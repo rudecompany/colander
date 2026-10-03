@@ -5,7 +5,7 @@ DEV_DB ?= data/dev.db
 DEV_KEY ?= server/testdata/dev-signing.key
 EXTENSION_ID ?= nninnogmbhfebflkcgghlmjmplmpodlc
 
-.PHONY: setup build server web extension extension-zip test test-server test-web test-extension e2e fixtures seed dev docker clean
+.PHONY: setup build server web extension extension-zip test test-server test-api test-web test-extension e2e fixtures seed dev docker clean
 
 setup:
 	pnpm install --frozen-lockfile
@@ -25,10 +25,15 @@ extension:
 extension-zip:
 	pnpm -C extension zip
 
-test: test-server test-web test-extension
+test: test-server test-api test-web test-extension
 
 test-server:
 	cd server && test -z "$$(gofmt -l .)" && go vet ./... && go test -race ./...
+
+test-api:
+	pnpm -C api check
+	pnpm -C api test
+	pnpm -C api deploy:dry
 
 test-web:
 	pnpm -C packages/shared check
