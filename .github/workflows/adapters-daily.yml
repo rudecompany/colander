@@ -1,0 +1,50 @@
+# Checks every day that the platform adapters still find cards, item IDs and sources on the live
+# sites (P0-2). A failure means a site changed its markup: fix it with a signed adapter config
+# update (extension/README.md, "Adapter configuration"), no code change or store review needed.
+name: Adapters daily
+
+on:
+  schedule:
+    - cron: '17 6 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  live:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm -C extension exec playwright install --with-deps chromium
+      # Signed-in surfaces (YouTube home and subscriptions, TikTok search, Instagram, Facebook)
+      # run only when a Playwright storage state for a test account is stored as a secret.
+      - name: Write storage states
+        env:
+          YT: ${{ secrets.COLANDER_LIVE_STATE_YT }}
+          TT: ${{ secrets.COLANDER_LIVE_STATE_TT }}
+          IG: ${{ secrets.COLANDER_LIVE_STATE_IG }}
+          FB: ${{ secrets.COLANDER_LIVE_STATE_FB }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/states"
+          for p in YT TT IG FB; do
+            v="${!p}"
+            if [ -n "$v" ]; then
+              printf '%s' "$v" > "$RUNNER_TEMP/states/$p.json"
+              echo "COLANDER_LIVE_STATE_$p=$RUNNER_TEMP/states/$p.json" >> "$GITHUB_ENV"
+            fi
+          done
+      - run: pnpm -C extension test:live
+      - if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: adapters-live-results
+          path: extension/test-results
+          retention-days: 14

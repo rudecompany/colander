@@ -273,6 +273,9 @@ svg.lucide {
 .uin-switch-md.uin-switch-on .uin-switch-thumb {
 	transform: translate(16px, -50%);
 }
+.uin-switch-on .uin-switch-thumb {
+	background: var(--cl-brand-fg);
+}
 .uin-switch:not(.uin-switch-on) .uin-switch-track {
 	background: color-mix(in srgb, var(--cl-text-muted) 55%, transparent);
 }

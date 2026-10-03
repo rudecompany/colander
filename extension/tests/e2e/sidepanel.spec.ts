@@ -34,6 +34,8 @@ test('queue, evidence and a decision', async ({ ext }) => {
 	const side = await ext.ctx.newPage();
 	await side.setViewportSize({ width: 400, height: 900 });
 	await side.goto(`chrome-extension://${EXT_ID}/sidepanel.html`);
+	await expect(side.getByRole('button', { name: /Cat Rescue Tales/ })).toBeVisible();
+	await side.screenshot({ path: 'screenshots/sidepanel-queue-light.png', animations: 'disabled' });
 	await side.getByRole('button', { name: /Cat Rescue Tales/ }).click();
 	await expect(side.getByRole('heading', { name: 'Cat Rescue Tales' })).toBeVisible();
 	await expect(side.getByText('Consensus is still forming')).toBeVisible();
@@ -46,5 +48,12 @@ test('queue, evidence and a decision', async ({ ext }) => {
 	await expect(side.getByText('Decision recorded.')).toBeVisible();
 	const d = ext.api.posted('/v1/review/sources/yt/%40catrescuetales/decision')[0]!;
 	expect(d.body).toMatchObject({ verdict: 'slop', reason: 'Staff review confirmed AI narration over generated footage, posted hourly.', signals: ['mostly_ai'], slop_type: 'deceptive', tests: ['mass_produced', 'hollow'], large: false });
-	await side.screenshot({ path: 'screenshots/sidepanel-evidence-light.png', fullPage: true, animations: 'disabled' });
+	await side.evaluate(() => scrollTo(0, 0));
+	await side.screenshot({ path: 'screenshots/sidepanel-evidence-light.png', animations: 'disabled' });
+	await side.getByRole('heading', { name: 'Decision' }).scrollIntoViewIfNeeded();
+	await side.evaluate(() => scrollBy(0, -56));
+	await side.screenshot({ path: 'screenshots/sidepanel-decision-light.png', animations: 'disabled' });
+	await side.emulateMedia({ colorScheme: 'dark' });
+	await side.evaluate(() => scrollTo(0, 0));
+	await side.screenshot({ path: 'screenshots/sidepanel-evidence-dark.png', animations: 'disabled' });
 });

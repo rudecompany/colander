@@ -563,6 +563,10 @@ sent by the website's account page through externally_connectable, or pasted her
 		background: var(--cl-clear-tint);
 		color: var(--cl-clear);
 	}
+	.entry :global(.uin-btn) {
+		align-self: flex-start;
+		margin-left: -8px;
+	}
 	.entry {
 		display: flex;
 		flex-direction: column;

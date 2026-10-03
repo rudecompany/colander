@@ -31,7 +31,14 @@ interface CardState {
 
 type Effective = Action | 'none';
 
-const send = <T = unknown>(m: ToWorker) => chrome.runtime.sendMessage(m) as Promise<T>;
+/** After an extension update the old content script's context is gone and sendMessage throws. */
+const send = <T = unknown>(m: ToWorker): Promise<T> => {
+	try {
+		return chrome.runtime.sendMessage(m) as Promise<T>;
+	} catch (e) {
+		return Promise.reject(e);
+	}
+};
 
 export function start(): void {
 	const bundled = defaults as AdapterConfig;
