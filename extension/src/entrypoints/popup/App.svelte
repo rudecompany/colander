@@ -161,14 +161,17 @@ Show, Always allow and Not slop beside each (P0-12), Report this source, and the
 		{#if plus}<span class="uin-badge uin-badge-md uin-badge-accent">Plus</span>{/if}
 	</header>
 
-	{#if needsAttention(status.value)}
-		<div class="note" role="status">
+	{#if needsAttention(status.value) || status.value.reportsClosed}
+		<div class="note" class:calm={!needsAttention(status.value)} role="status">
 			{#if status.value.reportsUpdated}
 				<p>A report you sent has a verdict.</p>
 				<Button variant="ghost" onclick={() => openOptions('reports')}>My reports</Button>
-			{:else}
+			{:else if needsAttention(status.value)}
 				<p>The list could not update. Blocking still works from the last copy.</p>
 				<Button variant="ghost" onclick={syncNow} aria-busy={syncing}><RefreshCw size={16} strokeWidth={1.75} />Sync now</Button>
+			{:else}
+				<p>A report you sent was closed.</p>
+				<Button variant="ghost" onclick={() => openOptions('reports')}>My reports</Button>
 			{/if}
 		</div>
 	{/if}
@@ -315,6 +318,9 @@ Show, Always allow and Not slop beside each (P0-12), Report this source, and the
 		padding: 8px 8px 8px 16px;
 		background: var(--cl-brand-tint);
 		font: var(--cl-caption);
+	}
+	.note.calm {
+		background: var(--cl-surface-raised);
 	}
 	.block {
 		display: flex;

@@ -128,7 +128,7 @@ export async function syncConfig(): Promise<void> {
 
 export async function syncAll(): Promise<void> {
 	await syncList(await keys());
-	await Promise.allSettled([syncConfig(), refreshReports(), refreshEntitlement(), pullSettings(), flushTags()]);
+	await Promise.allSettled([syncConfig(), refreshPendingReports(), refreshEntitlement(), pullSettings(), flushTags()]);
 	await refreshIcons();
 }
 
@@ -218,15 +218,30 @@ export async function submitReport(r: ReportRequest): Promise<ReportReply> {
 	}
 }
 
-/** Refreshes My reports and raises the attention dot when a verdict lands. */
+async function cachedReports(): Promise<Report[]> {
+	return ((await chrome.storage.local.get(K.reports))[K.reports] as Report[] | undefined) ?? [];
+}
+
+/**
+ * The sync asks for report statuses only while one of this install's reports waits for a
+ * verdict, so an install that never reported never sends its ID on a schedule (P0-11).
+ */
+async function refreshPendingReports(): Promise<void> {
+	if ((await cachedReports()).some((r) => r.status === 'under_review')) await refreshReports();
+}
+
+/** Refreshes My reports: a verdict raises the attention dot, a dismissal only a calm note. */
 export async function refreshReports(): Promise<Report[] | null> {
-	const cached = ((await chrome.storage.local.get(K.reports))[K.reports] as Report[] | undefined) ?? [];
+	const cached = await cachedReports();
 	try {
 		const { reports } = await json<{ reports: Report[] }>(await request('/v1/reports', { auth: { install: true } }));
 		const before = new Map(cached.map((r) => [r.id, r.status]));
-		const landed = reports.some((r) => before.has(r.id) && before.get(r.id) !== r.status && r.status !== 'under_review');
+		const landed = reports.filter((r) => before.has(r.id) && before.get(r.id) !== r.status && r.status !== 'under_review');
 		await chrome.storage.local.set({ [K.reports]: reports });
-		if (landed) await setStatus({ reportsUpdated: true });
+		const patch: Partial<Status> = {};
+		if (landed.some((r) => r.status !== 'dismissed')) patch.reportsUpdated = true;
+		if (landed.some((r) => r.status === 'dismissed')) patch.reportsClosed = true;
+		if (landed.length) await setStatus(patch);
 		return reports;
 	} catch {
 		return null;
@@ -537,7 +552,7 @@ async function handle(m: ToWorker, sender: chrome.runtime.MessageSender): Promis
 			return startTrial();
 		case 'refresh-reports': {
 			const reports = await refreshReports();
-			await setStatus({ reportsUpdated: false });
+			await setStatus({ reportsUpdated: false, reportsClosed: false });
 			return { ok: reports !== null, reports };
 		}
 		case 'set-platform':

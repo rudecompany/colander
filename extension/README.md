@@ -63,10 +63,10 @@ The release build asks for site access per platform through `optional_host_permi
 
 **Service worker** (`src/background`).
 On install it makes the install ID (16 random bytes, base64url, contract 2.4), opens the welcome tab, and syncs.
-It syncs on install, on browser start and on an hourly alarm: the list (delta when it can, snapshot otherwise), the signed adapter config, report statuses, the plan token's refresh, Plus settings, and any due tags.
+It syncs on install, on browser start and on an hourly alarm: the list (delta when it can, snapshot otherwise), the signed adapter config, report statuses (only while one of your reports is under review, so an install that never reported sends no ID on a schedule), the plan token's daily refresh, Plus settings, and any due tags.
 Every list file is verified (magic, version, length, sort order, Ed25519 signature) before it is used; a failure keeps the last good copy, a delta is applied only on top of its own base, and a snapshot older than the local list is refused.
 It registers content scripts with `chrome.scripting.registerContentScripts` (`runAt: document_start`) only for platforms that are switched on and granted, and keeps that in step with permission changes.
-It owns the toolbar: a per-tab count badge, the paused icon for paused tabs and sites, and the attention dot when a report gets a verdict or the list has not refreshed for 6 hours after a failure.
+It owns the toolbar: a per-tab count badge, the paused icon for paused tabs and sites, and the attention dot when a report gets a verdict or the list has not refreshed for 6 hours after a failure (a dismissed report only gets a calm note in the popup).
 
 **Content scripts** (`src/content`, `src/entrypoints/content`, `src/entrypoints/bridge.content.ts`).
 `content.js` runs in the isolated world at `document_start`.
@@ -120,7 +120,7 @@ Content scripts cannot open the extension origin's IndexedDB, so everything they
 | `storage.local` | `adapterConfig` | A verified remote adapter config newer than the bundled one. Read by content scripts. |
 | `storage.local` | `entitlement` | `{plus, trial, exp}` from the verified plan token. Read by content scripts. |
 | `storage.local` | `installId`, `planToken`, `reviewerToken` | Credentials for the API. |
-| `storage.local` | `status` | List sequence, count and date, last sync and error, config version, reports-updated flag. |
+| `storage.local` | `status` | List sequence, count and date, last sync and error, config version, report verdict and report closed flags. |
 | `storage.local` | `stats`, `reports`, `syncState`, `supportCard` | Daily counts (60 days), My reports cache, Plus sync version and dirty flag, support card timing. |
 | `storage.session` | `pausedTabs`, `tabInfo` | Paused tabs and each tab's platform and count; gone when the browser closes. |
 | IndexedDB `colander` | `kv` / `list` | The canonical list: sequence, created time and the sorted entries, the last good copy. |

@@ -64,7 +64,7 @@ so the popup and in-page notices can link straight to a section (#reports, #plat
 					<a href="#{s.id}" class:active={active.id === s.id} aria-current={active.id === s.id ? 'page' : undefined}>
 						<s.icon size={16} strokeWidth={1.75} />
 						<span>{s.label}</span>
-						{#if s.id === 'reports' && status.value.reportsUpdated}<span class="dot" aria-label="Updated"></span>{/if}
+						{#if s.id === 'reports' && (status.value.reportsUpdated || status.value.reportsClosed)}<span class="dot" aria-label="Updated"></span>{/if}
 					</a>
 				</li>
 			{/each}

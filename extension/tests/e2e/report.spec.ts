@@ -42,10 +42,31 @@ test('report a channel with examples, a reason, type and tests', async ({ ext })
 	await expect(reports.getByRole('link', { name: 'NASA' })).toHaveAttribute('href', 'http://localhost:8787/s/yt/@nasa');
 });
 
+const pending = { platform: 'yt', source_name: null, status: 'under_review', verdict: null, protects: 0, created_at: '2026-10-01T10:00:00Z', updated_at: '2026-10-01T10:00:00Z' };
+
+test('a fresh install sends no install ID on its hourly sync (P0-11)', async ({ ext }) => {
+	await ext.setup();
+	await ext.send({ type: 'sync-now' });
+	expect(ext.api.sent.length).toBeGreaterThan(0);
+	expect(ext.api.sent.filter((s) => s.auth !== undefined)).toEqual([]);
+
+	// Once a report waits for a verdict, the sync asks for its status, and stops once it has one.
+	await ext.send({ type: 'report', report: { platform: 'yt', sourceId: '@aihistorydaily', examples: [], reason: 'Same voice on every video.' } });
+	const statusChecks = () => ext.api.sent.filter((s) => s.method === 'GET' && s.path === '/v1/reports');
+	await ext.send({ type: 'sync-now' });
+	expect(statusChecks()).toHaveLength(1);
+	expect(statusChecks()[0]!.auth).toMatch(/^Install /);
+	ext.api.reports = [{ ...ext.api.reports[0]!, status: 'slop', verdict: 'slop' }];
+	await ext.send({ type: 'sync-now' });
+	await ext.send({ type: 'sync-now' });
+	expect(statusChecks()).toHaveLength(2);
+});
+
 test('a report verdict raises the attention state and shows in My reports', async ({ ext }) => {
 	await ext.setup();
-	ext.api.reports = [{ id: 'rpt_1', platform: 'yt', source_id: '@aihistorydaily', source_name: 'AI History Daily', status: 'under_review', verdict: null, protects: 0, created_at: '2026-10-01T10:00:00Z', updated_at: '2026-10-01T10:00:00Z' }];
-	await ext.send({ type: 'sync-now' });
+	ext.api.reports = [{ ...pending, id: 'rpt_1', source_id: '@aihistorydaily', source_name: 'AI History Daily' }];
+	// The report is in the local copy, as after sending it or opening My reports.
+	await ext.send({ type: 'refresh-reports' });
 	ext.api.reports = [{ ...ext.api.reports[0]!, status: 'slop', verdict: 'slop', protects: 1240 }];
 	await ext.send({ type: 'sync-now' });
 	expect((await ext.storage<{ reportsUpdated: boolean }>('status')).reportsUpdated).toBe(true);
@@ -57,4 +78,22 @@ test('a report verdict raises the attention state and shows in My reports', asyn
 	await expect(opts.getByText('Protects 1,240 installs')).toBeVisible();
 	await expect(opts.locator('[data-verdict="slop"]')).toContainText('Slop');
 	await expect.poll(() => ext.storage<{ reportsUpdated: boolean }>('status').then((s) => s.reportsUpdated)).toBe(false);
+});
+
+test('a dismissed report is closed calmly, without the attention dot', async ({ ext }) => {
+	await ext.setup();
+	ext.api.reports = [{ ...pending, id: 'rpt_1', source_id: '@catrescuetales', source_name: 'Cat Rescue Tales' }];
+	await ext.send({ type: 'refresh-reports' });
+	ext.api.reports = [{ ...ext.api.reports[0]!, status: 'dismissed' }];
+	await ext.send({ type: 'sync-now' });
+	const status = await ext.storage<{ reportsUpdated: boolean; reportsClosed: boolean }>('status');
+	expect(status).toMatchObject({ reportsUpdated: false, reportsClosed: true });
+	const popup = await ext.ctx.newPage();
+	await popup.goto(`chrome-extension://${EXT_ID}/popup.html`);
+	await expect(popup.getByText('A report you sent was closed.')).toBeVisible();
+	await expect(popup.getByText('A report you sent has a verdict.')).toHaveCount(0);
+	const opts = await ext.ctx.newPage();
+	await opts.goto(`chrome-extension://${EXT_ID}/options.html#reports`);
+	await expect(opts.getByText('Closed, no change')).toBeVisible();
+	await expect.poll(() => ext.storage<{ reportsClosed: boolean }>('status').then((s) => s.reportsClosed)).toBe(false);
 });

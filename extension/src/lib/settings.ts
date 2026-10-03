@@ -77,8 +77,10 @@ export interface Status {
 	lastAttemptAt: number | null;
 	lastError: string | null;
 	configVersion: number;
-	/** A report changed status since the user last looked at My reports. */
+	/** A report got a verdict since the user last looked at My reports (the attention dot). */
 	reportsUpdated: boolean;
+	/** A report was dismissed since then: a calm note in the popup, no attention dot. */
+	reportsClosed: boolean;
 }
 
 export const DEFAULT_STATUS: Status = {
@@ -89,7 +91,8 @@ export const DEFAULT_STATUS: Status = {
 	lastAttemptAt: null,
 	lastError: null,
 	configVersion: 0,
-	reportsUpdated: false
+	reportsUpdated: false,
+	reportsClosed: false
 };
 
 export interface DayStats {
