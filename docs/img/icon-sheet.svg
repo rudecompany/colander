@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 232" width="760" height="232" role="img" aria-label="Each verdict has its own shape, so it reads without color" font-family="system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="13">
+<title>Each verdict has its own shape, so it reads without color</title>
+<rect width="760" height="232" fill="#FFFFFF"/>
+<text x="24" y="34" font-size="15" font-weight="600" fill="#1A1C1F">Each verdict has its own shape, so it reads without color</text>
+<rect x="28" y="60" width="104" height="104" rx="10" fill="#F3F0E9" stroke="#BDB8AD" stroke-width="1"/>
+<g fill="#1A1C1F"><rect x="55" y="98" width="50" height="5" rx="2.5"/><path fill-rule="evenodd" d="M61 103A19 19 0 0 0 99 103ZM69 109a2 2 0 1 0 4 0a2 2 0 1 0 -4 0ZM78 109a2 2 0 1 0 4 0a2 2 0 1 0 -4 0ZM87 109a2 2 0 1 0 4 0a2 2 0 1 0 -4 0ZM73 115a2 2 0 1 0 4 0a2 2 0 1 0 -4 0ZM83 115a2 2 0 1 0 4 0a2 2 0 1 0 -4 0ZM78 119a2 2 0 1 0 4 0a2 2 0 1 0 -4 0Z"/><rect x="72" y="121.5" width="16" height="4.5" rx="1.5"/></g>
+<text x="80" y="190" text-anchor="middle" font-size="13" font-weight="600" fill="#1A1C1F">Brand mark</text><text x="80" y="208" text-anchor="middle" font-size="11.5" fill="#5A5F66">Colander</text>
+<rect x="148" y="60" width="104" height="104" rx="10" fill="#F3F0E9" stroke="#BDB8AD" stroke-width="1"/>
+<path d="M200 90C204 98 214 106 214 118A14 14 0 0 1 186 118C186 106 196 98 200 90Z" fill="#1A1C1F"/>
+<text x="200" y="190" text-anchor="middle" font-size="13" font-weight="600" fill="#1A1C1F">Slop</text><text x="200" y="208" text-anchor="middle" font-size="11.5" fill="#5A5F66">Solid drop</text>
+<rect x="268" y="60" width="104" height="104" rx="10" fill="#F3F0E9" stroke="#BDB8AD" stroke-width="1"/>
+<path d="M306 118A14 14 0 0 0 334 118Z" fill="#1A1C1F"/>
+<path d="M320 90C324 98 334 106 334 118A14 14 0 0 1 306 118C306 106 316 98 320 90Z" fill="none" stroke="#1A1C1F" stroke-width="2.5" stroke-linejoin="round"/>
+<text x="320" y="190" text-anchor="middle" font-size="13" font-weight="600" fill="#1A1C1F">Likely slop</text><text x="320" y="208" text-anchor="middle" font-size="11.5" fill="#5A5F66">Half-filled drop</text>
+<rect x="388" y="60" width="104" height="104" rx="10" fill="#F3F0E9" stroke="#BDB8AD" stroke-width="1"/>
+<path d="M437 95Q440.5 111.5 457 115Q440.5 118.5 437 135Q433.5 118.5 417 115Q433.5 111.5 437 95Z" fill="#1A1C1F"/>
+<path d="M456 90Q457.2 95.8 463 97Q457.2 98.2 456 104Q454.8 98.2 449 97Q454.8 95.8 456 90Z" fill="#1A1C1F"/>
+<text x="440" y="190" text-anchor="middle" font-size="13" font-weight="600" fill="#1A1C1F">AI-made</text><text x="440" y="208" text-anchor="middle" font-size="11.5" fill="#5A5F66">Sparkle</text>
+<rect x="508" y="60" width="104" height="104" rx="10" fill="#F3F0E9" stroke="#BDB8AD" stroke-width="1"/>
+<polygon points="557,93 538,112 557,131" fill="#1A1C1F"/>
+<polygon points="563,93 582,112 563,131" fill="none" stroke="#1A1C1F" stroke-width="2.5" stroke-linejoin="round"/>
+<text x="560" y="190" text-anchor="middle" font-size="13" font-weight="600" fill="#1A1C1F">Disputed</text><text x="560" y="208" text-anchor="middle" font-size="11.5" fill="#5A5F66">Split diamond</text>
+<rect x="628" y="60" width="104" height="104" rx="10" fill="#F3F0E9" stroke="#BDB8AD" stroke-width="1"/>
+<path fill-rule="evenodd" fill="#1A1C1F" d="M660 112a20 20 0 1 0 40 0a20 20 0 1 0 -40 0ZM672.84 111.16L676.93 115.25L688.1 103.23L691.91 106.77L677.07 122.75L669.16 114.84Z"/>
+<text x="680" y="190" text-anchor="middle" font-size="13" font-weight="600" fill="#1A1C1F">Clear</text><text x="680" y="208" text-anchor="middle" font-size="11.5" fill="#5A5F66">Circle and check</text>
+</svg>

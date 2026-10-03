@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 436" width="760" height="436" role="img" aria-label="Labeled and collapsed items stay on the page, and hidden items leave only a count" font-family="system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="13">
+<title>Labeled and collapsed items stay on the page, and hidden items leave only a count</title>
+<rect width="760" height="436" fill="#FFFFFF"/>
+<text x="24" y="34" font-size="15" font-weight="600" fill="#1A1C1F">Labeled and collapsed items stay on the page, and hidden items leave only a count</text>
+<rect x="160" y="56" width="576" height="356" rx="10" fill="#FFFFFF" stroke="#BDB8AD" stroke-width="1.25"/>
+<line x1="160" y1="96" x2="736" y2="96" stroke="#E4E0D8"/>
+<rect x="176" y="66" width="300" height="20" rx="10" fill="none" stroke="#E4E0D8"/>
+<text x="644" y="80" text-anchor="end" font-size="11.5" fill="#5A5F66">Hidden on this page</text>
+<g transform="translate(668 77) scale(0.42)" fill="#1A1C1F"><rect x="-25" y="-10" width="50" height="5" rx="2.5"/><path fill-rule="evenodd" d="M-19 -5A19 19 0 0 0 19 -5ZM-11 1a2 2 0 1 0 4 0a2 2 0 1 0 -4 0ZM-2 1a2 2 0 1 0 4 0a2 2 0 1 0 -4 0ZM7 1a2 2 0 1 0 4 0a2 2 0 1 0 -4 0ZM-7 7a2 2 0 1 0 4 0a2 2 0 1 0 -4 0ZM3 7a2 2 0 1 0 4 0a2 2 0 1 0 -4 0ZM-2 11a2 2 0 1 0 4 0a2 2 0 1 0 -4 0Z"/><rect x="-8" y="13.5" width="16" height="4.5" rx="1.5"/></g>
+<rect x="686" y="68" width="26" height="16" rx="8" fill="#E4EAF1" stroke="#1F4E8C" stroke-width="1.25"/>
+<text x="699" y="80" text-anchor="middle" font-size="11.5" font-weight="600" fill="#1A1C1F">1</text>
+<rect x="176" y="112" width="160" height="90" rx="8" fill="#F3F0E9" stroke="#BDB8AD" stroke-width="1"/>
+<g fill="#E4E0D8"><rect x="352" y="122" width="260" height="10" rx="5"/><rect x="352" y="142" width="200" height="10" rx="5"/><rect x="352" y="174" width="110" height="8" rx="4"/></g>
+<rect x="184" y="120" width="78" height="20" rx="6" fill="#FFFFFF" stroke="#1A1C1F" stroke-width="1.25"/>
+<path d="M196 124Q197.1 128.9 202 130Q197.1 131.1 196 136Q194.9 131.1 190 130Q194.9 128.9 196 124Z" fill="#1A1C1F"/>
+<text x="206" y="134" font-size="11.5" font-weight="600" fill="#1A1C1F">AI-made</text>
+<rect x="176" y="218" width="544" height="40" rx="8" fill="#FFFFFF" stroke="#BDB8AD" stroke-width="1.25"/>
+<path d="M190.3 240.5A5.7 5.7 0 0 0 201.7 240.5Z" fill="#1A1C1F"/>
+<path d="M196 229C197.6 232.3 201.7 235.5 201.7 240.5A5.7 5.7 0 0 1 190.3 240.5C190.3 235.5 194.4 232.3 196 229Z" fill="none" stroke="#1A1C1F" stroke-width="1.25"/>
+<text x="212" y="243" font-size="13" font-weight="600" fill="#1A1C1F">Likely slop</text>
+<text x="298" y="243" font-size="11.5" fill="#5A5F66">Mass-produced, AI-made</text>
+<text x="662" y="243" text-anchor="end" font-size="13" font-weight="600" fill="#1F4E8C">Show</text>
+<text x="706" y="243" text-anchor="end" font-size="13" font-weight="600" fill="#1F4E8C">Why</text>
+<line x1="176" y1="282" x2="302" y2="282" stroke="#8E8A80" stroke-dasharray="4 4"/>
+<line x1="594" y1="282" x2="720" y2="282" stroke="#8E8A80" stroke-dasharray="4 4"/>
+<text x="448" y="286" text-anchor="middle" font-size="11.5" fill="#5A5F66">One item hidden: nothing is left in the page</text>
+<rect x="176" y="306" width="160" height="90" rx="8" fill="#F3F0E9" stroke="#BDB8AD" stroke-width="1"/>
+<g fill="#E4E0D8"><rect x="352" y="316" width="260" height="10" rx="5"/><rect x="352" y="336" width="200" height="10" rx="5"/><rect x="352" y="368" width="110" height="8" rx="4"/></g>
+<rect x="652" y="314" width="60" height="28" rx="6" fill="#FFFFFF" stroke="#1A1C1F" stroke-width="1.25"/>
+<polygon points="664,323 671,323 676,328 671,333 664,333" fill="none" stroke="#1A1C1F" stroke-width="1.25" stroke-linejoin="round"/>
+<text x="683" y="332.5" font-size="12.5" font-weight="600" fill="#1A1C1F">Tag</text>
+<text x="24" y="128" font-size="13" font-weight="600" fill="#1A1C1F">Label</text>
+<text x="24" y="144" font-size="11.5" fill="#5A5F66">Chip on the item.</text>
+<text x="24" y="160" font-size="11.5" fill="#5A5F66">Nothing removed.</text>
+<text x="24" y="235" font-size="13" font-weight="600" fill="#1A1C1F">Collapse</text>
+<text x="24" y="251" font-size="11.5" fill="#5A5F66">Shrinks to one line</text>
+<text x="24" y="286" font-size="13" font-weight="600" fill="#1A1C1F">Hide</text>
+<text x="24" y="302" font-size="11.5" fill="#5A5F66">Gone, but counted</text>
+<text x="24" y="340" font-size="13" font-weight="600" fill="#1A1C1F">Tag</text>
+<text x="24" y="356" font-size="11.5" fill="#5A5F66">Two clicks, in place</text>
+</svg>
