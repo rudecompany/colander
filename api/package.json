@@ -1,0 +1,22 @@
+{
+  "name": "@colander/api",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "check": "wrangler types --strict-vars=false --check && tsc -p . && tsc -p test && tsc -p test/harness",
+    "test": "vitest run",
+    "deploy:dry": "wrangler deploy --dry-run --env='' --outdir dist/production && wrangler deploy --dry-run --env staging --outdir dist/staging",
+    "types": "wrangler types --strict-vars=false"
+  },
+  "dependencies": {
+    "@colander/shared": "workspace:*"
+  },
+  "devDependencies": {
+    "@cloudflare/vitest-plugin": "1.3.6",
+    "@types/node": "^24.19.1",
+    "typescript": "^5.9.0",
+    "vitest": "^4.1.11",
+    "wrangler": "4.147.0"
+  }
+}

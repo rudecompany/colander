@@ -6,5 +6,8 @@
     "build": "pnpm -r build",
     "test": "pnpm -r test",
     "check": "pnpm -r check"
+  },
+  "devDependencies": {
+    "wrangler": "4.147.0"
   }
 }

@@ -12,7 +12,8 @@
 			"ES2022",
 			"DOM",
 			"DOM.Iterable"
-		]
+		],
+		"allowImportingTsExtensions": true
 	},
 	"include": [
 		"src/**/*.ts",

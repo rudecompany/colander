@@ -1,0 +1,82 @@
+// Colander on Cloudflare: one Worker for the website and the API (docs/hosting-plan.md section 2).
+// Production is the top level; `env.staging` repeats every binding because Wrangler does not
+// inherit bindings, vars or secrets into named environments.
+{
+	"$schema": "./node_modules/wrangler/config-schema.json",
+	"name": "colander",
+	"main": "src/index.ts",
+	// The newest date the pinned workerd supports. Advance it with Wrangler and rerun the tests.
+	"compatibility_date": "2026-10-01",
+	"routes": [{ "pattern": "getcolander.com", "custom_domain": true }],
+	// Only the custom domain serves the Worker: a workers.dev or preview URL would bypass Access on
+	// staging and split the edge cache.
+	"workers_dev": false,
+	"preview_urls": false,
+	"assets": {
+		"directory": "../web/build",
+		"binding": "ASSETS",
+		// /definition serves definition.html, matching the Go server's lookup.
+		"html_handling": "auto-trailing-slash",
+		// Unknown paths get build/404.html (a copy of the SPA shell) with status 404.
+		"not_found_handling": "404-page",
+		"run_worker_first": ["/v1/*", "/ops/*", "/healthz", "/__dev/*"]
+	},
+	// Workers Cache in front of the list and public GETs. Responses carry explicit headers (src/http.ts).
+	"cache": { "enabled": true, "cross_version_cache": true },
+	"durable_objects": { "bindings": [{ "name": "STORE", "class_name": "Store" }] },
+	// Forward-only. CI must refuse deleted_classes, renamed_classes and transferred_classes for Store.
+	"migrations": [{ "tag": "v1", "new_sqlite_classes": ["Store"] }],
+	"r2_buckets": [
+		{ "binding": "LISTS", "bucket_name": "colander-lists" },
+		{ "binding": "BACKUPS", "bucket_name": "colander-backups" }
+	],
+	"send_email": [
+		{ "name": "EMAIL" },
+		// Placeholder: replace with the ops address verified in Email Routing (hosting plan section 8).
+		{ "name": "ALERTS", "destination_address": "ops-alerts@getcolander.com" }
+	],
+	// Burst shield for cache misses, keyed by the salted IP hash. Counts per location, so it is not exact.
+	"ratelimits": [{ "name": "MISSES", "namespace_id": "1001", "simple": { "limit": 120, "period": 60 } }],
+	// Watchdog every 5 minutes, analytics pull hourly.
+	"triggers": { "crons": ["*/5 * * * *", "7 * * * *"] },
+	// Scoring passes and dumps run inside the Store; the default 30 s CPU cap is too tight for them.
+	"limits": { "cpu_ms": 300000 },
+	"rules": [{ "type": "Text", "globs": ["**/*.sql"], "fallthrough": true }],
+	// Invocation logs and traces record request URLs and headers, so both stay off (contract 8).
+	// Code logs the route pattern, status and duration only.
+	"observability": {
+		"enabled": true,
+		"redact_query_string": true,
+		"logs": { "enabled": true, "invocation_logs": false },
+		"traces": { "enabled": false }
+	},
+	"vars": {
+		"PUBLIC_URL": "https://getcolander.com",
+		"COLANDER_DEV": ""
+	},
+	"secrets": { "required": ["COLANDER_SIGNING_KEY", "IP_SALT", "OPS_TOKEN"] },
+	"env": {
+		"staging": {
+			"name": "colander-staging",
+			"routes": [{ "pattern": "staging.getcolander.com", "custom_domain": true }],
+			"workers_dev": false,
+			"preview_urls": false,
+			"durable_objects": { "bindings": [{ "name": "STORE", "class_name": "Store" }] },
+			"r2_buckets": [
+				{ "binding": "LISTS", "bucket_name": "colander-staging-lists" },
+				{ "binding": "BACKUPS", "bucket_name": "colander-staging-backups" }
+			],
+			"send_email": [
+				{ "name": "EMAIL" },
+				{ "name": "ALERTS", "destination_address": "ops-alerts@getcolander.com" }
+			],
+			"ratelimits": [{ "name": "MISSES", "namespace_id": "1002", "simple": { "limit": 120, "period": 60 } }],
+			"triggers": { "crons": ["*/5 * * * *", "7 * * * *"] },
+			"vars": {
+				"PUBLIC_URL": "https://staging.getcolander.com",
+				"COLANDER_DEV": ""
+			},
+			"secrets": { "required": ["COLANDER_SIGNING_KEY", "IP_SALT", "OPS_TOKEN"] }
+		}
+	}
+}

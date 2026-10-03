@@ -2,12 +2,13 @@
 // the tests through Vitest's provide/inject, so the same test files run in Node and inside workerd,
 // which cannot read host files.
 import { readFileSync } from 'node:fs';
+import type { ContractFiles } from './provided.ts';
 
 const root = new URL('../../../', import.meta.url);
 const text = (path: string) => readFileSync(new URL(path, root), 'utf8');
 const base64 = (path: string) => readFileSync(new URL(path, root)).toString('base64');
 
-export function contractFiles() {
+export function contractFiles(): ContractFiles {
 	return {
 		snapshot: base64('testdata/contract/list-snapshot.bin'),
 		delta: base64('testdata/contract/list-delta.bin'),
@@ -18,12 +19,4 @@ export function contractFiles() {
 		devSeed: text('server/testdata/dev-signing.key').trim(),
 		devPublicKey: text('server/testdata/dev-signing.pub').trim()
 	};
-}
-
-export type ContractFiles = ReturnType<typeof contractFiles>;
-
-declare module 'vitest' {
-	export interface ProvidedContext {
-		contract: ContractFiles;
-	}
 }
