@@ -287,7 +287,7 @@
 	.keys {
 		display: flex;
 		align-items: center;
-		gap: 6px;
+		gap: var(--cl-s1);
 	}
 	.gate {
 		display: grid;
@@ -320,14 +320,14 @@
 	.queue-list {
 		list-style: none;
 		display: grid;
-		gap: 6px;
+		gap: var(--cl-s2);
 	}
 	.q {
 		width: 100%;
 		display: grid;
-		gap: 4px;
+		gap: var(--cl-s1);
 		text-align: left;
-		padding: 10px 12px;
+		padding: var(--cl-s3);
 		border-radius: var(--cl-r-card);
 		border: 1px solid var(--cl-border);
 		background: var(--cl-surface);
@@ -358,7 +358,7 @@
 		color: var(--cl-text-muted);
 	}
 	.q-name {
-		font: 600 15px/22px var(--cl-font);
+		font: 600 16px/24px var(--cl-font);
 		overflow-wrap: anywhere;
 	}
 	.q-summary {
@@ -369,8 +369,8 @@
 		display: flex;
 		flex-wrap: wrap;
 		align-items: center;
-		gap: 6px;
-		margin-top: 2px;
+		gap: var(--cl-s2);
+		margin-top: var(--cl-s1);
 	}
 	.arrow {
 		font: var(--cl-caption);
@@ -395,7 +395,7 @@
 	}
 	.queue-empty p {
 		background: var(--cl-paper);
-		padding: 4px 10px;
+		padding: var(--cl-s1) var(--cl-s3);
 		font: var(--cl-body);
 		color: var(--cl-text-muted);
 	}

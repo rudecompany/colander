@@ -33,10 +33,6 @@
 		max-width: 760px;
 		padding-bottom: var(--cl-s6);
 	}
-	.t-lede {
-		font-size: 18px;
-		line-height: 28px;
-	}
 	@media (max-width: 720px) {
 		.page-head {
 			padding-top: var(--cl-s6);

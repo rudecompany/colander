@@ -259,7 +259,7 @@
 	.ids {
 		display: flex;
 		flex-wrap: wrap;
-		gap: 4px 14px;
+		gap: var(--cl-s1) var(--cl-s4);
 		font: var(--cl-body);
 		color: var(--cl-text-muted);
 	}
@@ -282,7 +282,7 @@
 	.links {
 		display: flex;
 		flex-wrap: wrap;
-		gap: 4px 20px;
+		gap: var(--cl-s1) var(--cl-s5);
 		font: 600 14px/20px var(--cl-font);
 	}
 	.sec {
@@ -298,11 +298,12 @@
 		gap: 8px;
 	}
 	.count {
-		min-width: 22px;
-		padding: 0 6px;
+		min-width: 20px;
+		padding: 0 var(--cl-s1);
 		border-radius: var(--cl-r-full);
 		background: var(--w-ink-soft);
 		font: 600 12px/20px var(--cl-font);
+		font-variant-numeric: tabular-nums;
 		text-align: center;
 	}
 	.layers {
@@ -312,9 +313,9 @@
 	}
 	.layer {
 		display: grid;
-		gap: 4px;
+		gap: var(--cl-s1);
 		align-content: start;
-		padding: 12px 14px;
+		padding: var(--cl-s3) var(--cl-s4);
 		border-radius: var(--cl-r-card);
 		border: 1px dashed var(--w-control-border);
 		background: transparent;
@@ -373,9 +374,9 @@
 	}
 	.item-card {
 		display: grid;
-		gap: 6px;
+		gap: var(--cl-s2);
 		justify-items: start;
-		padding: 12px 14px;
+		padding: var(--cl-s3) var(--cl-s4);
 		border-radius: var(--cl-r-card);
 		border: 1px solid var(--cl-border);
 		background: var(--cl-surface);
@@ -392,7 +393,7 @@
 		font: var(--cl-caption);
 	}
 	.quote {
-		padding-left: 10px;
+		padding-left: var(--cl-s3);
 		border-left: 2px solid var(--cl-border);
 	}
 	.inline-form {
@@ -412,9 +413,9 @@
 	.radio {
 		display: inline-flex;
 		align-items: center;
-		gap: 6px;
+		gap: var(--cl-s2);
 		font: var(--cl-body);
-		min-height: 24px;
+		min-height: 32px;
 	}
 	.radio input {
 		accent-color: var(--cl-brand);

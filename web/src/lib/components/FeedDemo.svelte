@@ -182,7 +182,7 @@ Label, collapse and hide behave as they do in the extension, and Show and Why wo
 		align-items: center;
 		justify-content: space-between;
 		gap: var(--cl-s3);
-		padding: 10px 14px;
+		padding: var(--cl-s2) var(--cl-s4);
 		border-bottom: 1px solid var(--cl-border);
 		background: var(--cl-surface-raised);
 	}
@@ -192,8 +192,8 @@ Label, collapse and hide behave as they do in the extension, and Show and Why wo
 		gap: 8px;
 		flex: 1;
 		max-width: 300px;
-		height: 30px;
-		padding: 0 12px;
+		height: 32px;
+		padding: 0 var(--cl-s3);
 		border-radius: var(--cl-r-full);
 		background: var(--cl-surface);
 		border: 1px solid var(--cl-border);
@@ -215,7 +215,7 @@ Label, collapse and hide behave as they do in the extension, and Show and Why wo
 		top: 0;
 		min-width: 18px;
 		height: 18px;
-		padding: 0 5px;
+		padding: 0 var(--cl-s1);
 		border-radius: var(--cl-r-full);
 		background: var(--cl-brand);
 		color: var(--cl-brand-fg);
@@ -224,7 +224,7 @@ Label, collapse and hide behave as they do in the extension, and Show and Why wo
 	}
 	.list {
 		list-style: none;
-		padding: 6px 14px;
+		padding: var(--cl-s1) var(--cl-s4);
 	}
 	.list > li {
 		padding-block: 8px;
@@ -235,7 +235,7 @@ Label, collapse and hide behave as they do in the extension, and Show and Why wo
 	.card-item {
 		display: grid;
 		grid-template-columns: 136px 1fr;
-		gap: 14px;
+		gap: var(--cl-s4);
 		align-items: start;
 	}
 	.thumb {
@@ -244,11 +244,11 @@ Label, collapse and hide behave as they do in the extension, and Show and Why wo
 	}
 	.on-media {
 		position: absolute;
-		left: 6px;
-		top: 6px;
+		left: var(--cl-s2);
+		top: var(--cl-s2);
 	}
 	.title {
-		font: 600 15px/22px var(--cl-font);
+		font: 600 16px/24px var(--cl-font);
 		text-wrap: pretty;
 	}
 	.meta {
@@ -258,9 +258,9 @@ Label, collapse and hide behave as they do in the extension, and Show and Why wo
 	.collapsed {
 		display: flex;
 		align-items: center;
-		gap: 10px;
+		gap: var(--cl-s2);
 		min-height: 40px;
-		padding: 4px 4px 4px 10px;
+		padding: var(--cl-s1) var(--cl-s1) var(--cl-s1) var(--cl-s3);
 		border: 1px solid var(--cl-border);
 		border-radius: var(--cl-r-chip);
 		background: var(--cl-surface-raised);
@@ -276,35 +276,35 @@ Label, collapse and hide behave as they do in the extension, and Show and Why wo
 	}
 	.bar-actions {
 		display: flex;
-		gap: 2px;
+		gap: var(--cl-s1);
 	}
 	.quiet {
 		display: inline-flex;
 		align-items: center;
-		gap: 5px;
-		height: 30px;
-		padding: 0 8px;
+		gap: var(--cl-s1);
+		height: 32px;
+		padding: 0 var(--cl-s2);
 		border: 0;
 		border-radius: var(--cl-r-chip);
 		background: transparent;
 		color: var(--cl-brand);
-		font: 600 13px/16px var(--cl-font);
+		font: 600 14px/20px var(--cl-font);
 		cursor: pointer;
 	}
 	.quiet:hover {
 		background: var(--uin-mat-selected);
 	}
 	.why {
-		margin-top: 8px;
-		padding: 12px 14px;
+		margin-top: var(--cl-s2);
+		padding: var(--cl-s3) var(--cl-s4);
 		font: var(--cl-body);
 	}
 	.why-title {
 		font-weight: 600;
-		margin-bottom: 6px;
+		margin-bottom: var(--cl-s2);
 	}
 	.why ul {
-		padding-left: 18px;
+		padding-left: var(--cl-s4);
 		display: grid;
 		gap: 2px;
 	}
@@ -315,8 +315,8 @@ Label, collapse and hide behave as they do in the extension, and Show and Why wo
 	}
 	.hidden-note {
 		border-top: 1px dashed var(--w-control-border);
-		margin: 0 14px;
-		padding: 10px 0 12px;
+		margin: 0 var(--cl-s4);
+		padding: var(--cl-s3) 0;
 		font: var(--cl-caption);
 		color: var(--cl-text-muted);
 	}
@@ -326,7 +326,7 @@ Label, collapse and hide behave as they do in the extension, and Show and Why wo
 	@media (max-width: 480px) {
 		.card-item {
 			grid-template-columns: 104px 1fr;
-			gap: 10px;
+			gap: var(--cl-s3);
 		}
 		.title {
 			font-size: 14px;

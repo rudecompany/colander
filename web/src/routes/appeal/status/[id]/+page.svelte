@@ -278,7 +278,7 @@
 		gap: var(--cl-s3);
 	}
 	.code {
-		padding: 10px 16px;
+		padding: var(--cl-s2) var(--cl-s4);
 		border-radius: var(--cl-r-chip);
 		border: 1px dashed var(--w-control-border);
 		background: var(--cl-surface);
@@ -294,7 +294,7 @@
 		font: 600 16px/24px var(--cl-font);
 	}
 	.howto ol {
-		padding-left: 20px;
+		padding-left: var(--cl-s5);
 		display: grid;
 		gap: 4px;
 		font: var(--cl-body);

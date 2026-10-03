@@ -148,10 +148,6 @@
 	.head .t-display {
 		overflow-wrap: anywhere;
 	}
-	.t-lede {
-		font-size: 18px;
-		line-height: 28px;
-	}
 	.layout {
 		display: grid;
 		grid-template-columns: minmax(0, 1fr) 260px;
@@ -165,7 +161,7 @@
 	.current {
 		display: flex;
 		align-items: center;
-		gap: 10px;
+		gap: var(--cl-s2);
 		font: 600 14px/20px var(--cl-font);
 	}
 	.steps {

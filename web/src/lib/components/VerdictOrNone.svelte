@@ -15,6 +15,6 @@
 	.lg {
 		font-size: 14px;
 		line-height: 20px;
-		padding: 3px 9px;
+		padding: 4px 10px;
 	}
 </style>

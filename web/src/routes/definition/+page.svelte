@@ -308,12 +308,13 @@
 	.toc ol {
 		list-style: none;
 		display: grid;
-		gap: 2px;
 		border-left: 1px solid var(--cl-border);
 	}
 	.toc a {
-		display: block;
-		padding: 4px 0 4px 14px;
+		display: flex;
+		align-items: center;
+		min-height: 32px;
+		padding-left: var(--cl-s4);
 		margin-left: -1px;
 		border-left: 2px solid transparent;
 		color: var(--cl-text-muted);
@@ -340,7 +341,7 @@
 		margin-top: 0;
 	}
 	.lead {
-		font: 400 20px/30px var(--cl-font);
+		font: var(--w-lede);
 		padding-left: var(--cl-s4);
 		border-left: 3px solid var(--cl-text);
 	}
@@ -368,22 +369,22 @@
 	.layer-head {
 		display: flex;
 		align-items: center;
-		gap: 10px;
+		gap: var(--cl-s2);
 		font: var(--cl-title);
 	}
 	.layer-n {
 		display: inline-grid;
 		place-items: center;
-		width: 28px;
-		height: 28px;
+		width: 24px;
+		height: 24px;
 		border-radius: 50%;
 		border: 1.5px solid var(--cl-text);
-		font: 700 13px/1 var(--cl-font);
+		font: 700 12px/1 var(--cl-font);
 	}
 	.signals {
 		font: var(--cl-body);
 		color: var(--cl-text-muted);
-		padding-left: 18px !important;
+		padding-left: var(--cl-s4) !important;
 	}
 	.signals li + li {
 		margin-top: 2px !important;

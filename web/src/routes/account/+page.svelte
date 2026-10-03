@@ -250,7 +250,7 @@
 		gap: var(--cl-s2) var(--cl-s4);
 	}
 	.whoami .uin-btn {
-		margin-left: -10px;
+		margin-left: calc(-1 * var(--cl-s4));
 	}
 	.section-card {
 		display: grid;

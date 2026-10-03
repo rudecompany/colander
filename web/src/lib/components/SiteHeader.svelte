@@ -100,9 +100,9 @@
 	.account {
 		display: inline-flex;
 		align-items: center;
-		gap: 6px;
+		gap: var(--cl-s2);
 		height: 36px;
-		padding: 0 10px;
+		padding: 0 var(--cl-s3);
 		border-radius: var(--cl-r-chip);
 		color: var(--cl-text);
 		text-decoration: none;

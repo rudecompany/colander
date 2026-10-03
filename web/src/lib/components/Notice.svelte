@@ -24,8 +24,8 @@
 <style>
 	.notice {
 		display: flex;
-		gap: 10px;
-		padding: 12px 14px;
+		gap: var(--cl-s2);
+		padding: var(--cl-s3) var(--cl-s4);
 		border-radius: var(--cl-r-card);
 		border: 1px solid var(--cl-border);
 		background: var(--cl-surface-raised);
@@ -47,12 +47,12 @@
 		font-weight: 600;
 	}
 	.title + .body {
-		margin-top: 2px;
+		margin-top: var(--cl-s1);
 	}
 	.body {
 		color: var(--cl-text-muted);
 	}
 	.body :global(p + p) {
-		margin-top: 6px;
+		margin-top: var(--cl-s2);
 	}
 </style>

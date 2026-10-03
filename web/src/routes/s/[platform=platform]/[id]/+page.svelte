@@ -148,7 +148,7 @@
 				<h2 class="sr-only" id="status-title">Verdict</h2>
 				<p class="chip-line"><VerdictOrNone {verdict} size="lg" /><span class="plain muted">{VERDICT_PLAIN[verdict]}</span></p>
 				<p class="t-title">{SUMMARY[verdict]}</p>
-				{#if evidenceLine}<p class="t-body muted">{evidenceLine} Verdict since {source.updated_at ? fmtDate(source.updated_at) : 'an earlier list'}.</p>{/if}
+				{#if evidenceLine}<p class="t-body muted cl-num">{evidenceLine} Verdict since {source.updated_at ? fmtDate(source.updated_at) : 'an earlier list'}.</p>{/if}
 			</div>
 			<div class="banner-actions">
 				{#if appealable}
@@ -241,7 +241,7 @@
 								<li><span class="key key-fine" aria-hidden="true"></span>AI-made but fine <strong class="cl-num">{fmtNum(t.ai_fine)}</strong></li>
 								<li><span class="key key-not" aria-hidden="true"></span>Not slop <strong class="cl-num">{fmtNum(t.not_slop)}</strong></li>
 							</ul>
-							<p class="t-caption muted">From {plural(source.evidence.taggers, 'tagger')}, each weighted by their track record. Only each tagger's latest tag counts.</p>
+							<p class="t-caption muted cl-num">From {plural(source.evidence.taggers, 'tagger')}, each weighted by their track record. Only each tagger's latest tag counts.</p>
 						{:else}
 							<p class="t-body muted">No community tags yet.</p>
 						{/if}
@@ -255,8 +255,8 @@
 								<span class="meter-fill" style:width={fmtPct(share)}></span>
 								<span class="meter-bar"><span class="meter-bar-label">80%</span></span>
 							</div>
-							<p class="t-body">
-								<strong class="cl-num">{fmtPct(share)}</strong> of {plural(source.evidence.items_seen, 'recent item')} carry AI evidence.
+							<p class="t-body cl-num">
+								<strong>{fmtPct(share)}</strong> of {plural(source.evidence.items_seen, 'recent item')} carry AI evidence.
 								{share >= 0.8 ? 'That is above' : 'That is below'} the 80% bar for a source that is mostly AI.
 								{#if share < 0.8 && source.evidence.items_seen >= 5}A mixed source is never hidden as a whole.{/if}
 							</p>
@@ -334,7 +334,7 @@
 	.head {
 		display: grid;
 		gap: var(--cl-s2);
-		padding: 56px 0 var(--cl-s5);
+		padding: 64px 0 var(--cl-s5);
 	}
 	.head .t-display {
 		overflow-wrap: anywhere;
@@ -452,8 +452,8 @@
 	}
 	.effects li {
 		display: grid;
-		gap: 4px;
-		padding: 12px 14px;
+		gap: var(--cl-s1);
+		padding: var(--cl-s3) var(--cl-s4);
 		font: var(--cl-body);
 	}
 	.effects li + li {
@@ -478,10 +478,10 @@
 	.evidence h3 {
 		font: 600 14px/20px var(--cl-font);
 		color: var(--cl-text-muted);
-		margin-bottom: 6px;
+		margin-bottom: var(--cl-s2);
 	}
 	.signal-group ul {
-		padding-left: 18px;
+		padding-left: var(--cl-s4);
 		font: var(--cl-body);
 		display: grid;
 		gap: 4px;
@@ -537,7 +537,7 @@
 		list-style: none;
 		display: flex;
 		flex-wrap: wrap;
-		gap: 4px 20px;
+		gap: var(--cl-s1) var(--cl-s5);
 		font: var(--cl-body);
 	}
 	.legend li {
@@ -556,7 +556,7 @@
 		border-radius: 3px;
 		background-image: radial-gradient(circle, var(--cl-border) 1.5px, transparent 1.9px);
 		background-size: 8px 14px;
-		margin-top: 22px;
+		margin-top: var(--cl-s5);
 	}
 	.meter-fill {
 		position: absolute;

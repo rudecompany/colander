@@ -13,7 +13,7 @@
 	.wordmark {
 		display: inline-flex;
 		align-items: center;
-		gap: 10px;
+		gap: var(--cl-s2);
 		color: var(--cl-text);
 	}
 	.word {

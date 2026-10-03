@@ -243,7 +243,7 @@ appeal in review (403 staff_required), and Slop or Likely slop needs AI evidence
 					options={[{ value: '', label: 'No type' }, ...SLOP_TYPES.map((t) => ({ value: t, label: SLOP_TYPE_WORD[t] }))]}
 				/>
 			</div>
-			<fieldset class="group">
+			<fieldset class="group checks">
 				<legend class="field-label">Tests met</legend>
 				{#each TESTS as t (t)}
 					<Checkbox label={TEST_WORD[t]} checked={tests.includes(t)} onchange={(e) => (tests = toggle(tests, t, e.currentTarget.checked))} />
@@ -289,7 +289,7 @@ appeal in review (403 staff_required), and Slop or Likely slop needs AI evidence
 	}
 	.head {
 		display: grid;
-		gap: 2px;
+		gap: var(--cl-s1);
 	}
 	.linkish {
 		border: 0;
@@ -316,15 +316,15 @@ appeal in review (403 staff_required), and Slop or Likely slop needs AI evidence
 	.verdicts {
 		display: grid;
 		grid-template-columns: 1fr 1fr;
-		gap: 6px;
+		gap: var(--cl-s2);
 	}
 	.verdict-option {
 		position: relative;
 		display: flex;
 		align-items: center;
-		gap: 8px;
+		gap: var(--cl-s2);
 		min-height: 40px;
-		padding: 6px 10px;
+		padding: var(--cl-s1) var(--cl-s3);
 		border: 1px solid var(--cl-border);
 		border-radius: var(--cl-r-chip);
 		background: var(--cl-surface);
@@ -356,9 +356,10 @@ appeal in review (403 staff_required), and Slop or Likely slop needs AI evidence
 		display: grid;
 		gap: var(--cl-s3);
 	}
-	.signal-group {
+	.signal-group,
+	.checks {
 		display: grid;
-		gap: 6px;
+		gap: 0;
 	}
 	.layer {
 		font: 600 12px/16px var(--cl-font);
