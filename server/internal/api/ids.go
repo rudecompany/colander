@@ -1,8 +1,11 @@
 package api
 
 import (
+	"net/url"
 	"regexp"
 	"strings"
+
+	"golang.org/x/text/unicode/norm"
 
 	lf "github.com/rudecompany/colander/server/internal/listfmt"
 )
@@ -11,7 +14,7 @@ import (
 // anything else malformed is rejected so adapter bugs surface instead of silently not matching.
 var (
 	ytChannel = regexp.MustCompile(`^UC[A-Za-z0-9_-]{22}$`)
-	ytHandle  = regexp.MustCompile(`^@[\p{Ll}\p{Lo}\p{Lm}\p{N}._·-]{1,100}$`)
+	ytHandle  = regexp.MustCompile(`^@[\p{L}\p{M}\p{N}._·-]{1,100}$`)
 	ytVideo   = regexp.MustCompile(`^[A-Za-z0-9_-]{11}$`)
 	ttUser    = regexp.MustCompile(`^@[a-z0-9._]{1,64}$`)
 	numeric   = regexp.MustCompile(`^[0-9]{1,30}$`)
@@ -26,8 +29,21 @@ func validPlatform(p string) bool {
 	return ok
 }
 
+// normalizeToken applies the contract 2.2 steps shared by every platform, in the same order as the
+// extension: trim, percent-decode (seed lists and page links carry encoded handles), then NFC.
+// Lowercasing happens per platform with strings.ToLower, a per-code-point simple mapping that the
+// extension mirrors exactly (no final-sigma context, and U+0130 becomes "i").
+func normalizeToken(id string) string {
+	id = strings.TrimSpace(id)
+	if dec, err := url.PathUnescape(id); err == nil {
+		id = dec
+	}
+	return norm.NFC.String(id)
+}
+
 // CanonicalSource returns the canonical source ID, or false when id is not one.
 func CanonicalSource(platform, id string) (string, bool) {
+	id = normalizeToken(id)
 	switch platform {
 	case "yt":
 		if ytChannel.MatchString(id) {

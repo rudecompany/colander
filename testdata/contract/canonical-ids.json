@@ -1,0 +1,33 @@
+{
+  "note": "Contract section 2.2 source ID normalization. The Go server and the extension must both turn each raw token into exactly `source` (null means rejected). Raw tokens are written as they appear in page links or seed lists.",
+  "sources": [
+    { "platform": "yt", "raw": "UCX6OQ3DkcsbYNE6H8uQQuVA", "source": "UCX6OQ3DkcsbYNE6H8uQQuVA" },
+    { "platform": "yt", "raw": "@MrBeast", "source": "@mrbeast" },
+    { "platform": "yt", "raw": "@Mr.Beast_Fan-1", "source": "@mr.beast_fan-1" },
+    { "platform": "yt", "raw": "@HFY_en_Espa%C3%B1ol", "source": "@hfy_en_español" },
+    { "platform": "yt", "raw": "@Sabidur%C3%ADadeJung", "source": "@sabiduríadejung" },
+    { "platform": "yt", "raw": "@소소한작업실-z8d", "source": "@소소한작업실-z8d" },
+    { "platform": "yt", "raw": "@%EC%86%8C%EC%86%8C%ED%95%9C%EC%9E%91%EC%97%85%EC%8B%A4-z8d", "source": "@소소한작업실-z8d" },
+    { "platform": "yt", "raw": "@博特夫4848", "source": "@博特夫4848" },
+    { "platform": "yt", "raw": "@हिंदीकहानियाँ", "source": "@हिंदीकहानियाँ" },
+    { "platform": "yt", "raw": "@สารคดีไทย", "source": "@สารคดีไทย" },
+    { "platform": "yt", "raw": "@İstanbulTarihi", "source": "@istanbultarihi" },
+    { "platform": "yt", "raw": "@ΜΥΘΟΣ", "source": "@μυθοσ" },
+    { "platform": "yt", "raw": "@CaféHistoire", "source": "@caféhistoire" },
+    { "platform": "yt", "raw": "@l·escola", "source": "@l·escola" },
+    { "platform": "yt", "raw": "  @Trimmed  ", "source": "@trimmed" },
+    { "platform": "yt", "raw": "@bad/handle", "source": null },
+    { "platform": "yt", "raw": "@100%25real", "source": null },
+    { "platform": "yt", "raw": "@has space", "source": null },
+    { "platform": "yt", "raw": "mrbeast", "source": null },
+    { "platform": "tt", "raw": "@TikTok", "source": "@tiktok" },
+    { "platform": "tt", "raw": "@sloppy.facts_2", "source": "@sloppy.facts_2" },
+    { "platform": "tt", "raw": "@bad-name", "source": null },
+    { "platform": "ig", "raw": "NatGeo", "source": "natgeo" },
+    { "platform": "ig", "raw": "hand_made.pottery", "source": "hand_made.pottery" },
+    { "platform": "ig", "raw": "bad name", "source": null },
+    { "platform": "fb", "raw": "100064512345678", "source": "100064512345678" },
+    { "platform": "fb", "raw": "Springfield.Bakery", "source": "springfield.bakery" },
+    { "platform": "fb", "raw": "bad name", "source": null }
+  ]
+}

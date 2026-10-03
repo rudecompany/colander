@@ -29,6 +29,16 @@ function decode(part: string): string {
 	}
 }
 
+/**
+ * Per-code-point simple lowercase, identical to Go's strings.ToLower on the server: no final-sigma
+ * context (each character is mapped alone) and U+0130 becomes a plain "i".
+ */
+export function lowerSimple(s: string): string {
+	let out = '';
+	for (const c of s) out += c === '\u0130' ? 'i' : c.toLowerCase();
+	return out;
+}
+
 // Path segments that are platform pages, never account names.
 const IG_RESERVED = new Set(
 	'p reel reels tv explore stories accounts direct about legal developer web challenge emails session privacy terms api graphql oauth static press blog jobs help topics locations tags hashtag audio ar nametag lite create'.split(' ')
@@ -40,13 +50,14 @@ const FB_RESERVED = new Set(
 /** Canonicalizes a raw source token that was read off a page (an ID, handle or username). */
 export function canonicalSource(platform: Platform, raw: string | null | undefined): string | null {
 	if (!raw) return null;
-	const v = decode(raw.trim());
+	// Trim, percent-decode, then NFC: the same steps, in the same order, as the server (contract 2.2).
+	const v = decode(raw.trim()).normalize('NFC');
 	switch (platform) {
 		case 'yt': {
 			if (/^UC[\w-]{22}$/.test(v)) return v;
-			// Handles: 3 to 30 characters of letters (any script), digits, "_", "-" and ".".
-			const m = /^@([\p{L}\p{N}_.\-·]{3,30})$/u.exec(v);
-			return m ? '@' + m[1]!.toLowerCase() : null;
+			// Handles: letters of any script with their combining marks, digits, "_", "-", "." and "·".
+			const m = /^@([\p{L}\p{M}\p{N}_.\-·]{1,100})$/u.exec(v);
+			return m ? '@' + lowerSimple(m[1]!) : null;
 		}
 		case 'tt': {
 			const m = /^@?([A-Za-z0-9_.]{1,24})$/.exec(v);

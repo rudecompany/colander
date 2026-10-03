@@ -7,7 +7,7 @@ import { CONFIG_CONTEXT, importKeys, planActive, verifyEnvelope, verifyPlanToken
 import { DEV_PUBLIC_KEY } from '../../src/lib/env';
 import { hex } from '../../src/lib/bytes';
 import { sha256 } from '../../src/lib/sha256';
-import { keyHash } from '../../src/lib/ids';
+import { canonicalSource, keyHash } from '../../src/lib/ids';
 
 const root = new URL('../../../', import.meta.url);
 const read = (p: string) => new Uint8Array(readFileSync(new URL(p, root)));
@@ -177,3 +177,12 @@ import { SIGNALS } from '@colander/shared/verdicts';
 function SIGNAL_ORDER(s: string) {
 	return (SIGNALS as readonly string[]).indexOf(s);
 }
+
+describe('canonical source IDs (testdata/contract/canonical-ids.json, shared with the Go server)', () => {
+	const vectors = JSON.parse(readFileSync(new URL('testdata/contract/canonical-ids.json', root), 'utf8')) as {
+		sources: { platform: 'yt' | 'tt' | 'ig' | 'fb'; raw: string; source: string | null }[];
+	};
+	it.each(vectors.sources.map((v) => [v.platform, v.raw, v.source] as const))('%s %j becomes %j', (platform, raw, source) => {
+		expect(canonicalSource(platform, raw)).toBe(source);
+	});
+});

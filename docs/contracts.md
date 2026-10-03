@@ -44,6 +44,11 @@ Adapters must normalize exactly as below, or matching fails silently.
 | `ig` | Username without `@`, lowercased, for example `natgeo` | Shortcode from `/p/{code}/` or `/reel/{code}/`, case kept |
 | `fb` | Numeric ID from `profile.php?id=` or `/people/{name}/{id}`, or the vanity username lowercased | The post, reel or video ID from the URL (`/posts/{id}`, `story_fbid=`, `/reel/{id}`, `/videos/{id}`, `fbid=`), case kept |
 
+Before the per-platform rules, both sides normalize every raw source token the same way, in this order: trim whitespace, percent-decode (page links and seed lists carry encoded handles such as `@Espa%C3%B1ol`), then Unicode NFC.
+Lowercasing is a per-code-point simple mapping (Go's `strings.ToLower`): each character is mapped alone, so there is no final-sigma rule, and `İ` (U+0130) becomes `i`.
+YouTube handles may use letters of any script with their combining marks, digits, `_`, `-`, `.` and `·`.
+`testdata/contract/canonical-ids.json` holds vectors that the server and the extension must both pass.
+
 A source can have several aliases (a YouTube channel ID and its handle).
 The server stores aliases and emits one list entry per alias, all with the same verdict.
 
