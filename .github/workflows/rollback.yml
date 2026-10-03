@@ -1,0 +1,73 @@
+# Puts an earlier Worker version back live (docs/deploy.md, "Roll back"). Code, assets and crons
+# roll back together; Durable Object data and R2 objects do not. Wrangler refuses a rollback
+# across a Durable Object class migration.
+name: Rollback
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Where to roll back
+        type: choice
+        options: [production, staging]
+        default: production
+      version:
+        description: A release tag such as v1.4.2 (production), or a Worker version ID from `wrangler versions list`
+        required: true
+      reason:
+        description: Why, for the version message and the audit trail
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ inputs.environment }}
+  cancel-in-progress: false
+
+jobs:
+  rollback:
+    name: rollback
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment:
+      name: ${{ inputs.environment }}
+      deployment: false
+    env:
+      TARGET: ${{ inputs.environment }}
+      VERSION: ${{ inputs.version }}
+      REASON: ${{ inputs.reason }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          package-manager-cache: false
+      - run: pnpm install --frozen-lockfile
+      - name: Roll back
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          env_args=()
+          if [ "$TARGET" = staging ]; then env_args=(--env staging); fi
+          uuid='^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+          if [[ "$VERSION" =~ $uuid ]]; then
+            id=$VERSION
+          else
+            id=$(pnpm --silent -C api exec wrangler versions list --json "${env_args[@]}" \
+              | jq -r --arg tag "$VERSION" 'map(select(.annotations["workers/tag"] == $tag)) | last | .id // empty')
+          fi
+          if [ -z "$id" ]; then
+            echo "::error::No recent Worker version is tagged $VERSION. Pass its version ID instead (pnpm -C api exec wrangler versions list)."
+            exit 1
+          fi
+          pnpm -C api exec wrangler rollback "$id" "${env_args[@]}" --message "Rollback to $VERSION by $GITHUB_ACTOR: $REASON" --yes
+      - name: Smoke test (read-only)
+        run: node scripts/smoke.ts
+        env:
+          COLANDER_BASE_URL: ${{ inputs.environment == 'staging' && 'https://staging.getcolander.com' || 'https://getcolander.com' }}
+          COLANDER_PUBLIC_KEYS: ${{ inputs.environment == 'staging' && vars.STAGING_PUBLIC_KEYS || vars.COLANDER_PUBLIC_KEYS }}
+          CF_ACCESS_CLIENT_ID: ${{ secrets.CF_ACCESS_CLIENT_ID }}
+          CF_ACCESS_CLIENT_SECRET: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}

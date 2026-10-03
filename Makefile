@@ -1,11 +1,12 @@
 # Colander: one entry point for building, testing and running everything locally.
-# The JavaScript side is a pnpm workspace; the server is a Go module in server/.
+# The JavaScript side is a pnpm workspace, with the Cloudflare Worker in api/. The Go server in
+# server/ stays the reference implementation until the parity harness passes and it is deleted.
 
 DEV_DB ?= data/dev.db
 DEV_KEY ?= server/testdata/dev-signing.key
 EXTENSION_ID ?= nninnogmbhfebflkcgghlmjmplmpodlc
 
-.PHONY: setup build server web extension extension-zip test test-server test-api test-web test-extension e2e fixtures seed dev docker clean
+.PHONY: setup build server web extension extension-zip test test-server test-api test-web test-extension e2e fixtures seed dev dev-api deploy-dry smoke keygen docker clean
 
 setup:
 	pnpm install --frozen-lockfile
@@ -30,7 +31,9 @@ test: test-server test-api test-web test-extension
 test-server:
 	cd server && test -z "$$(gofmt -l .)" && go vet ./... && go test -race ./...
 
+# The Store migration guard, type checks, the Worker's Vitest suite inside workerd, and dry-run deploys.
 test-api:
+	node scripts/wrangler-guard.ts api/wrangler.jsonc
 	pnpm -C api check
 	pnpm -C api test
 	pnpm -C api deploy:dry
@@ -63,6 +66,26 @@ seed:
 dev: web
 	@test -f $(DEV_DB) || $(MAKE) seed
 	cd server && COLANDER_DEV=1 COLANDER_DB=../$(DEV_DB) COLANDER_SIGNING_KEY=../$(DEV_KEY) go run ./cmd/colander serve
+
+# The Worker on http://localhost:8787 with local Durable Objects and R2 (wrangler dev).
+dev-api: web
+	pnpm -C api dev
+
+# Builds and checks both Worker environments without uploading anything.
+deploy-dry: web
+	pnpm -C api deploy:dry
+
+# Contract smoke test against a running origin (docs/deploy.md). Against the Go server add
+# SMOKE_FLAGS=--spa-fallback; against staging set the CF_ACCESS_* variables.
+SMOKE_URL ?= http://localhost:8787
+SMOKE_KEYS ?= $(shell cat server/testdata/dev-signing.pub)
+smoke:
+	COLANDER_BASE_URL=$(SMOKE_URL) COLANDER_PUBLIC_KEYS=$(SMOKE_KEYS) node scripts/smoke.ts $(SMOKE_FLAGS)
+
+# A new Ed25519 signing key, offline: make keygen KEY=production-signing.key
+keygen:
+	@test -n "$(KEY)" || (echo "usage: make keygen KEY=<path>" && exit 2)
+	node scripts/keygen.ts $(KEY)
 
 docker:
 	docker build --build-arg PUBLIC_EXTENSION_ID=$(EXTENSION_ID) -t colander .

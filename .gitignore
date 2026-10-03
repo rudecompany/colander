@@ -20,3 +20,7 @@ coverage/
 # Wrangler: local secrets and local state.
 .dev.vars*
 .wrangler/
+
+# Signing keys made with scripts/keygen.ts never belong in git.
+*.key
+!server/testdata/dev-signing.key

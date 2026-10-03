@@ -21,6 +21,7 @@ Every interface between the parts is defined in [docs/contracts.md](docs/contrac
 | [packages/shared](packages/shared) | Verdict vocabulary, signal names, verdict glyphs and the brand mark, the Colander theme on top of Mittsu components, API types, and the list format, Ed25519 signing and canonical IDs used by the extension and the server | TypeScript, Svelte 5, Mittsu |
 | [e2e/](e2e/README.md) | Full-stack tests: the real server, website and extension together in Chromium | Playwright |
 | [testdata/contract](testdata/contract) | Signed fixtures that the Go and TypeScript code must both read byte for byte | Node |
+| [scripts/](docs/deploy.md) | Deploy tooling: the contract smoke test, offline signing key generation, the Cloudflare bootstrap, the restore drill and the Wrangler config guard | Node 24, Bash |
 
 ## Quick start
 
@@ -60,18 +61,26 @@ Platform page selectors ship as signed declarative configuration, so a site rede
 
 ## Deploying
 
-The server and the website ship as one container.
+Colander runs on Cloudflare as one TypeScript Worker on getcolander.com (`api/`): the API, the website as static assets, a Durable Object as the database, and R2 for the signed list and the backups.
+Staging runs the same Worker on staging.getcolander.com behind Cloudflare Access.
+GitHub Actions is the whole pipeline:
+
+- Every pull request runs CI; the required checks are `secrets`, `workflows`, `api`, `server`, `contract`, `web-and-extension` and `full-stack`.
+- Every green commit on main deploys to staging and passes a smoke test there.
+- Merging the release PR that release-please keeps open deploys that commit to production, smoke-tests it and rolls it back on failure.
+- Extension releases are built with provenance, attached to their GitHub release and submitted to the Chrome Web Store as a staged publish.
+- Hourly probes and weekly and monthly restore drills watch production from outside.
+
+[docs/deploy.md](docs/deploy.md) is the runbook: the one-time setup in order, every secret and variable, the ops channel, and rollback, restore and key rotation.
+The design behind it is [docs/hosting-plan.md](docs/hosting-plan.md).
 
 ```sh
-make docker
-docker run --rm -v colander-data:/data colander keygen      # once: creates the list signing key
-docker run -d -p 8787:8787 -v colander-data:/data \
-  -e COLANDER_PUBLIC_URL=https://your.domain colander
+make deploy-dry                       # build and check both Worker environments without uploading
+make smoke SMOKE_URL=https://getcolander.com SMOKE_KEYS=<production public key>
+node scripts/keygen.ts signing.key    # a new signing key, offline
 ```
 
-Configuration is by environment variable and is listed in [server/README.md](server/README.md): email through Resend, YouTube enrichment, Stripe billing with Managed Payments as merchant of record, and the client IP header of your proxy.
-Build the extension for release with `WXT_COLANDER_API`, `WXT_COLANDER_SITE` and `WXT_COLANDER_PUBLIC_KEYS` set to the production origin and the public key printed by `keygen`, then `make extension-zip`.
-Sign updated platform selectors with `colander sign-config`; installs pick them up on their next sync.
+The Go server and `make docker` keep working until the TypeScript port passes the parity harness and server/ is deleted.
 
 ## Status
 

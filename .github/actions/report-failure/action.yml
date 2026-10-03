@@ -1,0 +1,26 @@
+name: Report failure
+description: >-
+  Opens an issue for a failed scheduled run, or comments on the open issue with the same title,
+  so one ongoing problem keeps one thread. The job needs `issues: write`.
+inputs:
+  title:
+    description: Issue title; there is at most one open issue per title.
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: Open or update the issue
+      shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+        TITLE: ${{ inputs.title }}
+        RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      run: |
+        body="The ${GITHUB_WORKFLOW} run at $(date -u +%Y-%m-%dT%H:%MZ) failed: ${RUN_URL}"
+        number=$(gh issue list --repo "$GITHUB_REPOSITORY" --state open --search "in:title $TITLE" --json number,title --limit 100 \
+          | jq -r --arg t "$TITLE" 'map(select(.title == $t)) | first | .number // empty')
+        if [ -n "$number" ]; then
+          gh issue comment "$number" --repo "$GITHUB_REPOSITORY" --body "$body"
+        else
+          gh issue create --repo "$GITHUB_REPOSITORY" --title "$TITLE" --body "$body"
+        fi
