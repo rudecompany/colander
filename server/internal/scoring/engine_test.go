@@ -276,6 +276,38 @@ func TestItemsWithoutSource(t *testing.T) {
 	}
 }
 
+// A curator decision made while an appeal is open is never what a denied appeal restores.
+func TestAppealDeniedIgnoresCuratorDecision(t *testing.T) {
+	f := newFixture(t)
+	f.tags(8, "@farm", "slop", true)
+	f.highVolume("@farm")
+	f.clock = f.clock.Add(40 * 24 * time.Hour)
+	f.pass()
+	ref := f.source("@farm").Ref
+	a, err := f.st.CreateAppeal(f.ctx, store.Appeal{Platform: "yt", SourceRef: ref, Email: "x@example.test", Statement: "Not slop.",
+		Code: "colander-TEST0002", SecretHash: "h", CreatedAt: f.clock.Unix()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.clock = f.clock.Add(time.Hour)
+	if err := f.eng.Decide(f.ctx, DecisionInput{SourceRef: ref, Verdict: "clear", Reason: "Looks fine to me.", Actor: "curator"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.eng.VerifyAppeal(f.ctx, a); err != nil {
+		t.Fatal(err)
+	}
+	rae, err := f.st.GrantRole(f.ctx, "rae@colander.test", "staff", f.clock.Unix())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := f.eng.ResolveAppeal(f.ctx, a, "denied", "Twenty generated uploads a day.", rae); err != nil {
+		t.Fatal(err)
+	}
+	if v := f.source("@farm").State.Verdict; v != "slop" {
+		t.Fatalf("denied appeal restored %q, want the scored slop", v)
+	}
+}
+
 // Slop and Likely slop decisions need AI evidence: the target's provenance layer, or a provenance signal.
 func TestDecisionNeedsAIEvidence(t *testing.T) {
 	f := newFixture(t)

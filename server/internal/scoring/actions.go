@@ -89,8 +89,9 @@ func (e *Engine) VerifyAppeal(ctx context.Context, a *store.Appeal) error {
 		Reason: "The creator verified control of the account and appealed. Shown as Disputed while staff review it."})
 }
 
-// ResolveAppeal closes an appeal. Upheld records a Clear decision; denied restores the scored verdict.
-// Both write the decision log with the reviewer's reasoning.
+// ResolveAppeal closes an appeal. Upheld records a Clear decision; denied restores the scored verdict,
+// never a curator decision made while the appeal was open. Both write the decision log with the
+// reviewer's reasoning.
 func (e *Engine) ResolveAppeal(ctx context.Context, a *store.Appeal, outcome, reasoning string, reviewer *store.Account) error {
 	now := e.Now().Unix()
 	status := store.AppealDenied
@@ -105,6 +106,9 @@ func (e *Engine) ResolveAppeal(ctx context.Context, a *store.Appeal, outcome, re
 	if outcome == "upheld" {
 		return e.Decide(ctx, DecisionInput{SourceRef: a.SourceRef, Verdict: "clear", Reason: "Appeal upheld. " + reasoning,
 			Actor: "appeal", AccountID: reviewer.ID, ActorName: reviewer.DisplayName})
+	}
+	if err := e.Store.VoidCuratorDecisions(ctx, a.SourceRef, a.CreatedAt, now); err != nil {
+		return err
 	}
 	return e.Rescore(ctx, a.SourceRef, &Cause{Actor: "appeal", ActorName: reviewer.DisplayName, Always: true,
 		Reason: "Appeal denied. " + reasoning})

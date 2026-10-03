@@ -328,6 +328,25 @@ func (s *Store) AddDecision(ctx context.Context, d Decision, large *bool) (int64
 	return id, err
 }
 
+// VoidCuratorDecisions ends the curator decisions on a source itself made at or after since, so a
+// denied appeal never restores a curator verdict set while the appeal was open. reviewed_at falls
+// back to the latest decision still standing.
+func (s *Store) VoidCuratorDecisions(ctx context.Context, sourceRef, since, now int64) error {
+	return s.Tx(ctx, func(tx *sql.Tx) error {
+		res, err := tx.ExecContext(ctx, `UPDATE decisions SET expires_at = created_at WHERE source_id = ? AND item_id IS NULL
+			AND actor = 'curator' AND created_at >= ? AND expires_at > ?`, sourceRef, since, now)
+		if err != nil {
+			return err
+		}
+		if n, _ := res.RowsAffected(); n == 0 {
+			return nil
+		}
+		_, err = tx.ExecContext(ctx, `UPDATE sources SET reviewed_at = (SELECT max(created_at) FROM decisions
+			WHERE source_id = ? AND item_id IS NULL AND expires_at > created_at) WHERE id = ?`, sourceRef, sourceRef)
+		return err
+	})
+}
+
 // LatestDecisions lists the latest decision per target of a source, active or not.
 func (s *Store) LatestDecisions(ctx context.Context, sourceRef int64) ([]Decision, error) {
 	return s.decisions(ctx, `id IN (SELECT max(id) FROM decisions WHERE source_id = ? GROUP BY ifnull(item_id, 0))`, sourceRef)

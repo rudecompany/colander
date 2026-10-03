@@ -559,6 +559,27 @@ func TestCuratorLimitsAndReviewerToken(t *testing.T) {
 		t.Fatal("want staff_required for appeals")
 	}
 	expect(t, h.do("POST", "/v1/review/appeals/"+id+"/resolve", map[string]string{"outcome": "denied", "reasoning": "x"}, bearer...), http.StatusForbidden)
+
+	// An appeal awaiting verification is unproven, so curators may still decide. Once the creator has
+	// done their part (pending_manual, then under_review) only staff decide the source.
+	clear := map[string]any{"verdict": "clear", "reason": "Original work."}
+	expect(t, h.do("POST", "/v1/review/sources/yt/@smallslopfarm/decision", decision, bearer...), http.StatusOK)
+	w = h.do("POST", "/v1/appeals", map[string]string{"platform": "yt", "source_id": "@smallslopfarm", "email": "a@example.test", "statement": "Not slop."})
+	appeal := decodeBody[struct {
+		Appeal appealJSON
+		Secret string
+	}](t, w)
+	expect(t, h.do("POST", "/v1/appeals/"+appeal.Appeal.ID+"/verify", map[string]string{"secret": appeal.Secret}), http.StatusOK)
+	w = h.do("POST", "/v1/review/sources/yt/@smallslopfarm/decision", clear, bearer...)
+	expect(t, w, http.StatusForbidden)
+	if errorCode(t, w) != "staff_required" {
+		t.Fatal("want staff_required for a source with a pending_manual appeal")
+	}
+	staff := h.reviewer("rae@colander.test", "staff", "Rae")
+	expect(t, h.do("POST", "/v1/review/appeals/"+appeal.Appeal.ID+"/verify", nil, "Cookie", staff, "X-Colander-CSRF", "1"), http.StatusOK)
+	w = h.do("POST", "/v1/review/sources/yt/@smallslopfarm/decision", clear, bearer...)
+	expect(t, w, http.StatusForbidden)
+	expect(t, h.do("POST", "/v1/review/sources/yt/@smallslopfarm/decision", clear, "Cookie", staff, "X-Colander-CSRF", "1"), http.StatusOK)
 }
 
 func TestCORS(t *testing.T) {

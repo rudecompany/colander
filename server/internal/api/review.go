@@ -423,6 +423,19 @@ func (s *Server) reviewSourceDecision(w http.ResponseWriter, r *http.Request) {
 		staffRequired(w, "Large sources")
 		return
 	}
+	if a.Role != "staff" {
+		appeals, err := s.Store.AppealsBySource(ctx, ref)
+		if err != nil {
+			s.internalError(w, r, err)
+			return
+		}
+		for _, ap := range appeals {
+			if ap.Status == store.AppealPendingManual || ap.Status == store.AppealUnderReview {
+				staffRequired(w, "Sources with an open appeal")
+				return
+			}
+		}
+	}
 	in.SourceRef = ref
 	if !s.decide(w, r, in) {
 		return
