@@ -62,13 +62,17 @@ export function platformItemUrl(platform: Platform, itemId: string, sourceId: st
 	}
 }
 
-/** "Decided by staff member Sam", "Decided by community scoring", "Changed by a verified appeal". */
-export function actorText(entry: Pick<LogEntry, 'actor' | 'actor_name'>): string {
+/**
+ * "Decided by staff member Sam", "Decided by community scoring", "Appeal decided by Sam".
+ * An appeal entry without a reviewer is the automatic change to Disputed when the appeal is verified.
+ */
+export function actorText(entry: Pick<LogEntry, 'actor' | 'actor_name' | 'to'>): string {
 	switch (entry.actor) {
 		case 'community':
 			return 'Decided by community scoring';
 		case 'appeal':
-			return 'Changed by a verified appeal';
+			if (entry.actor_name) return `Appeal decided by ${entry.actor_name}`;
+			return entry.to === 'disputed' ? 'Changed by a verified appeal' : 'Appeal decided by staff';
 		case 'curator':
 			return entry.actor_name ? `Decided by curator ${entry.actor_name}` : 'Decided by a curator';
 		case 'staff':
