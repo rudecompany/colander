@@ -1073,6 +1073,12 @@
 		.rules {
 			grid-template-columns: 1fr;
 		}
+		.levels tr.default {
+			background: var(--cl-paper);
+			padding-inline: 10px;
+			margin-inline: -10px;
+			border-radius: var(--cl-r-chip);
+		}
 		.verdicts th[scope='row'] {
 			width: auto;
 		}

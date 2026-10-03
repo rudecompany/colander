@@ -329,8 +329,10 @@
 		display: block;
 		font-weight: 400;
 	}
-	.plan > .t-body.muted {
-		min-height: 60px;
+	@media (min-width: 1081px) {
+		.plan > .t-body.muted {
+			min-height: 60px;
+		}
 	}
 	.fees th[scope='row'] {
 		color: var(--cl-text);

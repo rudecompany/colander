@@ -443,6 +443,9 @@
 		}
 	}
 	@media (max-width: 860px) {
+		.keys {
+			display: none;
+		}
 		.console {
 			grid-template-columns: 1fr;
 		}

@@ -29,10 +29,10 @@
 		['Plus subscriptions', '$3 a month or $30 a year, from version 1.0', 'Planned'],
 		['Donations', 'Once or monthly, any amount, with optional credit', 'Open'],
 		['Grants', 'From foundations that fund work on the information ecosystem', 'Sought'],
-		['Advertising', 'Never', 'Never'],
-		['Affiliate links', 'Never', 'Never'],
-		['Selling or sharing data', 'Never', 'Never'],
-		['Paid removal from a list', 'Never, by anyone', 'Never']
+		['Advertising', 'Ads in the extension, on this site or in the lists', 'Never'],
+		['Affiliate links', 'Commission from links we show or rewrite', 'Never'],
+		['Selling or sharing data', 'Anything about the people who use Colander', 'Never'],
+		['Paid removal from a list', 'Creators, platforms or advertisers paying to leave a list', 'Never']
 	];
 
 	const rules = [
@@ -79,13 +79,17 @@
 				<div class="tile"><dt>Open appeals</dt><dd>{fmtNum(stats.appeals.open)}</dd></div>
 				<div class="tile">
 					<dt>Median days to decide an appeal</dt>
-					<dd>{stats.appeals.median_days === null ? 'No data yet' : stats.appeals.median_days.toFixed(1)}</dd>
-					<p class="tile-note">The goal is 7 days or fewer.</p>
+					<dd>
+						{stats.appeals.median_days === null ? 'No data yet' : stats.appeals.median_days.toFixed(1)}
+						<span class="tile-note">The goal is 7 days or fewer.</span>
+					</dd>
 				</div>
 				<div class="tile">
 					<dt>Active installs</dt>
-					<dd>{fmtNum(stats.active_installs)}</dd>
-					<p class="tile-note">Estimated from list downloads, which carry no identifier.</p>
+					<dd>
+						{fmtNum(stats.active_installs)}
+						<span class="tile-note">Estimated from list downloads, which carry no identifier.</span>
+					</dd>
 				</div>
 			</dl>
 
@@ -210,6 +214,7 @@
 		font: var(--cl-display);
 	}
 	.tile-note {
+		display: block;
 		font: var(--cl-caption);
 		color: var(--cl-text-muted);
 	}
@@ -318,8 +323,8 @@
 		}
 	}
 	@media (max-width: 480px) {
-		.tiles {
-			grid-template-columns: 1fr;
+		.tile {
+			padding: var(--cl-s3) var(--cl-s4);
 		}
 		.bars th {
 			width: 112px;
