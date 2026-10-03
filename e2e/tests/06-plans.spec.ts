@@ -13,7 +13,7 @@ test('Get Plus without Stripe shows the billing-unavailable message, and nothing
 	await page.getByRole('button', { name: 'Get Plus, $30 a year' }).click();
 	await page.getByLabel('Email').fill(email);
 	const mark = logMark();
-	await page.getByRole('button', { name: 'Email me a link to continue' }).click();
+	await page.getByRole('button', { name: 'Email me a link' }).click();
 	await expect(page.getByText('Check your inbox')).toBeVisible();
 	await page.goto(await signInLink(email, mark));
 	await expect(page).toHaveURL(`${ORIGIN}/plans?checkout=plus_yearly`);

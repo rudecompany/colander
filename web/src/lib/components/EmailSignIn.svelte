@@ -5,7 +5,12 @@
 	import { api, errorText } from '#lib/api.ts';
 	import Notice from './Notice.svelte';
 
-	let { next = '/account', submitLabel = 'Email me a sign-in link' }: { next?: string; submitLabel?: string } = $props();
+	// `block` stretches the button to the field's width, for narrow cards where every other button is full width.
+	let {
+		next = '/account',
+		submitLabel = 'Email me a sign-in link',
+		block = false
+	}: { next?: string; submitLabel?: string; block?: boolean } = $props();
 
 	let email = $state('');
 	let status = $state<'idle' | 'sending' | 'sent'>('idle');
@@ -57,7 +62,7 @@
 			{/if}
 		</div>
 		<div>
-			<button type="submit" class="uin-btn uin-btn-primary btn-lg" disabled={status === 'sending'}>
+			<button type="submit" class="uin-btn uin-btn-primary btn-lg" class:block disabled={status === 'sending'}>
 				<Mail size={16} strokeWidth={1.75} aria-hidden="true" />
 				<span>{status === 'sending' ? 'Sending' : submitLabel}</span>
 			</button>
@@ -69,6 +74,7 @@
 	.signin,
 	.sent {
 		display: grid;
+		grid-template-columns: minmax(0, 1fr);
 		gap: var(--cl-s4);
 		justify-items: stretch;
 	}
@@ -76,6 +82,9 @@
 		justify-items: start;
 	}
 	.sent :global(.notice) {
+		width: 100%;
+	}
+	.block {
 		width: 100%;
 	}
 </style>

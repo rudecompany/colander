@@ -1,4 +1,4 @@
-import { test, expect } from './fixtures.ts';
+import { test, expect, layoutSpills } from './fixtures.ts';
 import { ACCOUNT, PLUS_ACCOUNT, mockApi } from './mocks.ts';
 
 test('yearly is preselected and checkout handles billing being unavailable', async ({ page }) => {
@@ -24,8 +24,14 @@ test('signed out, Get Plus asks for a sign-in that returns to checkout', async (
 	await page.goto('/plans');
 	await page.getByRole('button', { name: 'Get Plus, $30 a year' }).click();
 	await page.getByLabel('Email').fill('maya@example.com');
-	await page.getByRole('button', { name: 'Email me a link to continue' }).click();
+	// The sign-in form sits in a narrow card in the four-column layout and must stay inside it.
+	for (const width of [1280, 1920]) {
+		await page.setViewportSize({ width, height: 900 });
+		expect(await layoutSpills(page), `layout spills at ${width}px`).toEqual([]);
+	}
+	await page.getByRole('button', { name: 'Email me a link' }).click();
 	await expect(page.getByText('Check your inbox')).toBeVisible();
+	expect(await layoutSpills(page), 'layout spills after sending').toEqual([]);
 	expect(calls.find((c) => c.path === '/v1/auth/email')!.body).toEqual({ email: 'maya@example.com', next: '/plans?checkout=plus_yearly' });
 });
 

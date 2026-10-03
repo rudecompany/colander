@@ -143,7 +143,7 @@
 					<p class="t-body">You have Plus. <a href="/account">Manage it on your account page</a>.</p>
 				{:else if step === 'signin'}
 					<p class="t-body">Sign in to continue. We create your account with the first sign-in.</p>
-					<EmailSignIn next="/plans?checkout={price}" submitLabel="Email me a link to continue" />
+					<EmailSignIn next="/plans?checkout={price}" submitLabel="Email me a link" block />
 				{:else if step === 'continue'}
 					<p class="t-body">You are signed in as {session.account?.email}.</p>
 					<button type="button" class="uin-btn uin-btn-primary btn-lg cta" onclick={getPlus}>Continue to checkout <ArrowRight size={16} strokeWidth={1.75} aria-hidden="true" /></button>
@@ -302,6 +302,8 @@
 	}
 	.cta-area {
 		display: grid;
+		/* minmax(0, 1fr): a long control inside must never stretch the column past the card. */
+		grid-template-columns: minmax(0, 1fr);
 		gap: var(--cl-s3);
 	}
 	.cta {
