@@ -51,6 +51,8 @@ ytd-search ytd-reel-shelf-renderer, ytd-search grid-shelf-view-model { margin: 8
 ytd-search [class*='ShelfViewModel'] #items, ytd-search grid-shelf-view-model .ytGridShelfViewModelGridShelfRow, ytd-search ytd-reel-shelf-renderer #items { display: flex; gap: 8px; }
 ytm-shorts-lockup-view-model { width: 210px; flex: none; }
 .shortsLockupViewModelHostOutsideMetadata { padding-top: 8px; }
+/* Like YouTube: two lines at most, and a long run of hashtags breaks instead of running into the next tile. */
+.shortsLockupViewModelHostOutsideMetadataTitle { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; overflow-wrap: anywhere; }
 
 /* Watch page: the related list. */
 ytd-watch-flexy #columns { display: flex; justify-content: flex-end; }

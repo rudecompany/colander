@@ -101,6 +101,14 @@ for (const scheme of ['light', 'dark'] as const) {
 			await cards.nth(2).screenshot({ path: `screenshots/inpage-chip-plain-${scheme}.png`, animations: 'disabled' });
 			await ext.send({ type: 'settings', patch: { plainChips: false } });
 
+			// Why on a Slop source with four signals, at Label so its chip stays: every signal on one wrapping line.
+			await ext.send({ type: 'settings', patch: { strictness: 'label' } });
+			await cards.nth(0).locator('colander-ui[data-kind="chip"] button').click();
+			await expect(page.locator('colander-ui[data-kind="layer"] .why-sig li')).toHaveCount(4);
+			await page.waitForTimeout(150);
+			await page.screenshot({ path: `screenshots/inpage-why-signals-${scheme}.png`, clip: { x: 0, y: 0, width: 760, height: 420 }, animations: 'disabled' });
+			await page.keyboard.press('Escape');
+
 			// Home grid at Strict: hidden, collapsed and labeled cards side by side.
 			await ext.send({ type: 'settings', patch: { strictness: 'strict' } });
 			const home = await ext.open('https://www.youtube.com/', { dark });
