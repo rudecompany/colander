@@ -64,3 +64,11 @@ jobs:
       - run: pnpm exec playwright install --with-deps chromium
         working-directory: web
       - run: xvfb-run -a make e2e
+      - if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: full-stack-results
+          path: |
+            e2e/.run/server.log
+            e2e/test-results
+            e2e/screenshots
