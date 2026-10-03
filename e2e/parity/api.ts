@@ -118,7 +118,7 @@ export async function apiStory(sides: [Side, Side], now: string, check: Check, s
 		...fields
 	});
 
-	// ---- Batch 1: tags, reports, trials, sync and appeals from the public side ----
+	// ---- Batch 1: tags, reports, trials and sync ----
 
 	// A burst: 22 brand-new installs tag one source as slop within the hour.
 	for (let i = 1; i <= 22; i++) await both(`burst tag ${i}`, '/v1/tags', { install: install(i), body: { tags: [tag()] } });
@@ -209,11 +209,16 @@ export async function apiStory(sides: [Side, Side], now: string, check: Check, s
 	await both('sync after the write', '/v1/sync', (_, i) => ({ auth: plan(i) }));
 	await both('sync without a plan', '/v1/sync');
 
+	await settle();
+	await compare('api: tags, reports, trials and sync');
+
+	// ---- Batch 2: appeals and reviewers, on the sources batch 1 got rated ----
+
 	// Appeals from one address: create, read, verify by code (no YouTube key: staff check by hand), and the per-IP quota.
 	const creator = '203.0.113.50';
 	const [gA, wA] = await both('an appeal', '/v1/appeals', {
 		ip: creator,
-		body: { platform: 'yt', source_id: '@paritysloppy', email: 'Creator@Example.test', statement: 'We script and voice every video ourselves.' }
+		body: { platform: 'yt', source_id: '@lostcivsexplained', email: 'Creator@Example.test', statement: 'We script and voice every video ourselves.' }
 	});
 	const appeal = (i: number) => (i === 0 ? gA : wA).body as { appeal: { id: string }; secret: string };
 	await both('the appeal read with its secret', (_, i) => `/v1/appeals/${appeal(i).appeal.id}?secret=${appeal(i).secret}`);
@@ -222,7 +227,7 @@ export async function apiStory(sides: [Side, Side], now: string, check: Check, s
 	for (const [n, body] of [
 		[2, { platform: 'yt', source_id: '@aihistorydaily', email: 'two@example.test', statement: 'Second.' }],
 		[3, { platform: 'tt', source_id: '@nobodyknows', email: 'three@example.test', statement: 'Unknown source.' }],
-		[4, { platform: 'yt', source_id: '@paritysloppy', email: 'not an email', statement: 'Bad email.' }],
+		[4, { platform: 'yt', source_id: '@lostcivsexplained', email: 'not an email', statement: 'Bad email.' }],
 		[5, { platform: 'yt', source_id: '@gossipnarrated', email: 'five@example.test', statement: 's'.repeat(2001) }],
 		[6, { platform: 'yt', source_id: '@gossipnarrated', email: 'six@example.test', statement: 'Six.' }],
 		[7, { platform: 'yt', source_id: '@spacekidssongs', email: 'seven@example.test', statement: 'Over the quota.' }]
@@ -230,10 +235,6 @@ export async function apiStory(sides: [Side, Side], now: string, check: Check, s
 		await both(`appeal ${n} from the same address`, '/v1/appeals', { ip: creator, body });
 	}
 
-	await settle();
-	await compare('api: tags, reports, trials and appeals');
-
-	// ---- Batch 2: reviewers ----
 
 	/** Signs in through the emailed link and returns the session cookie and a reviewer token per side. */
 	async function signIn(email: string): Promise<{ cookie: string[]; bearer: string[] }> {
@@ -270,7 +271,7 @@ export async function apiStory(sides: [Side, Side], now: string, check: Check, s
 
 	const decision = (fields: Record<string, unknown>) => ({ verdict: 'slop', reason: 'Generated narration on every upload.', signals: [], slop_type: 'filler', tests: ['mass_produced'], ...fields });
 	await both('a curator on a large source', '/v1/review/sources/yt/@gossipnarrated/decision', (_, i) => ({ ...asCurator(i), body: decision({}) }));
-	await both('a curator on a source with an open appeal', '/v1/review/sources/yt/@paritysloppy/decision', (_, i) => ({ ...asCurator(i), body: decision({}) }));
+	await both('a curator on a source with an open appeal', '/v1/review/sources/yt/@lostcivsexplained/decision', (_, i) => ({ ...asCurator(i), body: decision({}) }));
 	await both('slop without AI evidence', '/v1/review/sources/tt/@chefmarta/decision', (_, i) => ({ ...asCurator(i), body: decision({}) }));
 	await both('a curator decision with a provenance signal', '/v1/review/sources/tt/@chefmarta/decision', (_, i) => ({ ...asCurator(i), body: decision({ verdict: 'likely_slop', signals: ['creator_statement'], tests: ['low_effort', 'hollow'] }) }));
 	await both('an unknown verdict', '/v1/review/sources/tt/@chefmarta/decision', (_, i) => ({ ...asStaff(i), body: decision({ verdict: 'awful' }) }));
@@ -278,7 +279,7 @@ export async function apiStory(sides: [Side, Side], now: string, check: Check, s
 	// The appeal: staff confirm the code, the source shows Disputed, then the appeal is denied.
 	const appealPath = (i: number, action: string) => `/v1/review/appeals/${appeal(i).appeal.id}/${action}`;
 	await both('staff confirm the appeal code', (_, i) => appealPath(i, 'verify'), (_, i) => ({ ...asStaff(i), method: 'POST' }));
-	await both('the source page while disputed', '/v1/sources/yt/@paritysloppy');
+	await both('the source page while disputed', '/v1/sources/yt/@lostcivsexplained');
 	await both('a curator resolving an appeal', (_, i) => appealPath(i, 'resolve'), (_, i) => ({ ...asCurator(i), body: { outcome: 'denied', reasoning: 'No.' } }));
 	await both('an unknown outcome', (_, i) => appealPath(i, 'resolve'), (_, i) => ({ ...asStaff(i), body: { outcome: 'maybe', reasoning: 'Hm.' } }));
 	await both('staff deny the appeal', (_, i) => appealPath(i, 'resolve'), (_, i) => ({ ...asStaff(i), body: { outcome: 'denied', reasoning: 'The narration is generated and the scripts are templated.' } }));
@@ -298,6 +299,7 @@ export async function apiStory(sides: [Side, Side], now: string, check: Check, s
 	// What the public and the extension read.
 	for (const path of [
 		'/v1/sources/yt/@paritysloppy',
+		'/v1/sources/yt/@lostcivsexplained',
 		'/v1/sources/yt/UCaaaaaaaaaaaaaaaaaaaaaa',
 		'/v1/sources/tt/@chefmarta',
 		'/v1/sources/yt/@nobodyknows',
@@ -312,5 +314,5 @@ export async function apiStory(sides: [Side, Side], now: string, check: Check, s
 	await both("an install's reports after the review", '/v1/reports', { install: install(1) });
 
 	await settle();
-	await compare('api: review');
+	await compare('api: appeals and review');
 }
