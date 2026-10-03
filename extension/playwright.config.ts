@@ -6,7 +6,8 @@ import { defineConfig } from '@playwright/test';
 export default defineConfig({
 	timeout: 60_000,
 	expect: { timeout: 10_000 },
-	reporter: [['list']],
+	// The summary reporter only reports the live project (the daily adapter checks).
+	reporter: [['list'], ['./tests/live/summary-reporter.ts']],
 	workers: process.env.CI ? 2 : 4,
 	projects: [
 		{ name: 'e2e', testDir: 'tests/e2e', fullyParallel: true },

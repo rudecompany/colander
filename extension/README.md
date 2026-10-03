@@ -259,6 +259,8 @@ There is no remote code, no `eval` and no inline script.
 - `tests/live`: the real YouTube and TikTok pages, no login.
   Signed-in surfaces run only with a Playwright storage state in `COLANDER_LIVE_STATE_YT`, `_TT`, `_IG` or `_FB`.
   `.github/workflows/adapters-daily.yml` runs it every day.
+  A surface that finds no cards fails the run, and so does a surface whose platform has a storage state when the site refuses the automated browser.
+  Without credentials, such surfaces are skipped as unverified: `tests/live/summary-reporter.ts` lists every surface in the job summary and adds a warning annotation for each unverified one.
 - `tests/e2e/shots.spec.ts` writes the screenshots in `screenshots/`, light and dark.
 
 ## Fixtures
@@ -273,7 +275,7 @@ YouTube home and subscriptions need an account, so their fixtures reuse real ric
 - **Instagram and Facebook** selectors are built from stable structure (`main article`, header links, `/p/` and `/reel/` links, `role="feed"`, `aria-posinset`, heading links, `story_fbid` and `/posts/` links, `data-video-id`, `data-ad-preview`, the "AI info" label) and tested on hand-written fixtures only.
   They need a signed-in live check before release: run `pnpm test:live` with `COLANDER_LIVE_STATE_IG` and `COLANDER_LIVE_STATE_FB`.
 - **TikTok search** and **YouTube home and subscriptions** need an account and were not checked live; they run in the live suite when storage states are provided.
-- **TikTok For You and profiles** were checked live once (both rendered For You articles yielded item IDs and sources); later runs from this machine got TikTok's "Something went wrong" page, which the live suite reports as a skip rather than a failure.
+- **TikTok For You and profiles** were checked live once (both rendered For You articles yielded item IDs and sources); later runs from this machine got TikTok's "Something went wrong" page, which the live suite reports as an unverified skip (with a warning in the daily job summary) when no TikTok storage state is configured, and as a failure when one is.
 - **YouTube search, watch suggestions, channel pages and Shorts** pass live: every card yields an item ID and a source (Shorts: the active one).
 - **Platform AI labels** on YouTube cards and in Shorts, TikTok, Instagram and Facebook are matched by their visible text ("Altered or synthetic content", "AI-generated", "AI info"); no live page with a label was at hand to confirm where each sits, and the English text is assumed.
 - Shorts in YouTube's search shelves carry no channel in the DOM or in their data, so they match by video ID only.

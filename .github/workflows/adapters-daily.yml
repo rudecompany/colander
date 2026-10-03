@@ -1,6 +1,11 @@
 # Checks every day that the platform adapters still find cards, item IDs and sources on the live
 # sites (P0-2). A failure means a site changed its markup: fix it with a signed adapter config
 # update (extension/README.md, "Adapter configuration"), no code change or store review needed.
+#
+# The run fails when any surface finds no cards, and when a surface whose platform has a storage
+# state secret is refused by the site: with credentials configured, every surface must be checked.
+# Surfaces without credentials are skipped as unverified; the job summary lists every surface and
+# each unverified one gets a warning annotation, so the gap is visible every day.
 name: Adapters daily
 
 on:
@@ -41,6 +46,7 @@ jobs:
               echo "COLANDER_LIVE_STATE_$p=$RUNNER_TEMP/states/$p.json" >> "$GITHUB_ENV"
             fi
           done
+      # tests/live/summary-reporter.ts writes the table to $GITHUB_STEP_SUMMARY and the warnings.
       - run: pnpm -C extension test:live
       - if: failure()
         uses: actions/upload-artifact@v4
