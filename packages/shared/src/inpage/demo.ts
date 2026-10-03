@@ -6,7 +6,7 @@ import { ACTION_TABLE, PLATFORM_NAME, barReason, type Action, type Platform, typ
 import { hyper } from './dom';
 import { evidence } from './evidence';
 import type { InpageContext } from './host';
-import { THUMB_CSS, THUMB_SCENES, toneVar } from './thumbs';
+import { THUMB_CSS, THUMB_SCENES, numeralText, toneVar } from './thumbs';
 import { bar, chip, cover, evidencePopover, gridStub, type ItemView } from './ui';
 
 export type DemoLayout = 'grid' | 'list' | 'swipe' | 'mini';
@@ -67,14 +67,16 @@ export function thumbSvg(doc: Document, scene: ThumbScene, part?: number): SVGEl
 	const s = THUMB_SCENES[scene];
 	const svg = el('svg', { viewBox: '0 0 160 90', class: 'cl-thumb', 'aria-hidden': 'true', focusable: 'false', preserveAspectRatio: 'xMidYMid slice' });
 	svg.append(el('rect', { width: 160, height: 90, style: `fill:${toneVar(s.bg)}` }));
-	for (const p of s.prims) {
-		const paint = 'stroke' in p && p.stroke ? `fill:none;stroke:${toneVar(p.tone)};stroke-width:${p.stroke}` : `fill:${toneVar(p.tone)}`;
-		if ('rect' in p) svg.append(el('rect', { x: p.rect[0], y: p.rect[1], width: p.rect[2], height: p.rect[3], style: paint }));
-		else if ('circle' in p) svg.append(el('circle', { cx: p.circle[0], cy: p.circle[1], r: p.circle[2], style: paint }));
-		else if ('path' in p) svg.append(el('path', { d: p.path, style: paint }));
-		else if (part != null) {
-			const t = el('text', { x: p.x, y: p.y, style: `${paint};font:700 ${p.size}px var(--cl-font)` });
-			t.textContent = scene === 'template-a' ? `Part ${part}` : String(part);
+	svg.append(el('image', { href: s.image, width: 160, height: 90, preserveAspectRatio: 'xMidYMid slice' }));
+	if (part != null) {
+		for (const line of s.numeral ?? []) {
+			const t = el('text', {
+				x: line.x,
+				y: line.y,
+				'text-anchor': 'middle',
+				style: `fill:${line.fill};stroke:${line.halo};stroke-width:${line.size / 9};paint-order:stroke;font:700 ${line.size}px var(--cl-font)`
+			});
+			t.textContent = numeralText(line, part);
 			svg.append(t);
 		}
 	}
