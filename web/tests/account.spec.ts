@@ -53,7 +53,7 @@ test('connect this browser sends the plan token to the extension', async ({ page
 	const calls = await mockApi(page, {
 		'GET /v1/account': { json: { account: PLUS_ACCOUNT } },
 		'POST /v1/entitlement': { json: { token: 'plan.token' } },
-		'POST /v1/billing/cancel': { json: {} }
+		'POST /v1/billing/cancel': { json: { account: { ...PLUS_ACCOUNT, plan: { ...PLUS_ACCOUNT.plan!, status: 'canceled', refundable: false } } } }
 	});
 	await page.goto('/account');
 	await expect(page.getByText('Colander 1.0.0 is installed here.')).toBeVisible();
@@ -67,6 +67,35 @@ test('connect this browser sends the plan token to the extension', async ({ page
 	await page.getByRole('group').getByRole('button', { name: 'Cancel and refund' }).click();
 	await expect(page.getByText('Plus has ended and your last charge is being refunded.')).toBeVisible();
 	expect(calls.find((c) => c.path === '/v1/billing/cancel')!.body).toEqual({ refund: true });
+	await expect(page.getByText('Free.', { exact: false })).toBeVisible();
+	await expect(page.getByRole('button', { name: 'Connect this browser' })).toHaveCount(0);
+});
+
+test('cancel keeps Plus until the period ends and still offers the refund', async ({ page }) => {
+	const cancelled = { ...PLUS_ACCOUNT, plan: { ...PLUS_ACCOUNT.plan!, cancel_at_period_end: true } };
+	const calls = await mockApi(page, {
+		'GET /v1/account': { json: { account: PLUS_ACCOUNT } },
+		'POST /v1/billing/cancel': (c) =>
+			c.body.refund
+				? { status: 409, json: { error: { code: 'not_refundable', message: 'Your last charge is more than 30 days old, so it cannot be refunded.' } } }
+				: { json: { account: cancelled } }
+	});
+	await page.goto('/account');
+	await expect(page.getByText('Renews on 12 September 2027.')).toBeVisible();
+	await page.getByRole('button', { name: 'Cancel', exact: true }).click();
+	await expect(page.getByText('Plus stays on until 12 September 2027, and you will not be charged again.')).toBeVisible();
+	await page.getByRole('group').getByRole('button', { name: 'Cancel Plus' }).click();
+	await expect(page.getByText('Cancelled. Plus stays on until the end of the period you paid for.')).toBeVisible();
+	await expect(page.getByText('Cancelled. Plus stays on until 12 September 2027', { exact: false })).toBeVisible();
+	expect(calls.filter((c) => c.path === '/v1/billing/cancel').map((c) => c.body)).toEqual([{ refund: false }]);
+	expect(calls.find((c) => c.path === '/v1/billing/cancel')!.headers['x-colander-csrf']).toBe('1');
+
+	// Cancelled within 30 days of the charge: the refund is still offered, and a refusal changes nothing.
+	await expect(page.getByRole('button', { name: 'Cancel', exact: true })).toHaveCount(0);
+	await page.getByRole('button', { name: 'End now and refund' }).click();
+	await page.getByRole('group').getByRole('button', { name: 'End now and refund' }).click();
+	await expect(page.getByText('Nothing was changed')).toBeVisible();
+	await expect(page.getByText('more than 30 days old', { exact: false })).toBeVisible();
 });
 
 test('without the extension the account page says so plainly', async ({ page }) => {

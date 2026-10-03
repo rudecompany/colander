@@ -1,17 +1,15 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { PUBLIC_STORE_URL } from '$app/env/public';
 	import type { Account, Plan } from '@colander/shared/api';
 	import Input from '@colander/shared/components/ui/input/input.svelte';
 	import LogOut from '@lucide/svelte/icons/log-out';
 	import Plug from '@lucide/svelte/icons/plug';
-	import Plus from '@lucide/svelte/icons/plus';
-	import RefreshCw from '@lucide/svelte/icons/refresh-cw';
 	import ListChecks from '@lucide/svelte/icons/list-checks';
 	import { api, ApiError, errorText } from '#lib/api.ts';
 	import { detectExtension, sendToExtension, type ExtensionState } from '#lib/extension.ts';
 	import { fmtDate } from '#lib/format.ts';
 	import { loadAccount, session } from '#lib/session.svelte.ts';
+	import ConnectBrowser from '#lib/components/ConnectBrowser.svelte';
 	import EmailSignIn from '#lib/components/EmailSignIn.svelte';
 	import Loading from '#lib/components/Loading.svelte';
 	import Notice from '#lib/components/Notice.svelte';
@@ -22,7 +20,6 @@
 	let nameStatus = $state<{ kind: 'idle' | 'saving' | 'saved' } | { kind: 'error'; message: string }>({ kind: 'idle' });
 	let confirm = $state<null | 'cancel' | 'refund'>(null);
 	let billing = $state<{ kind: 'idle' | 'working' } | { kind: 'error'; message: string } | { kind: 'done'; message: string }>({ kind: 'idle' });
-	let connect = $state<{ kind: 'idle' | 'working' } | { kind: 'done' | 'error'; message: string }>({ kind: 'idle' });
 	let reviewer = $state<{ kind: 'idle' | 'working' } | { kind: 'done' | 'error'; message: string }>({ kind: 'idle' });
 
 	const account = $derived(session.account);
@@ -61,8 +58,8 @@
 	async function cancelPlan(refund: boolean) {
 		billing = { kind: 'working' };
 		try {
-			await api('/v1/billing/cancel', { method: 'POST', body: { refund } });
-			await loadAccount();
+			const res = await api<{ account: Account }>('/v1/billing/cancel', { method: 'POST', body: { refund } });
+			session.account = res.account;
 			confirm = null;
 			billing = {
 				kind: 'done',
@@ -75,25 +72,6 @@
 					e instanceof ApiError && e.code === 'billing_unavailable'
 						? 'Billing is not available right now, so nothing was changed. Please try again later.'
 						: errorText(e)
-			};
-		}
-	}
-
-	async function connectBrowser() {
-		connect = { kind: 'working' };
-		try {
-			const { token } = await api<{ token: string }>('/v1/entitlement', { method: 'POST' });
-			await sendToExtension({ type: 'colander:plan-token', token });
-			connect = { kind: 'done', message: 'Connected. Plus features are on in this browser.' };
-		} catch (e) {
-			connect = {
-				kind: 'error',
-				message:
-					e instanceof ApiError
-						? e.code === 'no_plan'
-							? 'There is no active plan on this account to connect.'
-							: e.message
-						: 'Colander did not answer. Make sure it is installed and turned on in this browser, then try again.'
 			};
 		}
 	}
@@ -168,6 +146,7 @@
 				<p><a class="uin-btn uin-btn-primary uin-btn-md" href="/plans">See Plus</a></p>
 			{:else}
 				{@const plan = account.plan}
+				{@const refundLabel = plan.cancel_at_period_end ? 'End now and refund' : 'Cancel and refund'}
 				<p class="t-body-lg"><strong>Plus</strong>, billed {plan.interval === 'year' ? 'yearly at $30' : 'monthly at $3'}.</p>
 				<p class="t-body">
 					{#if plan.status === 'trialing'}
@@ -181,29 +160,34 @@
 					{/if}
 				</p>
 
-				{#if !plan.cancel_at_period_end}
-					{#if confirm === null}
+				{#if confirm === null}
+					{#if !plan.cancel_at_period_end || plan.refundable}
 						<div class="row">
-							<button type="button" class="uin-btn uin-btn-outline uin-btn-md" onclick={() => (confirm = 'cancel')}>Cancel</button>
+							{#if !plan.cancel_at_period_end}
+								<button type="button" class="uin-btn uin-btn-outline uin-btn-md" onclick={() => (confirm = 'cancel')}>Cancel</button>
+							{/if}
 							{#if plan.refundable}
-								<button type="button" class="uin-btn uin-btn-outline uin-btn-md" onclick={() => (confirm = 'refund')}>Cancel and refund</button>
+								<button type="button" class="uin-btn uin-btn-outline uin-btn-md" onclick={() => (confirm = 'refund')}>{refundLabel}</button>
 							{/if}
 						</div>
-					{:else}
-						<div class="confirm" role="group" aria-labelledby="confirm-text">
-							<p id="confirm-text" class="t-body">
-								{confirm === 'refund'
-									? 'Plus ends now and your last charge is refunded to the card you paid with.'
-									: `Plus stays on until ${fmtDate(plan.current_period_end)}, and you will not be charged again.`}
-							</p>
-							<div class="row">
-								<button type="button" class="uin-btn uin-btn-primary uin-btn-md" disabled={billing.kind === 'working'} onclick={() => cancelPlan(confirm === 'refund')}>
-									{confirm === 'refund' ? 'Cancel and refund' : 'Cancel Plus'}
-								</button>
-								<button type="button" class="uin-btn uin-btn-ghost uin-btn-md" onclick={() => (confirm = null)}>Keep Plus</button>
-							</div>
-						</div>
+						{#if plan.refundable}
+							<p class="t-caption muted">Your last charge was less than 30 days ago, so you can still get it back.</p>
+						{/if}
 					{/if}
+				{:else}
+					<div class="confirm" role="group" aria-labelledby="confirm-text">
+						<p id="confirm-text" class="t-body">
+							{confirm === 'refund'
+								? 'Plus ends now and your last charge is refunded the way you paid.'
+								: `Plus stays on until ${fmtDate(plan.current_period_end)}, and you will not be charged again.`}
+						</p>
+						<div class="row">
+							<button type="button" class="uin-btn uin-btn-primary uin-btn-md" disabled={billing.kind === 'working'} onclick={() => cancelPlan(confirm === 'refund')}>
+								{confirm === 'refund' ? refundLabel : 'Cancel Plus'}
+							</button>
+							<button type="button" class="uin-btn uin-btn-ghost uin-btn-md" onclick={() => (confirm = null)}>Keep Plus</button>
+						</div>
+					</div>
 				{/if}
 			{/if}
 			{#if billing.kind === 'error'}<Notice tone="error" title="Nothing was changed"><p>{billing.message}</p></Notice>{/if}
@@ -213,34 +197,7 @@
 		<section class="card section-card" aria-labelledby="connect-title">
 			<h2 class="t-title" id="connect-title">Connect this browser</h2>
 			<p class="t-body muted">Sends a signed plan token to the extension, so Plus works here. Nothing else about your account is shared with it.</p>
-			{#if ext.kind === 'checking'}
-				<Loading label="Looking for Colander in this browser" />
-			{:else if ext.kind === 'not_chrome'}
-				<Notice title="This browser is not Chrome">
-					<p>Colander runs in Chrome on desktop. Open this page in Chrome, with Colander installed, to connect it.</p>
-				</Notice>
-			{:else if ext.kind === 'missing'}
-				<Notice title="Colander is not installed in this browser">
-					<p>Add it from the Chrome Web Store, then come back to this page.</p>
-				</Notice>
-				<div class="row">
-					<a class="uin-btn uin-btn-primary uin-btn-md" href={PUBLIC_STORE_URL}><Plus size={16} strokeWidth={1.75} aria-hidden="true" /> Add to Chrome</a>
-					<button type="button" class="uin-btn uin-btn-outline uin-btn-md" onclick={checkExtension}><RefreshCw size={16} strokeWidth={1.75} aria-hidden="true" /> Check again</button>
-				</div>
-			{:else}
-				<p class="t-body">Colander {ext.version} is installed here.</p>
-				{#if livePlan}
-					<div class="row">
-						<button type="button" class="uin-btn uin-btn-primary uin-btn-md" onclick={connectBrowser} disabled={connect.kind === 'working'}>
-							<Plug size={16} strokeWidth={1.75} aria-hidden="true" /> {connect.kind === 'working' ? 'Connecting' : 'Connect this browser'}
-						</button>
-					</div>
-				{:else}
-					<p class="t-body muted">Once you have Plus, connect this browser here.</p>
-				{/if}
-			{/if}
-			{#if connect.kind === 'done'}<Notice tone="success" title={connect.message} />{/if}
-			{#if connect.kind === 'error'}<Notice tone="error" title="Not connected"><p>{connect.message}</p></Notice>{/if}
+			<ConnectBrowser {ext} canConnect={!!livePlan} onrecheck={checkExtension} />
 		</section>
 
 		{#if account.role !== 'member'}
@@ -275,7 +232,7 @@
 					<label class="field-label" for="display-name">Display name</label>
 					<Input id="display-name" maxlength={60} autocomplete="nickname" bind:value={displayName} aria-describedby="display-name-hint" />
 					<p class="field-hint" id="display-name-hint">
-						Shown in the decision log when you review, and on the supporters page only if you ask for credit.
+						Shown in the decision log when you review. Donors choose their own name for the supporters page when they give.
 					</p>
 				</div>
 				<div class="row">

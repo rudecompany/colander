@@ -90,3 +90,21 @@ func Appeal(sourceName, sourceNoun, code, link string) (subject, body string) {
 			"and you can remove the code.\n" +
 			"The outcome and the reasoning are published in the decision log.\n\nColander"
 }
+
+// PlusCancelled confirms a cancellation at the end of the paid period.
+func PlusCancelled(until time.Time) (subject, body string) {
+	return "Your Colander Plus is cancelled",
+		"We cancelled Plus as you asked.\n\n" +
+			"Plus stays on until " + until.UTC().Format("2 January 2006") + ", and you will not be charged again.\n" +
+			"Blocking, tagging, reporting and appeals stay free on every platform.\n\n" +
+			"Thank you for supporting Colander.\n\nColander"
+}
+
+// PlusRefunded confirms a refund that ended Plus at once.
+func PlusRefunded() (subject, body string) {
+	return "Your Colander Plus refund",
+		"We refunded your last Plus charge, and Plus has ended.\n\n" +
+			"The refund goes back to the way you paid. Most banks show it within 5 to 10 business days.\n" +
+			"Blocking, tagging, reporting and appeals stay free on every platform.\n\n" +
+			"Thank you for trying Plus.\n\nColander"
+}

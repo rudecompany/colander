@@ -397,16 +397,30 @@ Session cookie or Reviewer bearer token. Curators may decide sources that are no
 | Request | Auth | Effect |
 | --- | --- | --- |
 | `POST /v1/trial` | Install | `200` `{"token": PlanToken}` for a 14-day Plus trial, once per install (`409 trial_used` after). No card, no account. |
-| `POST /v1/billing/checkout` `{"price": "plus_yearly" \| "plus_monthly"}` | Session | `200` `{"url": "<hosted checkout>"}` |
-| `POST /v1/billing/donate` `{"amount_cents", "recurring", "credit_name"}` | none | `200` `{"url"}`. `amount_cents` 100 to 100000. `credit_name` optional, shown on the supporters page if set. |
-| `POST /v1/billing/cancel` `{"refund": bool}` | Session | Cancels at period end. With `refund: true` and a charge under 30 days old, refunds it and ends Plus now. |
-| `POST /v1/billing/webhook` | Stripe signature | Subscription and payment events |
+| `POST /v1/billing/checkout` `{"price": "plus_yearly" \| "plus_monthly"}` | Session | `200` `{"url": "<hosted checkout>"}`. `400 invalid_price` for any other price. `409 already_subscribed` while the account's plan is `active`, `trialing` or `past_due`. |
+| `POST /v1/billing/donate` `{"amount_cents", "recurring", "credit_name"}` | none | `200` `{"url"}`. `amount_cents` 100 to 100000 (`400 invalid_amount`). `credit_name` optional, one line of at most 80 characters (`400 invalid_credit_name`), shown on the supporters page if set. 10 per IP per hour. |
+| `POST /v1/billing/cancel` `{"refund": bool}` | Session | `200` `{"account": Account}`. Cancels at period end; repeating it changes nothing. With `refund: true` and a charge under 30 days old, refunds it and ends Plus now, also after an earlier cancel at period end. `409 not_refundable` (nothing changes) when `refund` is true and the charge is older. `404 no_plan` without a running plan. |
+| `POST /v1/billing/webhook` | Stripe signature | Subscription and payment events. `400 invalid_signature` for a bad or stale signature; `200` for applied, ignored and repeated events; `500` asks Stripe to retry. |
 | `POST /v1/entitlement` | Session | `200` `{"token": PlanToken}` when the account has an active plan, else `404 no_plan` |
-| `POST /v1/entitlement/refresh` `{"token"}` | none | A fresh token if the subscription behind it is still active, else `404 no_plan` |
+| `POST /v1/entitlement/refresh` `{"token"}` | none | A fresh token if the subscription behind it is still active, else `404 no_plan`. The token may have expired but must verify (`400 invalid_plan`). Trial tokens always get `404 no_plan`. |
 | `GET /v1/supporters` | none | `{"supporters": [{"name", "since"}]}` for supporters who opted into credit |
 | `GET /v1/sync`, `PUT /v1/sync` `{"version", "data"}` | Plan | Plus settings sync. `data` is an opaque JSON object up to 64 KB. `PUT` with a stale `version` gets `409` and the current blob. |
 
 `Plan` in the account object: `{"plan": "plus", "interval": "year" | "month", "status": "active" | "trialing" | "past_due" | "canceled", "current_period_end": "...", "cancel_at_period_end": bool, "refundable": bool}`.
+`plan` is `null` until the account first subscribes, and an ended subscription stays as `canceled` (Stripe's `unpaid`, `paused` and `incomplete_expired` also show as `canceled`).
+`refundable` is true while the plan runs and its latest charge is under 30 days old and not refunded.
+
+Paid plan tokens carry the account ID as `sub`, so settings sync keeps one blob per account across renewals, refreshes and browsers.
+Their `exp` is `current_period_end` plus 3 days; while a renewal payment is retried (`past_due`) it is the start of the unpaid period plus 3 days, and no token is issued once that has passed.
+
+Without `STRIPE_SECRET_KEY` every `/v1/billing/*` route answers `503 billing_unavailable`, and the webhook does so without `STRIPE_WEBHOOK_SECRET` too.
+Entitlements and supporters keep answering from stored state.
+
+Checkout returns to `{public_url}/plans/welcome` after paying and to `{public_url}/plans?checkout=<price>&cancelled=1` when closed.
+Donations return to `{public_url}/support/thanks` and `{public_url}/support?cancelled=1`.
+
+Supporters are donors who gave a `credit_name`, newest first by their first donation; a repeated name appears once.
+Refunded donations drop off the list, and amounts and emails are never shown.
 
 ## 7. Website and extension handoff
 
@@ -496,6 +510,9 @@ The server counts list snapshot and delta requests per UTC day without any ident
 | `YOUTUBE_API_KEY` | unset | YouTube enrichment and appeal verification |
 | `RESEND_API_KEY`, `COLANDER_MAIL_FROM` | unset | Email delivery |
 | `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_PLUS_MONTHLY`, `STRIPE_PRICE_PLUS_YEARLY` | unset | Billing. Without them billing routes answer `503 billing_unavailable`. |
+| `STRIPE_MANAGED_PAYMENTS` | on | Plus checkout with Stripe Managed Payments as merchant of record. `0` turns it off. |
+| `STRIPE_API_BASE` | `https://api.stripe.com` | Stripe API origin, for tests against a fake |
+| `COLANDER_CLIENT_IP_HEADER` | unset | Header a trusted reverse proxy sets to the client address, such as `CF-Connecting-IP` or `X-Forwarded-For`, for per-IP rate limits |
 
 ## 11. Extension build configuration
 

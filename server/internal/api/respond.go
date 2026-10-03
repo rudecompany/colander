@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"net"
 	"net/http"
+	"net/netip"
 	"strconv"
 	"strings"
 	"sync"
@@ -138,4 +140,50 @@ func allow(now time.Time, key string, n float64, ls ...*limiter) (bool, time.Dur
 		l.buckets[key].tokens -= n
 	}
 	return true, 0
+}
+
+// clientIP is the address per-IP rate limits key on: the TCP peer, or the address a trusted reverse
+// proxy reports in ClientIPHeader. Set that header only when the server is reachable through the
+// proxy alone, or clients can choose their own address.
+func (s *Server) clientIP(r *http.Request) string {
+	if s.ClientIPHeader != "" {
+		if ip := forwardedIP(r.Header.Values(s.ClientIPHeader)); ip != "" {
+			return ip
+		}
+	}
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		return r.RemoteAddr
+	}
+	return host
+}
+
+// forwardedIP picks the client out of a proxy header. Each proxy appends the address it saw on the
+// right of X-Forwarded-For, and the left part is whatever the client sent, so the client is the
+// right-most hop that is not one of our own proxies. Private, loopback and link-local hops count as
+// our own proxies. When every hop is ours, or a hop does not parse, the last one we trust wins.
+// A single-value header such as CF-Connecting-IP is a list of one.
+func forwardedIP(values []string) string {
+	var hops []string
+	for _, v := range values {
+		hops = append(hops, strings.Split(v, ",")...)
+	}
+	trusted := ""
+	for i := len(hops) - 1; i >= 0; i-- {
+		hop := strings.TrimSpace(hops[i])
+		ip, err := netip.ParseAddr(hop)
+		if err != nil {
+			ap, err := netip.ParseAddrPort(hop) // some proxies add the port
+			if err != nil {
+				break
+			}
+			ip = ap.Addr()
+		}
+		ip = ip.Unmap()
+		if !ip.IsPrivate() && !ip.IsLoopback() && !ip.IsLinkLocalUnicast() && !ip.IsUnspecified() {
+			return ip.String()
+		}
+		trusted = ip.String()
+	}
+	return trusted
 }

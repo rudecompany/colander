@@ -18,12 +18,15 @@
 	let interval = $state<Interval>('year');
 	let step = $state<'idle' | 'signin' | 'continue' | 'working'>('idle');
 	let checkoutError = $state<{ title: string; body: string } | null>(null);
+	let cancelled = $state(false);
 
 	const price = $derived<Price>(interval === 'year' ? 'plus_yearly' : 'plus_monthly');
 	const hasPlus = $derived(!!session.account?.plan && session.account.plan.status !== 'canceled');
 
 	onMount(async () => {
-		const wanted = new URLSearchParams(location.search).get('checkout');
+		const q = new URLSearchParams(location.search);
+		const wanted = q.get('checkout');
+		cancelled = q.has('cancelled');
 		if (wanted === 'plus_monthly') interval = 'month';
 		const account = await loadAccount();
 		if (account && (wanted === 'plus_yearly' || wanted === 'plus_monthly')) step = 'continue';
@@ -52,6 +55,8 @@
 			} else if (e instanceof ApiError && e.status === 401) {
 				session.account = null;
 				step = 'signin';
+			} else if (e instanceof ApiError && e.code === 'already_subscribed') {
+				await loadAccount();
 			} else {
 				checkoutError = { title: 'Checkout could not start', body: errorText(e) };
 			}
@@ -149,6 +154,8 @@
 				{/if}
 				{#if checkoutError}
 					<Notice title={checkoutError.title}><p>{checkoutError.body}</p></Notice>
+				{:else if cancelled && !hasPlus}
+					<Notice title="Checkout closed before payment"><p>Nothing was charged. You can pick up where you left off whenever you like.</p></Notice>
 				{/if}
 			</div>
 		</article>

@@ -14,8 +14,10 @@ The Go server serves that folder and the API from the same origin, so every page
 | `/appeal/{platform}/{id}` | Start an appeal | SPA fallback |
 | `/appeal/status/{id}?secret=` | Appeal code, instructions, Verify and status | SPA fallback |
 | `/log` | The decision log, with platform and verdict filters and a cursor | Prerendered shell |
-| `/plans` | Free, Plus, Family and Supporter, with checkout | Prerendered shell |
-| `/support` | Donations, once or monthly | Prerendered shell |
+| `/plans` | Free, Plus, Family and Supporter, with checkout; `?cancelled=1` after a closed checkout | Prerendered shell |
+| `/plans/welcome` | Checkout success: waits for the plan, then connects this browser | Prerendered shell |
+| `/support` | Donations, once or monthly; `?cancelled=1` after a closed payment | Prerendered shell |
+| `/support/thanks` | Donation success | Prerendered |
 | `/supporters` | Credited supporters | Prerendered shell |
 | `/transparency` | Live list numbers, funding, independence rules, expiry | Prerendered shell |
 | `/account` | Sign-in, plan, cancel, connect this browser, reviewer token | Prerendered shell |
@@ -77,8 +79,9 @@ A shared fixture fails any test that logs a page error or a CSP violation.
 | `source.spec.ts` | Source pages for all five verdicts, Not rated, unknown platforms, no support links |
 | `appeal.spec.ts` | Start an appeal, copy the code, Verify, every status, missing secret |
 | `log.spec.ts` | Platform and verdict filters, address sync, load more with the cursor |
-| `account.spec.ts` | Email sign-in and callback, safe `next`, connect this browser, cancel and refund |
-| `plans.spec.ts` | Yearly preselected, `503 billing_unavailable`, sign-in before checkout, redirect |
+| `account.spec.ts` | Email sign-in and callback, safe `next`, connect this browser, cancel at period end, cancel and refund, `409 not_refundable` |
+| `plans.spec.ts` | Yearly preselected, `503 billing_unavailable`, sign-in before checkout, redirect, closed checkout, `409 already_subscribed`, the welcome page |
+| `support.spec.ts` | Donation body and redirect, custom amounts and limits, `503 billing_unavailable`, closed payment |
 | `console.spec.ts` | Keyboard queue, evidence, decision body and CSRF header, curator limits and `403 staff_required` |
 | `a11y.spec.ts` | axe WCAG 2.2 A and AA rules on every page, light and dark |
 
