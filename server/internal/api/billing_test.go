@@ -378,6 +378,9 @@ func TestRefundWithinThirtyDays(t *testing.T) {
 	if p := h.plan(recent); !p.Refundable {
 		t.Fatalf("an 11-day-old charge must be refundable: %+v", p)
 	}
+	token, _ := h.entitlement(recent)
+	planAuth := []string{"Authorization", "Plan " + token}
+	expect(t, h.do("GET", "/v1/sync", nil, planAuth...), http.StatusOK)
 	h.mail.Reset()
 	w = h.do("POST", "/v1/billing/cancel", map[string]bool{"refund": true}, "Cookie", recent, "X-Colander-CSRF", "1")
 	expect(t, w, http.StatusOK)
@@ -400,6 +403,13 @@ func TestRefundWithinThirtyDays(t *testing.T) {
 	if _, code := h.entitlement(recent); code != http.StatusNotFound {
 		t.Fatal("a refunded plan must not issue tokens")
 	}
+	// The token issued before the refund still verifies, but sync stops at once.
+	w = h.do("PUT", "/v1/sync", map[string]any{"version": 0, "data": map[string]any{"strictness": "strict"}}, planAuth...)
+	expect(t, w, http.StatusForbidden)
+	if errorCode(t, w) != "no_plan" {
+		t.Fatal("want no_plan for a refunded plan's token")
+	}
+	expect(t, h.do("GET", "/v1/sync", nil, planAuth...), http.StatusForbidden)
 }
 
 func subOf(t *testing.T, h *harness, email string) string {
