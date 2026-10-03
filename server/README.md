@@ -42,7 +42,7 @@ For anything real, create a key with `keygen` and keep it out of the repository.
 
 `seed-dev` refuses to touch a database that already has sources.
 Every verdict it creates comes from the real code paths: tags and reports through the store, scoring passes, reviewer decisions and appeals through the scoring engine.
-It covers all four platforms, every verdict, large, imported, mixed and frozen sources, appeals in every status, open and closed reports, a lapsed decision and a burst of tags from new installs.
+It covers all four platforms, every verdict, large, imported, mixed and frozen sources, sources held at Likely slop because their audience size is unknown, appeals in every status (one overdue for a manual check), open and closed reports, a lapsed decision and a burst of tags from new installs.
 It also includes the targets from `testdata/contract/list-expected.json`, such as `@aihistorydaily` and `@catrescuetales`, so the extension's tests line up with dev data.
 All names and IDs are invented.
 
@@ -90,10 +90,26 @@ Every change asks the publisher for a new list sequence, so a verified appeal re
 A few readings of the contract are worth knowing when you work on scoring.
 
 - A source's tag sums come from tags on the source itself; item tags reach the source through platform label reports and the 80% rule only.
-- An item counts toward the 80% rule as AI-made when its own provenance layer is met or a reviewer rated it AI evidence, and as not AI-made when not-slop tags outweigh the others or a reviewer cleared it.
-- An item gets its own verdict only when it says more than its source's, so items of a Slop source are not listed again as Likely slop.
+- An item counts toward the 80% rule as AI-made only on independent evidence: platform label reports from 2 or more installs, or a reviewer rating it Slop, Likely slop or AI-made.
+- Tags agreeing an item is AI-made never count there, so tags alone can never make a source look mass-produced.
+- An item counts as not AI-made when not-slop tags outweigh the others or a reviewer cleared it; an item with only AI tags counts neither way.
+- Community scoring holds rule 6 Slop at Likely slop, with an escalation, when the source is large, is an unreviewed import, or has an unknown audience size.
+- The audience size is known when the YouTube Data API reported a subscriber count or staff recorded `large` either way, so a TikTok, Instagram or Facebook source reaches Slop only through a reviewer, or after staff recorded its size.
+- The log reason says plainly why a source is held, for example "Held at Likely slop until staff review it, because its audience size is unknown."
+- A source is mixed when at least 5 of its items have evidence and under 80% of them are AI-made.
+- Platform labels on a mixed source's items never count toward the source's own provenance, so it is AI-made only on evidence about the source itself, and otherwise not rated.
+- Items of a mixed source keep their own list entries even when they match the source's verdict, except while an appeal shows the source as Disputed.
+- Any other item gets its own verdict only when it says more than its source's, so items of a Slop source are not listed again as Likely slop.
+- Item tags without a `source_id` (the card did not show it) are filed under a placeholder source with an empty ID per platform, which is never rated, never frozen and never receives roll-ups; each such item is scored on its own.
+- Such an item joins the first real source a later tag names, with its tags and decisions.
 - Reputation counts a target as decided when it holds a reviewer or appeal decision, a slop verdict the consensus layer agreed on, or a Clear from not-slop consensus.
+- AI-made verdicts from community AI consensus never count as decided, because they would feed back into the weights that produced them.
 - Reviewers can record provenance and behavior signals; the other signals are always computed.
+- A Slop or Likely slop decision needs AI evidence: `400 ai_evidence_required` unless the target's provenance layer is met without its current decision, or the decision records a provenance signal.
+- Curators get `403 staff_required` for large sources and for sources with an appeal in `pending_manual` or `under_review`.
+- A denied appeal restores the scored verdict and voids any curator decision on the source made after the appeal was filed.
+- An appeal waiting for staff to check its code by hand never expires; once it was filed 14 days ago it also raises an escalation at the top of the review queue.
+- When a source's list verdict changes, its open reports close and show that verdict and `protects`; a reviewer decision closes them the same way.
 - When a decision or verdict reaches its 90-day `rescore_at` and scores as Slop again, it is held at Likely slop with an escalation until a reviewer looks again.
 
 Scoring never reads plan, payment or donation state, and `TestIndependence` in `internal/billing` fails if scoring, or the tag, report and review handlers, ever import the billing package or name its tables.
@@ -114,6 +130,7 @@ Without `STRIPE_SECRET_KEY` every `/v1/billing/*` route answers `503 billing_una
 - Cancel sets `cancel_at_period_end` and sends a short confirmation email.
 - Cancel and refund refunds first and then ends the subscription now, so a failure in between never leaves someone charged without Plus; a retry finishes the cancel without refunding twice.
 - Paid plan tokens carry the account ID as `sub` and expire 3 days after the paid period ends; the extension renews them with `POST /v1/entitlement/refresh`.
+- Settings sync also checks the plan behind a paid token on every request, so a refund or an ended subscription stops sync at once with `403 no_plan`; install trial tokens run until they expire.
 - Billing state lives in its own tables (`subscriptions`, `donations`, `billing_events`) and never includes card data.
 
 ### Setting up Stripe
