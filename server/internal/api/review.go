@@ -206,8 +206,15 @@ type layerJSON struct {
 func layers(ev *scoring.Evaluation) map[string]layerJSON {
 	r, in, src := ev.Result, ev.Input, ev.Data.Source
 	var prov []string
-	if in.LabelInstalls > 0 {
-		prov = append(prov, fmt.Sprintf("%d installs saw a platform AI label", in.LabelInstalls))
+	labels := in.RollupLabelInstalls
+	if r.Mixed {
+		labels = in.LabelInstalls
+	}
+	if labels > 0 {
+		prov = append(prov, fmt.Sprintf("%d installs saw a platform AI label", labels))
+	}
+	if r.Mixed && in.RollupLabelInstalls > in.LabelInstalls {
+		prov = append(prov, "labels on its items do not count, because the source is mixed")
 	}
 	if src.ImportList != "" {
 		prov = append(prov, fmt.Sprintf("imported from %s (%s) as a %s entry", src.ImportSource, src.ImportLicense, src.ImportList))

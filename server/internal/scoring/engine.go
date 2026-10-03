@@ -251,12 +251,15 @@ func (e *Engine) evaluate(d *store.SourceData, reps map[string]store.Rep, now ti
 	// install even when it tagged two aliases. Item evidence reaches the source only through platform
 	// labels and the 80% rule (9.3).
 	perInstall := map[string]store.Vote{}
-	labelInstalls := map[string]bool{}
+	labelInstalls, rollupLabels := map[string]bool{}, map[string]bool{}
 	byItem := map[int64][]store.Vote{}
 	burst := 0
 	for _, v := range d.Votes {
 		if v.PlatformLabel {
-			labelInstalls[v.Install] = true
+			rollupLabels[v.Install] = true
+			if v.ItemRef == 0 {
+				labelInstalls[v.Install] = true
+			}
 		}
 		if v.ItemRef != 0 {
 			byItem[v.ItemRef] = append(byItem[v.ItemRef], v)
@@ -277,7 +280,9 @@ func (e *Engine) evaluate(d *store.SourceData, reps map[string]store.Rep, now ti
 		ev.Burst, frozen = true, true
 	}
 
-	// Items first: their AI evidence feeds the source's 80% rule.
+	// Items first: their AI evidence feeds the source's 80% rule. Only independent evidence makes an
+	// item count as AI-made there: platform labels from enough installs or a reviewer decision, never
+	// tags agreeing it is AI, so tags alone cannot make a source look mass-produced (9.3).
 	aiItems, seen := 0, 0
 	for _, it := range d.Items {
 		in := Input{Item: true, Decision: toDecision(d.Decisions[it.Ref]), AppealOpen: d.AppealOpen, Frozen: frozen,
@@ -288,29 +293,36 @@ func (e *Engine) evaluate(d *store.SourceData, reps map[string]store.Rep, now ti
 				in.LabelInstalls++
 			}
 		}
-		r := e.Th.Score(in)
+		sums := SumVotes(in.Votes)
 		dec := in.Decision
 		switch {
-		case r.Provenance.Met || (dec != nil && (dec.Verdict == "slop" || dec.Verdict == "likely_slop" || dec.Verdict == "ai_made")):
+		case dec != nil && (dec.Verdict == "slop" || dec.Verdict == "likely_slop" || dec.Verdict == "ai_made"):
 			aiItems++
 			seen++
-		case (r.Sums.N > 0 && r.Sums.N > r.Sums.S+r.Sums.A) || (dec != nil && dec.Verdict == "clear"):
+		case dec != nil && dec.Verdict == "clear":
+			seen++
+		case in.LabelInstalls >= e.Th.LabelInstalls:
+			aiItems++
+			seen++
+		case sums.N > 0 && sums.N > sums.S+sums.A:
 			seen++
 		}
 		ev.Items = append(ev.Items, ItemEvaluation{Item: it, Input: in, lapsing: isLapsing(it.State, now.Unix())})
 	}
 
 	in := Input{
-		Decision:      toDecision(d.Decisions[0]),
-		AppealOpen:    d.AppealOpen,
-		Frozen:        frozen,
-		Imported:      src.ImportList,
-		Reviewed:      src.ReviewedAt > 0,
-		Large:         src.LargeStaff || (src.Subscribers.Valid && src.Subscribers.Int64 >= e.Th.LargeSubscribers),
-		UploadsPerDay: -1,
-		ItemsSeen:     seen,
-		AIItems:       aiItems,
-		LabelInstalls: len(labelInstalls),
+		Decision:            toDecision(d.Decisions[0]),
+		AppealOpen:          d.AppealOpen,
+		Frozen:              frozen,
+		Imported:            src.ImportList,
+		Reviewed:            src.ReviewedAt > 0,
+		Large:               src.LargeStaff || (src.Subscribers.Valid && src.Subscribers.Int64 >= e.Th.LargeSubscribers),
+		AudienceKnown:       src.Subscribers.Valid || src.SizeReviewedAt > 0,
+		UploadsPerDay:       -1,
+		ItemsSeen:           seen,
+		AIItems:             aiItems,
+		LabelInstalls:       len(labelInstalls),
+		RollupLabelInstalls: len(rollupLabels),
 	}
 	if src.UploadsPerDay.Valid {
 		in.UploadsPerDay = src.UploadsPerDay.Float64
@@ -325,6 +337,7 @@ func (e *Engine) evaluate(d *store.SourceData, reps map[string]store.Rep, now ti
 	for i := range ev.Items {
 		ev.Items[i].Input.SourceBehavior = ev.Result.Behavior
 		ev.Items[i].Input.SourceVerdict = ev.Result.Verdict
+		ev.Items[i].Input.SourceMixed = ev.Result.Mixed
 		ev.Items[i].Result = e.Th.Score(ev.Items[i].Input)
 	}
 	return ev
@@ -335,6 +348,7 @@ func (e *Engine) nextState(old store.State, r Result, in Input, dec *store.Decis
 	st := store.State{Verdict: r.Verdict, Signals: r.Signals, Detail: lf.SlopTypeCode(r.SlopType) | r.Tests,
 		Computed: r.Computed, ChangedAt: old.ChangedAt, RescoreAt: old.RescoreAt}
 	if !in.Item {
+		st.Mixed = r.Mixed
 		if in.Large {
 			st.Flags |= lf.FlagLarge
 		}
@@ -443,10 +457,10 @@ func (e *Engine) scoreSource(ctx context.Context, ref int64, reps map[string]sto
 	}
 	want := map[string]string{}
 	switch r := ev.Result; {
-	case r.Rule == 6 && (r.CappedBy == "large" || r.CappedBy == "imported"):
-		want["capped"] = escalationSummary(r.CappedBy)
 	case r.Rule == 6 && r.CappedBy == "lapsed":
 		want["lapsed"] = escalationSummary("lapsed")
+	case r.Rule == 6 && r.CappedBy != "":
+		want["capped"] = escalationSummary(r.CappedBy)
 	}
 	if d.OpenReports >= e.Th.ReportEscalation {
 		want["reports"] = fmt.Sprintf("%d or more open reports", e.Th.ReportEscalation)

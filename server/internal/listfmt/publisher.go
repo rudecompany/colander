@@ -77,8 +77,8 @@ func (p *Publisher) Publish(ctx context.Context) error {
 	}
 	want := make(map[[8]byte]store.ListEntry, len(targets))
 	for _, t := range targets {
-		// An item entry exists only when its own verdict differs from its source's.
-		if t.TargetType == "item" && t.State.Verdict == t.SourceVerdict {
+		// An item entry exists only when its own verdict differs from its source's, or its source is mixed.
+		if t.TargetType == "item" && t.State.Verdict == t.SourceVerdict && !t.SourceMixed {
 			continue
 		}
 		pc, _ := PlatformCode(t.Platform)

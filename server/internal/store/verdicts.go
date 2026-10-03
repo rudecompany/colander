@@ -268,6 +268,11 @@ func (s *Store) ApplyUpdate(ctx context.Context, u Update) (bool, error) {
 		if err != nil {
 			return err
 		}
+		if u.ItemRef == 0 {
+			if _, err := tx.ExecContext(ctx, `UPDATE sources SET mixed = ? WHERE id = ?`, st.Mixed, id); err != nil {
+				return err
+			}
+		}
 		if u.Log != nil {
 			if err := addLog(ctx, tx, u.Log); err != nil {
 				return err
@@ -304,7 +309,8 @@ func (s *Store) AddDecision(ctx context.Context, d Decision, large *bool) (int64
 			return err
 		}
 		if large != nil {
-			if _, err := tx.ExecContext(ctx, `UPDATE sources SET large_staff = ? WHERE id = ?`, *large, d.SourceRef); err != nil {
+			if _, err := tx.ExecContext(ctx, `UPDATE sources SET large_staff = ?, size_reviewed_at = ? WHERE id = ?`,
+				*large, d.CreatedAt, d.SourceRef); err != nil {
 				return err
 			}
 		}

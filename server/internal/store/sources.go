@@ -17,6 +17,7 @@ type State struct {
 	RescoreAt int64
 	LapseHold bool
 	Computed  string
+	Mixed     bool // sources only: the source is mixed, so its items keep their own list entries
 }
 
 // Source is a channel, profile or page.
@@ -32,6 +33,7 @@ type Source struct {
 	ImportedAt       int64
 	ReviewedAt       int64
 	LargeStaff       bool
+	SizeReviewedAt   int64 // when staff last recorded the source's size, 0 when never
 	Subscribers      sql.NullInt64
 	UploadsPerDay    sql.NullFloat64
 	YouTubeCheckedAt int64
@@ -51,16 +53,16 @@ type Item struct {
 }
 
 const sourceCols = `id, platform, canonical_id, ifnull(name, ''), ifnull(import_list, ''), ifnull(import_source, ''),
-	ifnull(import_license, ''), ifnull(imported_at, 0), ifnull(reviewed_at, 0), large_staff, subscribers, uploads_per_day,
-	ifnull(youtube_checked_at, 0), ifnull(frozen_until, 0), ifnull(verdict, ''), signals, detail, flags,
-	ifnull(changed_at, 0), ifnull(rescore_at, 0), lapse_hold, ifnull(computed, ''), created_at`
+	ifnull(import_license, ''), ifnull(imported_at, 0), ifnull(reviewed_at, 0), large_staff, ifnull(size_reviewed_at, 0),
+	subscribers, uploads_per_day, ifnull(youtube_checked_at, 0), ifnull(frozen_until, 0), ifnull(verdict, ''), signals, detail,
+	flags, ifnull(changed_at, 0), ifnull(rescore_at, 0), lapse_hold, ifnull(computed, ''), mixed, created_at`
 
 func scanSource(row interface{ Scan(...any) error }) (*Source, error) {
 	var s Source
 	err := row.Scan(&s.Ref, &s.Platform, &s.CanonicalID, &s.Name, &s.ImportList, &s.ImportSource, &s.ImportLicense,
-		&s.ImportedAt, &s.ReviewedAt, &s.LargeStaff, &s.Subscribers, &s.UploadsPerDay, &s.YouTubeCheckedAt,
+		&s.ImportedAt, &s.ReviewedAt, &s.LargeStaff, &s.SizeReviewedAt, &s.Subscribers, &s.UploadsPerDay, &s.YouTubeCheckedAt,
 		&s.FrozenUntil, &s.State.Verdict, &s.State.Signals, &s.State.Detail, &s.State.Flags, &s.State.ChangedAt,
-		&s.State.RescoreAt, &s.State.LapseHold, &s.State.Computed, &s.CreatedAt)
+		&s.State.RescoreAt, &s.State.LapseHold, &s.State.Computed, &s.State.Mixed, &s.CreatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -238,6 +240,7 @@ func mergeSources(ctx context.Context, tx *sql.Tx, keep, drop int64) error {
 		imported_at = coalesce(sources.imported_at, d.imported_at),
 		reviewed_at = max(ifnull(sources.reviewed_at, 0), ifnull(d.reviewed_at, 0)),
 		large_staff = max(sources.large_staff, d.large_staff),
+		size_reviewed_at = max(ifnull(sources.size_reviewed_at, 0), ifnull(d.size_reviewed_at, 0)),
 		frozen_until = max(ifnull(sources.frozen_until, 0), ifnull(d.frozen_until, 0))
 		FROM (SELECT * FROM sources WHERE id = ?) AS d WHERE sources.id = ?`, drop, keep)
 	if err != nil {
