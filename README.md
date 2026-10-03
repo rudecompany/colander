@@ -77,9 +77,13 @@ Sign updated platform selectors with `colander sign-config`; installs pick them 
 Every P0 requirement for version 1.0 is built and tested: blocking from lists on all four platforms, strictness and pause, platform AI labels, tagging, reporting, Why, Show and Always allow, signed list sync, consensus and review, appeals, privacy by default, counts and activity, Plus and donations, and accessibility.
 The 1.1 items (articles and search results, the Family plan, Content Credentials, Firefox and Edge) are not built.
 
+Fairness rules are enforced in code and tested: tags alone never make anything Slop, a reviewer needs AI evidence to rate Slop or Likely slop, mixed sources are judged item by item, appeals unhide a source while staff review it, and curators cannot decide large or appealed sources.
+Because TikTok, Instagram and Facebook give no audience figures, a Slop verdict there always waits for staff review, so plan review capacity accordingly.
+
 Some things need people or accounts rather than code.
 
 - Instagram and Facebook selectors are tested on hand-built fixtures only; run `pnpm -C extension test:live` with signed-in storage states before those platforms ship.
 - AiSList is licensed CC BY-NC 4.0, not MIT as the spec assumed, so its data is not bundled; `colander import-seed` imports a list file only with an explicit license acknowledgement.
 - Stripe Managed Payments needs Stripe's eligibility approval and its terms accepted in the dashboard.
+- The extension asks for the `scripting` permission in addition to the spec's minimal list, because per-platform site access needs runtime content script registration; the spec's permission list should add it.
 - The open questions in the spec still stand: legal review of labels and platform terms, the calibration set behind the thresholds, the code and data licenses, and trademark clearance for the name.
