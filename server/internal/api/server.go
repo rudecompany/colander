@@ -206,7 +206,10 @@ func (s *Server) logRequests(next http.Handler) http.Handler {
 		sw := &statusWriter{ResponseWriter: w}
 		next.ServeHTTP(sw, r)
 		route := r.Pattern
-		if route == "" || route == "/" {
+		switch route {
+		case "":
+			route = r.Method + " (preflight)" // answered by the CORS middleware before routing
+		case "/":
 			route = r.Method + " (site)"
 		}
 		s.Log.Info("request", "route", route, "status", sw.status, "ms", time.Since(start).Milliseconds())

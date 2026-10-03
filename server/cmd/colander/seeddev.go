@@ -146,9 +146,17 @@ func (s *seeder) youtube(alias, channelID, handle, title string, subs int64, upl
 	s.fail(err)
 }
 
+// pass scores until nothing changes, since reputation feeds on the verdicts of the pass before.
 func (s *seeder) pass() {
-	if s.err == nil {
-		s.fail(s.eng.FullPass(s.ctx))
+	for range 5 {
+		if s.err != nil {
+			return
+		}
+		n, err := s.eng.FullPass(s.ctx)
+		s.fail(err)
+		if n == 0 {
+			return
+		}
 	}
 }
 
@@ -434,19 +442,21 @@ func (s *seeder) run(pub *lf.Publisher) error {
 	s.at(s.days(2))
 	s.appeal("ig", "garden.with.ana", "ana@garden.example.test", "I photograph my own garden every morning.")
 
-	// A burst of slop tags from brand-new installs two hours ago: consensus freezes and staff are asked to look.
+	// Yesterday's pass and publication.
 	s.at(s.days(2))
 	s.tag(pick(m, 0, 3), "tt", "source", "@viralpetfails", "", tagOpt{verdict: "ai_fine", label: true})
 	s.source("tt", "@viralpetfails", "Viral Pet Fails")
-	s.at(s.now.Add(-2 * time.Hour))
-	s.tag(f[:25], "tt", "source", "@viralpetfails", "", slop(low, "filler", true))
-
-	// Yesterday's pass and publication, then today's.
 	s.at(s.days(1))
 	s.pass()
 	if s.err == nil {
 		s.fail(pub.Publish(ctx))
 	}
+
+	// Two hours ago, a burst of slop tags from brand-new installs: consensus freezes and staff are asked to look.
+	s.at(s.now.Add(-2 * time.Hour))
+	s.tag(f[:25], "tt", "source", "@viralpetfails", "", slop(low, "filler", true))
+
+	// Today's pass and publication, so a delta from yesterday's sequence has something in it.
 	s.at(s.now)
 	s.pass()
 	if s.err == nil {

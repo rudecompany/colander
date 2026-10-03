@@ -292,7 +292,7 @@ func importSeed(ctx context.Context, cfg config, log *slog.Logger, args []string
 		return err
 	}
 	engine := scoring.NewEngine(st, nil, nil, log)
-	if err := engine.FullPass(ctx); err != nil {
+	if _, err := engine.FullPass(ctx); err != nil {
 		return err
 	}
 	fmt.Printf("Imported %d YouTube channels from %s (%s) as %s entries, skipped %d lines.\n"+

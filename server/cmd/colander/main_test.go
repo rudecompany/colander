@@ -9,6 +9,9 @@ import (
 	"strings"
 	"testing"
 
+	lf "github.com/rudecompany/colander/server/internal/listfmt"
+	"github.com/rudecompany/colander/server/internal/scoring"
+	"github.com/rudecompany/colander/server/internal/sign"
 	"github.com/rudecompany/colander/server/internal/store"
 )
 
@@ -67,5 +70,76 @@ func TestImportSeed(t *testing.T) {
 	ref, _ := st.FindSource(ctx, "yt", "@aimadebutfine")
 	if src, _ := st.GetSource(ctx, ref); src.State.Verdict != "ai_made" {
 		t.Fatalf("warnlist entry = %q, want ai_made", src.State.Verdict)
+	}
+}
+
+// seed-dev produces every verdict and appeal state, settles (a further pass changes nothing) and
+// lists the contract fixture targets with the verdicts the extension's tests expect.
+func TestSeedDev(t *testing.T) {
+	ctx := context.Background()
+	cfg := config{DB: filepath.Join(t.TempDir(), "dev.db"), KeyPath: "../../testdata/dev-signing.key"}
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	if err := seedDev(ctx, cfg, log); err != nil {
+		t.Fatal(err)
+	}
+	if err := seedDev(ctx, cfg, log); err == nil {
+		t.Fatal("seed-dev ran twice on the same database")
+	}
+	st, err := store.Open(ctx, cfg.DB)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+
+	counts, _, _ := st.VerdictCounts(ctx)
+	for v, n := range counts {
+		if n == 0 {
+			t.Errorf("no source is %s", v)
+		}
+	}
+	for _, status := range []string{store.AppealAwaiting, store.AppealPendingManual, store.AppealUnderReview,
+		store.AppealUpheld, store.AppealDenied, store.AppealExpired} {
+		if list, _ := st.AppealsWithStatus(ctx, status); len(list) == 0 {
+			t.Errorf("no appeal is %s", status)
+		}
+	}
+	if open, _ := st.OpenReports(ctx); len(open) == 0 {
+		t.Error("no open reports")
+	}
+
+	engine := scoring.NewEngine(st, nil, nil, log)
+	if n, err := engine.FullPass(ctx); err != nil || n != 0 {
+		t.Fatalf("a pass after seeding changed %d targets (err %v)", n, err)
+	}
+
+	key, _ := sign.LoadKey(cfg.KeyPath)
+	pub := lf.NewPublisher(st, key, log)
+	if err := pub.Publish(ctx); err != nil {
+		t.Fatal(err)
+	}
+	snapBytes, _ := pub.Snapshot()
+	snap, err := lf.Decode(snapBytes, key.Public)
+	if err != nil {
+		t.Fatal(err)
+	}
+	byHash := map[[8]byte]lf.Entry{}
+	for _, e := range snap.Entries {
+		byHash[e.Hash] = e
+	}
+	for key, want := range map[string]string{
+		"yt:s:@aihistorydaily": "slop", "yt:s:UCaaaaaaaaaaaaaaaaaaaaaa": "slop", "yt:s:@catrescuetales": "likely_slop",
+		"tt:s:@sloppyfacts": "disputed", "ig:s:handmadepottery": "clear", "fb:i:pfbid02abcDEF": "slop",
+		"tt:i:7412345678901234567": "likely_slop",
+	} {
+		e, ok := byHash[lf.Hash(key)]
+		if !ok || lf.Verdicts[e.Verdict] != want {
+			t.Errorf("%s: verdict %v (listed %v), want %s", key, lf.Verdicts[e.Verdict], ok, want)
+		}
+	}
+	if e := byHash[lf.Hash("tt:s:@sloppyfacts")]; e.Flags&lf.FlagLarge == 0 || e.Signals&lf.SigOpenAppeal == 0 {
+		t.Errorf("@sloppyfacts entry = %+v, want large with an open appeal", e)
+	}
+	if e := byHash[lf.Hash("yt:s:@catrescuetales")]; e.Flags&lf.FlagImported == 0 {
+		t.Errorf("@catrescuetales entry = %+v, want imported", e)
 	}
 }

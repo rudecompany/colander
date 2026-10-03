@@ -82,7 +82,7 @@ func (e *Engine) Run(ctx context.Context) {
 }
 
 func (e *Engine) runPass(ctx context.Context) {
-	if err := e.FullPass(ctx); err != nil && ctx.Err() == nil {
+	if _, err := e.FullPass(ctx); err != nil && ctx.Err() == nil {
 		e.Log.Error("scoring pass failed", "err", err)
 	}
 }
@@ -107,10 +107,11 @@ func (e *Engine) requestPublish() {
 }
 
 // FullPass expires stale appeals, refreshes YouTube data and rescores every source.
-func (e *Engine) FullPass(ctx context.Context) error {
+// It returns the number of sources and items whose stored state changed.
+func (e *Engine) FullPass(ctx context.Context) (int, error) {
 	now := e.Now()
 	if _, err := e.Store.ExpireAppeals(ctx, now.Add(-e.Th.AppealExpiry).Unix(), now.Unix()); err != nil {
-		return err
+		return 0, err
 	}
 	if e.YouTube != nil {
 		// Network calls happen outside the scoring lock.
@@ -122,20 +123,20 @@ func (e *Engine) FullPass(ctx context.Context) error {
 	defer e.mu.Unlock()
 	reps, err := e.Store.Reputation(ctx, 0)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	refs, err := e.Store.SourceRefs(ctx)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	changed := 0
 	for _, ref := range refs {
 		if ctx.Err() != nil {
-			return ctx.Err()
+			return changed, ctx.Err()
 		}
 		n, err := e.scoreSource(ctx, ref, reps, nil)
 		if err != nil {
-			return fmt.Errorf("score source %d: %w", ref, err)
+			return changed, fmt.Errorf("score source %d: %w", ref, err)
 		}
 		changed += n
 	}
@@ -144,7 +145,7 @@ func (e *Engine) FullPass(ctx context.Context) error {
 	}
 	// Always ask: the publisher only writes a sequence when the list really differs.
 	e.requestPublish()
-	return nil
+	return changed, nil
 }
 
 // Rescore scores one source and its items now. cause attributes the change in the log.

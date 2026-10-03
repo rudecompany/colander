@@ -66,7 +66,7 @@ func (f *fixture) source(alias string) *store.Source {
 }
 
 func (f *fixture) pass() {
-	if err := f.eng.FullPass(f.ctx); err != nil {
+	if _, err := f.eng.FullPass(f.ctx); err != nil {
 		f.t.Fatal(err)
 	}
 }

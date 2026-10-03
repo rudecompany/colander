@@ -116,8 +116,11 @@ type Rep struct {
 }
 
 // Reputation returns reputation inputs per install. With sourceRef set, only installs that tagged
-// that source or its items are returned. A target counts as decided when it holds a staff, appeal
-// or consensus verdict; an item without its own verdict holds its source's.
+// that source or its items are returned. A target counts as decided when it holds a staff or appeal
+// decision (the staff reviewed flag), a slop verdict the community consensus layer agreed on, or a
+// Clear from not-slop consensus. An AI-made verdict that merely carries the consensus signal does
+// not count, or slop taggers would lose weight for the consensus they formed and verdicts would
+// flip back and forth between passes. An item without its own verdict holds its source's.
 func (s *Store) Reputation(ctx context.Context, sourceRef int64) (map[string]Rep, error) {
 	filter := ""
 	var args []any
@@ -132,7 +135,9 @@ func (s *Store) Reputation(ctx context.Context, sourceRef int64) (map[string]Rep
 			CASE WHEN it.verdict IS NOT NULL THEN it.signals ELSE src.signals END AS sg
 		FROM tags t JOIN sources src ON src.id = t.source_id LEFT JOIN items it ON it.id = t.item_id `+filter+`
 	), d AS (
-		SELECT h, tv, v, v IN ('slop', 'likely_slop', 'ai_made', 'clear') AND ((f & 64) != 0 OR (sg & 36864) != 0) AS decided FROM t
+		SELECT h, tv, v, (v IN ('slop', 'likely_slop', 'ai_made', 'clear') AND (f & 64) != 0)
+			OR (v IN ('slop', 'likely_slop') AND (sg & 4096) != 0)
+			OR (v = 'clear' AND (sg & 32768) != 0) AS decided FROM t
 	)
 	SELECT i.hash, ifnull(i.first_tag_at, i.created_at), sum(d.decided),
 		sum(d.decided AND ((tv = 'slop' AND v IN ('slop', 'likely_slop')) OR (tv = 'not_slop' AND v = 'clear') OR (tv = 'ai_fine' AND v = 'ai_made')))
