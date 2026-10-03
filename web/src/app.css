@@ -15,7 +15,6 @@
 	--w-control-border: color-mix(in srgb, var(--cl-text-muted) 75%, var(--cl-surface));
 	--w-dot-strong: color-mix(in srgb, var(--cl-text-muted) 45%, var(--cl-paper));
 	--w-ink-soft: color-mix(in srgb, var(--cl-text) 8%, transparent);
-	--uin-line-strong: var(--w-control-border);
 	scroll-padding-top: 24px;
 	-webkit-text-size-adjust: 100%;
 	text-size-adjust: 100%;
@@ -27,54 +26,6 @@
 		--w-lede: 400 18px/28px var(--cl-font);
 		--w-gutter: 16px;
 		--w-section: 64px;
-	}
-}
-
-/*
- * tokens.css redefines the Mittsu colors for dark mode with a more specific selector than the
- * Colander mapping in colander.css, so dark mode fell back to macOS blue. Re-apply the mapping
- * at the same specificity; the --cl-* values it points to are already the dark ones.
- */
-:root[data-theme='dark'] {
-	--uin-fg: var(--cl-text);
-	--uin-fg-mute: var(--cl-text-muted);
-	--uin-fg-dim: color-mix(in srgb, var(--cl-text-muted) 80%, var(--cl-surface));
-	--uin-fg-faint: color-mix(in srgb, var(--cl-text) 22%, transparent);
-	--uin-line: var(--cl-border);
-	--uin-line-strong: var(--w-control-border);
-	--uin-bg-base: var(--cl-paper);
-	--uin-bg-panel: var(--cl-surface);
-	--uin-mat-window: var(--cl-surface);
-	--uin-mat-sidebar: var(--cl-surface-raised);
-	--uin-mat-panel: var(--cl-surface);
-	--uin-mat-row: var(--cl-surface);
-	--uin-mat-hover: color-mix(in srgb, var(--cl-text) 6%, transparent);
-	--uin-mat-selected: color-mix(in srgb, var(--cl-brand) 12%, transparent);
-	--uin-accent: var(--cl-brand);
-	--uin-success: var(--cl-clear);
-	--uin-warn: var(--cl-likely);
-	--uin-danger: var(--cl-slop);
-}
-@media (prefers-color-scheme: dark) {
-	:root:not([data-theme='light']) {
-		--uin-fg: var(--cl-text);
-		--uin-fg-mute: var(--cl-text-muted);
-		--uin-fg-dim: color-mix(in srgb, var(--cl-text-muted) 80%, var(--cl-surface));
-		--uin-fg-faint: color-mix(in srgb, var(--cl-text) 22%, transparent);
-		--uin-line: var(--cl-border);
-		--uin-line-strong: var(--w-control-border);
-		--uin-bg-base: var(--cl-paper);
-		--uin-bg-panel: var(--cl-surface);
-		--uin-mat-window: var(--cl-surface);
-		--uin-mat-sidebar: var(--cl-surface-raised);
-		--uin-mat-panel: var(--cl-surface);
-		--uin-mat-row: var(--cl-surface);
-		--uin-mat-hover: color-mix(in srgb, var(--cl-text) 6%, transparent);
-		--uin-mat-selected: color-mix(in srgb, var(--cl-brand) 12%, transparent);
-		--uin-accent: var(--cl-brand);
-		--uin-success: var(--cl-clear);
-		--uin-warn: var(--cl-likely);
-		--uin-danger: var(--cl-slop);
 	}
 }
 

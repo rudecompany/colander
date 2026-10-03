@@ -66,14 +66,22 @@
 	--cl-fast: 120ms;
 	--cl-slow: 200ms;
 	--cl-ease: cubic-bezier(0, 0, 0.2, 1);
+}
 
-	/* Mittsu mapping */
+/*
+ * Mittsu mapping. tokens.css sets its dark colors with (0,2,0) selectors, so the mapping uses
+ * :root:not([data-theme='light']) as well (same specificity, later in the cascade) and plain
+ * :root for forced light. The --cl-* values it points to switch per mode on their own.
+ */
+:root,
+:root:not([data-theme='light']) {
 	--uin-fg: var(--cl-text);
 	--uin-fg-mute: var(--cl-text-muted);
 	--uin-fg-dim: color-mix(in srgb, var(--cl-text-muted) 80%, var(--cl-surface));
 	--uin-fg-faint: color-mix(in srgb, var(--cl-text) 22%, transparent);
 	--uin-line: var(--cl-border);
-	--uin-line-strong: color-mix(in srgb, var(--cl-border) 60%, var(--cl-text-muted));
+	/* Control outlines clear 3:1 against their surface (WCAG 1.4.11). */
+	--uin-line-strong: color-mix(in srgb, var(--cl-text-muted) 75%, var(--cl-surface));
 	--uin-bg-base: var(--cl-paper);
 	--uin-bg-panel: var(--cl-surface);
 	--uin-mat-window: var(--cl-surface);
