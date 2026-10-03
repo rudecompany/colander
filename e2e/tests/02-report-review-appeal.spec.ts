@@ -82,10 +82,12 @@ test('a report goes through review and its verdict reaches the extension and My 
 	await site.getByRole('button', { name: new RegExp(REPORTED.name) }).click();
 	await expect(site.getByRole('heading', { level: 2, name: REPORTED.name })).toBeVisible();
 	await expect(site.getByText(REASON)).toBeVisible();
-	await site.locator('label.verdict-option').filter({ has: site.getByRole('radio', { name: 'Slop', exact: true }) }).click();
-	// Slop needs AI evidence; staff record what they saw on the channel.
+	// Slop needs AI evidence, so the console keeps it locked until staff record what they saw on the channel.
+	const slop = site.getByRole('radio', { name: 'Slop', exact: true });
+	await expect(slop).toBeDisabled();
 	await site.locator('label.uin-checkbox', { hasText: 'The platform labels it AI-generated' }).click();
 	await site.locator('label.uin-checkbox', { hasText: 'One template across titles and thumbnails' }).click();
+	await site.locator('label.verdict-option').filter({ has: slop }).click();
 	await site.getByLabel('Reason').fill(DECISION);
 	const before = await listSequence();
 	await site.getByRole('button', { name: 'Review decision' }).click();
