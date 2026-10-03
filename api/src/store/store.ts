@@ -5,9 +5,12 @@
 import { DurableObject } from 'cloudflare:workers';
 import { b64decode } from '@colander/shared/bytes';
 import { SigningKey } from '@colander/shared/signing';
+import { dump } from '../backup';
+import { devRoutes, testNow } from '../dev';
 import { jsonError, notFound, ROUTE_HEADER, setCache } from '../http';
 import { Jobs, prune, STATUS, type DumpStatus, type PassStatus, type PublishStatus } from '../jobs';
 import { Publisher, r2Sequence } from '../list/publisher';
+import { storeOps, type OpsArgs } from '../ops';
 import { Engine } from '../scoring/engine';
 import { Db } from './db';
 import { latestSequence, setListRequests, SNAPSHOT_KEY, type Sequence } from './list';
@@ -60,10 +63,14 @@ export class Store extends DurableObject<Env> {
 	constructor(ctx: DurableObjectState, env: Env) {
 		super(ctx, env);
 		this.db = new Db(ctx.storage);
-		this.jobs = new Jobs(this.db, ctx.storage, ctx.id.name === 'primary');
+		// The parity harness freezes the clock and settles the jobs itself (src/dev.ts).
+		const frozen = testNow(env);
+		if (frozen !== undefined) this.now = () => frozen;
+		this.jobs = new Jobs(this.db, ctx.storage, ctx.id.name === 'primary' && frozen === undefined);
 		this.publisher = new Publisher(this.db, env.LISTS, this.signingKey);
 		this.jobs.definePublish((now) => this.publisher.publish(now));
 		this.jobs.define('prune', (_, now) => prune(this.db, now), (now) => now);
+		this.jobs.defineDump(async (now) => void (await dump(ctx, this.db, env.BACKUPS, now)));
 		// Scoring (Go's Engine.Run): the full pass every 5 minutes in chunks, and the debounced rescore
 		// of the sources the routes hand to jobs.touch() after reports and appeal changes.
 		this.engine = new Engine(this.db, this.jobs, () => this.now());
@@ -90,6 +97,7 @@ export class Store extends DurableObject<Env> {
 		// The port adds the rest of the API here, and dev-only /__dev/* routes, which the edge
 		// forwards only when COLANDER_DEV=1.
 		this.routes = [
+			...devRoutes(this, ctx, env).map(([method, pattern, handler]) => route(method, pattern, handler)),
 			route('GET', '/v1/list/delta', (_, url) => this.listDelta(url)),
 			route('GET', '/v1/list/snapshot', () => this.listSnapshot())
 		];
@@ -170,6 +178,12 @@ export class Store extends DurableObject<Env> {
 		this.ctx.storage.kv.put(STATUS.alerts, keys);
 	}
 
+	/** The ops channel's commands that run in the Store (src/ops.ts), with JSON arguments and answer. */
+	async ops(command: string, args: string): Promise<{ status: number; json: string }> {
+		const a = await storeOps(this, this.ctx, this.env, command, JSON.parse(args) as OpsArgs);
+		return { status: a.status, json: JSON.stringify(a.body) };
+	}
+
 	/** The hourly analytics pull: list requests per unix hour, replacing what was there. */
 	setListRequests(counts: { hour: number; count: number }[]): void {
 		this.db.tx(() => {
@@ -177,7 +191,7 @@ export class Store extends DurableObject<Env> {
 		});
 	}
 
-	private signingKey = (): Promise<SigningKey> =>
+	readonly signingKey = (): Promise<SigningKey> =>
 		(this.key ??= SigningKey.fromSeed(b64decode(this.env.COLANDER_SIGNING_KEY)).catch((err) => {
 			this.key = undefined;
 			throw err;

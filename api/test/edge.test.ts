@@ -1,7 +1,7 @@
 // The edge Worker through its fetch handler: list endpoints and their cache headers, CORS,
 // `since` checks, the miss limiter, the ops guard, dev routes and what reaches the Store and logs.
 import { env, exports } from 'cloudflare:workers';
-import { runInDurableObject } from 'cloudflare:test';
+import { createExecutionContext, runInDurableObject } from 'cloudflare:test';
 import { afterEach, beforeEach, describe, expect, inject, it, vi } from 'vitest';
 import { b64decode, hex } from '@colander/shared/bytes';
 import { encodeEntry, ENTRY, HEADER, verifyList } from '@colander/shared/list';
@@ -27,7 +27,7 @@ const get = (path: string, init?: RequestInit) => exports.default.fetch(new Requ
 /** Calls the handler directly, for an env that differs from the configured one. */
 const IncomingRequest = Request<unknown, IncomingRequestCfProperties>;
 const getWith = (overrides: Partial<Env>, path: string, init?: RequestInit<IncomingRequestCfProperties>) =>
-	worker.fetch(new IncomingRequest(ORIGIN + path, withClient(init) as RequestInit<IncomingRequestCfProperties>), { ...env, ...overrides });
+	worker.fetch(new IncomingRequest(ORIGIN + path, withClient(init) as RequestInit<IncomingRequestCfProperties>), { ...env, ...overrides }, createExecutionContext());
 const primary = () => env.STORE.getByName('primary');
 
 const LIST_CLIENT = 'public, max-age=60';
@@ -291,9 +291,9 @@ describe('/ops/*', () => {
 		expect(none.headers.get('WWW-Authenticate')).toBe('Bearer');
 		expect((await get('/ops/status', { headers: { Authorization: 'Bearer wrong' } })).status).toBe(401);
 		expect((await get('/ops/status', { headers: { Authorization: 'test-ops-token' } })).status).toBe(401);
-		const ok = await get('/ops/status', { method: 'POST', headers: { Authorization: 'Bearer test-ops-token' } });
-		expect(ok.status).toBe(404);
-		expect(((await ok.json()) as { error: { code: string } }).error.code).toBe('unknown_command');
+		const ok = await get('/ops/status', { method: 'POST', headers: { Authorization: 'Bearer test-ops-token' }, body: '{}' });
+		expect(ok.status).toBe(200);
+		expect(await ok.json()).toHaveProperty('head_seq');
 	});
 
 	it('is closed when no token is configured', async () => {
@@ -304,11 +304,14 @@ describe('/ops/*', () => {
 describe('/__dev/*', () => {
 	it('reaches the Store router in dev mode', async () => {
 		const store = vi.spyOn(Store.prototype, 'fetch');
-		const res = await get('/__dev/seed', { method: 'POST' });
+		const res = await get('/__dev/dump');
 		expect(store).toHaveBeenCalledOnce();
-		// No dev route is ported yet, so the Store answers with its JSON 404.
-		expect(res.status).toBe(404);
-		expect(res.headers.get('Content-Type')).toBe('application/json');
+		expect(res.status).toBe(200);
+		expect(res.headers.get('Content-Type')).toBe('application/sql; charset=utf-8');
+		expect(res.headers.get('Cache-Control')).toBe('no-store');
+		const notThere = await get('/__dev/nothing');
+		expect(notThere.status).toBe(404);
+		expect(notThere.headers.get('Content-Type')).toBe('application/json');
 	});
 
 	it('does not exist otherwise: the site answers as for any unknown path', async () => {

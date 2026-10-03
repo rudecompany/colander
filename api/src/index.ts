@@ -3,7 +3,9 @@
 // misses. It answers preflights, checks `since`, rate-limits misses per salted IP hash, serves
 // snapshot misses from R2 (from the Store while R2 has none) and forwards the rest of /v1 to the
 // Store. The cron triggers run src/scheduled.ts.
+import { testNow } from './dev';
 import { finish, IP_HASH_HEADER, isCorsPath, json, jsonError, notFound, preflight, ROUTE_HEADER, setCache, tooMany } from './http';
+import { ops as runOps } from './ops';
 import { scheduled } from './scheduled';
 import { SNAPSHOT_KEY } from './store/list';
 import { primary } from './store/store';
@@ -23,12 +25,12 @@ interface Handled {
 
 export default {
 	scheduled,
-	async fetch(request, env): Promise<Response> {
+	async fetch(request, env, ctx): Promise<Response> {
 		const started = Date.now();
 		const url = new URL(request.url);
 		let handled: Handled;
 		try {
-			handled = await handle(request, url, env);
+			handled = await handle(request, url, env, ctx);
 		} catch (err) {
 			const route = `${request.method} (error)`;
 			console.error(JSON.stringify({ message: 'internal error', route, error: String(err) }));
@@ -40,7 +42,7 @@ export default {
 	}
 } satisfies ExportedHandler<Env>;
 
-async function handle(request: Request, url: URL, env: Env): Promise<Handled> {
+async function handle(request: Request, url: URL, env: Env, ctx: ExecutionContext): Promise<Handled> {
 	const path = url.pathname;
 	const method = request.method;
 	if (method === 'OPTIONS' && path.startsWith('/v1/')) {
@@ -56,14 +58,14 @@ async function handle(request: Request, url: URL, env: Env): Promise<Handled> {
 
 	const read = method === 'GET' || method === 'HEAD';
 	if (path === '/healthz' && read) return { route: 'GET /healthz', res: await health(env) };
-	if (path === '/ops' || path.startsWith('/ops/')) return { route: `${method} /ops/*`, res: await ops(request, env) };
+	if (path === '/ops' || path.startsWith('/ops/')) return { route: `${method} /ops/*`, res: await ops(request, env, ctx) };
 	if (path === '/v1/list/snapshot' && read) {
 		const res = await snapshot(env);
 		// Before the first publication reaches R2, or if the object is lost, the Store serves its head.
 		if (res) return { route: 'GET /v1/list/snapshot', res };
 	}
 	if (path === '/v1/list/delta' && read) {
-		const bad = checkSince(url.search, Date.now());
+		const bad = checkSince(url.search, testNow(env) ?? Date.now());
 		if (bad) return { route: 'GET /v1/list/delta', res: bad };
 	}
 	if (path.startsWith('/v1/') || path.startsWith('/__dev/')) return forward(request, env, ipHash);
@@ -135,13 +137,13 @@ async function forward(request: Request, env: Env, ipHash: string): Promise<Hand
 	}
 }
 
-/** The ops channel: GitHub workflows post here with OPS_TOKEN. Commands arrive with the port. */
-async function ops(request: Request, env: Env): Promise<Response> {
+/** The ops channel: GitHub workflows post here with OPS_TOKEN; src/ops.ts runs the commands. */
+async function ops(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
 	if (!env.OPS_TOKEN) return jsonError(503, 'ops_unavailable', 'The ops channel is not configured.');
 	if (!(await sameSecret(request.headers.get('Authorization') ?? '', `Bearer ${env.OPS_TOKEN}`))) {
 		return jsonError(401, 'unauthorized', 'A valid ops token is required.', { 'WWW-Authenticate': 'Bearer' });
 	}
-	return jsonError(404, 'unknown_command', 'There is no ops command at this path.');
+	return runOps(request, env, ctx.cache);
 }
 
 /** Constant-time comparison: both sides are hashed first so their lengths match. */
