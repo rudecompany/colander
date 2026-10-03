@@ -231,3 +231,35 @@ func TestReputationIgnoresPlanState(t *testing.T) {
 		t.Fatal("weights differ")
 	}
 }
+
+// Run rescores touched sources after the debounce: three open reports raise an escalation
+// without waiting for the next full pass.
+func TestRunRescoresTouchedSources(t *testing.T) {
+	f := newFixture(t)
+	f.eng.Th.PassInterval, f.eng.Th.Debounce = time.Hour, 10*time.Millisecond
+	ctx, cancel := context.WithCancel(f.ctx)
+	done := make(chan struct{})
+	go func() {
+		f.eng.Run(ctx)
+		close(done)
+	}()
+	defer func() {
+		cancel()
+		<-done
+	}()
+	for i := range 3 {
+		rp, _, err := f.st.CreateReport(f.ctx, store.ReportInput{InstallHash: fmt.Sprintf("i%d", i), ClientID: "r",
+			Platform: "yt", SourceID: "@farm", Reason: "Generated narration.", Examples: []string{}}, f.clock.Unix())
+		if err != nil {
+			t.Fatal(err)
+		}
+		f.eng.Touch(rp.SourceRef)
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for !f.escalations()["reports"] {
+		if time.Now().After(deadline) {
+			t.Fatal("no reports escalation after the debounce")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}

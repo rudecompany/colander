@@ -95,11 +95,16 @@ func (s *Store) UseMagicLink(ctx context.Context, tokenHash string, now int64) (
 	return s.AccountByEmail(ctx, email)
 }
 
-// CreateSession stores a hashed session token.
+// CreateSession stores a hashed session token and drops expired sessions.
 func (s *Store) CreateSession(ctx context.Context, tokenHash, accountID string, now, expires int64) error {
-	_, err := s.DB.ExecContext(ctx, `INSERT INTO sessions (token_hash, account_id, created_at, expires_at) VALUES (?, ?, ?, ?)`,
-		tokenHash, accountID, now, expires)
-	return err
+	return s.Tx(ctx, func(tx *sql.Tx) error {
+		if _, err := tx.ExecContext(ctx, `DELETE FROM sessions WHERE expires_at <= ?`, now); err != nil {
+			return err
+		}
+		_, err := tx.ExecContext(ctx, `INSERT INTO sessions (token_hash, account_id, created_at, expires_at) VALUES (?, ?, ?, ?)`,
+			tokenHash, accountID, now, expires)
+		return err
+	})
 }
 
 // SessionAccount returns the account behind an unexpired session.
