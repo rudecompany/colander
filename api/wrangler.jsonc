@@ -56,7 +56,14 @@
 		// The watchdog's recipient: exactly the ALERTS destination_address above.
 		"ALERT_ADDRESS": "ops-alerts@getcolander.com",
 		// The getcolander.com zone ID, for the hourly list request count. Empty skips that pull.
-		"CF_ZONE_ID": ""
+		"CF_ZONE_ID": "",
+		// Sender of sign-in, appeal and billing mail, on the domain onboarded to Email Sending (and Resend).
+		"COLANDER_MAIL_FROM": "Colander <hello@getcolander.com>",
+		// Price IDs of the $3 monthly and $30 yearly Plus prices; checkout answers 503 until they are set.
+		"STRIPE_PRICE_PLUS_MONTHLY": "",
+		"STRIPE_PRICE_PLUS_YEARLY": "",
+		// Plus checkout with Stripe Managed Payments as merchant of record; "0" turns it off.
+		"STRIPE_MANAGED_PAYMENTS": ""
 	},
 	"secrets": { "required": ["COLANDER_SIGNING_KEY", "IP_SALT", "OPS_TOKEN"] },
 	"env": {
@@ -80,7 +87,11 @@
 				"PUBLIC_URL": "https://staging.getcolander.com",
 				"COLANDER_DEV": "",
 				"ALERT_ADDRESS": "ops-alerts@getcolander.com",
-				"CF_ZONE_ID": ""
+				"CF_ZONE_ID": "",
+				"COLANDER_MAIL_FROM": "Colander <hello@getcolander.com>",
+				"STRIPE_PRICE_PLUS_MONTHLY": "",
+				"STRIPE_PRICE_PLUS_YEARLY": "",
+				"STRIPE_MANAGED_PAYMENTS": ""
 			},
 			"secrets": { "required": ["COLANDER_SIGNING_KEY", "IP_SALT", "OPS_TOKEN"] }
 		}
