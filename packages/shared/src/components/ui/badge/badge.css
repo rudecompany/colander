@@ -1,0 +1,48 @@
+/* Badge — see ./badge.svelte. */
+
+.uin-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border-radius: 999px;
+  font-family: var(--uin-font-ui);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  border: 1px solid transparent;
+  white-space: nowrap;
+}
+.uin-badge-sm {
+  padding: 1px 7px;
+  font-size: 10.5px;
+}
+.uin-badge-md {
+  padding: 2px 9px;
+  font-size: 11.5px;
+}
+
+.uin-badge-neutral {
+  background: color-mix(in srgb, var(--uin-fg) 6%, transparent);
+  color: var(--uin-fg-dim);
+}
+.uin-badge-accent {
+  background: color-mix(in srgb, var(--uin-accent) 14%, transparent);
+  color: var(--uin-accent);
+}
+.uin-badge-success {
+  background: color-mix(in srgb, var(--uin-success) 18%, transparent);
+  color: color-mix(in srgb, var(--uin-success) 70%, var(--uin-fg));
+}
+.uin-badge-warn {
+  background: color-mix(in srgb, var(--uin-warn) 22%, transparent);
+  color: color-mix(in srgb, var(--uin-warn) 50%, var(--uin-fg));
+}
+.uin-badge-danger {
+  background: color-mix(in srgb, var(--uin-danger) 18%, transparent);
+  color: var(--uin-danger);
+}
+.uin-badge-outline {
+  background: transparent;
+  border-color: var(--uin-line);
+  color: var(--uin-fg-mute);
+}

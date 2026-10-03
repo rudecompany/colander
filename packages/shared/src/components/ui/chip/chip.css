@@ -1,0 +1,46 @@
+/* Chip — see ./chip.svelte. */
+
+.uin-chip {
+  -webkit-app-region: no-drag;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 9px;
+  border: 1px solid var(--uin-line);
+  background: var(--uin-mat-row);
+  color: var(--uin-fg-mute);
+  border-radius: 999px;
+  font-family: var(--uin-font-ui);
+  font-size: 11px;
+  font-weight: 500;
+  cursor: default;
+  transition:
+    background-color var(--uin-dur-1) var(--uin-ease-standard),
+    color var(--uin-dur-1) var(--uin-ease-standard),
+    border-color var(--uin-dur-1) var(--uin-ease-standard);
+}
+button.uin-chip:hover:not(:disabled):not(.uin-chip-active) {
+  background: var(--uin-mat-hover);
+  color: var(--uin-fg);
+}
+button.uin-chip:focus-visible {
+  outline: none;
+  box-shadow: var(--uin-focus-ring);
+  border-color: transparent;
+}
+button.uin-chip:disabled {
+  opacity: 0.4;
+}
+.uin-chip-active {
+  background: color-mix(in srgb, var(--uin-accent) 14%, transparent);
+  border-color: color-mix(in srgb, var(--uin-accent) 36%, transparent);
+  color: var(--uin-fg);
+}
+.uin-chip-count {
+  font-size: 10px;
+  color: var(--uin-fg-dim);
+  font-variant-numeric: tabular-nums;
+}
+.uin-chip-active .uin-chip-count {
+  color: var(--uin-accent);
+}

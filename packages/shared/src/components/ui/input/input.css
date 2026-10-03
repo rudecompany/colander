@@ -1,0 +1,97 @@
+/* Input — see ./input.svelte. */
+
+.uin-input {
+  -webkit-app-region: no-drag;
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 100%;
+}
+
+.uin-input-el {
+  width: 100%;
+  background: var(--uin-mat-row);
+  border: 1px solid var(--uin-line);
+  color: var(--uin-fg);
+  font-family: var(--uin-font-ui);
+  font-size: 13px;
+  text-overflow: ellipsis;
+  transition:
+    border-color var(--uin-dur-1) var(--uin-ease-standard),
+    background-color var(--uin-dur-1) var(--uin-ease-standard);
+}
+.uin-input-el:focus {
+  outline: none;
+  border-color: transparent;
+  box-shadow: var(--uin-focus-ring);
+  background: var(--uin-bg-panel);
+}
+.uin-input-el::placeholder {
+  color: var(--uin-fg-dim);
+}
+.uin-input-el::-webkit-search-cancel-button,
+.uin-input-el::-webkit-search-decoration {
+  -webkit-appearance: none;
+  appearance: none;
+  display: none;
+}
+.uin-input-el:disabled {
+  opacity: 0.55;
+  pointer-events: none;
+}
+
+/* Sizes */
+.uin-input-md .uin-input-el {
+  height: 30px;
+  padding: 0 12px;
+}
+.uin-input-sm .uin-input-el {
+  height: 24px;
+  padding: 0 10px;
+  font-size: 12px;
+}
+
+/* Shapes */
+.uin-input-pill .uin-input-el {
+  border-radius: 999px;
+}
+.uin-input-rounded .uin-input-el {
+  border-radius: var(--uin-r-sm);
+}
+.uin-input-square .uin-input-el {
+  border-radius: 0;
+}
+
+/* Adornment padding adjustments */
+.uin-input-has-leading.uin-input-md .uin-input-el {
+  padding-left: 36px;
+}
+.uin-input-has-leading.uin-input-sm .uin-input-el {
+  padding-left: 30px;
+}
+.uin-input-has-trailing.uin-input-md .uin-input-el {
+  padding-right: 56px;
+}
+.uin-input-has-trailing.uin-input-sm .uin-input-el {
+  padding-right: 44px;
+}
+
+.uin-input-leading,
+.uin-input-trailing {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  display: inline-flex;
+  align-items: center;
+  color: var(--uin-fg-dim);
+}
+.uin-input-leading {
+  left: 12px;
+  pointer-events: none;
+}
+.uin-input-trailing {
+  right: 8px;
+}
+.uin-input-sm .uin-input-leading {
+  left: 10px;
+}

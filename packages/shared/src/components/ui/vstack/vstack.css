@@ -1,0 +1,27 @@
+/* VStack — see ./vstack.svelte. */
+
+.uin-vstack {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.uin-vstack-gap-0 { gap: 0; }
+.uin-vstack-gap-1 { gap: var(--uin-s-1); }
+.uin-vstack-gap-2 { gap: var(--uin-s-2); }
+.uin-vstack-gap-3 { gap: var(--uin-s-3); }
+.uin-vstack-gap-4 { gap: var(--uin-s-4); }
+.uin-vstack-gap-5 { gap: var(--uin-s-5); }
+.uin-vstack-gap-6 { gap: var(--uin-s-6); }
+.uin-vstack-gap-7 { gap: var(--uin-s-7); }
+.uin-vstack-gap-8 { gap: var(--uin-s-8); }
+
+.uin-vstack-align-start    { align-items: flex-start; }
+.uin-vstack-align-center   { align-items: center; }
+.uin-vstack-align-end      { align-items: flex-end; }
+.uin-vstack-align-stretch  { align-items: stretch; }
+
+.uin-vstack-justify-start    { justify-content: flex-start; }
+.uin-vstack-justify-center   { justify-content: center; }
+.uin-vstack-justify-end      { justify-content: flex-end; }
+.uin-vstack-justify-between  { justify-content: space-between; }

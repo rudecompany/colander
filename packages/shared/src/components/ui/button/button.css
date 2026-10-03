@@ -1,0 +1,81 @@
+/* Button — see ./button.svelte for the markup. */
+
+.uin-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--uin-s-2);
+  border: 1px solid transparent;
+  border-radius: var(--uin-r-sm);
+  font-family: var(--uin-font-ui);
+  font-weight: 500;
+  cursor: default;
+  user-select: none;
+  -webkit-app-region: no-drag;
+  transition:
+    background-color var(--uin-dur-1) var(--uin-ease-standard),
+    border-color var(--uin-dur-1) var(--uin-ease-standard),
+    color var(--uin-dur-1) var(--uin-ease-standard),
+    filter var(--uin-dur-1) var(--uin-ease-standard),
+    transform var(--uin-dur-1) var(--uin-ease-standard);
+}
+.uin-btn:focus-visible {
+  outline: none;
+  box-shadow: var(--uin-focus-ring);
+}
+.uin-btn:disabled {
+  opacity: 0.45;
+  pointer-events: none;
+}
+
+/* Sizes */
+.uin-btn-md {
+  height: 30px;
+  padding: 0 14px;
+  font-size: 13px;
+}
+.uin-btn-sm {
+  height: 24px;
+  padding: 0 10px;
+  font-size: 12px;
+}
+.uin-btn-icon {
+  padding: 0;
+  width: 30px;
+  height: 30px;
+}
+.uin-btn-icon.uin-btn-sm {
+  width: 24px;
+  height: 24px;
+}
+
+/* Variants */
+.uin-btn-primary {
+  background: var(--uin-accent);
+  color: var(--uin-accent-fg);
+  box-shadow: 0 1px 0 color-mix(in srgb, var(--uin-accent) 40%, transparent);
+}
+.uin-btn-primary:hover:not(:disabled) {
+  filter: brightness(1.06);
+}
+.uin-btn-primary:active:not(:disabled) {
+  transform: translateY(0.5px);
+}
+
+.uin-btn-ghost {
+  background: transparent;
+  color: var(--uin-fg-mute);
+}
+.uin-btn-ghost:hover:not(:disabled) {
+  background: var(--uin-mat-hover);
+  color: var(--uin-fg);
+}
+
+.uin-btn-outline {
+  background: var(--uin-mat-panel);
+  border-color: var(--uin-line-strong);
+  color: var(--uin-fg);
+}
+.uin-btn-outline:hover:not(:disabled) {
+  background: var(--uin-mat-hover);
+}

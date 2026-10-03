@@ -1,0 +1,45 @@
+/* NativeSelect — see ./native-select.svelte. */
+
+.uin-nselect {
+  position: relative;
+  display: inline-block;
+  width: 100%;
+}
+
+.uin-nselect-el {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  background: var(--uin-mat-row);
+  border: 1px solid var(--uin-line);
+  border-radius: var(--uin-r-sm);
+  color: var(--uin-fg);
+  font-family: var(--uin-font-ui);
+  cursor: pointer;
+  text-align: left;
+  transition:
+    border-color var(--uin-dur-1) var(--uin-ease-standard);
+}
+.uin-nselect-el:hover { border-color: var(--uin-line-strong); }
+.uin-nselect-el:focus-visible {
+  outline: none;
+  border-color: var(--uin-accent);
+  box-shadow: var(--uin-focus-ring);
+}
+
+.uin-nselect-md .uin-nselect-el { height: 30px; padding: 0 28px 0 var(--uin-s-3); font-size: 13px; }
+.uin-nselect-sm .uin-nselect-el { height: 24px; padding: 0 24px 0 10px; font-size: 12px; }
+
+.uin-nselect-chev {
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--uin-fg-mute);
+  pointer-events: none;
+}
+
+.uin-nselect-disabled .uin-nselect-el {
+  opacity: 0.5;
+  cursor: not-allowed;
+}

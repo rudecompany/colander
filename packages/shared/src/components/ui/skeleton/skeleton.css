@@ -1,0 +1,42 @@
+/* Skeleton — see ./skeleton.svelte. */
+
+.uin-skeleton {
+  background: var(--uin-mat-hover);
+  animation: uin-skeleton-pulse 1.5s ease-in-out infinite;
+}
+
+.uin-skeleton-rect {
+  border-radius: var(--uin-r-sm);
+  height: 1em;
+  width: 100%;
+}
+
+.uin-skeleton-text {
+  border-radius: 999px;
+  height: 0.75em;
+  width: 100%;
+}
+
+.uin-skeleton-circle {
+  border-radius: 50%;
+  aspect-ratio: 1;
+  width: 32px;
+  height: 32px;
+}
+
+@keyframes uin-skeleton-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.55;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .uin-skeleton {
+    animation: none;
+    opacity: 0.75;
+  }
+}

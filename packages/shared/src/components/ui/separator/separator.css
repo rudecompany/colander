@@ -1,0 +1,28 @@
+/* Separator — see ./separator.svelte. */
+
+.uin-sep {
+  border: 0;
+  background: var(--uin-line);
+  flex-shrink: 0;
+}
+.uin-sep-h {
+  width: 100%;
+  height: 1px;
+  margin: var(--uin-s-2) 0;
+}
+.uin-sep-v {
+  width: 1px;
+  height: auto;
+  align-self: stretch;
+  margin: 0 var(--uin-s-2);
+}
+.uin-sep-dashed {
+  background: transparent;
+  border-top: 1px dashed var(--uin-line);
+  height: 0;
+}
+.uin-sep-v.uin-sep-dashed {
+  border-top: 0;
+  border-left: 1px dashed var(--uin-line);
+  width: 0;
+}

@@ -1,0 +1,13 @@
+/* Container — see ./container.svelte. */
+
+.uin-container {
+  width: 100%;
+  margin-inline: auto;
+  padding-inline: var(--uin-s-4);
+}
+
+.uin-container-sm   { max-width: 640px; }
+.uin-container-md   { max-width: 768px; }
+.uin-container-lg   { max-width: 1024px; }
+.uin-container-xl   { max-width: 1280px; }
+.uin-container-full { max-width: none; }

@@ -1,0 +1,30 @@
+/* Textarea — see ./textarea.svelte. */
+
+.uin-textarea {
+  width: 100%;
+  background: var(--uin-mat-row);
+  border: 1px solid var(--uin-line);
+  color: var(--uin-fg);
+  font-family: var(--uin-font-ui);
+  font-size: 13px;
+  line-height: 1.5;
+  padding: 8px 12px;
+  border-radius: var(--uin-r-sm);
+  resize: vertical;
+  transition:
+    border-color var(--uin-dur-1) var(--uin-ease-standard),
+    background-color var(--uin-dur-1) var(--uin-ease-standard);
+}
+.uin-textarea:focus {
+  outline: none;
+  border-color: transparent;
+  box-shadow: var(--uin-focus-ring);
+  background: var(--uin-bg-panel);
+}
+.uin-textarea::placeholder {
+  color: var(--uin-fg-dim);
+}
+.uin-textarea:disabled {
+  opacity: 0.55;
+  pointer-events: none;
+}

@@ -1,0 +1,25 @@
+/* Popover — see ./popover.svelte. */
+
+.uin-popover {
+  background: var(--uin-mat-panel);
+  border: 1px solid var(--uin-line);
+  border-radius: var(--uin-r-md);
+  box-shadow: 0 8px 28px color-mix(in srgb, #000 22%, transparent);
+  padding: var(--uin-s-3);
+  font-size: 13px;
+  color: var(--uin-fg);
+  -webkit-backdrop-filter: blur(20px) saturate(1.4);
+  backdrop-filter: blur(20px) saturate(1.4);
+  z-index: 60;
+  max-width: 320px;
+  animation: uin-popover-in var(--uin-dur-1) var(--uin-ease-standard);
+}
+
+.uin-popover:focus-visible {
+  outline: none;
+}
+
+@keyframes uin-popover-in {
+  from { opacity: 0; transform: scale(0.97); }
+  to { opacity: 1; transform: scale(1); }
+}

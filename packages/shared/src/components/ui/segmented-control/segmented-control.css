@@ -1,0 +1,55 @@
+/* SegmentedControl — see ./segmented-control.svelte. */
+
+.uin-seg {
+  display: inline-flex;
+  border: 1px solid var(--uin-line);
+  border-radius: var(--uin-r-sm);
+  background: var(--uin-mat-row);
+  overflow: hidden;
+  -webkit-app-region: no-drag;
+}
+.uin-seg-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: 0;
+  background: transparent;
+  color: var(--uin-fg-mute);
+  font-family: var(--uin-font-ui);
+  font-weight: 500;
+  cursor: default;
+  transition:
+    background-color var(--uin-dur-1) var(--uin-ease-standard),
+    color var(--uin-dur-1) var(--uin-ease-standard);
+}
+.uin-seg-sm .uin-seg-btn {
+  padding: 3px 8px;
+  font-size: 11px;
+}
+.uin-seg-md .uin-seg-btn {
+  padding: 4px 10px;
+  font-size: 11.5px;
+}
+.uin-seg-btn + .uin-seg-btn {
+  border-left: 1px solid var(--uin-line);
+}
+.uin-seg-btn:hover:not(.uin-seg-btn-active):not(:disabled) {
+  background: var(--uin-mat-hover);
+  color: var(--uin-fg);
+}
+.uin-seg-btn-active {
+  background: color-mix(in srgb, var(--uin-accent) 14%, transparent);
+  color: var(--uin-accent);
+}
+.uin-seg-btn:focus-visible {
+  outline: none;
+  box-shadow: var(--uin-focus-ring);
+  border-radius: var(--uin-r-sm);
+}
+.uin-seg-btn:disabled {
+  opacity: 0.4;
+}
+.uin-seg-icon {
+  display: inline-flex;
+  align-items: center;
+}

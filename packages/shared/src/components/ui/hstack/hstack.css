@@ -1,0 +1,31 @@
+/* HStack — see ./hstack.svelte. */
+
+.uin-hstack {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  min-width: 0;
+}
+
+.uin-hstack-wrap { flex-wrap: wrap; }
+
+.uin-hstack-gap-0 { gap: 0; }
+.uin-hstack-gap-1 { gap: var(--uin-s-1); }
+.uin-hstack-gap-2 { gap: var(--uin-s-2); }
+.uin-hstack-gap-3 { gap: var(--uin-s-3); }
+.uin-hstack-gap-4 { gap: var(--uin-s-4); }
+.uin-hstack-gap-5 { gap: var(--uin-s-5); }
+.uin-hstack-gap-6 { gap: var(--uin-s-6); }
+.uin-hstack-gap-7 { gap: var(--uin-s-7); }
+.uin-hstack-gap-8 { gap: var(--uin-s-8); }
+
+.uin-hstack-align-start    { align-items: flex-start; }
+.uin-hstack-align-center   { align-items: center; }
+.uin-hstack-align-end      { align-items: flex-end; }
+.uin-hstack-align-stretch  { align-items: stretch; }
+.uin-hstack-align-baseline { align-items: baseline; }
+
+.uin-hstack-justify-start    { justify-content: flex-start; }
+.uin-hstack-justify-center   { justify-content: center; }
+.uin-hstack-justify-end      { justify-content: flex-end; }
+.uin-hstack-justify-between  { justify-content: space-between; }

@@ -1,0 +1,22 @@
+/* Field — see ./field.svelte. */
+
+.uin-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.uin-field-desc {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--uin-fg-mute);
+}
+
+.uin-field-error {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--uin-danger);
+}
