@@ -189,8 +189,10 @@ svg { display: block; flex: none; }
 .check .d { display: block; color: var(--muted); font-size: 12px; line-height: 16px; }
 
 /* Why popover: five lines at most. */
-.why-sig { margin: 0; padding: 0; list-style: none; }
-.why-sig li { display: flex; gap: 6px; align-items: baseline; }
+.why-sig { display: flex; gap: 6px; align-items: baseline; }
+.why-sig ul { margin: 0; padding: 0; list-style: none; }
+.why-sig li { display: inline; }
+.why-sig li + li::before { content: ' · ' / ''; color: var(--muted); }
 .why-src { margin-top: 4px; color: var(--muted); font-size: 12px; line-height: 16px; }
 .why-links { display: flex; flex-wrap: wrap; gap: 4px 12px; margin-top: 4px; font-size: 12px; line-height: 16px; }
 .why-links a { color: var(--brand); text-decoration: underline; text-underline-offset: 2px; border-radius: 2px; }

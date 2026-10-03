@@ -363,24 +363,28 @@ export class Layer {
 				listLine = 'The platform’s own label';
 				break;
 			default: {
-				for (const s of d.signals.slice(0, 2)) lines.push(SIGNAL_TEXT[s]);
+				// Every signal that fired (safeguard 5), as one wrapping line so the popover keeps to five.
+				for (const s of d.signals) lines.push(SIGNAL_TEXT[s]);
 				const hit = d.hit;
 				listLine = hit ? `Core list, updated ${formatDate(dayToDate(hit.updated))}${hit.imported ? ', imported and not yet reviewed' : ''}` : 'Core list';
 			}
 		}
 		const sourceId = v.sourceId;
-		const fromList = d.reason === 'item_list' || d.reason === 'source_list' || d.reason === 'platform_label';
+		// Only a list verdict can be appealed; the server knows nothing to appeal for a platform label.
+		const listed = d.reason === 'item_list' || d.reason === 'source_list';
 		const links =
-			fromList && sourceId
+			(listed || d.reason === 'platform_label') && sourceId
 				? h(
 						'div',
 						{ class: 'why-links' },
 						h('a', { href: `${SITE}/s/${v.platform}/${idSegment(sourceId)}`, target: '_blank', rel: 'noopener' }, 'Source page'),
-						h(
-							'a',
-							{ href: `${SITE}/appeal/${v.platform}/${idSegment(sourceId)}`, target: '_blank', rel: 'noopener' },
-							`Is this your ${SOURCE_NOUN[v.platform]}? Appeal this verdict.`
-						)
+						listed
+							? h(
+									'a',
+									{ href: `${SITE}/appeal/${v.platform}/${idSegment(sourceId)}`, target: '_blank', rel: 'noopener' },
+									`Is this your ${SOURCE_NOUN[v.platform]}? Appeal this verdict.`
+								)
+							: null
 					)
 				: null;
 		const actions = h('div', { class: 'why-actions' });
@@ -396,7 +400,7 @@ export class Layer {
 				h('h2', { id: titleId }, title),
 				h('button', { type: 'button', class: 'close', 'aria-label': 'Close', onclick: () => this.closePop(true) }, icon(X, 16))
 			),
-			h('ul', { class: 'why-sig' }, ...lines.map((l) => h('li', {}, d.verdict ? glyph(d.verdict, 12) : icon(Info, 12), h('span', {}, l)))),
+			h('div', { class: 'why-sig' }, d.verdict ? glyph(d.verdict, 12) : icon(Info, 12), h('ul', { 'aria-label': 'Signals' }, ...lines.map((l) => h('li', {}, l)))),
 			h('p', { class: 'why-src' }, listLine),
 			links,
 			actions.childElementCount ? actions : null

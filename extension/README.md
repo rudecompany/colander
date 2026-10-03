@@ -106,7 +106,7 @@ Disputed is always labeled with its mark, and Clear is always allowed.
 
 Every card with a source gets a 28 px Tag button: shown on hover or keyboard focus in grids and lists, always in swipe feeds.
 Tag, then Slop, applies the tag at once (two clicks, P0-5); type and tests are optional after that.
-Why lists at most two signals, the list and its date, and links to the public source page and the appeal page.
+Why lists every signal that fired on one wrapping line, then the list and its date, and links to the public source page and, for list verdicts only, the appeal page (a platform label or your own tag has nothing to appeal).
 
 ## Storage layout
 
