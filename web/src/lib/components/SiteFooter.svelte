@@ -1,124 +1,189 @@
+<!--
+@component SiteFooter: the footer CTA (except on /s, /appeal, /console and /account), a
+perforation row, four link columns and a bottom row with the mark, the live list badge and the
+cookie line. Support links never appear on source or appeal pages: no creator is asked for money
+while their case is open.
+-->
 <script lang="ts">
 	import { page } from '$app/state';
 	import { PUBLIC_STORE_URL } from '$app/env/public';
-	import Heart from '@lucide/svelte/icons/heart';
-	import Wordmark from './Wordmark.svelte';
+	import { ColanderMark, LiveBadge, PerforationRow } from '@colander/shared';
+	import Button from '@colander/shared/components/ui/button/button.svelte';
+	import { live } from '#lib/live.svelte.ts';
+	import ArrowLink from './ArrowLink.svelte';
+	import SendToComputer from './SendToComputer.svelte';
 
-	// No creator is asked for money while their case is open: never on source or appeal pages.
-	const wide = $derived(page.url.pathname.startsWith('/console'));
-	const showSupport = $derived(!/^\/(s|appeal)(\/|$)/.test(page.url.pathname));
+	const path = $derived(page.url.pathname);
+	const creatorPage = $derived(/^\/(s|appeal)(\/|$)/.test(path));
+	const cta = $derived(!creatorPage && !/^\/(console|account)(\/|$)/.test(path));
+
+	const columns = $derived([
+		{
+			title: 'Product',
+			links: [
+				{ href: PUBLIC_STORE_URL, label: 'Add to Chrome' },
+				{ href: '/definition', label: 'How it decides' },
+				{ href: '/plans', label: 'Plans' },
+				...(creatorPage ? [] : [{ href: '/support', label: 'Support our work' }])
+			]
+		},
+		{
+			title: 'Openness',
+			links: [
+				{ href: '/log', label: 'Decision log' },
+				{ href: '/transparency', label: 'Transparency' },
+				...(creatorPage ? [] : [{ href: '/supporters', label: 'Supporters' }])
+			]
+		},
+		{
+			title: 'Help',
+			links: [
+				{ href: '/definition#appeals', label: 'Appeal a verdict' },
+				{ href: '/account', label: 'Account' },
+				{ href: '/privacy#contact', label: 'Contact' }
+			]
+		},
+		{
+			title: 'Legal',
+			links: [
+				{ href: '/privacy', label: 'Privacy' },
+				{ href: '/terms', label: 'Terms' }
+			]
+		}
+	]);
 </script>
 
 <footer class="site-footer">
-	<hr class="dot-rule" />
-	<div class="wrap grid" class:wrap-wide={wide}>
-		<div class="brand">
-			<Wordmark size={32} />
-			<p class="tagline">Drain the slop. Keep the substance.</p>
-			<p class="t-body muted">A Chrome extension that hides AI slop on YouTube, TikTok, Instagram and Facebook, from shared lists anyone can read.</p>
-			{#if showSupport}
-				<a class="uin-btn uin-btn-outline uin-btn-md support" href="/support">
-					<Heart size={16} strokeWidth={1.75} aria-hidden="true" />
-					<span>Support our work</span>
-				</a>
-			{/if}
-		</div>
-
-		<nav aria-label="Product">
-			<h2>Product</h2>
-			<ul>
-				<li><a href={PUBLIC_STORE_URL}>Add to Chrome</a></li>
-				<li><a href="/definition">How it decides</a></li>
-				<li><a href="/plans">Plans</a></li>
-				<li><a href="/account">Account</a></li>
-			</ul>
-		</nav>
-		<nav aria-label="Open records">
-			<h2>Open records</h2>
-			<ul>
-				<li><a href="/log">Decision log</a></li>
-				<li><a href="/transparency">Transparency</a></li>
-				{#if showSupport}<li><a href="/supporters">Supporters</a></li>{/if}
-				<li><a href="/definition#appeals">Appeals</a></li>
-			</ul>
-		</nav>
-		<nav aria-label="Policies">
-			<h2>Policies</h2>
-			<ul>
-				<li><a href="/privacy">Privacy</a></li>
-				<li><a href="/terms">Terms</a></li>
-				<li><a href="/transparency#independence">Independence rules</a></li>
-			</ul>
-		</nav>
+	{#if cta}
+		<section class="cta" aria-labelledby="footer-cta">
+			<PerforationRow />
+			<div class="cl-container cta-in">
+				<h2 class="cl-display-lg" id="footer-cta">Install once. <span class="cl-tone2">Change nothing.</span></h2>
+				<div class="cta-btn desktop">
+					<Button variant="primary" size="xxl" href={PUBLIC_STORE_URL}>Add to Chrome, free</Button>
+				</div>
+				<div class="cta-btn phone"><SendToComputer caption={false} /></div>
+				<p class="cl-figure small">Chrome on desktop. Also works in Edge and Brave. No account needed.</p>
+			</div>
+		</section>
+	{/if}
+	<PerforationRow />
+	<div class="cl-container cols">
+		{#each columns as c (c.title)}
+			<nav aria-labelledby="foot-{c.title}">
+				<h2 id="foot-{c.title}">{c.title}</h2>
+				<ul>
+					{#each c.links as l (l.label)}<li><a href={l.href}>{l.label}</a></li>{/each}
+				</ul>
+			</nav>
+		{/each}
 	</div>
-	<div class="wrap" class:wrap-wide={wide}>
+	<div class="cl-container">
 		<div class="base">
-			<p>No ads, no trackers, no analytics. Paying never changes a verdict.</p>
-			<p>Colander is a working name.</p>
+			<span class="brand"><ColanderMark size={20} /><span class="word">Colander</span></span>
+			<LiveBadge sequence={live.stats?.list_sequence} updatedAt={live.stats?.list_updated_at} now={live.now ?? undefined} />
+			<span class="note">No cookies, so no banner.</span>
+			<span class="who"><ArrowLink href="/transparency" size="sm">Who runs Colander and how it is funded</ArrowLink></span>
 		</div>
 	</div>
 </footer>
 
 <style>
 	.site-footer {
-		background: var(--cl-surface-raised);
+		margin-top: auto;
+		background: var(--cl-paper);
 	}
-	.dot-rule {
-		background-color: var(--cl-paper);
-	}
-	.grid {
+	.cta-in {
 		display: grid;
-		grid-template-columns: 1.6fr 1fr 1fr 1fr;
-		gap: var(--cl-s6);
-		padding-block: var(--cl-s6) var(--cl-s5);
+		justify-items: center;
+		gap: 24px;
+		padding-block: var(--cl-s9);
+		text-align: center;
 	}
-	.brand {
-		display: grid;
-		gap: var(--cl-s3);
-		align-content: start;
-		max-width: 360px;
+	.cta h2 {
+		max-width: none;
 	}
-	.tagline {
-		font: 600 16px/24px var(--cl-font);
-	}
-	.support {
-		justify-self: start;
-		margin-top: var(--cl-s2);
-	}
-	h2 {
-		font: 600 14px/20px var(--cl-font);
+	.small {
 		color: var(--cl-text-muted);
-		margin-bottom: var(--cl-s3);
 	}
-	ul {
-		list-style: none;
+	.phone {
+		display: none;
+		width: 100%;
+	}
+	.cols {
 		display: grid;
-		gap: var(--cl-s2);
+		grid-template-columns: repeat(4, minmax(0, 1fr));
+		gap: 24px;
+		padding-block: var(--cl-s7) var(--cl-s6);
+	}
+	nav h2 {
+		margin-bottom: 12px;
+		color: var(--cl-text-muted);
+		font: var(--cl-chip);
+	}
+	nav ul {
+		display: grid;
+		gap: 4px;
+		list-style: none;
 	}
 	nav a {
+		display: inline-flex;
+		align-items: center;
+		min-height: 28px;
 		color: var(--cl-text);
-		text-decoration: none;
 		font: var(--cl-body);
+		text-decoration: none;
 	}
 	nav a:hover {
 		text-decoration: underline;
+		text-underline-offset: 3px;
 	}
 	.base {
 		display: flex;
 		flex-wrap: wrap;
-		justify-content: space-between;
-		gap: var(--cl-s2) var(--cl-s5);
-		padding-block: var(--cl-s4) var(--cl-s6);
+		align-items: center;
+		gap: 12px 24px;
+		padding-block: 20px 32px;
 		border-top: 1px solid var(--cl-border);
-		font: var(--cl-caption);
 		color: var(--cl-text-muted);
+		font: var(--cl-caption);
 	}
-	@media (max-width: 860px) {
-		.grid {
-			grid-template-columns: 1fr 1fr;
+	.brand {
+		display: inline-flex;
+		align-items: center;
+		gap: 8px;
+		color: var(--cl-text);
+	}
+	.word {
+		font: var(--cl-body-strong);
+	}
+	.who {
+		margin-left: auto;
+	}
+	@media (max-width: 1023px) {
+		.who {
+			margin-left: 0;
 		}
-		.brand {
-			grid-column: 1 / -1;
+	}
+	@media (max-width: 639px) {
+		.cta-in {
+			justify-items: stretch;
+			padding-block: var(--cl-s8);
+		}
+		.desktop {
+			display: none;
+		}
+		.phone {
+			display: block;
+		}
+		.cols {
+			grid-template-columns: repeat(2, minmax(0, 1fr));
+			row-gap: 32px;
+		}
+		.base {
+			flex-direction: column;
+			align-items: flex-start;
+			gap: 12px;
 		}
 	}
 </style>

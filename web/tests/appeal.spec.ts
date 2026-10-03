@@ -40,11 +40,11 @@ test('a creator starts an appeal, gets a code, verifies and sees the status', as
 	await expect(page.getByRole('button', { name: 'Copied' })).toBeVisible();
 	expect(await page.evaluate(() => navigator.clipboard.readText())).toBe('colander-7KQ2M9XD');
 
-	await page.getByRole('button', { name: 'Verify' }).click();
+	await page.getByRole('button', { name: 'Check my description' }).click();
 	await expect(page.getByRole('heading', { name: 'Waiting for a manual check' })).toBeVisible();
 	const verify = calls.find((c) => c.path === '/v1/appeals/apl_4k9x2m/verify')!;
 	expect(verify.body).toEqual({ secret: 's3cret' });
-	await expect(page.getByRole('button', { name: 'Verify' })).toHaveCount(0);
+	await expect(page.getByRole('button', { name: 'Check my description' })).toHaveCount(0);
 	await expect(page.locator('a[href="/support"], a[href="/supporters"]')).toHaveCount(0);
 });
 

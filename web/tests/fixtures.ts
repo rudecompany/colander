@@ -28,7 +28,7 @@ export function layoutSpills(page: Page): Promise<string[]> {
 		const out: string[] = [];
 		const root = document.documentElement;
 		if (root.scrollWidth > root.clientWidth + 0.5) out.push(`page scrolls sideways by ${root.scrollWidth - root.clientWidth}px`);
-		for (const card of document.querySelectorAll('.card')) {
+		for (const card of document.querySelectorAll('.card, .uin-card, .price')) {
 			const c = card.getBoundingClientRect();
 			for (const el of card.querySelectorAll('*')) {
 				const r = el.getBoundingClientRect();

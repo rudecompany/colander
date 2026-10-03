@@ -1,17 +1,17 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
-	import { PLATFORM_NAME, SOURCE_NOUN, type Platform } from '@colander/shared';
+	import { PLATFORM_NAME, SOURCE_NOUN, VerdictChip, canAppeal, sourcePath, type Platform } from '@colander/shared';
 	import type { Appeal, SourceResponse } from '@colander/shared/api';
-	import Scale from '@lucide/svelte/icons/scale';
-	import ArrowLeft from '@lucide/svelte/icons/arrow-left';
+	import Button from '@colander/shared/components/ui/button/button.svelte';
 	import Input from '@colander/shared/components/ui/input/input.svelte';
 	import Textarea from '@colander/shared/components/ui/textarea/textarea.svelte';
+	import CircleAlert from '@lucide/svelte/icons/circle-alert';
+	import Scale from '@lucide/svelte/icons/scale';
 	import { api, ApiError, errorText } from '#lib/api.ts';
-	import { canAppeal, sourcePath } from '#lib/format.ts';
+	import AppealFrame from '#lib/components/AppealFrame.svelte';
 	import Loading from '#lib/components/Loading.svelte';
 	import Notice from '#lib/components/Notice.svelte';
-	import VerdictOrNone from '#lib/components/VerdictOrNone.svelte';
 
 	const platform = $derived(page.params.platform as Platform);
 	const id = $derived(page.params.id ?? '');
@@ -64,17 +64,18 @@
 	<meta name="robots" content="noindex" />
 </svelte:head>
 
-<div class="wrap wrap-narrow page">
-	<p><a class="back icon-line" href={sourcePath(platform, id)}><ArrowLeft size={14} strokeWidth={1.75} aria-hidden="true" /> Back to the source page</a></p>
-	<header class="head">
-		<p class="eyebrow">Appeal</p>
-		<h1 class="t-display">Appeal the verdict for {name}</h1>
-		<p class="t-lede">
-			If this {PLATFORM_NAME[platform]} {noun} is yours and the verdict is wrong, tell us why. You prove the {noun} is yours
-			with a short code, and nothing from it is hidden while staff review.
-		</p>
-	</header>
-
+<AppealFrame
+	back={{ href: sourcePath(platform, id), label: 'Back to the source page' }}
+	eyebrow="Appeal"
+	title="Appeal the verdict for {name}"
+	lede="If this {PLATFORM_NAME[platform]} {noun} is yours and the verdict is wrong, tell us why. You prove the {noun} is yours with a short code, and nothing from it is hidden while staff review."
+	steps={[
+		{ label: 'Code', state: 'current', detail: 'Start to get your code' },
+		{ label: 'Verify', state: 'later' },
+		{ label: 'Under review', state: 'later' },
+		{ label: 'Decision', state: 'later' }
+	]}
+>
 	{#if source.kind === 'loading'}
 		<Loading />
 	{:else if source.kind === 'error'}
@@ -94,119 +95,67 @@
 	{/if}
 
 	{#if appealable && s?.verdict}
-		<div class="layout">
-			<form class="card form" onsubmit={submit} novalidate>
-				<p class="current">Current verdict <VerdictOrNone verdict={s.verdict} /></p>
-				<div class="field">
-					<label class="field-label" for="appeal-email">Email</label>
-					<Input id="appeal-email" type="email" autocomplete="email" required bind:value={email} aria-describedby="email-hint" />
-					<p class="field-hint" id="email-hint">We send the appeal link and the outcome here. It is never published.</p>
-				</div>
-				<div class="field">
-					<label class="field-label" for="appeal-statement">Your statement</label>
-					<Textarea id="appeal-statement" rows={7} maxlength={2000} required bind:value={statement} aria-describedby="statement-hint" />
-					<p class="field-hint" id="statement-hint">
-						How is the {noun} made? Who films, writes and edits it, and what is AI used for, if anything. Your statement is
-						shown to staff, and their reasoning is published.
-					</p>
-				</div>
-				{#if formError}<p class="field-error" role="alert">{formError}</p>{/if}
-				<div>
-					<button type="submit" class="uin-btn uin-btn-primary btn-lg" disabled={sending}>
-						<Scale size={16} strokeWidth={1.75} aria-hidden="true" />
-						<span>{sending ? 'Starting the appeal' : 'Start the appeal'}</span>
-					</button>
-				</div>
-			</form>
+		<form class="uin-card uin-card-lg uin-card-pad form" onsubmit={submit} novalidate>
+			<p class="current">Current verdict <VerdictChip verdict={s.verdict} /></p>
+			<div class="field">
+				<label class="field-label" for="appeal-email">Email</label>
+				<Input id="appeal-email" size="lg" type="email" autocomplete="email" required bind:value={email} aria-describedby="email-hint" />
+				<p class="field-hint" id="email-hint">We send the appeal link and the outcome here. It is never published.</p>
+			</div>
+			<div class="field">
+				<label class="field-label" for="appeal-statement">Your statement</label>
+				<Textarea id="appeal-statement" rows={7} maxlength={2000} required bind:value={statement} aria-describedby="statement-hint" />
+				<p class="field-hint" id="statement-hint">
+					How is the {noun} made? Who films, writes and edits it, and what is AI used for, if anything. Your statement is shown to staff,
+					and their reasoning is published.
+				</p>
+			</div>
+			{#if formError}<p class="field-error" role="alert"><CircleAlert size={16} aria-hidden="true" />{formError}</p>{/if}
+			<div>
+				<Button type="submit" variant="primary" size="xl" disabled={sending}>
+					<Scale size={16} aria-hidden="true" />{sending ? 'Starting the appeal' : 'Start the appeal'}
+				</Button>
+			</div>
+		</form>
 
-			<aside class="steps" aria-labelledby="steps-title">
-				<h2 class="steps-title" id="steps-title">What happens next</h2>
-				<ol>
-					<li><strong>You get a code.</strong> It looks like <span class="mono">colander-7KQ2M9XD</span>.</li>
-					<li><strong>Add it to your {noun}.</strong> Put it in the description or bio, then choose Verify.</li>
-					<li><strong>Disputed while we look.</strong> Once verified, nothing from the {noun} is hidden.</li>
-					<li><strong>A published decision.</strong> Staff uphold or deny the appeal, and the reasoning goes in the decision log.</li>
-				</ol>
-				<p class="t-caption muted">Unverified appeals expire after 14 days. Appeals are free.</p>
-			</aside>
-		</div>
+		<section class="next" aria-labelledby="next-title">
+			<h2 id="next-title">What happens next</h2>
+			<ol>
+				<li><strong>You get a code.</strong> It looks like <span class="cl-figure">colander-7KQ2M9XD</span>.</li>
+				<li><strong>Add it to your {noun}.</strong> Put it in the description or bio, then ask us to check it.</li>
+				<li><strong>Unhidden while staff review.</strong> Once verified, the {noun} shows as Disputed and nothing from it is hidden.</li>
+				<li><strong>A published decision.</strong> Staff uphold or deny the appeal, and the reasoning goes in the decision log.</li>
+			</ol>
+			<p class="cl-caption cl-muted">Unverified appeals expire after 14 days.</p>
+		</section>
 	{/if}
-</div>
+</AppealFrame>
 
 <style>
-	.page {
-		padding-top: var(--cl-s6);
-	}
-	.back {
-		font: 600 14px/20px var(--cl-font);
-	}
-	.head {
-		display: grid;
-		gap: var(--cl-s3);
-		padding: var(--cl-s5) 0 var(--cl-s6);
-	}
-	.head .t-display {
-		overflow-wrap: anywhere;
-	}
-	.layout {
-		display: grid;
-		grid-template-columns: minmax(0, 1fr) 260px;
-		gap: var(--cl-s6);
-		align-items: start;
-	}
 	.form {
 		display: grid;
-		gap: var(--cl-s5);
+		gap: 24px;
 	}
 	.current {
 		display: flex;
 		align-items: center;
-		gap: var(--cl-s2);
-		font: 600 14px/20px var(--cl-font);
+		gap: 8px;
+		font: var(--cl-body-strong);
 	}
-	.steps {
-		padding-top: var(--cl-s2);
-	}
-	.steps-title {
-		font: 600 16px/24px var(--cl-font);
-		margin-bottom: var(--cl-s3);
-	}
-	.steps ol {
-		list-style: none;
-		counter-reset: step;
-		display: grid;
-		gap: var(--cl-s4);
-		font: var(--cl-body);
-		color: var(--cl-text-muted);
-		margin-bottom: var(--cl-s4);
-	}
-	.steps li {
-		counter-increment: step;
-		position: relative;
-		padding-left: 36px;
-	}
-	.steps li::before {
-		content: counter(step);
-		position: absolute;
-		left: 0;
-		top: -2px;
-		display: grid;
-		place-items: center;
-		width: 24px;
-		height: 24px;
-		border-radius: 50%;
-		border: 1.5px solid var(--cl-text);
-		color: var(--cl-text);
-		font: 700 12px/1 var(--cl-font);
-	}
-	.steps strong {
-		display: block;
-		color: var(--cl-text);
+	.next h2 {
+		margin-bottom: 12px;
+		font: var(--cl-body-lg);
 		font-weight: 600;
 	}
-	@media (max-width: 760px) {
-		.layout {
-			grid-template-columns: 1fr;
-		}
+	.next ol {
+		display: grid;
+		gap: 12px;
+		margin-bottom: 12px;
+		padding-left: 20px;
+		color: var(--cl-text-muted);
+		font: var(--cl-body);
+	}
+	.next strong {
+		color: var(--cl-text);
 	}
 </style>

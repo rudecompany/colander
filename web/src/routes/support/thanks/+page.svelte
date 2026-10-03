@@ -1,6 +1,7 @@
 <script lang="ts">
 	import Users from '@lucide/svelte/icons/users';
-	import PageHead from '#lib/components/PageHead.svelte';
+	import Button from '@colander/shared/components/ui/button/button.svelte';
+	import { PageHeader } from '@colander/shared';
 </script>
 
 <svelte:head>
@@ -8,16 +9,17 @@
 	<meta name="robots" content="noindex" />
 </svelte:head>
 
-<PageHead
+<div class="cl-container page-top">
+	<PageHeader
 	eyebrow="Support our work"
 	title="Thank you for your support"
 	lede="Your gift pays for the people who review reports and appeals, the upkeep that keeps four platforms working, and the servers that sign the lists."
-	narrow
 />
+</div>
 
-<div class="wrap wrap-narrow page">
-	<section class="card section-card" aria-labelledby="next-title">
-		<h2 class="t-title" id="next-title">What happens now</h2>
+<div class="cl-container page-body">
+	<section class="uin-card uin-card-lg uin-card-pad section-card" aria-labelledby="next-title">
+		<h2 class="cl-title" id="next-title">What happens now</h2>
 		<ul class="steps">
 			<li>Our payment provider emails you a receipt.</li>
 			<li>If you gave a name for credit, it appears on the supporters page within a minute or two. We never publish amounts.</li>
@@ -25,25 +27,23 @@
 			<li>Giving never changes tag weight, review priority or any verdict.</li>
 		</ul>
 		<p class="row">
-			<a class="uin-btn uin-btn-primary uin-btn-md" href="/supporters"><Users size={16} strokeWidth={1.75} aria-hidden="true" /> See the supporters page</a>
-			<a class="uin-btn uin-btn-ghost uin-btn-md" href="/transparency">Where the money goes</a>
+			<Button variant="primary" size="xl" href="/supporters"><Users size={16} aria-hidden="true" />See the supporters page</Button>
+			<Button variant="quiet" size="xl" href="/transparency">Where the money goes</Button>
 		</p>
 	</section>
 </div>
 
 <style>
-	.page {
-		padding-top: var(--cl-s6);
-	}
 	.section-card {
 		display: grid;
 		gap: var(--cl-s3);
+		max-width: 720px;
 	}
 	.steps {
 		display: grid;
 		gap: var(--cl-s2);
 		padding-left: var(--cl-s5);
-		font: var(--cl-body);
+		font: var(--cl-body-lg);
 	}
 	.row {
 		display: flex;

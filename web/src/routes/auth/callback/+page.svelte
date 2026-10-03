@@ -3,11 +3,12 @@
 	import { goto } from '$app/navigation';
 	import type { Account } from '@colander/shared/api';
 	import { api, ApiError, errorText } from '#lib/api.ts';
-	import { safeNext } from '#lib/format.ts';
+	import { safeNext } from '@colander/shared';
 	import { session } from '#lib/session.svelte.ts';
 	import Loading from '#lib/components/Loading.svelte';
 	import Notice from '#lib/components/Notice.svelte';
-	import PageHead from '#lib/components/PageHead.svelte';
+	import Button from '@colander/shared/components/ui/button/button.svelte';
+	import AuthCard from '#lib/components/AuthCard.svelte';
 
 	let error = $state('');
 
@@ -37,21 +38,11 @@
 	<meta name="robots" content="noindex" />
 </svelte:head>
 
-<PageHead eyebrow="Account" title={error ? 'That link did not work' : 'Signing you in'} narrow />
-<div class="wrap wrap-narrow page">
+<AuthCard title={error ? 'That link did not work' : 'Signing you in'}>
 	{#if error}
 		<Notice tone="error" title="Not signed in"><p>{error}</p></Notice>
-		<p><a class="uin-btn uin-btn-primary uin-btn-md" href="/account">Get a new sign-in link</a></p>
+		<Button variant="primary" size="xl" block href="/account">Get a new sign-in link</Button>
 	{:else}
 		<Loading label="Checking your sign-in link" />
 	{/if}
-</div>
-
-<style>
-	.page {
-		display: grid;
-		gap: var(--cl-s4);
-		justify-items: start;
-		padding-top: var(--cl-s6);
-	}
-</style>
+</AuthCard>

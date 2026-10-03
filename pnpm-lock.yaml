@@ -136,6 +136,9 @@ importers:
       '@types/node':
         specifier: ^24.19.1
         version: 24.19.1
+      linkedom:
+        specifier: ^0.18.13
+        version: 0.18.13
       svelte:
         specifier: ^5.57.1
         version: 5.57.1

@@ -10,22 +10,24 @@ test('the decision log filters by platform and verdict and loads more', async ({
 	await page.getByLabel('Platform').selectOption('yt');
 	await expect(entries).toHaveCount(4);
 	await expect(page).toHaveURL(/\/log\?platform=yt$/);
-	await page.getByLabel('Changed to').selectOption('slop');
+	await page.getByLabel('Verdict').selectOption('slop');
 	await expect(entries).toHaveCount(2);
 	await expect(page).toHaveURL(/\/log\?platform=yt&verdict=slop$/);
 	const last = calls.filter((c) => c.path === '/v1/log').at(-1)!;
 	expect(last.search.get('platform')).toBe('yt');
 	expect(last.search.get('verdict')).toBe('slop');
 
+	// Each entry is one row that opens to the signals behind the change.
 	const first = entries.first();
-	await expect(first.getByRole('heading')).toHaveText('Ancient Facts Daily');
-	await expect(first.locator('.cl-chip')).toHaveText(['Likely slop', 'Slop']);
+	await expect(first.locator('summary')).toContainText('Ancient Facts Daily');
+	await expect(first.locator('summary .cl-chip')).toHaveText(['Likely slop', 'Slop']);
 	await expect(first).toContainText('Decided by staff member Sam');
-	await expect(first).toContainText('Confirmed by staff review');
-	await expect(first.getByRole('link', { name: 'Ancient Facts Daily' })).toHaveAttribute('href', '/s/yt/UCq3x9Vb2m4LkT7pQe8sW1aZ');
+	await first.locator('summary').click();
+	await expect(first.getByText('Confirmed by staff review.')).toBeVisible();
+	await expect(first.getByRole('link', { name: 'Source page' })).toHaveAttribute('href', '/s/yt/UCq3x9Vb2m4LkT7pQe8sW1aZ');
 
 	await page.getByLabel('Platform').selectOption('');
-	await page.getByLabel('Changed to').selectOption('');
+	await page.getByLabel('Verdict').selectOption('');
 	await expect(entries).toHaveCount(8);
 	await page.getByRole('button', { name: 'Load more' }).click();
 	await expect(entries).toHaveCount(10);
@@ -43,7 +45,7 @@ test('filters in the address are applied on load', async ({ page }) => {
 test('appeal entries name the reviewer who decided them', async ({ page }) => {
 	await mockApi(page);
 	await page.goto('/log');
-	const entry = (name: string) => page.locator('ol.entries > li').filter({ has: page.getByRole('heading', { name }) });
+	const entry = (name: string) => page.locator('ol.entries > li').filter({ hasText: name });
 	// Verifying an appeal moves the source to Disputed on its own; a decided appeal names its reviewer.
 	await expect(entry('Numis Notes').locator('.actor')).toHaveText('Changed by a verified appeal');
 	await expect(entry('Coastal Science Club').locator('.actor')).toHaveText('Appeal decided by Ines');

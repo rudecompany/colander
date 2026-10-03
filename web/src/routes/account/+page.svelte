@@ -7,13 +7,15 @@
 	import ListChecks from '@lucide/svelte/icons/list-checks';
 	import { api, ApiError, errorText } from '#lib/api.ts';
 	import { detectExtension, sendToExtension, type ExtensionState } from '#lib/extension.ts';
-	import { fmtDate } from '#lib/format.ts';
+	import { fmtDate } from '@colander/shared';
 	import { loadAccount, session } from '#lib/session.svelte.ts';
 	import ConnectBrowser from '#lib/components/ConnectBrowser.svelte';
 	import EmailSignIn from '#lib/components/EmailSignIn.svelte';
 	import Loading from '#lib/components/Loading.svelte';
 	import Notice from '#lib/components/Notice.svelte';
-	import PageHead from '#lib/components/PageHead.svelte';
+	import { PageHeader, PriceCard } from '@colander/shared';
+	import Button from '@colander/shared/components/ui/button/button.svelte';
+	import AuthCard from '#lib/components/AuthCard.svelte';
 
 	let ext = $state<ExtensionState>({ kind: 'checking' });
 	let displayName = $state('');
@@ -103,47 +105,40 @@
 </svelte:head>
 
 {#if session.status === 'idle' || session.status === 'loading'}
-	<PageHead eyebrow="Account" title="Your account" narrow />
-	<div class="wrap wrap-narrow"><Loading label="Checking whether you are signed in" /></div>
+	<AuthCard title="Your account"><Loading label="Checking whether you are signed in" /></AuthCard>
 {:else if !account}
-	<PageHead
-		eyebrow="Account"
+	<AuthCard
 		title="Sign in"
 		lede="Colander needs no account to block, tag, report or appeal. Sign in to manage Plus, connect a browser to your plan, or review."
-		narrow
-	/>
-	<div class="wrap wrap-narrow page">
+	>
 		{#if session.status === 'error'}
 			<Notice tone="error" title="We could not check your session"><p>Colander may be busy. Try again in a moment.</p></Notice>
 		{/if}
-		<div class="card signin-card">
-			<EmailSignIn next="/account" />
-		</div>
-	</div>
+		<EmailSignIn next="/account" block />
+	</AuthCard>
 {:else}
-	<PageHead eyebrow="Account" title={account.display_name ? `Hello, ${account.display_name}` : 'Your account'} narrow>
-		<div class="whoami">
-			<p class="t-body muted">Signed in as <strong>{account.email}</strong>{account.role !== 'member' ? ` · ${ROLE_WORD[account.role]}` : ''}</p>
-			<button type="button" class="uin-btn uin-btn-ghost uin-btn-md" onclick={signOut}>
-				<LogOut size={16} strokeWidth={1.75} aria-hidden="true" /> Sign out
-			</button>
-		</div>
-	</PageHead>
+	<div class="cl-container page-top">
+		<PageHeader eyebrow="Account" title={account.display_name ? `Hello, ${account.display_name}` : 'Your account'}>
+			<div class="whoami">
+				<p class="cl-body cl-muted">Signed in as <strong>{account.email}</strong>{account.role !== 'member' ? ` · ${ROLE_WORD[account.role]}` : ''}</p>
+				<Button variant="quiet" size="xl" onclick={signOut}><LogOut size={16} aria-hidden="true" />Sign out</Button>
+			</div>
+		</PageHeader>
+	</div>
 
-	<div class="wrap wrap-narrow page">
-		<section class="card section-card" aria-labelledby="plan-title">
+	<div class="cl-container page-body grid">
+		<section class="uin-card uin-card-lg uin-card-pad section-card" aria-labelledby="plan-title">
 			<div class="section-top">
-				<h2 class="t-title" id="plan-title">Plan</h2>
-				{#if account.plan}<span class="tag">{PLAN_STATUS[account.plan.status]}</span>{/if}
+				<h2 class="cl-title" id="plan-title">Plan</h2>
+				{#if account.plan}<span class="uin-badge uin-badge-lg">{PLAN_STATUS[account.plan.status]}</span>{/if}
 			</div>
 			{#if !account.plan || account.plan.status === 'canceled'}
-				<p class="t-body-lg"><strong>Free.</strong> Blocking, tagging, reporting and appeals on every platform, for good.</p>
-				<p class="t-body muted">Plus adds sync across browsers, strictness per platform and topic, keyword and hashtag rules, and a weekly summary.</p>
-				<p><a class="uin-btn uin-btn-primary uin-btn-md" href="/plans">See Plus</a></p>
+				<p class="cl-body-lg"><strong>Free.</strong> Blocking, tagging, reporting and appeals on every platform, for good.</p>
+				<PriceCard plan="plus" size="app" headingLevel={3} cta={{ label: 'See Plus', href: '/plans' }} />
 			{:else}
 				{@const plan = account.plan}
-				<p class="t-body-lg"><strong>Plus</strong>, billed {plan.interval === 'year' ? 'yearly at $30' : 'monthly at $3'}.</p>
-				<p class="t-body" aria-live="polite">
+				<p class="cl-body-lg"><strong>Plus</strong>, billed {plan.interval === 'year' ? 'yearly at $30' : 'monthly at $3'}.</p>
+				<p class="cl-body" aria-live="polite">
 					{#if plan.cancel_at_period_end}
 						Cancelled. Plus stays on until {fmtDate(plan.current_period_end)}, and you will not be charged again.
 					{:else if plan.status === 'trialing'}
@@ -158,17 +153,17 @@
 				<!-- One click cancels. The same button then offers the refund; aria-disabled (not disabled) keeps keyboard focus on it. -->
 				{#if !plan.cancel_at_period_end || plan.refundable}
 					<div class="row">
-						<button
-							type="button"
-							class="uin-btn uin-btn-outline uin-btn-md"
+						<Button
+							variant="secondary"
+							size="xl"
 							aria-disabled={billing.kind === 'working'}
 							onclick={() => billing.kind !== 'working' && cancelPlan(plan.cancel_at_period_end)}
 						>
 							{plan.cancel_at_period_end ? 'End now and refund' : 'Cancel Plus'}
-						</button>
+						</Button>
 					</div>
 					{#if plan.cancel_at_period_end}
-						<p class="t-caption muted">
+						<p class="cl-caption cl-muted">
 							Your last charge was less than 30 days ago, so you can still get it back. Plus then ends at once, and the charge is
 							refunded the way you paid.
 						</p>
@@ -179,50 +174,50 @@
 			{#if billing.kind === 'done'}<Notice tone="success" title={billing.message} />{/if}
 		</section>
 
-		<section class="card section-card" aria-labelledby="connect-title">
-			<h2 class="t-title" id="connect-title">Connect this browser</h2>
-			<p class="t-body muted">Sends a signed plan token to the extension, so Plus works here. Nothing else about your account is shared with it.</p>
+		<section class="uin-card uin-card-lg uin-card-pad section-card" aria-labelledby="connect-title">
+			<h2 class="cl-title" id="connect-title">Connect this browser</h2>
+			<p class="cl-body cl-muted">Sends a signed plan token to the extension, so Plus works here. Nothing else about your account is shared with it.</p>
 			<ConnectBrowser {ext} canConnect={!!livePlan} onrecheck={checkExtension} />
 		</section>
 
 		{#if account.role !== 'member'}
-			<section class="card section-card" aria-labelledby="review-title">
-				<h2 class="t-title" id="review-title">Review</h2>
-				<p class="t-body muted">
+			<section class="uin-card uin-card-lg uin-card-pad section-card" aria-labelledby="review-title">
+				<h2 class="cl-title" id="review-title">Review</h2>
+				<p class="cl-body cl-muted">
 					You are a {account.role === 'staff' ? 'staff member' : 'curator'}.
 					{account.role === 'staff'
 						? 'You can decide any source and resolve appeals.'
 						: 'You can decide items and sources that are not large. Large sources and appeals need staff.'}
 				</p>
 				<div class="row">
-					<a class="uin-btn uin-btn-primary uin-btn-md" href="/console"><ListChecks size={16} strokeWidth={1.75} aria-hidden="true" /> Open the review console</a>
+					<Button variant="primary" size="xl" href="/console"><ListChecks size={16} aria-hidden="true" />Open the review console</Button>
 					{#if ext.kind === 'installed'}
-						<button type="button" class="uin-btn uin-btn-outline uin-btn-md" onclick={connectReviewer} disabled={reviewer.kind === 'working'}>
-							<Plug size={16} strokeWidth={1.75} aria-hidden="true" /> Connect the review side panel
-						</button>
+						<Button variant="secondary" size="xl" onclick={connectReviewer} disabled={reviewer.kind === 'working'}>
+							<Plug size={16} aria-hidden="true" />Connect side panel
+						</Button>
 					{/if}
 				</div>
 				{#if ext.kind !== 'installed' && ext.kind !== 'checking'}
-					<p class="t-caption muted">To use the side panel, open this page in Chrome with Colander installed.</p>
+					<p class="cl-caption cl-muted">To use the side panel, open this page in Chrome with Colander installed.</p>
 				{/if}
 				{#if reviewer.kind === 'done'}<Notice tone="success" title={reviewer.message} />{/if}
 				{#if reviewer.kind === 'error'}<Notice tone="error" title="Not connected"><p>{reviewer.message}</p></Notice>{/if}
 			</section>
 		{/if}
 
-		<section class="card section-card" aria-labelledby="profile-title">
-			<h2 class="t-title" id="profile-title">Profile</h2>
+		<section class="uin-card uin-card-lg uin-card-pad section-card" aria-labelledby="profile-title">
+			<h2 class="cl-title" id="profile-title">Profile</h2>
 			<form class="name-form" onsubmit={saveName}>
 				<div class="field">
 					<label class="field-label" for="display-name">Display name</label>
-					<Input id="display-name" maxlength={60} autocomplete="nickname" bind:value={displayName} aria-describedby="display-name-hint" />
+					<Input id="display-name" size="lg" maxlength={60} autocomplete="nickname" bind:value={displayName} aria-describedby="display-name-hint" />
 					<p class="field-hint" id="display-name-hint">
 						Shown in the decision log when you review. Donors choose their own name for the supporters page when they give.
 					</p>
 				</div>
 				<div class="row">
-					<button type="submit" class="uin-btn uin-btn-outline uin-btn-md" disabled={nameStatus.kind === 'saving'}>Save name</button>
-					<span class="t-body muted" aria-live="polite">{nameStatus.kind === 'saved' ? 'Saved.' : ''}</span>
+					<Button type="submit" variant="secondary" size="xl" disabled={nameStatus.kind === 'saving'}>Save name</Button>
+					<span class="cl-body cl-muted" aria-live="polite">{nameStatus.kind === 'saved' ? 'Saved.' : ''}</span>
 				</div>
 				{#if nameStatus.kind === 'error'}<p class="field-error" role="alert">{nameStatus.message}</p>{/if}
 			</form>
@@ -235,13 +230,16 @@
 {/if}
 
 <style>
-	.page {
+	.grid {
 		display: grid;
-		gap: var(--cl-s4);
-		padding-top: var(--cl-s6);
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+		gap: 24px;
+		align-items: start;
 	}
-	.signin-card {
-		max-width: 520px;
+	@media (max-width: 1023px) {
+		.grid {
+			grid-template-columns: minmax(0, 1fr);
+		}
 	}
 	.whoami {
 		display: flex;
@@ -249,8 +247,8 @@
 		flex-wrap: wrap;
 		gap: var(--cl-s2) var(--cl-s4);
 	}
-	.whoami .uin-btn {
-		margin-left: calc(-1 * var(--cl-s4));
+	.whoami {
+		margin-top: 16px;
 	}
 	.section-card {
 		display: grid;

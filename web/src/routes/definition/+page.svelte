@@ -1,33 +1,46 @@
 <script lang="ts">
 	import {
+		ACTION_DONE_WORD,
 		ACTION_TABLE,
+		DEFINITION,
+		LAYER_KEYS,
+		LAYER_QUESTION,
+		LAYER_SIGNALS,
+		LAYER_WORD,
+		PageHeader,
 		SIGNAL_TEXT,
 		SLOP_TYPES,
 		SLOP_TYPE_WORD,
-		STRICTNESS,
-		STRICTNESS_HINT,
-		STRICTNESS_WORD,
+		StrictnessTable,
 		TAG_WORD,
 		VerdictChip,
-		type Action,
+		VERDICTS,
+		fmtDate,
 		type Verdict
 	} from '@colander/shared';
-	import PageHead from '#lib/components/PageHead.svelte';
-	import { LAYER_KEYS, LAYER_QUESTION, LAYER_SIGNALS, LAYER_WORD } from '#lib/layers.ts';
+	import ChevronsDownUp from '@lucide/svelte/icons/chevrons-down-up';
+	import Eye from '@lucide/svelte/icons/eye';
+	import EyeOff from '@lucide/svelte/icons/eye-off';
+	import Tag from '@lucide/svelte/icons/tag';
+	import Figure from '#lib/components/Figure.svelte';
+	import { COMPARISON, COMPARISON_CHECKED } from '#lib/content.ts';
 
 	const toc = [
-		['definition', 'The working definition'],
+		['definition', 'The definition'],
+		['tests', 'The three tests'],
 		['not-slop', 'What is not slop'],
 		['types', 'Three types'],
-		['detectors', 'Why not an AI detector'],
 		['layers', 'Four evidence layers'],
-		['verdicts', 'Verdicts'],
-		['strictness', 'Strictness levels'],
+		['verdicts', 'Five verdicts'],
 		['safeguards', 'Safeguards'],
+		['strictness', 'Strictness'],
+		['signing', 'How signing works'],
 		['consensus', 'How consensus works'],
 		['rubric', 'The tagging rubric'],
 		['appeals', 'Appeals'],
-		['sources', 'Sources']
+		['detectors', 'Why not an AI detector'],
+		['comparison', 'Comparison sources'],
+		['sources', 'Research']
 	] as const;
 
 	const tests = [
@@ -42,17 +55,16 @@
 		deceptive: ['Synthetic content presented as real', 'Fabricated news events, staged rescue videos']
 	};
 
-	const verdictRows: { v: Verdict; evidence: string; action: string }[] = [
-		{ v: 'slop', evidence: 'AI evidence, plus a mass-produced source, plus community consensus or staff review', action: 'Hide' },
-		{ v: 'likely_slop', evidence: 'AI evidence, plus behavior or rubric signals, with consensus still forming', action: 'Collapse, with the reason shown' },
-		{ v: 'ai_made', evidence: 'AI evidence only', action: 'Label' },
-		{ v: 'disputed', evidence: 'Tags and counter-tags split, or an appeal is open', action: 'Show, with a disputed mark' },
-		{ v: 'clear', evidence: '"Not slop" consensus or a successful appeal', action: 'Allow' }
-	];
+	const EVIDENCE: Record<Verdict, string> = {
+		slop: 'AI evidence, plus a mass-produced source, plus community consensus or staff review',
+		likely_slop: 'AI evidence, plus behavior or rubric signals, with consensus still forming',
+		ai_made: 'AI evidence only',
+		disputed: 'Tags and counter-tags split, or an appeal is open',
+		clear: '"Not slop" consensus or a successful appeal'
+	};
+	const ACTION_ICON = { hide: EyeOff, collapse: ChevronsDownUp, label: Tag, allow: Eye };
 
-	const ACTION_WORD: Record<Action, string> = { hide: 'Hide', collapse: 'Collapse', label: 'Label', allow: 'Allow' };
-
-	const sources = [
+	const research = [
 		['Kommers et al., "Why Slop Matters", ACM AI Letters, March 2026', 'https://doi.org/10.1145/3786777', 'Three family-resemblance features: superficial competence, asymmetric effort and mass producibility.'],
 		['Silbey and Hartzog, "AI Slop", September 2026', 'https://cyberlaw.stanford.edu/publications/ai-slop/', 'Negligible exertion, asymmetrical imposition and domain degradation, scored along a spectrum.'],
 		['Shaib et al., "Measuring AI Slop in Text", 2025', 'https://arxiv.org/abs/2509.19163', 'Information utility, information quality and style quality. Not all AI text is slop.'],
@@ -67,69 +79,84 @@
 </script>
 
 <svelte:head>
-	<title>The definition of AI slop · Colander</title>
-	<meta name="description" content="The published definition of AI slop that Colander uses, with its three tests, four evidence layers, five verdicts and the tagging rubric." />
+	<title>How Colander decides · Colander</title>
+	<meta
+		name="description"
+		content="The published definition of AI slop that Colander uses: three tests, four evidence layers, five verdicts, the strictness levels, signing, consensus and appeals."
+	/>
 </svelte:head>
 
-<PageHead
-	eyebrow="The definition"
-	title="What counts as AI slop, and how Colander decides"
-	lede="Researchers agree there is no consensus definition, so Colander publishes a working one, built from the frameworks that recur across the literature. Every verdict is measured against this page."
-/>
+<div class="cl-container page-top">
+	<PageHeader
+		eyebrow="How it decides"
+		title="How Colander decides"
+		lede="Researchers agree there is no settled definition of AI slop, so Colander publishes a working one built from the frameworks that recur across the research. Every verdict is measured against this page."
+	/>
+</div>
 
-<div class="wrap layout">
+{#snippet tocList()}
+	<ol>
+		{#each toc as [id, label] (id)}<li><a href="#{id}">{label}</a></li>{/each}
+	</ol>
+{/snippet}
+
+<div class="cl-container page-body longform">
 	<nav class="toc" aria-label="On this page">
 		<p class="toc-title">On this page</p>
-		<ol>
-			{#each toc as [id, label] (id)}<li><a href="#{id}">{label}</a></li>{/each}
-		</ol>
+		{@render tocList()}
 	</nav>
 
-	<article class="prose doc">
-		<section id="definition">
-			<h2>The working definition</h2>
-			<p class="lead">
-				AI slop is AI-generated content that is mass-produced with little human effort to capture attention or money, and
-				that gives the viewer little in return. AI use alone never makes something slop.
+	<article class="doc">
+		<details class="toc-mobile">
+			<summary>On this page</summary>
+			{@render tocList()}
+		</details>
+
+		<section id="definition" class="prose">
+			<h2>The definition</h2>
+			<p class="cl-title-lg statement">{DEFINITION}</p>
+			<p>
+				The unit that matters most is the source: the channel, profile or page. Slop is a production pattern, and patterns show at
+				the source level long before a single item gives itself away.
 			</p>
+		</section>
+
+		<section id="tests" class="prose">
+			<h2>The three tests</h2>
 			<p>An item or source is slop when it is AI-generated and meets at least two of three tests.</p>
-			<div class="table-scroll">
+			<div class="table-card">
 				<table class="plain stack-sm">
 					<thead><tr><th scope="col">Test</th><th scope="col">Question</th><th scope="col">Research root</th></tr></thead>
 					<tbody>
 						{#each tests as [name, q, root] (name)}
-							<tr><th scope="row" class="strong">{name}</th><td>{q}</td><td class="muted" data-label="Research root">{root}</td></tr>
+							<tr><th scope="row" class="nowrap">{name}</th><td>{q}</td><td class="muted" data-label="Research root">{root}</td></tr>
 						{/each}
 					</tbody>
 				</table>
 			</div>
-			<p>
-				The unit that matters most is the source: the channel, profile or page. Slop is a production pattern, and patterns
-				show at the source level long before a single item gives itself away.
-			</p>
 		</section>
 
-		<section id="not-slop">
+		<section id="not-slop" class="prose">
 			<h2>What is not slop</h2>
-			<ul>
+			<ul class="dots-list">
 				<li>AI-assisted work with clear human authorship, such as AI used for editing, captions, dubbing or illustration.</li>
 				<li>Openly artificial art, satire, parody and political expression, which have real expressive and dissent value.</li>
 				<li>Low-quality human-made content. It may be bad, but it is out of scope.</li>
 				<li>
-					Deepfakes, fraud and intimate-image abuse. These are harms beyond slop and belong with platform and legal
-					reporting. The extension offers a shortcut to the platform's own reporting.
+					Deepfakes, fraud and intimate-image abuse. These are harms beyond slop and belong with platform and legal reporting. The
+					extension offers a shortcut to the platform's own reporting.
 				</li>
 			</ul>
 		</section>
 
-		<section id="types">
+		<section id="types" class="prose">
 			<h2>Three types you can tag</h2>
-			<div class="table-scroll">
+			<div class="table-card">
 				<table class="plain stack-sm">
 					<thead><tr><th scope="col">Type</th><th scope="col">What it is</th><th scope="col">Example</th></tr></thead>
 					<tbody>
 						{#each SLOP_TYPES as t (t)}
-							<tr><th scope="row" class="strong">{SLOP_TYPE_WORD[t]}</th><td>{types[t][0]}</td><td class="muted" data-label="Example">{types[t][1]}</td></tr>
+							<tr><th scope="row">{SLOP_TYPE_WORD[t]}</th><td>{types[t][0]}</td><td class="muted" data-label="Example">{types[t][1]}</td></tr>
 						{/each}
 					</tbody>
 				</table>
@@ -137,29 +164,23 @@
 			<p>Deceptive slop is hidden first. Openly artificial, expressive work is labeled, not hidden.</p>
 		</section>
 
-		<section id="detectors">
-			<h2>Why an AI detector cannot be the method</h2>
-			<ul>
-				<li>Open-source detectors lose about half their accuracy on real social media. On one benchmark, accuracy fell 50% for video, 48% for audio and 45% for images.</li>
-				<li>Text detectors punish the wrong people. Seven detectors misjudged 61.3% of essays by non-native English writers as AI-written.</li>
-				<li>Detecting AI is not detecting slop. They are different tasks, and standard automatic measures did not reproduce editors' judgments.</li>
-				<li>Labels and watermarks can be stripped, covered or never applied.</li>
-			</ul>
-			<p>
-				Detector models are therefore optional, run on your device, and can only add weight to the "AI-made" question. They
-				can never mark something as slop.
-			</p>
-		</section>
-
-		<section id="layers">
+		<section id="layers" class="prose">
 			<h2>The four evidence layers</h2>
-			<p>No single signal hides anything. Each source and item is scored from four layers, and nothing is hidden by default until two independent layers agree.</p>
-			<ol class="layer-list">
+			<p>
+				No single signal hides anything. Each source and item is scored from four layers, and nothing is hidden by default until two
+				independent layers agree.
+			</p>
+			<figure class="fig">
+				<Figure n={2} />
+				<figcaption><span class="cl-figure muted">Fig. 2</span> Two layers must agree.</figcaption>
+			</figure>
+			<ol class="layers">
 				{#each LAYER_KEYS as k, i (k)}
-					<li class="card">
-						<p class="layer-head"><span class="layer-n cl-num">{i + 1}</span> {LAYER_WORD[k]}</p>
-						<p class="strong">{LAYER_QUESTION[k]}</p>
-						<ul class="signals">
+					<li>
+						<span class="cl-figure muted">0{i + 1}</span>
+						<h3>{LAYER_WORD[k]}</h3>
+						<p class="q">{LAYER_QUESTION[k]}</p>
+						<ul class="dots-list">
 							{#each LAYER_SIGNALS[k] as s (s)}<li>{SIGNAL_TEXT[s]}</li>{/each}
 						</ul>
 					</li>
@@ -167,104 +188,115 @@
 			</ol>
 		</section>
 
-		<section id="verdicts">
+		<section id="verdicts" class="prose">
 			<h2>Five verdicts</h2>
-			<div class="table-scroll">
+			<div class="table-card">
 				<table class="plain stack-sm">
-					<thead><tr><th scope="col">Verdict</th><th scope="col">Evidence required</th><th scope="col">Default action</th></tr></thead>
+					<thead><tr><th scope="col">Verdict</th><th scope="col">Evidence required</th><th scope="col">At Standard</th></tr></thead>
 					<tbody>
-						{#each verdictRows as r (r.v)}
-							<tr><th scope="row"><VerdictChip verdict={r.v} /></th><td data-label="Evidence">{r.evidence}</td><td data-label="On Standard">{r.action}</td></tr>
-						{/each}
-					</tbody>
-				</table>
-			</div>
-			<p>The actions shown are those of the Standard level. Labels describe content, never the people who made it.</p>
-		</section>
-
-		<section id="strictness">
-			<h2>Strictness levels</h2>
-			<div class="table-scroll">
-				<table class="plain stack-sm">
-					<thead>
-						<tr>
-							<th scope="col">Level</th>
-							<th scope="col"><VerdictChip verdict="slop" /></th>
-							<th scope="col"><VerdictChip verdict="likely_slop" /></th>
-							<th scope="col"><VerdictChip verdict="ai_made" /></th>
-							<th scope="col">What it does</th>
-						</tr>
-					</thead>
-					<tbody>
-						{#each STRICTNESS as s (s)}
+						{#each VERDICTS as v (v)}
+							{@const a = ACTION_TABLE.standard[v]}
+							{@const Icon = ACTION_ICON[a]}
 							<tr>
-								<th scope="row" class="strong">{STRICTNESS_WORD[s]}{s === 'standard' ? ' (default)' : ''}</th>
-								<td data-label="Slop">{ACTION_WORD[ACTION_TABLE[s].slop]}</td>
-								<td data-label="Likely slop">{ACTION_WORD[ACTION_TABLE[s].likely_slop]}</td>
-								<td data-label="AI-made">{ACTION_WORD[ACTION_TABLE[s].ai_made]}</td>
-								<td class="muted">{STRICTNESS_HINT[s]}</td>
+								<th scope="row"><VerdictChip verdict={v} /></th>
+								<td data-label="Evidence">{EVIDENCE[v]}</td>
+								<td data-label="At Standard"><span class="act"><Icon size={16} aria-hidden="true" />{ACTION_DONE_WORD[a]}</span></td>
 							</tr>
 						{/each}
 					</tbody>
 				</table>
 			</div>
-			<p>Disputed items are always shown with a mark, and Clear items are always allowed.</p>
+			<p>Labels describe content, never the people who made it.</p>
 		</section>
 
-		<section id="safeguards">
+		<section id="safeguards" class="prose">
 			<h2>Safeguards against wrong calls</h2>
+			<div class="fig-pair">
+				<figure class="fig">
+					<Figure n={1} />
+					<figcaption><span class="cl-figure muted">Fig. 1</span> AI evidence is a gate.</figcaption>
+				</figure>
+				<figure class="fig">
+					<Figure n={3} />
+					<figcaption><span class="cl-figure muted">Fig. 3</span> Tags alone never make anything Slop.</figcaption>
+				</figure>
+			</div>
 			<ol>
 				<li>AI evidence is a gate. Without it, nothing can be rated slop, however low its quality.</li>
 				<li>Two layers must agree before anything is hidden by default.</li>
+				<li>Tags alone never make anything Slop. Slop needs AI evidence, a mass-produced source, and consensus or staff review.</li>
 				<li>Mixed sources are never hidden as a whole. Their AI items get item-level labels.</li>
 				<li>Sources with large audiences need staff review before a list-wide Slop verdict.</li>
-				<li>Every hidden item states which signals fired, and one click reveals it.</li>
+				<li>Every hidden item states which signals agreed, and one click shows it again.</li>
 				<li>Source verdicts expire and are re-scored every 90 days. An appeal triggers re-review at once.</li>
 			</ol>
 			<p>
-				A source counts as mostly AI when at least 80% of its recent items carry AI evidence, following Kagi's published
-				rule. Other thresholds are starting values, calibrated against a hand-labeled set of at least 1,000 sources.
+				A source counts as mostly AI when at least 80% of its recent items carry AI evidence, following Kagi's published rule. Other
+				thresholds are starting values, calibrated against a hand-labeled set of at least 1,000 sources.
 			</p>
 		</section>
 
-		<section id="consensus">
-			<h2>How consensus is computed</h2>
+		<section id="strictness" class="prose">
+			<h2>Strictness</h2>
+			<p>You choose what each verdict does to your own feed. Standard is the default. Colander never decides what an adult may see.</p>
+			<div class="wide"><StrictnessTable current="standard" /></div>
+			<p>Disputed items are always labeled, and Clear items are always shown.</p>
+		</section>
+
+		<section id="signing" class="prose">
+			<h2>How signing works</h2>
+			<figure class="fig">
+				<Figure n={4} />
+				<figcaption><span class="cl-figure muted">Fig. 4</span> The signed list, your device, your feed.</figcaption>
+			</figure>
 			<p>
-				Each install gets a random pseudonymous ID. A tag applies on the tagger's own device at once and enters the shared
-				pool with a weight based on that tagger's track record. New installs count for little, and bursts of tags on one
-				source from new installs freeze its consensus until staff look.
+				Colander works like an ad blocker. Your extension downloads the whole core list, carrying no identifier at all, and matches
+				every feed card against it on your device. Colander never asks a server about the page you are viewing.
 			</p>
 			<p>
-				Paying or donating never changes tag weight, review priority or any verdict. Bridging, where a verdict needs agreement
-				between groups that usually tag differently, is added once tag volume supports it.
+				Each copy of the list is signed by Colander. The extension checks the signature before it uses a list, refuses any copy that
+				was changed on the way, and keeps working from its last good copy, offline too. It looks for updates about once an hour.
 			</p>
 		</section>
 
-		<section id="rubric">
+		<section id="consensus" class="prose">
+			<h2>How consensus works</h2>
+			<p>
+				Each install gets a random pseudonymous ID. A tag applies on the tagger's own device at once and enters the shared pool with a
+				weight based on that tagger's track record. New installs count for little, and bursts of tags on one source from new installs
+				freeze its consensus until staff look.
+			</p>
+			<p>
+				Paying or giving never changes tag weight, review priority or any verdict. Bridging, where a verdict needs agreement between
+				groups that usually tag differently, is added once tag volume supports it.
+			</p>
+		</section>
+
+		<section id="rubric" class="prose">
 			<h2>The tagging rubric</h2>
 			<p>Tagging takes two clicks, on the content itself. You choose one of three tags.</p>
-			<ul>
+			<ul class="dots-list">
 				<li><strong>{TAG_WORD.slop}.</strong> Optionally add a type (Filler, Bait or Deceptive) and tick which of the three tests apply.</li>
 				<li><strong>{TAG_WORD.ai_fine}.</strong> AI-generated, and fine. This counts toward the AI-made question only.</li>
 				<li><strong>{TAG_WORD.not_slop}.</strong> A counter-tag. Enough of them move a verdict to Disputed or Clear.</li>
 			</ul>
 			<p>When you tick tests, ask three questions about the item.</p>
-			<ul>
+			<ul class="dots-list">
 				<li><strong>Useful.</strong> Would a viewer come away knowing or feeling something they came for?</li>
 				<li><strong>Accurate.</strong> Are the facts, dates, names and images right?</li>
 				<li><strong>Original.</strong> Is there footage, commentary or judgment you would not find on ten other sources?</li>
 			</ul>
 			<p class="callout">
-				AI voices, dubbing and translation are not evidence of slop on their own. Many creators who are non-native speakers
-				or disabled rely on them.
+				AI voices, dubbing and translation are not evidence of slop on their own. Many creators who are non-native speakers or disabled
+				rely on them.
 			</p>
 		</section>
 
-		<section id="appeals">
+		<section id="appeals" class="prose">
 			<h2>Appeals</h2>
 			<p>
-				Every label links to a public page for its source, showing the verdict and the evidence behind it. A creator who
-				disagrees can appeal from that page.
+				Every label links to a public page for its source, showing the verdict and the evidence behind it. A creator who disagrees can
+				appeal from that page. Appeals are free.
 			</p>
 			<ol>
 				<li>Start an appeal from the source page with an email address and a short statement.</li>
@@ -272,153 +304,161 @@
 				<li>Once verified, the verdict changes to Disputed and nothing from the source is hidden while staff review.</li>
 				<li>The outcome and the reasoning are published in the <a href="/log">decision log</a>.</li>
 			</ol>
-			<p>Unverified appeals expire after 14 days. Appeal pages never ask for money.</p>
+			<p>Unverified appeals expire after 14 days.</p>
 		</section>
 
-		<section id="sources">
-			<h2>Sources</h2>
-			<ul class="sources">
-				{#each sources as [name, href, note] (href)}
+		<section id="detectors" class="prose">
+			<h2>Why an AI detector cannot be the method</h2>
+			<ul class="dots-list">
+				<li>Open-source detectors lose about half their accuracy on real social media. On one benchmark, accuracy fell 50% for video, 48% for audio and 45% for images.</li>
+				<li>Text detectors punish the wrong people. Seven detectors misjudged 61.3% of essays by non-native English writers as AI-written.</li>
+				<li>Detecting AI is not detecting slop. They are different tasks, and standard automatic measures did not reproduce editors' judgments.</li>
+				<li>Labels and watermarks can be stripped, covered or never applied.</li>
+			</ul>
+			<p>
+				Detector models are therefore optional, run on your device, and can only add weight to the AI-made question. They can never
+				mark something as slop.
+			</p>
+		</section>
+
+		<section id="comparison" class="prose">
+			<h2>Comparison sources</h2>
+			<p>
+				The comparison on the home page describes what is common among the most-installed AI content blockers, without naming them.
+				These are the listings each row was checked against on {fmtDate(COMPARISON_CHECKED)}. They are checked again for every
+				release.
+			</p>
+			<dl class="sources-list">
+				{#each COMPARISON as row (row.check)}
+					<div>
+						<dt>{row.check}: {row.common}</dt>
+						<dd>
+							{#each row.sources as s, i (s.url)}{#if i > 0}{'; '}{/if}<a href={s.url} rel="noreferrer">{s.name}</a>{/each}
+						</dd>
+					</div>
+				{/each}
+			</dl>
+		</section>
+
+		<section id="sources" class="prose">
+			<h2>Research</h2>
+			<ul class="research">
+				{#each research as [name, href, note] (href)}
 					<li><a {href} rel="noreferrer">{name}</a><span class="muted">{note}</span></li>
 				{/each}
 			</ul>
-			<p class="muted t-body">Version 1, October 2026. Changes to this definition are published on this page with their date.</p>
+			<p class="muted">Version 1, October 2026. Changes to this definition are published on this page with their date.</p>
 		</section>
 	</article>
 </div>
 
 <style>
-	.layout {
-		display: grid;
-		grid-template-columns: 220px minmax(0, 1fr);
-		gap: 64px;
-		padding-top: var(--cl-s6);
-	}
-	.toc {
-		position: sticky;
-		top: 24px;
-		align-self: start;
-		font: var(--cl-body);
-	}
-	.toc-title {
-		font-weight: 600;
-		color: var(--cl-text-muted);
-		margin-bottom: var(--cl-s2);
-	}
-	.toc ol {
-		list-style: none;
-		display: grid;
-		border-left: 1px solid var(--cl-border);
-	}
-	.toc a {
-		display: flex;
-		align-items: center;
-		min-height: 32px;
-		padding-left: var(--cl-s4);
-		margin-left: -1px;
-		border-left: 2px solid transparent;
-		color: var(--cl-text-muted);
-		text-decoration: none;
-	}
-	.toc a:hover {
-		color: var(--cl-text);
-		border-left-color: var(--cl-text);
-	}
 	.doc {
-		max-width: 760px;
+		display: grid;
+		gap: var(--cl-s7);
+		min-width: 0;
 	}
-	.doc section {
-		padding-bottom: var(--cl-s5);
-	}
-	.doc section + section {
-		padding-top: var(--cl-s5);
+	.doc > section + section {
+		padding-top: var(--cl-s7);
 		border-top: 1px solid var(--cl-border);
 	}
-	.doc section > :global(* + *) {
-		margin-top: var(--cl-s4);
+	.muted {
+		color: var(--cl-text-muted);
 	}
-	.doc h2 {
-		margin-top: 0;
-	}
-	.lead {
-		font: var(--w-lede);
-		padding-left: var(--cl-s4);
-		border-left: 3px solid var(--cl-text);
-	}
-	.strong {
-		font-weight: 600;
-		color: var(--cl-text);
-	}
-	th.strong {
+	.nowrap {
 		white-space: nowrap;
 	}
-	.layer-list {
+	.statement {
+		text-wrap: pretty;
+	}
+	.fig {
+		display: grid;
+		gap: 12px;
+		max-width: 440px;
+	}
+	.fig figcaption {
+		color: var(--cl-text-muted);
+		font: var(--cl-body);
+	}
+	.fig-pair {
+		display: grid;
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+		gap: 24px;
+	}
+	.layers {
+		display: grid;
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+		gap: 16px;
+		padding: 0;
 		list-style: none;
-		padding: 0 !important;
-		display: grid;
-		grid-template-columns: 1fr 1fr;
-		gap: var(--cl-s3);
 	}
-	.layer-list li {
-		margin: 0 !important;
+	.prose .layers > li {
 		display: grid;
-		gap: var(--cl-s2);
 		align-content: start;
-		padding: var(--cl-s4);
+		gap: 8px;
+		margin: 0;
+		padding: 24px;
+		border: 1px solid var(--cl-border);
+		border-radius: var(--cl-r-card);
+		background: var(--cl-surface);
 	}
-	.layer-head {
-		display: flex;
-		align-items: center;
-		gap: var(--cl-s2);
+	.layers h3 {
+		margin: 0;
 		font: var(--cl-title);
 	}
-	.layer-n {
-		display: inline-grid;
-		place-items: center;
-		width: 24px;
-		height: 24px;
-		border-radius: 50%;
-		border: 1.5px solid var(--cl-text);
-		font: 700 12px/1 var(--cl-font);
+	.q {
+		font: var(--cl-body-strong);
 	}
-	.signals {
-		font: var(--cl-body);
+	.layers .dots-list {
+		padding: 0;
 		color: var(--cl-text-muted);
-		padding-left: var(--cl-s4) !important;
+		font: var(--cl-body);
 	}
-	.signals li + li {
-		margin-top: 2px !important;
+	.prose .dots-list {
+		padding-left: 0;
+	}
+	.act {
+		display: inline-flex;
+		align-items: center;
+		gap: 6px;
+		white-space: nowrap;
+	}
+	.wide {
+		max-width: none;
+	}
+	.wide :global(td svg) {
+		flex: none;
 	}
 	.callout {
-		padding: var(--cl-s3) var(--cl-s4);
-		border-radius: var(--cl-r-card);
-		background: var(--cl-surface-raised);
+		padding: 12px 16px;
 		border: 1px solid var(--cl-border);
+		border-radius: var(--cl-r-card);
+		background: var(--cl-surface);
 		font: var(--cl-body);
 	}
-	.sources {
-		list-style: none;
+	.sources-list {
+		display: grid;
+		gap: 16px;
+		font: var(--cl-body);
+	}
+	.sources-list dt {
+		font-weight: 600;
+	}
+	.research {
+		display: grid;
+		gap: 12px;
 		padding: 0 !important;
+		list-style: none;
 		font: var(--cl-body);
 	}
-	.sources li {
+	.prose .research li {
 		display: grid;
 		gap: 2px;
+		margin: 0;
 	}
-	.sources li + li {
-		margin-top: var(--cl-s3) !important;
-	}
-	@media (max-width: 960px) {
-		.layout {
-			grid-template-columns: 1fr;
-			gap: 0;
-		}
-		.toc {
-			display: none;
-		}
-	}
-	@media (max-width: 600px) {
-		.layer-list {
+	@media (max-width: 639px) {
+		.fig-pair,
+		.layers {
 			grid-template-columns: 1fr;
 		}
 	}

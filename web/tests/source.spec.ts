@@ -1,5 +1,5 @@
 import { test, expect } from './fixtures.ts';
-import { mockApi } from './mocks.ts';
+import { LOG, SOURCES, mockApi } from './mocks.ts';
 
 const cases = [
 	{ path: '/s/yt/UCq3x9Vb2m4LkT7pQe8sW1aZ', name: 'Ancient Facts Daily', chip: 'Slop', plain: 'Low-effort AI content', summary: 'Hidden for people on Standard', appeal: true },
@@ -20,8 +20,9 @@ for (const c of cases) {
 		await expect(banner).toContainText(c.summary);
 		// Appeal is offered only where an appeal can start: a verdict other than Clear, with no appeal open.
 		if (c.appeal) {
-			await expect(banner.getByRole('link', { name: 'Appeal' })).toHaveAttribute('href', c.path.replace('/s/', '/appeal/'));
-			await expect(page.getByRole('heading', { name: /Appeal this verdict/ })).toBeVisible();
+			// One Appeal call to action on the page, in the banner.
+			await expect(banner.getByRole('link', { name: 'Appeal this verdict' })).toHaveAttribute('href', c.path.replace('/s/', '/appeal/'));
+			await expect(page.locator('a[href^="/appeal/"]')).toHaveCount(1);
 		} else {
 			await expect(page.locator('a[href^="/appeal/"]')).toHaveCount(0);
 		}
@@ -34,17 +35,28 @@ for (const c of cases) {
 test('an open appeal is explained instead of offering another', async ({ page }) => {
 	await mockApi(page);
 	await page.goto('/s/yt/@numisnotes');
-	const notice = page.getByRole('status').filter({ hasText: 'An appeal is open' });
-	await expect(notice).toContainText('The channel is shown to everyone while staff review it');
-	// Already Disputed, so the counter-tag hint has nothing left to do.
-	await expect(page.getByRole('heading', { name: 'Not the creator?' })).toHaveCount(0);
+	const banner = page.getByRole('region', { name: 'Verdict', exact: true });
+	await expect(banner).toContainText('Unhidden while staff review');
+	await expect(banner).toContainText('The channel is shown to everyone while staff review the appeal');
+	await expect(banner.getByRole('list', { name: 'Appeal' }).getByRole('listitem')).toHaveCount(4);
+	await expect(page.locator('a[href^="/appeal/"]')).toHaveCount(0);
 });
 
-test('a Clear source says there is nothing to appeal', async ({ page }) => {
-	await mockApi(page);
+test('history hides entries where nothing changed', async ({ page }) => {
+	await mockApi(page, {
+		'GET /v1/sources/*': () => ({
+			json: {
+				source: { ...SOURCES['fb:104729388112'] },
+				history: [
+					{ ...LOG[3] },
+					{ ...LOG[3], id: 'log_same', from: 'clear', to: 'clear', reason: 'Re-scored with no change.' }
+				]
+			}
+		})
+	});
 	await page.goto('/s/fb/104729388112');
-	await expect(page.getByRole('heading', { name: 'Nothing to appeal' })).toBeVisible();
-	await expect(page.getByRole('heading', { name: 'Not the creator?' })).toHaveCount(0);
+	await expect(page.getByText('Appeal upheld. Original footage')).toBeVisible();
+	await expect(page.getByText('Re-scored with no change.')).toHaveCount(0);
 });
 
 test('source page for a source with no verdict', async ({ page }) => {

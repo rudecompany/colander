@@ -1,5 +1,6 @@
 // The spec's brand rules on every page: the vocabulary table's "Not" words never appear, copy has no exclamation
-// marks, nothing is set below 12 px, and controls are at least 32 px tall (inline text links aside).
+// marks, nothing is set below 12 px, and controls are at least 32 px tall (inline text links aside). A segmented
+// control is measured by its track, and inert pictures of the product (the landing's bento visuals) are not controls.
 import { test, expect, layoutSpills } from './fixtures.ts';
 import { PAGES, mockApi } from './mocks.ts';
 
@@ -34,10 +35,11 @@ for (const [path, mocks] of PAGES) {
 				if (hasText && visible(el) && parseFloat(getComputedStyle(el).fontSize) < 12) small.push(name(el));
 			}
 			const controls = 'button, select, input:not([type="checkbox"]):not([type="radio"]), a.uin-btn, label:has(> input[type="checkbox"], > input[type="radio"])';
+			const box = (el: Element) => el.closest('.uin-seg') ?? el;
 			const short = [...document.querySelectorAll(controls)]
-				.filter((el) => visible(el) && !el.matches('.linkish'))
-				.filter((el) => el.getBoundingClientRect().height < 31.5)
-				.map((el) => `${name(el)} ${el.getBoundingClientRect().height}px`);
+				.filter((el) => visible(el) && !el.matches('.linkish') && !el.closest('[inert]'))
+				.filter((el) => box(el).getBoundingClientRect().height < 31.5)
+				.map((el) => `${name(el)} ${box(el).getBoundingClientRect().height}px`);
 			return { small, short };
 		});
 		expect(small, 'text below 12 px').toEqual([]);
