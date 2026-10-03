@@ -27,13 +27,15 @@ Actions sit beside their words, such as Undo (undo-2) and Why.
 <div class="cl-toast cl-ink" role="status" aria-live="polite" data-v={verdict}>
 	{#if verdict}<VerdictGlyph {verdict} size={16} />{/if}
 	<span class="cl-toast-t">{text}</span>
-	{#each actions as a (a.label)}
-		<button type="button" class="cl-b cl-b-q cl-b-sm" onclick={a.onClick}>
-			{#if a.icon}<a.icon size={16} aria-hidden="true" />{/if}{a.label}
-		</button>
-	{/each}
-	<span class="cl-count" aria-hidden="true" data-paused={paused || undefined}>
-		<i onanimationend={() => onTimeout?.()}></i><i></i><i></i><i></i>
+	<span class="cl-toast-end">
+		{#each actions as a (a.label)}
+			<button type="button" class="cl-b cl-b-q cl-b-sm" onclick={a.onClick}>
+				{#if a.icon}<a.icon size={16} aria-hidden="true" />{/if}{a.label}
+			</button>
+		{/each}
+		<span class="cl-count" aria-hidden="true" data-paused={paused || undefined}>
+			<i onanimationend={() => onTimeout?.()}></i><i></i><i></i><i></i>
+		</span>
+		<button type="button" class="cl-b cl-x" aria-label="Close" onclick={() => onClose?.()}><X size={16} aria-hidden="true" /></button>
 	</span>
-	<button type="button" class="cl-b cl-x" aria-label="Close" onclick={() => onClose?.()}><X size={16} aria-hidden="true" /></button>
 </div>

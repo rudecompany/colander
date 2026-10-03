@@ -171,7 +171,9 @@ export const DEMO_CSS =
 .title{margin:8px 0 0;font:600 14px/20px var(--cl-font-system);display:-webkit-box;overflow:hidden;-webkit-line-clamp:2;-webkit-box-orient:vertical}
 .meta{margin:2px 0 0;color:var(--hm);font:400 12px/16px var(--cl-font-system)}
 .feed-grid{grid-template-columns:repeat(3,minmax(0,1fr));gap:24px 16px;align-content:start}
-.feed-grid .card>.cl-pop{position:absolute;top:32px;left:16px;z-index:2}
+.feed-grid .card>.cl-pop{position:absolute;top:36px;left:8px;z-index:2}
+.feed-grid .stubbed>.cl-pop{top:16px;left:calc(100% - 24px)}
+.feed-grid .stubbed:nth-child(3n)>.cl-pop{left:auto;right:calc(100% - 24px)}
 .feed-list .card{display:grid;grid-template-columns:160px 1fr;gap:12px;align-items:start}
 .feed-list .title{margin:0}
 .feed-list .barred,.feed-list .card:has(>.cl-pop){display:block}
@@ -181,7 +183,7 @@ export const DEMO_CSS =
 .feed-swipe .card>.cl-pop{position:absolute;top:48px;left:8px;z-index:2}
 .creator{display:flex;align-items:center;gap:8px;margin-top:8px}
 .creator .meta{margin:0}
-.feed-mini{gap:8px;padding:12px}
+.feed-mini{gap:8px;padding:0;background:transparent}
 .feed-mini .card{display:grid;grid-template-columns:64px 1fr;gap:8px;align-items:center}
 .feed-mini .text{display:grid;gap:4px;justify-items:start}
 .feed-mini .barred{display:block}

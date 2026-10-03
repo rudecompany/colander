@@ -54,7 +54,8 @@ stats, the /log summary); `rows` stacks them with a 50-dot DotMeter each, scaled
 	}
 	.tally-rows {
 		display: grid;
-		grid-template-columns: max-content minmax(0, auto) max-content;
+		grid-template-columns: repeat(3, max-content);
+		justify-content: start;
 		gap: 8px 16px;
 		align-items: center;
 	}

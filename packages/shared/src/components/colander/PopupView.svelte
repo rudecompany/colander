@@ -92,9 +92,10 @@ Flat: the website adds the shadow where it docks the popup.
 	let all = $state(false);
 	const rows = $derived(s.rows ?? []);
 	const onPage = $derived(s.onPage ?? rows.filter((r) => r.action === 'hide' || r.action === 'collapse').length);
+	// The tally breaks down "On this page": hidden and collapsed items by verdict, so it fits one line.
 	const tally = $derived.by(() => {
 		const t: Partial<Record<Verdict, number>> = {};
-		for (const r of rows) if (r.verdict) t[r.verdict] = (t[r.verdict] ?? 0) + 1;
+		for (const r of rows) if (r.verdict && (r.action === 'hide' || r.action === 'collapse')) t[r.verdict] = (t[r.verdict] ?? 0) + 1;
 		return t;
 	});
 	const summary = $derived.by(() => {
@@ -344,7 +345,7 @@ Flat: the website adds the shadow where it docks the popup.
 		background: var(--cl-dot-strong);
 	}
 	.strict {
-		padding: 12px;
+		padding: 12px 8px;
 	}
 	.strict :global(.uin-seg) {
 		width: 100%;

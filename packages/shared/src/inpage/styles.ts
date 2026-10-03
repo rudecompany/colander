@@ -31,11 +31,12 @@ button.cl-chip { cursor: pointer; }
 .bar { display: flex; align-items: center; gap: 8px; height: 40px; padding: 0 4px 0 12px; border: 1px solid var(--cl-host-line); border-radius: var(--cl-r-card); animation: cl-in var(--cl-slow) var(--cl-ease); }
 .bar .r { flex: 1 1 auto; }
 .bar .acts { margin-left: auto; }
-@container (max-width: 419px) { .bar .r { display: none; } }
-@container (max-width: 299px) { .bar .t { display: none; } }
-.stub { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; width: 100%; height: 100%; min-height: 120px; padding: 12px; border: 1px solid var(--cl-host-line); border-radius: var(--cl-r-card); text-align: center; animation: cl-in var(--cl-slow) var(--cl-ease); }
+@container (max-width: 519px) { .bar .r { display: none; } }
+@container (max-width: 379px) { .bar .t { display: none; } }
+@container (max-width: 279px) { .bar .acts .lucide { display: none; } }
+.stub { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; width: 100%; height: 100%; min-height: 120px; padding: 8px; border: 1px solid var(--cl-host-line); border-radius: var(--cl-r-card); text-align: center; animation: cl-in var(--cl-slow) var(--cl-ease); }
 .stub .r { max-width: 100%; }
-@container (max-width: 239px) { .stub .r { display: none; } }
+@container (max-width: 199px) { .stub .r { display: none; } }
 
 .cover { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; padding: 24px; text-align: center; border-radius: inherit; animation: cl-in var(--cl-slow) var(--cl-ease); }
 .cover .t { font: var(--cl-body-lg); font-weight: 600; }

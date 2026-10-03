@@ -257,15 +257,17 @@
 	margin: 8px 0 0;
 }
 
-/* Toast and skip notice: ink, 44 tall, a 4-dot countdown. */
+/* Toast and skip notice: ink, 44 tall, a 4-dot countdown. A long confirmation keeps its text on
+   one line and moves the actions under it, never squeezing the words. */
 .cl-toast {
 	display: flex;
+	flex-wrap: wrap;
 	align-items: center;
-	gap: 4px;
+	gap: 0 4px;
 	width: max-content;
 	max-width: min(420px, calc(100vw - 32px));
-	height: 44px;
-	padding: 0 4px 0 16px;
+	min-height: 44px;
+	padding: 4px 4px 4px 16px;
 	border-radius: var(--cl-r-card);
 	box-shadow: var(--cl-shadow-pop);
 	font: var(--cl-body);
@@ -276,11 +278,14 @@
 }
 .cl-toast-t {
 	flex: 1 1 auto;
-	min-width: 0;
+	max-width: 100%;
 	margin-right: 4px;
-	overflow: hidden;
-	text-overflow: ellipsis;
-	white-space: nowrap;
+}
+.cl-toast-end {
+	display: flex;
+	align-items: center;
+	gap: 4px;
+	margin-left: auto;
 }
 /* One dot drains per second; the toast closes when the first dot ends. Hover and focus pause it. */
 .cl-count {

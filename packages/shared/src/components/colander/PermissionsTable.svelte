@@ -33,6 +33,7 @@ A surface card with hairline rows; below 560 px of width the rows become stacked
 
 <style>
 	.perms {
+		align-self: start;
 		container-type: inline-size;
 		border: 1px solid var(--cl-border);
 		border-radius: var(--cl-r-card);

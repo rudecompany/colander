@@ -255,7 +255,12 @@
 	--uin-focus-ring: 0 0 0 2px var(--cl-surface), 0 0 0 4px var(--cl-brand);
 }
 
-/* Page base. Extension pages and the website both sit on paper. */
+/* Page base. Extension pages and the website both sit on paper. Heights in this system include borders. */
+*,
+*::before,
+*::after {
+	box-sizing: border-box;
+}
 html {
 	color-scheme: light dark;
 	background: var(--cl-paper);

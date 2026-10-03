@@ -383,9 +383,13 @@ export function toast(ctx: InpageContext, t: ToastInput): HTMLElement {
 		{ class: 'cl-toast cl-ink', role: 'status', 'aria-live': 'polite', 'data-v': t.verdict },
 		t.verdict ? glyph(ctx.doc, t.verdict, 16) : null,
 		h('span', { class: 'cl-toast-t' }, t.text),
-		...(t.actions ?? []).map((a) => button(ctx, { label: a.label, icon: a.icon, sm: true, onClick: a.onClick })),
-		count,
-		h('button', { type: 'button', class: 'cl-b cl-x', 'aria-label': ctx.strings.close, onclick: () => t.onClose?.() }, icon(ctx.doc, X))
+		h(
+			'span',
+			{ class: 'cl-toast-end' },
+			...(t.actions ?? []).map((a) => button(ctx, { label: a.label, icon: a.icon, sm: true, onClick: a.onClick })),
+			count,
+			h('button', { type: 'button', class: 'cl-b cl-x', 'aria-label': ctx.strings.close, onclick: () => t.onClose?.() }, icon(ctx.doc, X))
+		)
 	);
 }
 
