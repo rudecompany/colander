@@ -267,6 +267,7 @@ Response `201`: `{"report": Report}`. Limit: 20 per install per day.
     "tests": ["low_effort", "mass_produced"],
     "large": false,
     "imported": false,
+    "attribution": null,
     "appeal_open": false,
     "updated_at": "...",
     "rescore_at": "...",
@@ -284,6 +285,7 @@ Response `201`: `{"report": Report}`. Limit: 20 per install per day.
 
 `verdict` is `null` when the source is known but not rated. Fields without data are `null`.
 A lookup by any alias returns the same source.
+`imported` is true when the source came from an imported seed list, reviewed or not; `attribution` then names the list and its license (for example `AiSList (CC BY-NC 4.0), blocklist`), and the source page must show it.
 
 `GET /v1/log?cursor=&platform=&verdict=&limit=` returns `{"entries": [LogEntry, ...], "next_cursor": "..." | null}`, newest first, default limit 50, max 200.
 

@@ -304,7 +304,7 @@
 						{#if source.updated_at}<div><dt>Since</dt><dd>{fmtDate(source.updated_at)}</dd></div>{/if}
 						{#if source.rescore_at}<div><dt>Re-scored by</dt><dd>{fmtDate(source.rescore_at)}, or at once if an appeal opens</dd></div>{/if}
 						<div><dt>Large audience</dt><dd>{source.large ? 'Yes. A Slop verdict needs staff review.' : 'No'}</dd></div>
-						{#if source.imported}<div><dt>Origin</dt><dd>Imported from a seed list. Until reviewed, it can be Likely slop at most.</dd></div>{/if}
+						{#if source.imported}<div><dt>Origin</dt><dd>Imported from {source.attribution ?? 'a seed list'}. {source.signals.includes('staff_review') ? 'Reviewed since.' : 'Until reviewed, it can be Likely slop at most.'}</dd></div>{/if}
 					</dl>
 				</section>
 

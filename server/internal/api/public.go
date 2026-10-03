@@ -2,6 +2,7 @@ package api
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -57,20 +58,21 @@ type evidenceJSON struct {
 }
 
 type sourceJSON struct {
-	Platform   string       `json:"platform"`
-	ID         string       `json:"id"`
-	Aliases    []string     `json:"aliases"`
-	Name       *string      `json:"name"`
-	Verdict    *string      `json:"verdict"`
-	Signals    []string     `json:"signals"`
-	SlopType   *string      `json:"slop_type"`
-	Tests      []string     `json:"tests"`
-	Large      bool         `json:"large"`
-	Imported   bool         `json:"imported"`
-	AppealOpen bool         `json:"appeal_open"`
-	UpdatedAt  *string      `json:"updated_at"`
-	RescoreAt  *string      `json:"rescore_at"`
-	Evidence   evidenceJSON `json:"evidence"`
+	Platform    string       `json:"platform"`
+	ID          string       `json:"id"`
+	Aliases     []string     `json:"aliases"`
+	Name        *string      `json:"name"`
+	Verdict     *string      `json:"verdict"`
+	Signals     []string     `json:"signals"`
+	SlopType    *string      `json:"slop_type"`
+	Tests       []string     `json:"tests"`
+	Large       bool         `json:"large"`
+	Imported    bool         `json:"imported"`
+	Attribution *string      `json:"attribution"`
+	AppealOpen  bool         `json:"appeal_open"`
+	UpdatedAt   *string      `json:"updated_at"`
+	RescoreAt   *string      `json:"rescore_at"`
+	Evidence    evidenceJSON `json:"evidence"`
 }
 
 func round2(f float64) *float64 {
@@ -87,6 +89,10 @@ func toSource(ev *scoring.Evaluation) sourceJSON {
 		Tests: lf.TestNames(st.Detail), Large: ev.Input.Large, Imported: src.ImportList != "", AppealOpen: ev.Data.AppealOpen,
 		UpdatedAt: optTime(st.ChangedAt), RescoreAt: optTime(st.RescoreAt),
 		Evidence: evidenceJSON{Taggers: e.Taggers, Tags: tagCounts{e.Slop, e.AIFine, e.NotSlop}, ItemsSeen: e.ItemsSeen},
+	}
+	if src.ImportList != "" {
+		a := fmt.Sprintf("%s (%s), %s", src.ImportSource, src.ImportLicense, src.ImportList)
+		out.Attribution = &a
 	}
 	if out.Aliases == nil {
 		out.Aliases = []string{}

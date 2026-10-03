@@ -71,6 +71,8 @@ export interface Source {
 	tests: Test[];
 	large: boolean;
 	imported: boolean;
+	/** Seed list attribution and license when the source came from an imported list, e.g. "AiSList (CC BY-NC 4.0), blocklist". */
+	attribution: string | null;
 	appeal_open: boolean;
 	updated_at: ISODate | null;
 	rescore_at: ISODate | null;

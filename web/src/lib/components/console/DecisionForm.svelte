@@ -46,7 +46,9 @@ and surfaces curator limits (large sources and open appeals need staff) before s
 		onSourceTarget: () => void;
 	} = $props();
 
-	const REVIEWABLE: Signal[] = LAYER_KEYS.flatMap((k) => LAYER_SIGNALS[k]);
+	// Reviewers record provenance and behavior evidence; rubric and consensus signals are computed from tags.
+	const RECORDABLE_LAYERS = ['provenance', 'behavior'] as const;
+	const REVIEWABLE: Signal[] = RECORDABLE_LAYERS.flatMap((k) => LAYER_SIGNALS[k]);
 
 	let verdict = $state<Verdict | 'none' | ''>('');
 	let reason = $state('');
@@ -185,6 +187,7 @@ and surfaces curator limits (large sources and open appeals need staff) before s
 				</label>
 			{/each}
 		</div>
+		<p class="field-hint">Rubric and consensus signals are computed from tags, so they are not set by hand.</p>
 	</fieldset>
 
 	<div class="field">
@@ -196,7 +199,7 @@ and surfaces curator limits (large sources and open appeals need staff) before s
 	<fieldset class="group" disabled={!!needsStaff}>
 		<legend class="field-label">Signals</legend>
 		<div class="signal-groups">
-			{#each LAYER_KEYS as k (k)}
+			{#each RECORDABLE_LAYERS as k (k)}
 				<div class="signal-group">
 					<p class="layer">{LAYER_WORD[k]}</p>
 					{#each LAYER_SIGNALS[k] as s (s)}

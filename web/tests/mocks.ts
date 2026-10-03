@@ -18,6 +18,7 @@ const source = (s: Partial<Source> & Pick<Source, 'platform' | 'id' | 'name' | '
 	tests: [],
 	large: false,
 	imported: false,
+	attribution: null,
 	appeal_open: false,
 	updated_at: '2026-09-28T09:14:00Z',
 	rescore_at: '2026-12-27T09:14:00Z',

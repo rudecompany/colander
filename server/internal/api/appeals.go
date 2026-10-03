@@ -115,7 +115,7 @@ func (s *Server) postAppeal(w http.ResponseWriter, r *http.Request) {
 	if name == "" {
 		name = src.CanonicalID
 	}
-	link := s.PublicURL + "/appeals/" + a.ID + "?secret=" + url.QueryEscape(secret)
+	link := s.PublicURL + "/appeal/status/" + a.ID + "?secret=" + url.QueryEscape(secret)
 	subject, text := mail.Appeal(name, sourceNoun[src.Platform], a.Code, link)
 	if err := s.Mail.Send(r.Context(), email, subject, text); err != nil {
 		s.Log.Error("appeal email not sent", "err", err)

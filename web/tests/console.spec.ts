@@ -47,7 +47,7 @@ test('staff move through the queue by keyboard, read the evidence and write a de
 	expect(post.body).toEqual({
 		verdict: 'slop',
 		reason: 'Twelve near-identical AI history videos a day with one caption template.',
-		signals: ['platform_label', 'templated', 'near_duplicates', 'rubric_hollow', 'high_volume'],
+		signals: ['platform_label', 'templated', 'near_duplicates', 'high_volume'],
 		slop_type: 'filler',
 		tests: ['mass_produced', 'hollow'],
 		large: false
