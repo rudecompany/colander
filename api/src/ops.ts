@@ -38,7 +38,7 @@ async function call(stub: DurableObjectStub<Store>, command: string, args: OpsAr
 /** The commands of the contract. */
 const COMMANDS = new Set(['status', 'grant-role', 'import-seed', 'sign-config', 'drill', 'purge-cache', 'restore-dump', 'pitr-restore']);
 
-/** The dump drill fails when the newest dump is this old (two missed 6-hourly dumps would be 12 h). */
+/** The drill fails when the newest dump is this old: one 6-hourly dump went missing (hosting plan section 3). */
 export const DUMP_MAX_AGE_S = 7 * 3600;
 
 const ok = (body: Record<string, unknown>): OpsAnswer => ({ status: 200, body });
