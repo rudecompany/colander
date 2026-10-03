@@ -8,9 +8,10 @@ import * as db from '../lib/db';
 import { SITE, PUBLIC_KEYS } from '../lib/env';
 import { targetKey } from '../lib/ids';
 import type { ActivityEntry, HelloReply, PageCounts, ReportReply, ReportRequest, TagRequest, ToPage, ToWorker } from '../lib/messages';
-import { ORIGINS } from '../lib/platforms';
+import { offered, ORIGINS } from '../lib/platforms';
 import {
 	dayKey,
+	isPlus,
 	K,
 	withDefaults,
 	type Entitlement,
@@ -56,8 +57,9 @@ function upsert(list: MyListEntry[], key: string, name?: string): MyListEntry[] 
 // ---- Content scripts -------------------------------------------------------------------------
 
 /**
- * Registers scripts only for platforms that are switched on and granted; removes the rest.
- * Calls are serialized: two overlapping runs would both try to register the same IDs.
+ * Registers scripts only for platforms that are switched on, granted and offered (an early
+ * access platform needs Plus); removes the rest. Calls are serialized: two overlapping runs
+ * would both try to register the same IDs.
  */
 let reconciling: Promise<void> = Promise.resolve();
 export function reconcileScripts(): Promise<void> {
@@ -68,10 +70,12 @@ export function reconcileScripts(): Promise<void> {
 
 async function reconcileOnce(): Promise<void> {
 	const s = await getSettings();
+	const got = await chrome.storage.local.get([K.adapterConfig, K.entitlement]);
+	const plus = isPlus(got[K.entitlement] as Entitlement | undefined);
 	const registered = new Set((await chrome.scripting.getRegisteredContentScripts()).map((r) => r.id));
 	for (const p of PLATFORMS) {
 		const granted = await chrome.permissions.contains({ origins: ORIGINS[p] });
-		const want = s.platforms[p] && granted;
+		const want = s.platforms[p] && granted && offered(p, got[K.adapterConfig] as AdapterConfig | undefined, plus);
 		const ids = [`cl-${p}`, `cl-${p}-bridge`];
 		if (want) {
 			const missing = ids.filter((id) => !registered.has(id));
@@ -129,6 +133,8 @@ export async function syncConfig(): Promise<void> {
 export async function syncAll(): Promise<void> {
 	await syncList(await keys());
 	await Promise.allSettled([syncConfig(), refreshPendingReports(), refreshEntitlement(), pullSettings(), flushTags()]);
+	// An expired entitlement changes no storage; this keeps early access platforms in step.
+	await reconcileScripts();
 	await refreshIcons();
 }
 
@@ -282,28 +288,29 @@ export async function startTrial(): Promise<{ ok: true } | { ok: false; error: s
 }
 
 /**
- * Swaps a paid token for a fresh one in its last week, or after it ran out (the server accepts
- * an expired token whose signature verifies). `404 no_plan` means the plan ended: Plus turns
- * off. Trials are never refreshed; they simply end.
+ * Swaps a paid token for a fresh one once a day, also after it ran out (the server accepts an
+ * expired token whose signature verifies), so a cancel or refund turns Plus off within a day.
+ * `404 no_plan` means the plan ended: Plus turns off. Trials are never refreshed; they end.
  */
 export async function refreshEntitlement(): Promise<void> {
-	const t = (await chrome.storage.local.get(K.planToken))[K.planToken] as string | undefined;
+	const got = await chrome.storage.local.get([K.planToken, K.planCheckedAt]);
+	const t = got[K.planToken] as string | undefined;
 	if (!t) return;
 	const p = await verifyPlanToken(t, await keys());
 	if (!p) {
 		await chrome.storage.local.remove([K.planToken, K.entitlement]);
 		return;
 	}
-	if (p.trial || p.exp * 1000 - Date.now() > 7 * 86_400_000) return;
+	if (p.trial || Date.now() - ((got[K.planCheckedAt] as number | undefined) ?? 0) < 86_400_000) return;
 	try {
 		const { token } = await json<{ token: string }>(await request('/v1/entitlement/refresh', { body: { token: t } }));
-		await applyPlanToken(token);
+		if (await applyPlanToken(token)) await chrome.storage.local.set({ [K.planCheckedAt]: Date.now() });
 	} catch (e) {
-		if (e instanceof ApiError && e.status === 404) {
-			await chrome.storage.local.remove(K.planToken);
+		if (e instanceof ApiError && e.status === 404 && e.code === 'no_plan') {
+			await chrome.storage.local.remove([K.planToken, K.planCheckedAt]);
 			await chrome.storage.local.set({ [K.entitlement]: { plus: false, trial: false, exp: p.exp } satisfies Entitlement });
 		}
-		// Offline or a server error: keep the token until the next hourly try.
+		// Offline or a server error: keep the token and try again on the next hourly sync.
 	}
 }
 
@@ -484,6 +491,7 @@ export function startWorker(): void {
 			}
 		}
 		if (area === 'local' && changes[K.status]) await refreshIcons();
+		if (area === 'local' && (changes[K.entitlement] || changes[K.adapterConfig])) await reconcileScripts();
 	});
 
 	chrome.runtime.onMessage.addListener((m: ToWorker, sender, reply) => {

@@ -66,7 +66,9 @@ export const K = {
 	reports: 'reports',
 	reviewerToken: 'reviewerToken',
 	syncState: 'syncState',
-	supportCard: 'supportCard'
+	supportCard: 'supportCard',
+	weeklyCard: 'weeklyCard',
+	planCheckedAt: 'planCheckedAt'
 } as const;
 
 export interface Status {
@@ -132,6 +134,11 @@ export interface Entitlement {
 	plus: boolean;
 	trial: boolean;
 	exp: number;
+}
+
+/** Plus features are on while the verified plan token has not expired. */
+export function isPlus(e: Entitlement | undefined, now = Date.now()): boolean {
+	return !!e?.plus && e.exp * 1000 > now;
 }
 
 export function withDefaults(s: Partial<Settings> | undefined): Settings {

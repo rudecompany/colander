@@ -27,14 +27,30 @@ Show, Always allow and Not slop beside each (P0-12), Report this source, and the
 	import { targetKey } from '../../lib/ids';
 	import type { PageAction, PageState, ToPage } from '../../lib/messages';
 	import { ORIGINS } from '../../lib/platforms';
-	import { dayKey, K, needsAttention, withDefaults, DEFAULT_STATUS, type Entitlement, type Settings, type Stats, type Status } from '../../lib/settings';
-	import { send, stored } from '../../ui/store.svelte';
+	import { dayKey, isPlus, K, needsAttention, withDefaults, DEFAULT_STATUS, type Entitlement, type Settings, type Stats, type Status } from '../../lib/settings';
+	import { fmtNum, send, stored } from '../../ui/store.svelte';
+
+	type CardTiming = { shownAt?: number; dismissedAt?: number };
+	const DAY = 86_400_000;
+
+	/** A dismissible card shows at most once per `every`: the whole day it first shows, until dismissed. */
+	function due(c: CardTiming, every: number, now = Date.now()): boolean {
+		if (c.dismissedAt && now - c.dismissedAt < every) return false;
+		return !c.shownAt || now - c.shownAt > every || dayKey(c.shownAt) === dayKey(now);
+	}
+	function markShown(key: string, c: CardTiming, every: number) {
+		if (!c.shownAt || Date.now() - c.shownAt > every) void chrome.storage.local.set({ [key]: { ...c, shownAt: Date.now() } });
+	}
+	function dismiss(key: string, c: CardTiming) {
+		void chrome.storage.local.set({ [key]: { ...c, dismissedAt: Date.now() } });
+	}
 
 	const settingsStore = stored<Partial<Settings> | undefined>(K.settings, undefined);
 	const stats = stored<Stats | undefined>(K.stats, undefined);
 	const status = stored<Status>(K.status, DEFAULT_STATUS);
 	const entitlement = stored<Entitlement | undefined>(K.entitlement, undefined);
-	const supportCard = stored<{ shownAt?: number; dismissedAt?: number }>(K.supportCard, {});
+	const supportCard = stored<CardTiming>(K.supportCard, {});
+	const weeklyCard = stored<CardTiming>(K.weeklyCard, {});
 	const settings = $derived(withDefaults(settingsStore.value));
 
 	let tabId = $state<number | null>(null);
@@ -46,33 +62,32 @@ Show, Always allow and Not slop beside each (P0-12), Report this source, and the
 	const platform = $derived(page?.platform ?? tabPlatform);
 	const sitePaused = $derived(!!platform && settings.pausedSites.includes(platform));
 	const tabPaused = $derived(page?.paused.tab ?? false);
-	const plus = $derived(!!entitlement.value?.plus && entitlement.value.exp * 1000 > Date.now());
+	const plus = $derived(isPlus(entitlement.value));
 	const override = $derived(plus && platform ? settings.perPlatform[platform] : undefined);
 	const today = $derived.by(() => {
 		const d = stats.value?.days[dayKey()];
 		return d ? d.hidden + d.collapsed : 0;
 	});
 	const onPage = $derived(page ? page.counts.hidden + page.counts.collapsed : 0);
-	const week = $derived.by(() => {
-		let n = 0;
+	const weekly = $derived.by(() => {
+		const w = { hidden: 0, collapsed: 0, labeled: 0 };
 		for (let i = 0; i < 7; i++) {
-			const d = stats.value?.days[dayKey(Date.now() - i * 86_400_000)];
-			if (d) n += d.hidden + d.collapsed;
+			const d = stats.value?.days[dayKey(Date.now() - i * DAY)];
+			if (d) (w.hidden += d.hidden, w.collapsed += d.collapsed, w.labeled += d.labeled);
 		}
-		return n;
+		return w;
 	});
-	const DAY = 86_400_000;
-	const showSupport = $derived.by(() => {
-		const first = stats.value?.firstRunAt;
-		if (!first || Date.now() - first < 7 * DAY || week === 0) return false;
-		const { shownAt, dismissedAt } = supportCard.value;
-		if (dismissedAt && Date.now() - dismissedAt < 30 * DAY) return false;
-		return !shownAt || Date.now() - shownAt > 30 * DAY || dayKey(shownAt) === dayKey();
+	const week = $derived(weekly.hidden + weekly.collapsed);
+	const firstWeekDone = $derived(!!stats.value?.firstRunAt && Date.now() - stats.value.firstRunAt >= 7 * DAY);
+	// Plus: the weekly summary, once a week. Everyone else: the support card, at most once in 30 days.
+	// Never both at once.
+	const showWeekly = $derived(plus && firstWeekDone && weeklyCard.ready && due(weeklyCard.value, 7 * DAY));
+	const showSupport = $derived(!showWeekly && firstWeekDone && week > 0 && supportCard.ready && due(supportCard.value, 30 * DAY));
+	$effect(() => {
+		if (showWeekly) markShown(K.weeklyCard, weeklyCard.value, 7 * DAY);
 	});
 	$effect(() => {
-		if (showSupport && supportCard.ready && (!supportCard.value.shownAt || Date.now() - supportCard.value.shownAt > 30 * DAY)) {
-			void chrome.storage.local.set({ [K.supportCard]: { ...supportCard.value, shownAt: Date.now() } });
-		}
+		if (showSupport) markShown(K.supportCard, supportCard.value, 30 * DAY);
 	});
 
 	async function load() {
@@ -260,9 +275,22 @@ Show, Always allow and Not slop beside each (P0-12), Report this source, and the
 		</section>
 	{/if}
 
+	{#if showWeekly}
+		<section class="support" aria-labelledby="weekly-title">
+			<button class="dismiss" aria-label="Dismiss the weekly summary" onclick={() => dismiss(K.weeklyCard, weeklyCard.value)}>
+				<X size={16} strokeWidth={1.75} />
+			</button>
+			<h2 id="weekly-title" class="label">Your week</h2>
+			<p>In the last 7 days Colander hid or collapsed <strong class="cl-num">{fmtNum(week)}</strong> items and labeled <strong class="cl-num">{fmtNum(weekly.labeled)}</strong>.</p>
+			<div class="support-btns">
+				<Button variant="outline" onclick={() => openOptions('plus')}>See each day</Button>
+			</div>
+		</section>
+	{/if}
+
 	{#if showSupport}
 		<section class="support" aria-label="Support">
-			<button class="dismiss" aria-label="Dismiss" onclick={() => chrome.storage.local.set({ [K.supportCard]: { ...supportCard.value, dismissedAt: Date.now() } })}>
+			<button class="dismiss" aria-label="Dismiss" onclick={() => dismiss(K.supportCard, supportCard.value)}>
 				<X size={16} strokeWidth={1.75} />
 			</button>
 			<p>You skipped <strong class="cl-num">{week}</strong> slop items this week. Colander runs on support from people like you.</p>
@@ -449,7 +477,8 @@ Show, Always allow and Not slop beside each (P0-12), Report this source, and the
 		border-radius: var(--cl-r-card);
 		background: var(--cl-surface-raised);
 	}
-	.support p {
+	.support p,
+	.support h2 {
 		padding-right: 24px;
 	}
 	.support-btns {

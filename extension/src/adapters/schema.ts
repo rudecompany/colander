@@ -14,6 +14,8 @@ export interface AdapterConfig {
 }
 
 export interface PlatformConfig {
+	/** Early access: offered, and its content scripts registered, only with an active Plus entitlement. */
+	early_access?: boolean;
 	/** Hostnames the adapter runs on. */
 	hosts: string[];
 	/** Document events that signal in-page navigation, in addition to the Navigation API. */
@@ -136,6 +138,7 @@ export function validateConfig(value: unknown): AdapterConfig {
 	for (const [p, pc] of Object.entries(c.platforms)) {
 		if (!['yt', 'tt', 'ig', 'fb'].includes(p)) fail(`unknown platform ${p}`);
 		if (!pc || !Array.isArray(pc.hosts) || !Array.isArray(pc.surfaces)) fail(`${p} needs hosts and surfaces`);
+		if (pc!.early_access !== undefined && typeof pc!.early_access !== 'boolean') fail(`${p} early_access must be true or false`);
 		for (const s of pc!.surfaces) {
 			if (!s.id || !s.card || !s.path || !['grid', 'list', 'swipe'].includes(s.mode)) fail(`${p} surface ${s.id} is incomplete`);
 			regexes.push(s.path);

@@ -8,9 +8,16 @@ platforms; finishing opens the first one.
 	import Button from '@colander/shared/components/ui/button/button.svelte';
 	import { PLATFORMS, PLATFORM_NAME, STRICTNESS, STRICTNESS_HINT, STRICTNESS_WORD, type Platform, type Strictness } from '@colander/shared/verdicts';
 	import Check from '@lucide/svelte/icons/check';
-	import { HOME } from '../../lib/platforms';
+	import type { AdapterConfig } from '../../adapters/schema';
+	import { HOME, offered } from '../../lib/platforms';
+	import { isPlus, K, type Entitlement } from '../../lib/settings';
 	import { enablePlatforms } from '../../ui/platforms';
-	import { send } from '../../ui/store.svelte';
+	import { send, stored } from '../../ui/store.svelte';
+
+	const config = stored<AdapterConfig | undefined>(K.adapterConfig, undefined);
+	const entitlement = stored<Entitlement | undefined>(K.entitlement, undefined);
+	// Early access platforms are offered only with Plus.
+	const available = $derived(PLATFORMS.filter((p) => offered(p, config.value, isPlus(entitlement.value))));
 
 	let strictness = $state<Strictness>('standard');
 	let chosen = $state<Platform[]>(['yt']);
@@ -32,6 +39,7 @@ platforms; finishing opens the first one.
 
 	async function finish() {
 		error = '';
+		chosen = chosen.filter((p) => available.includes(p));
 		if (!chosen.length) {
 			error = 'Choose at least one platform.';
 			return;
@@ -90,7 +98,7 @@ platforms; finishing opens the first one.
 			<section class="card" aria-labelledby="s2">
 				<h2 id="s2" class="t-title"><span class="step">2</span>Where should it work?</h2>
 				<div class="platforms" role="group" aria-labelledby="s2">
-					{#each PLATFORMS as p (p)}
+					{#each available as p (p)}
 						<button type="button" role="checkbox" aria-checked={chosen.includes(p)} class="platform" class:on={chosen.includes(p)} onclick={() => togglePlatform(p)}>
 							<span class="box" aria-hidden="true">{#if chosen.includes(p)}<Check size={14} strokeWidth={2.25} />{/if}</span>
 							<span class="pt"><span class="pw">{PLATFORM_NAME[p]}</span><span class="t-caption muted">{SURFACES[p]}</span></span>

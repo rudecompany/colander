@@ -9,7 +9,8 @@ import { targetKey } from '../lib/ids';
 import { ListIndex } from '../lib/list';
 import { decide, type Decision, type MatchContext } from '../lib/match';
 import type { ActivityEntry, HelloReply, PageAction, PageCounts, PageState, ReportReply, TagRequest, ToPage, ToWorker } from '../lib/messages';
-import { K, withDefaults, type Entitlement, type OwnTag, type Settings, type StoredIndex } from '../lib/settings';
+import { platformConfig } from '../lib/platforms';
+import { isPlus, K, withDefaults, type Entitlement, type OwnTag, type Settings, type StoredIndex } from '../lib/settings';
 import { pageIsDark, reducedMotion, setDark } from './dom';
 import { Layer, bar, chip, cover, reportButton, tagButton, type CardView } from './ui';
 
@@ -89,9 +90,7 @@ export function start(): void {
 	}
 
 	function applyConfig(stored: unknown) {
-		const c = stored as AdapterConfig | undefined;
-		const cfg = c && c.version > bundled.version && c.platforms?.[platform!] ? c : bundled;
-		pc = cfg.platforms[platform!] ?? bundled.platforms[platform!]!;
+		pc = platformConfig(stored as AdapterConfig | undefined, platform!);
 		surfaces = activeSurfaces(pc.surfaces, location.pathname);
 		sendBridge();
 	}
@@ -104,7 +103,7 @@ export function start(): void {
 		index = stored?.entries ? new ListIndex(b64decode(stored.entries)) : null;
 	}
 	function applyEntitlement(e: Entitlement | undefined) {
-		plus = !!e?.plus && e.exp * 1000 > Date.now();
+		plus = isPlus(e);
 	}
 	function applyTags(t: Record<string, OwnTag> | undefined) {
 		ownTags = new Map(Object.entries(t ?? {}).map(([k, v]) => [k, v.verdict]));

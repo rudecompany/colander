@@ -4,7 +4,7 @@
 	import NativeSelect from '@colander/shared/components/ui/native-select/native-select.svelte';
 	import SegmentedControl from '@colander/shared/components/ui/segmented-control/segmented-control.svelte';
 	import { ACTION_TABLE, PLATFORMS, PLATFORM_NAME, STRICTNESS, STRICTNESS_HINT, STRICTNESS_WORD, type Platform, type Strictness, type Verdict } from '@colander/shared/verdicts';
-	import { K, withDefaults, type Entitlement, type Settings } from '../../lib/settings';
+	import { isPlus, K, withDefaults, type Entitlement, type Settings } from '../../lib/settings';
 	import Card from '../../ui/Card.svelte';
 	import PlusGate from '../../ui/PlusGate.svelte';
 	import Section from '../../ui/Section.svelte';
@@ -13,7 +13,7 @@
 	const settingsStore = stored<Partial<Settings> | undefined>(K.settings, undefined);
 	const entitlement = stored<Entitlement | undefined>(K.entitlement, undefined);
 	const settings = $derived(withDefaults(settingsStore.value));
-	const plus = $derived(!!entitlement.value?.plus && entitlement.value.exp * 1000 > Date.now());
+	const plus = $derived(isPlus(entitlement.value));
 	const SHOWN: Verdict[] = ['slop', 'likely_slop', 'ai_made'];
 	const WORD = { hide: 'Hide', collapse: 'Collapse', label: 'Label', allow: 'Allow' } as const;
 

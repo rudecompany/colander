@@ -8,7 +8,7 @@
 	import { STRICTNESS, STRICTNESS_WORD, type Strictness } from '@colander/shared/verdicts';
 	import Plus from '@lucide/svelte/icons/plus';
 	import Trash2 from '@lucide/svelte/icons/trash-2';
-	import { dayKey, K, withDefaults, type Entitlement, type Settings, type Stats, type Topic } from '../../lib/settings';
+	import { dayKey, isPlus, K, withDefaults, type Entitlement, type Settings, type Stats, type Topic } from '../../lib/settings';
 	import Card from '../../ui/Card.svelte';
 	import PlusGate from '../../ui/PlusGate.svelte';
 	import Section from '../../ui/Section.svelte';
@@ -18,7 +18,7 @@
 	const entitlement = stored<Entitlement | undefined>(K.entitlement, undefined);
 	const stats = stored<Stats | undefined>(K.stats, undefined);
 	const settings = $derived(withDefaults(settingsStore.value));
-	const plus = $derived(!!entitlement.value?.plus && entitlement.value.exp * 1000 > Date.now());
+	const plus = $derived(isPlus(entitlement.value));
 
 	const week = $derived.by(() => {
 		const days = [];

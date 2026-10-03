@@ -40,6 +40,8 @@ export class MockApi {
 	offline = false;
 	reports: Record<string, unknown>[] = [];
 	config: unknown = null;
+	/** What POST /v1/entitlement/refresh finds behind a paid token. */
+	plan: 'active' | 'ended' = 'active';
 	review: { queue: unknown[]; source: unknown } = { queue: [], source: null };
 
 	async handle(route: Route) {
@@ -67,6 +69,10 @@ export class MockApi {
 			return ok({ report }, 201);
 		}
 		if (p === '/v1/reports') return ok({ reports: this.reports });
+		if (p === '/v1/entitlement/refresh') {
+			if (this.plan === 'ended') return ok({ error: { code: 'no_plan', message: 'No active plan.' } }, 404);
+			return ok({ token: planToken({ trial: false, exp: Math.floor(Date.now() / 1000) + 33 * 86400 }) });
+		}
 		if (p === '/v1/trial') return ok({ token: planToken({ trial: true, exp: Math.floor(Date.now() / 1000) + 14 * 86400 }) });
 		if (p === '/v1/sync') return req.method() === 'GET' ? ok({ error: { code: 'not_found', message: 'None.' } }, 404) : ok({ version: 1 });
 		if (p.startsWith('/v1/review/queue')) return ok({ items: this.review.queue, next_cursor: null });

@@ -63,7 +63,7 @@ The release build asks for site access per platform through `optional_host_permi
 
 **Service worker** (`src/background`).
 On install it makes the install ID (16 random bytes, base64url, contract 2.4), opens the welcome tab, and syncs.
-It syncs on install, on browser start and on an hourly alarm: the list (delta when it can, snapshot otherwise), the signed adapter config, report statuses (only while one of your reports is under review, so an install that never reported sends no ID on a schedule), the plan token's daily refresh, Plus settings, and any due tags.
+It syncs on install, on browser start and on an hourly alarm: the list (delta when it can, snapshot otherwise), the signed adapter config, report statuses (only while one of your reports is under review, so an install that never reported sends no ID on a schedule), the plan token's daily check (a paid token is swapped for a fresh one once a day, so a cancel or refund turns Plus off within a day; `404 no_plan` turns it off), Plus settings, and any due tags.
 Every list file is verified (magic, version, length, sort order, Ed25519 signature) before it is used; a failure keeps the last good copy, a delta is applied only on top of its own base, and a snapshot older than the local list is refused.
 It registers content scripts with `chrome.scripting.registerContentScripts` (`runAt: document_start`) only for platforms that are switched on and granted, and keeps that in step with permission changes.
 It owns the toolbar: a per-tab count badge, the paused icon for paused tabs and sites, and the attention dot when a report gets a verdict or the list has not refreshed for 6 hours after a failure (a dismissed report only gets a calm note in the popup).
@@ -78,7 +78,7 @@ The isolated script trusts that attribute only while its item matches the card's
 All UI is vanilla DOM in open shadow roots with one constructed stylesheet, the system font stack and no `innerHTML`, so page CSS, page CSP and Trusted Types do not get in the way.
 
 **Pages** (`src/entrypoints/*`, Svelte 5, Mittsu components, `colander.css`).
-The popup (pause, strictness, counts, this page's actions with Show, Always allow and Not slop, Report this source, the support card), Options (Lists, Platforms, Strictness, Plus, Appearance, Plan, My reports, Data, Privacy), the welcome page, and the curator side panel.
+The popup (pause, strictness, counts, this page's actions with Show, Always allow and Not slop, Report this source, the support card, and for Plus a weekly summary once a week), Options (Lists, Platforms, Strictness, Plus, Appearance, Plan, My reports, Data, Privacy), the welcome page, and the curator side panel.
 
 ### Matching
 
@@ -122,8 +122,9 @@ Content scripts cannot open the extension origin's IndexedDB, so everything they
 | `storage.local` | `adapterConfig` | A verified remote adapter config newer than the bundled one. Read by content scripts. |
 | `storage.local` | `entitlement` | `{plus, trial, exp}` from the verified plan token. Read by content scripts. |
 | `storage.local` | `installId`, `planToken`, `reviewerToken` | Credentials for the API. |
+| `storage.local` | `planCheckedAt` | When the paid plan token was last checked with `POST /v1/entitlement/refresh` (once a day). |
 | `storage.local` | `status` | List sequence, count and date, last sync and error, config version, report verdict and report closed flags. |
-| `storage.local` | `stats`, `reports`, `syncState`, `supportCard` | Daily counts (60 days), My reports cache, Plus sync version and dirty flag, support card timing. |
+| `storage.local` | `stats`, `reports`, `syncState`, `supportCard`, `weeklyCard` | Daily counts (60 days), My reports cache, Plus sync version and dirty flag, support card and weekly summary timing. |
 | `storage.session` | `pausedTabs`, `tabInfo` | Paused tabs and each tab's platform and count; gone when the browser closes. |
 | IndexedDB `colander` | `kv` / `list` | The canonical list: sequence, created time and the sorted entries, the last good copy. |
 | IndexedDB `colander` | `tags` | The tag queue: each tag with its attempts and next retry time. |
@@ -154,6 +155,7 @@ It is plain data: CSS selectors, attribute names, regular expressions and proper
 
 | Field | Type | Rule |
 | --- | --- | --- |
+| `early_access` | boolean? | Early access to new platforms, a Plus feature. When `true` the platform is offered (welcome page, Options under Platforms) and its content scripts are registered only while a Plus entitlement is active; when Plus ends they are removed. Default `false`. No bundled platform sets it. |
 | `hosts` | string[] | Hostnames the adapter runs on, for example `www.youtube.com`. |
 | `navEvents` | string[]? | Document events that mean an in-page navigation, besides the Navigation API and `popstate`. |
 | `reportHelp` | URL | The platform's own reporting help, linked as "This is a scam or deepfake". |
