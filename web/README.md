@@ -82,7 +82,7 @@ A shared fixture fails any test that logs a page error or a CSP violation.
 | `account.spec.ts` | Email sign-in and callback, safe `next`, connect this browser, one-click cancel at period end, then end now and refund, `409 not_refundable` |
 | `plans.spec.ts` | Yearly preselected, `503 billing_unavailable`, sign-in before checkout, redirect, closed checkout, `409 already_subscribed`, the welcome page |
 | `support.spec.ts` | Donation body and redirect, custom amounts and limits, `503 billing_unavailable`, closed payment |
-| `console.spec.ts` | Keyboard queue, evidence, decision body and CSRF header, curator limits and `403 staff_required` |
+| `console.spec.ts` | Keyboard queue, evidence, decision body and CSRF header, curator limits (large sources, appeals in review) and `403 staff_required`, AI evidence before Slop and `400 ai_evidence_required` |
 | `a11y.spec.ts` | axe WCAG 2.2 A and AA rules on every page, light and dark |
 | `brand.spec.ts` | The vocabulary table's "Not" words and exclamation marks never appear on any page |
 

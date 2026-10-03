@@ -249,7 +249,7 @@
 						<Evidence data={detail.data} queueItem={openItem} role={account.role} onDecideItem={decideItem} onChanged={changed} />
 						<div class="decide card">
 							<DecisionForm
-								source={detail.data.source}
+								data={detail.data}
 								{target}
 								role={account.role}
 								displayName={account.display_name}

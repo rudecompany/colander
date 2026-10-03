@@ -1,6 +1,7 @@
 <!--
 @component The review decision form. Shows exactly what will be written to the public log before it posts,
-and surfaces curator limits (large sources and open appeals need staff) before submit.
+and surfaces the server's limits before submit: curators cannot decide large sources or sources with an
+appeal in review (403 staff_required), and Slop or Likely slop needs AI evidence (400 ai_evidence_required).
 -->
 <script module lang="ts">
 	import type { Signal, Verdict } from '@colander/shared';
@@ -19,7 +20,7 @@ and surfaces curator limits (large sources and open appeals need staff) before s
 		type SlopType,
 		type Test
 	} from '@colander/shared';
-	import type { DecisionInput, LogEntry, Role, Source } from '@colander/shared/api';
+	import type { Appeal, DecisionInput, LogEntry, ReviewSourceResponse, Role } from '@colander/shared/api';
 	import Checkbox from '@colander/shared/components/ui/checkbox/checkbox.svelte';
 	import Dialog from '@colander/shared/components/ui/dialog/dialog.svelte';
 	import NativeSelect from '@colander/shared/components/ui/native-select/native-select.svelte';
@@ -31,14 +32,14 @@ and surfaces curator limits (large sources and open appeals need staff) before s
 	import Notice from '../Notice.svelte';
 
 	let {
-		source,
+		data,
 		target,
 		role,
 		displayName,
 		onDone,
 		onSourceTarget
 	}: {
-		source: Source;
+		data: ReviewSourceResponse;
 		target: Target;
 		role: Role;
 		displayName: string | null;
@@ -49,6 +50,10 @@ and surfaces curator limits (large sources and open appeals need staff) before s
 	// Reviewers record provenance and behavior evidence; rubric and consensus signals are computed from tags.
 	const RECORDABLE_LAYERS = ['provenance', 'behavior'] as const;
 	const REVIEWABLE: Signal[] = RECORDABLE_LAYERS.flatMap((k) => LAYER_SIGNALS[k]);
+	// Contract 6.7: appeals in these states lock the source to staff.
+	const STAFF_APPEAL: Appeal['status'][] = ['pending_manual', 'under_review'];
+
+	const source = $derived(data.source);
 
 	let verdict = $state<Verdict | 'none' | ''>('');
 	let reason = $state('');
@@ -59,7 +64,7 @@ and surfaces curator limits (large sources and open appeals need staff) before s
 	let error = $state('');
 	let confirming = $state(false);
 	let posting = $state(false);
-	let staffBlock = $state<string | null>(null);
+	let refused = $state<{ title: string; message: string } | null>(null);
 
 	// Prefill from whatever is being decided whenever the target changes.
 	$effect(() => {
@@ -71,7 +76,7 @@ and surfaces curator limits (large sources and open appeals need staff) before s
 		tests = target.kind === 'source' ? [...source.tests] : [];
 		large = source.large;
 		error = '';
-		staffBlock = null;
+		refused = null;
 	});
 
 	const current = $derived(target.kind === 'item' ? target.verdict : source.verdict);
@@ -80,10 +85,14 @@ and surfaces curator limits (large sources and open appeals need staff) before s
 		role === 'curator' && target.kind === 'source'
 			? source.large
 				? `${source.name ?? source.id} has a large audience, so only staff can decide it. Leave it in the queue for staff.`
-				: source.appeal_open
+				: source.appeal_open || data.appeals.some((a) => STAFF_APPEAL.includes(a.status))
 					? 'An appeal is open on this source, so only staff can decide it until the appeal is resolved.'
 					: null
 			: null
+	);
+	// The form knows the source's layers, not an item's; the server still checks items and answers ai_evidence_required.
+	const needsAiEvidence = $derived(
+		target.kind === 'source' && !data.layers.provenance.met && !signals.some((s) => LAYER_SIGNALS.provenance.includes(s))
 	);
 
 	function toggle<T>(list: T[], value: T, on: boolean): T[] {
@@ -125,6 +134,7 @@ and surfaces curator limits (large sources and open appeals need staff) before s
 		if (!verdict) return (error = 'Choose a verdict, or No verdict.');
 		if (reason.trim().length < 10) return (error = 'Write a reason of at least 10 characters. It is published in the log.');
 		if (needsStaff) return;
+		if (slopish && needsAiEvidence) return (error = 'Slop and Likely slop need AI evidence. Record a provenance signal, or choose another verdict.');
 		confirming = true;
 	}
 
@@ -140,7 +150,8 @@ and surfaces curator limits (large sources and open appeals need staff) before s
 			onDone('Decision written to the public log.');
 		} catch (e) {
 			confirming = false;
-			if (e instanceof ApiError && e.code === 'staff_required') staffBlock = e.message;
+			if (e instanceof ApiError && e.code === 'staff_required') refused = { title: 'Staff decision needed', message: e.message };
+			else if (e instanceof ApiError && e.code === 'ai_evidence_required') refused = { title: 'AI evidence needed', message: e.message };
 			else error = errorText(e);
 		} finally {
 			posting = false;
@@ -172,12 +183,13 @@ and surfaces curator limits (large sources and open appeals need staff) before s
 		</Notice>
 	{/if}
 
-	<fieldset class="group" disabled={!!needsStaff}>
+	<fieldset class="group" disabled={!!needsStaff} aria-describedby={needsAiEvidence ? 'ai-evidence-hint' : undefined}>
 		<legend class="field-label">Verdict</legend>
 		<div class="verdicts">
 			{#each verdictOptions as o (o.value)}
-				<label class="verdict-option" class:on={verdict === o.value}>
-					<input type="radio" name="decision-verdict" value={o.value} bind:group={verdict} />
+				{@const locked = needsAiEvidence && (o.value === 'slop' || o.value === 'likely_slop')}
+				<label class="verdict-option" class:on={verdict === o.value} class:locked>
+					<input type="radio" name="decision-verdict" value={o.value} bind:group={verdict} disabled={locked} />
 					{#if o.value === 'none'}
 						<span class="chip-none">No verdict</span>
 					{:else}
@@ -187,6 +199,12 @@ and surfaces curator limits (large sources and open appeals need staff) before s
 				</label>
 			{/each}
 		</div>
+		{#if needsAiEvidence}
+			<p class="field-hint" id="ai-evidence-hint">
+				Slop and Likely slop need AI evidence. The provenance layer is not met, so record a provenance signal below to choose
+				them.
+			</p>
+		{/if}
 		<p class="field-hint">Rubric and consensus signals are computed from tags, so they are not set by hand.</p>
 	</fieldset>
 
@@ -245,8 +263,8 @@ and surfaces curator limits (large sources and open appeals need staff) before s
 	{/if}
 
 	{#if error}<p class="field-error" role="alert">{error}</p>{/if}
-	{#if staffBlock}
-		<Notice tone="error" title="Staff decision needed"><p>{staffBlock}</p></Notice>
+	{#if refused}
+		<Notice tone="error" title={refused.title}><p>{refused.message}</p></Notice>
 	{/if}
 
 	<button type="submit" class="uin-btn uin-btn-primary btn-lg submit" disabled={!!needsStaff}>Review decision</button>
@@ -324,6 +342,10 @@ and surfaces curator limits (large sources and open appeals need staff) before s
 	.verdict-option.on {
 		border-color: var(--cl-brand);
 		box-shadow: inset 0 0 0 1px var(--cl-brand);
+	}
+	.verdict-option.locked {
+		opacity: 0.55;
+		cursor: not-allowed;
 	}
 	.now {
 		margin-left: auto;
