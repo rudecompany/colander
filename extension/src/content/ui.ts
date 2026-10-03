@@ -1,7 +1,7 @@
 // In-page UI: chips, collapsed bars, swipe covers, the Tag button and the layer that holds
 // the tag menu, the Why popover, notices and the Report source dialog. Vanilla DOM in shadow
 // roots, styled by styles.ts. Copy follows the spec's sample copy and vocabulary exactly.
-import { ChevronsDownUp, Eye, Flag, Info, Scale, Tag, X, Check, SkipForward } from 'lucide';
+import { ChevronsDownUp, Eye, Flag, Info, Tag, X, Check, SkipForward } from 'lucide';
 import {
 	SIGNAL_TEXT,
 	SLOP_TYPES,
@@ -386,7 +386,7 @@ export class Layer {
 		const actions = h('div', { class: 'why-actions' });
 		if (x.show) actions.append(h('button', { type: 'button', class: 'link sm', onclick: () => (this.closePop(false), x.show!()) }, icon(Eye), 'Show'));
 		if (x.allow) actions.append(h('button', { type: 'button', class: 'link sm', onclick: () => (this.closePop(false), x.allow!()) }, icon(Check), 'Always allow'));
-		if (x.notSlop) actions.append(h('button', { type: 'button', class: 'link sm', onclick: () => (this.closePop(false), x.notSlop!()) }, icon(Scale), 'Not slop'));
+		if (x.notSlop) actions.append(h('button', { type: 'button', class: 'link sm', onclick: () => (this.closePop(false), x.notSlop!()) }, icon(Tag), 'Not slop'));
 		const pop = h(
 			'div',
 			{ class: 'pop', role: 'dialog', 'aria-labelledby': titleId },
