@@ -18,7 +18,6 @@
 	let ext = $state<ExtensionState>({ kind: 'checking' });
 	let displayName = $state('');
 	let nameStatus = $state<{ kind: 'idle' | 'saving' | 'saved' } | { kind: 'error'; message: string }>({ kind: 'idle' });
-	let confirm = $state<null | 'cancel' | 'refund'>(null);
 	let billing = $state<{ kind: 'idle' | 'working' } | { kind: 'error'; message: string } | { kind: 'done'; message: string }>({ kind: 'idle' });
 	let reviewer = $state<{ kind: 'idle' | 'working' } | { kind: 'done' | 'error'; message: string }>({ kind: 'idle' });
 
@@ -60,11 +59,8 @@
 		try {
 			const res = await api<{ account: Account }>('/v1/billing/cancel', { method: 'POST', body: { refund } });
 			session.account = res.account;
-			confirm = null;
-			billing = {
-				kind: 'done',
-				message: refund ? 'Plus has ended and your last charge is being refunded.' : 'Cancelled. Plus stays on until the end of the period you paid for.'
-			};
+			// A plain cancel shows its result in the plan line itself; a refund also gets a confirmation.
+			billing = refund ? { kind: 'done', message: 'Plus has ended and your last charge is being refunded.' } : { kind: 'idle' };
 		} catch (e) {
 			billing = {
 				kind: 'error',
@@ -146,13 +142,12 @@
 				<p><a class="uin-btn uin-btn-primary uin-btn-md" href="/plans">See Plus</a></p>
 			{:else}
 				{@const plan = account.plan}
-				{@const refundLabel = plan.cancel_at_period_end ? 'End now and refund' : 'Cancel and refund'}
 				<p class="t-body-lg"><strong>Plus</strong>, billed {plan.interval === 'year' ? 'yearly at $30' : 'monthly at $3'}.</p>
-				<p class="t-body">
-					{#if plan.status === 'trialing'}
-						Your trial runs until {fmtDate(plan.current_period_end)}. No card is needed for the trial.
-					{:else if plan.cancel_at_period_end}
+				<p class="t-body" aria-live="polite">
+					{#if plan.cancel_at_period_end}
 						Cancelled. Plus stays on until {fmtDate(plan.current_period_end)}, and you will not be charged again.
+					{:else if plan.status === 'trialing'}
+						Your trial runs until {fmtDate(plan.current_period_end)}. No card is needed for the trial.
 					{:else if plan.status === 'past_due'}
 						Your last payment did not go through. Plus stays on for 3 days of grace while the payment is retried.
 					{:else}
@@ -160,34 +155,24 @@
 					{/if}
 				</p>
 
-				{#if confirm === null}
-					{#if !plan.cancel_at_period_end || plan.refundable}
-						<div class="row">
-							{#if !plan.cancel_at_period_end}
-								<button type="button" class="uin-btn uin-btn-outline uin-btn-md" onclick={() => (confirm = 'cancel')}>Cancel</button>
-							{/if}
-							{#if plan.refundable}
-								<button type="button" class="uin-btn uin-btn-outline uin-btn-md" onclick={() => (confirm = 'refund')}>{refundLabel}</button>
-							{/if}
-						</div>
-						{#if plan.refundable}
-							<p class="t-caption muted">Your last charge was less than 30 days ago, so you can still get it back.</p>
-						{/if}
-					{/if}
-				{:else}
-					<div class="confirm" role="group" aria-labelledby="confirm-text">
-						<p id="confirm-text" class="t-body">
-							{confirm === 'refund'
-								? 'Plus ends now and your last charge is refunded the way you paid.'
-								: `Plus stays on until ${fmtDate(plan.current_period_end)}, and you will not be charged again.`}
-						</p>
-						<div class="row">
-							<button type="button" class="uin-btn uin-btn-primary uin-btn-md" disabled={billing.kind === 'working'} onclick={() => cancelPlan(confirm === 'refund')}>
-								{confirm === 'refund' ? refundLabel : 'Cancel Plus'}
-							</button>
-							<button type="button" class="uin-btn uin-btn-ghost uin-btn-md" onclick={() => (confirm = null)}>Keep Plus</button>
-						</div>
+				<!-- One click cancels. The same button then offers the refund; aria-disabled (not disabled) keeps keyboard focus on it. -->
+				{#if !plan.cancel_at_period_end || plan.refundable}
+					<div class="row">
+						<button
+							type="button"
+							class="uin-btn uin-btn-outline uin-btn-md"
+							aria-disabled={billing.kind === 'working'}
+							onclick={() => billing.kind !== 'working' && cancelPlan(plan.cancel_at_period_end)}
+						>
+							{plan.cancel_at_period_end ? 'End now and refund' : 'Cancel Plus'}
+						</button>
 					</div>
+					{#if plan.cancel_at_period_end}
+						<p class="t-caption muted">
+							Your last charge was less than 30 days ago, so you can still get it back. Plus then ends at once, and the charge is
+							refunded the way you paid.
+						</p>
+					{/if}
 				{/if}
 			{/if}
 			{#if billing.kind === 'error'}<Notice tone="error" title="Nothing was changed"><p>{billing.message}</p></Notice>{/if}
@@ -281,14 +266,6 @@
 		flex-wrap: wrap;
 		align-items: center;
 		gap: var(--cl-s2);
-	}
-	.confirm {
-		display: grid;
-		gap: var(--cl-s3);
-		padding: var(--cl-s4);
-		border-radius: var(--cl-r-card);
-		background: var(--cl-surface-raised);
-		border: 1px solid var(--cl-border);
 	}
 	.name-form {
 		display: grid;
