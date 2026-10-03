@@ -2,7 +2,9 @@
 <script lang="ts">
 	import Switch from '@colander/shared/components/ui/switch/switch.svelte';
 	import { PLATFORMS, PLATFORM_NAME, type Platform } from '@colander/shared/verdicts';
-	import { K, withDefaults, type Settings } from '../../lib/settings';
+	import type { AdapterConfig } from '../../adapters/schema';
+	import { offered, platformConfig } from '../../lib/platforms';
+	import { isPlus, K, withDefaults, type Entitlement, type Settings } from '../../lib/settings';
 	import Card from '../../ui/Card.svelte';
 	import Section from '../../ui/Section.svelte';
 	import { disablePlatform, enablePlatforms, granted } from '../../ui/platforms';
@@ -17,6 +19,9 @@
 	};
 	const settingsStore = stored<Partial<Settings> | undefined>(K.settings, undefined);
 	const settings = $derived(withDefaults(settingsStore.value));
+	const config = stored<AdapterConfig | undefined>(K.adapterConfig, undefined);
+	const entitlement = stored<Entitlement | undefined>(K.entitlement, undefined);
+	const plus = $derived(isPlus(entitlement.value));
 	let access = $state<Record<Platform, boolean>>({ yt: false, tt: false, ig: false, fb: false });
 	let note = $state('');
 
@@ -42,13 +47,18 @@
 		<ul class="rows">
 			{#each PLATFORMS as p (p)}
 				{@const on = settings.platforms[p] && access[p]}
+				{@const early = !!platformConfig(config.value, p).early_access}
 				<li>
 					<div class="what">
-						<span id="pf-{p}" class="name">{PLATFORM_NAME[p]}</span>
+						<span class="head"><span id="pf-{p}" class="name">{PLATFORM_NAME[p]}</span>{#if early}<span class="uin-badge uin-badge-sm uin-badge-accent">Early access</span>{/if}</span>
 						<span class="t-caption muted">{SURFACES[p]}</span>
-						{#if settings.platforms[p] && !access[p]}<span class="t-caption warn">Site access for {HOSTS[p]} was removed. Switch it on again to grant it.</span>{/if}
+						{#if !offered(p, config.value, plus)}
+							<span class="t-caption muted">Early access to new platforms is part of Plus. <a href="#plan">See Plus</a></span>
+						{:else if settings.platforms[p] && !access[p]}
+							<span class="t-caption warn">Site access for {HOSTS[p]} was removed. Switch it on again to grant it.</span>
+						{/if}
 					</div>
-					<Switch checked={on} aria-labelledby="pf-{p}" onCheckedChange={(v) => toggle(p, v)} />
+					{#if offered(p, config.value, plus)}<Switch checked={on} aria-labelledby="pf-{p}" onCheckedChange={(v) => toggle(p, v)} />{/if}
 				</li>
 			{/each}
 		</ul>
@@ -72,6 +82,11 @@
 		display: flex;
 		flex-direction: column;
 		gap: 2px;
+	}
+	.head {
+		display: flex;
+		align-items: center;
+		gap: 8px;
 	}
 	.name {
 		font-weight: 600;

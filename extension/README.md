@@ -25,6 +25,7 @@ Only the public half of the RSA key is in the repository; the Chrome Web Store s
 | `pnpm -C extension test` | Vitest unit tests. |
 | `pnpm -C extension test:e2e` | Builds the end-to-end variant and runs the Playwright suite. |
 | `pnpm -C extension test:live` | Builds the end-to-end variant and checks the adapters against the real sites. |
+| `pnpm -C extension screenshots` | Builds the end-to-end variant and rewrites `screenshots/`, light and dark. A normal `test:e2e` run never touches them. |
 | `pnpm -C extension icons` | Renders `public/icons/*.png` from the brand geometry. |
 | `node extension/scripts/capture-fixtures.ts` | Captures sanitized YouTube and TikTok fixtures from the live sites. |
 
@@ -63,10 +64,10 @@ The release build asks for site access per platform through `optional_host_permi
 
 **Service worker** (`src/background`).
 On install it makes the install ID (16 random bytes, base64url, contract 2.4), opens the welcome tab, and syncs.
-It syncs on install, on browser start and on an hourly alarm: the list (delta when it can, snapshot otherwise), the signed adapter config, report statuses, the plan token's refresh, Plus settings, and any due tags.
+It syncs on install, on browser start and on an hourly alarm: the list (delta when it can, snapshot otherwise), the signed adapter config, report statuses (only while one of your reports is under review, so an install that never reported sends no ID on a schedule), the plan token's daily check (a paid token is swapped for a fresh one once a day, so a cancel or refund turns Plus off within a day; `404 no_plan` turns it off), Plus settings, and any due tags.
 Every list file is verified (magic, version, length, sort order, Ed25519 signature) before it is used; a failure keeps the last good copy, a delta is applied only on top of its own base, and a snapshot older than the local list is refused.
 It registers content scripts with `chrome.scripting.registerContentScripts` (`runAt: document_start`) only for platforms that are switched on and granted, and keeps that in step with permission changes.
-It owns the toolbar: a per-tab count badge, the paused icon for paused tabs and sites, and the attention dot when a report gets a verdict or the list has not refreshed for 6 hours after a failure.
+It owns the toolbar: a per-tab count badge, the paused icon for paused tabs and sites, and the attention dot when a report gets a verdict or the list has not refreshed for 6 hours after a failure (a dismissed report only gets a calm note in the popup).
 
 **Content scripts** (`src/content`, `src/entrypoints/content`, `src/entrypoints/bridge.content.ts`).
 `content.js` runs in the isolated world at `document_start`.
@@ -78,7 +79,7 @@ The isolated script trusts that attribute only while its item matches the card's
 All UI is vanilla DOM in open shadow roots with one constructed stylesheet, the system font stack and no `innerHTML`, so page CSS, page CSP and Trusted Types do not get in the way.
 
 **Pages** (`src/entrypoints/*`, Svelte 5, Mittsu components, `colander.css`).
-The popup (pause, strictness, counts, this page's actions with Show, Always allow and Not slop, Report this source, the support card), Options (Lists, Platforms, Strictness, Plus, Appearance, Plan, My reports, Data, Privacy), the welcome page, and the curator side panel.
+The popup (pause, strictness, counts, this page's actions with Show, Always allow and Not slop, Report this source, the support card, and for Plus a weekly summary once a week), Options (Lists, Platforms, Strictness, Plus, Appearance, Plan, My reports, Data, Privacy), the welcome page, and the curator side panel.
 
 ### Matching
 
@@ -104,9 +105,11 @@ Disputed is always labeled with its mark, and Clear is always allowed.
 | Collapse | The card keeps only a 40 px bar: glyph, verdict, one reason, Show and Why. Enter shows it. | The video is covered and paused until Show or Skip. |
 | Hide | The card leaves the layout, so the grid closes up, and the page count goes up. | The video is skipped when it becomes active, with "Skipped 1 slop video. Undo" for 4 seconds, announced politely, never stacked. |
 
-Every card with a source gets a 28 px Tag button: shown on hover or keyboard focus in grids and lists, always in swipe feeds.
+Every card with an item or a source gets a 28 px Tag button: shown on hover or keyboard focus in grids and lists, always in swipe feeds.
+Where a card shows no source (the Instagram Explore grid), the item tag goes out without `source_id` (contract 6.2).
 Tag, then Slop, applies the tag at once (two clicks, P0-5); type and tests are optional after that.
-Why lists at most two signals, the list and its date, and links to the public source page and the appeal page.
+One menu sends one tag: Slop is queued at once but held while the menu is open, type and tests change it on the device, and the final state replaces the queued tag when the menu closes (a held tag goes out after 5 minutes at the latest).
+Why lists every signal that fired on one wrapping line, then the list and its date, and links to the public source page and, for list verdicts only, the appeal page (a platform label or your own tag has nothing to appeal).
 
 ## Storage layout
 
@@ -120,8 +123,9 @@ Content scripts cannot open the extension origin's IndexedDB, so everything they
 | `storage.local` | `adapterConfig` | A verified remote adapter config newer than the bundled one. Read by content scripts. |
 | `storage.local` | `entitlement` | `{plus, trial, exp}` from the verified plan token. Read by content scripts. |
 | `storage.local` | `installId`, `planToken`, `reviewerToken` | Credentials for the API. |
-| `storage.local` | `status` | List sequence, count and date, last sync and error, config version, reports-updated flag. |
-| `storage.local` | `stats`, `reports`, `syncState`, `supportCard` | Daily counts (60 days), My reports cache, Plus sync version and dirty flag, support card timing. |
+| `storage.local` | `planCheckedAt` | When the paid plan token was last checked with `POST /v1/entitlement/refresh` (once a day). |
+| `storage.local` | `status` | List sequence, count and date, last sync and error, config version, report verdict and report closed flags. |
+| `storage.local` | `stats`, `reports`, `syncState`, `supportCard`, `weeklyCard` | Daily counts (60 days), My reports cache, Plus sync version and dirty flag, support card and weekly summary timing. |
 | `storage.session` | `pausedTabs`, `tabInfo` | Paused tabs and each tab's platform and count; gone when the browser closes. |
 | IndexedDB `colander` | `kv` / `list` | The canonical list: sequence, created time and the sorted entries, the last good copy. |
 | IndexedDB `colander` | `tags` | The tag queue: each tag with its attempts and next retry time. |
@@ -152,6 +156,7 @@ It is plain data: CSS selectors, attribute names, regular expressions and proper
 
 | Field | Type | Rule |
 | --- | --- | --- |
+| `early_access` | boolean? | Early access to new platforms, a Plus feature. When `true` the platform is offered (welcome page, Options under Platforms) and its content scripts are registered only while a Plus entitlement is active; when Plus ends they are removed. Default `false`. No bundled platform sets it. |
 | `hosts` | string[] | Hostnames the adapter runs on, for example `www.youtube.com`. |
 | `navEvents` | string[]? | Document events that mean an in-page navigation, besides the Navigation API and `popstate`. |
 | `reportHelp` | URL | The platform's own reporting help, linked as "This is a scam or deepfake". |
@@ -249,13 +254,16 @@ There is no remote code, no `eval` and no inline script.
 
 - `tests/unit`: the list decoder and verifier against `testdata/contract` (snapshot, delta, tampering, length, sort order, unknown keys, delta on the wrong base), the config envelope and plan token, the synchronous SHA-256 against Node's, canonical IDs per platform from real-looking URLs, matching precedence and the strictness table, the tag queue's offline retry planning, and adapter extraction against a saved fixture of every surface.
 - `tests/e2e`: the built extension in Chromium with fixtures served on the real hostnames and the API mocked by route handlers serving the contract fixtures.
-  It covers hiding, collapsing and labeling per strictness, re-applying within 1 second without a reload (P0-3), pause by site and tab, the badge, delta sync, a tampered list, a signed config fixing a renamed selector, no layout jump during infinite scroll, Tag in two clicks and the exact tag body, the offline queue, keyboard-only use of the tag menu and collapsed bar, Why, Show, Always allow and Not slop, swipe skip with Undo and covers, the welcome flow's permission request, Report source, website messaging, the trial and Plus sync, the side panel, and the performance budgets.
+  It covers hiding, collapsing and labeling per strictness, re-applying within 1 second without a reload (P0-3), pause by site and tab, the badge, delta sync, a tampered list, a signed config fixing a renamed selector, no layout jump during infinite scroll, Tag in two clicks and the exact tag body (one POST per tag menu, item tags without a source on the Instagram Explore grid), the offline queue, keyboard-only use of the tag menu and collapsed bar, Why (every signal that fired, Appeal only for list verdicts), Show, Always allow and Not slop, swipe skip with Undo and covers, the welcome flow's permission request, Report source, website messaging, the trial and Plus sync, Plus early access, the weekly summary and the daily plan check, no install ID on a fresh install's sync, a dismissed report closed calmly, the side panel, and the performance budgets.
 - Performance on a 200-card page: slop cards are hidden 3 ms after insertion at the 95th percentile (budget 150 ms), and the content script adds about 21 ms in total (budget 50 ms).
   On live YouTube pages it adds 7 to 23 ms per page.
 - `tests/live`: the real YouTube and TikTok pages, no login.
   Signed-in surfaces run only with a Playwright storage state in `COLANDER_LIVE_STATE_YT`, `_TT`, `_IG` or `_FB`.
   `.github/workflows/adapters-daily.yml` runs it every day.
-- `tests/e2e/shots.spec.ts` writes the screenshots in `screenshots/`, light and dark.
+  A surface that finds no cards fails the run, and so does a surface whose platform has a storage state when the site refuses the automated browser.
+  Without credentials, such surfaces are skipped as unverified: `tests/live/summary-reporter.ts` lists every surface in the job summary and adds a warning annotation for each unverified one.
+- `tests/e2e/shots.spec.ts` (and the side panel test) write the screenshots in `screenshots/`, light and dark, only under `pnpm screenshots` (`SCREENSHOTS=1`).
+- `tests/e2e/a11y.spec.ts` runs axe-core (WCAG 2.2 A and AA) over the popup, every Options section, the welcome page, the side panel and every in-page element (chip, collapsed bar, Tag button, tag menu, Why, report form, skip notice, cover), light and dark, and checks the radio group keys, the popup's 32 px rows and the switches' 3:1 contrast.
 
 ## Fixtures
 
@@ -269,7 +277,7 @@ YouTube home and subscriptions need an account, so their fixtures reuse real ric
 - **Instagram and Facebook** selectors are built from stable structure (`main article`, header links, `/p/` and `/reel/` links, `role="feed"`, `aria-posinset`, heading links, `story_fbid` and `/posts/` links, `data-video-id`, `data-ad-preview`, the "AI info" label) and tested on hand-written fixtures only.
   They need a signed-in live check before release: run `pnpm test:live` with `COLANDER_LIVE_STATE_IG` and `COLANDER_LIVE_STATE_FB`.
 - **TikTok search** and **YouTube home and subscriptions** need an account and were not checked live; they run in the live suite when storage states are provided.
-- **TikTok For You and profiles** were checked live once (both rendered For You articles yielded item IDs and sources); later runs from this machine got TikTok's "Something went wrong" page, which the live suite reports as a skip rather than a failure.
+- **TikTok For You and profiles** were checked live once (both rendered For You articles yielded item IDs and sources); later runs from this machine got TikTok's "Something went wrong" page, which the live suite reports as an unverified skip (with a warning in the daily job summary) when no TikTok storage state is configured, and as a failure when one is.
 - **YouTube search, watch suggestions, channel pages and Shorts** pass live: every card yields an item ID and a source (Shorts: the active one).
 - **Platform AI labels** on YouTube cards and in Shorts, TikTok, Instagram and Facebook are matched by their visible text ("Altered or synthetic content", "AI-generated", "AI info"); no live page with a label was at hand to confirm where each sits, and the English text is assumed.
 - Shorts in YouTube's search shelves carry no channel in the DOM or in their data, so they match by video ID only.

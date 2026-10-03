@@ -1,6 +1,9 @@
 // Screenshots of every surface, light and dark, saved to screenshots/ for review.
+// Run with `pnpm screenshots`; skipped in the normal end-to-end run so it never rewrites them.
 import type { Page } from '@playwright/test';
-import { EXT_ID, expect, fixtureHtml, test } from './harness';
+import { EXT_ID, SHOTS, expect, fixtureHtml, test } from './harness';
+
+test.skip(!SHOTS, 'Set SCREENSHOTS=1 (pnpm screenshots) to capture screenshots.');
 
 const shot = (page: Page, name: string, full = false) => page.screenshot({ path: `screenshots/${name}.png`, fullPage: full, animations: 'disabled' });
 
@@ -93,8 +96,18 @@ for (const scheme of ['light', 'dark'] as const) {
 			// Plain-language chips.
 			await ext.send({ type: 'settings', patch: { plainChips: true } });
 			await expect(cards.nth(2).locator('colander-ui[data-kind="chip"]')).toContainText('Made with AI');
+			// Plain words read neutrally (VERDICT_PLAIN), never "tagged as slop by the community".
+			await expect(cards.nth(1).locator('colander-ui[data-kind="bar"]')).toContainText('Probably low-effort AI content');
 			await cards.nth(2).screenshot({ path: `screenshots/inpage-chip-plain-${scheme}.png`, animations: 'disabled' });
 			await ext.send({ type: 'settings', patch: { plainChips: false } });
+
+			// Why on a Slop source with four signals, at Label so its chip stays: every signal on one wrapping line.
+			await ext.send({ type: 'settings', patch: { strictness: 'label' } });
+			await cards.nth(0).locator('colander-ui[data-kind="chip"] button').click();
+			await expect(page.locator('colander-ui[data-kind="layer"] .why-sig li')).toHaveCount(4);
+			await page.waitForTimeout(150);
+			await page.screenshot({ path: `screenshots/inpage-why-signals-${scheme}.png`, clip: { x: 0, y: 0, width: 760, height: 420 }, animations: 'disabled' });
+			await page.keyboard.press('Escape');
 
 			// Home grid at Strict: hidden, collapsed and labeled cards side by side.
 			await ext.send({ type: 'settings', patch: { strictness: 'strict' } });

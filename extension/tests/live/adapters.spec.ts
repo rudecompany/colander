@@ -1,7 +1,12 @@
 // Live adapter checks against the real sites (pnpm test:live). They prove the bundled selectors
 // still find cards, item IDs and sources on today's pages; .github/workflows/adapters-daily.yml
-// runs them every day (P0-2). No login is used. Surfaces that need an account run only when a
-// Playwright storage state is given: COLANDER_LIVE_STATE_YT, _TT, _IG or _FB (a JSON file path).
+// runs them every day (P0-2). Surfaces that need an account run only when a Playwright storage
+// state is given: COLANDER_LIVE_STATE_YT, _TT, _IG or _FB (a JSON file path).
+//
+// A surface whose platform has credentials configured must find its cards: being refused by the
+// site fails the run like a broken selector does. Without credentials, a surface that needs an
+// account, or a public one the site refused, is skipped as unverified; summary-reporter.ts lists
+// those in the job summary with a warning, so the gap shows every day instead of passing quietly.
 import { chromium, expect, test, type BrowserContext } from '@playwright/test';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -71,7 +76,9 @@ test.afterAll(async () => ctx?.close());
 
 for (const s of SURFACES) {
 	test(`${s.surface} on ${s.url}`, async () => {
-		test.skip(!!s.login && !STATE[s.platform], `needs a signed-in storage state (COLANDER_LIVE_STATE_${s.platform.toUpperCase()})`);
+		const creds = !!STATE[s.platform];
+		test.info().annotations.push({ type: 'credentials', description: creds ? 'configured' : s.login ? 'missing' : 'not needed' });
+		test.skip(s.login === true && !creds, `unverified: needs a signed-in storage state (COLANDER_LIVE_STATE_${s.platform.toUpperCase()})`);
 		const page = await ctx.newPage();
 		await page.goto(s.url, { waitUntil: 'domcontentloaded' });
 		const state = async () =>
@@ -84,17 +91,20 @@ for (const s of SURFACES) {
 		try {
 			await expect.poll(async () => (await of()).withItem, { timeout: 45_000, intervals: [1000] }).toBeGreaterThanOrEqual(s.min);
 		} catch (e) {
-			// Sites sometimes refuse automated browsers outright. That is not an adapter failure,
-			// but it is reported, and a run where it happens every day needs a person to look.
+			// Sites sometimes refuse automated browsers outright. Without credentials that is not an
+			// adapter failure, but it leaves the surface unverified and is reported as such. With
+			// credentials configured, the surface must be checked, so it fails.
 			await page.screenshot({ path: test.info().outputPath('page.png') });
-			test.skip((await of()).total === 0 && (await blocked()), `${new URL(s.url).hostname} served its own error page to the automated browser`);
+			test.skip(!creds && (await of()).total === 0 && (await blocked()), `unverified: ${new URL(s.url).hostname} served its own error page to the automated browser`);
 			throw e;
 		}
 		await page.mouse.wheel(0, 1500);
 		await page.waitForTimeout(2500);
 		const st = (await state())!;
 		const b = st.bySurface[s.surface]!;
-		console.log(`${s.surface}: ${b.total} cards, ${b.withItem} with item IDs, ${b.withSource} with sources; page adds ${st.perf.totalMs} ms over ${st.perf.batches} batches`);
+		const found = `${b.total} cards, ${b.withItem} with item IDs, ${b.withSource} with sources`;
+		console.log(`${s.surface}: ${found}; page adds ${st.perf.totalMs} ms over ${st.perf.batches} batches`);
+		test.info().annotations.push({ type: 'found', description: found });
 		expect(b.withItem).toBeGreaterThanOrEqual(s.min);
 		// Grids on a source page take the page's source when a card shows none.
 		expect(s.page ? b.withItem : b.withSource).toBeGreaterThanOrEqual(s.sources);

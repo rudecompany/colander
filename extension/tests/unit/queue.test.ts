@@ -31,6 +31,14 @@ describe('tag queue', () => {
 		expect(add).toMatchObject({ client_id: 'c', target: 'yt:i:x', attempts: 0, nextAt: 1000 });
 	});
 
+	it('a held tag waits; its replacement is due at once and is the only one sent', () => {
+		const held = enqueue([], tag('a'), 'yt:i:x', 1000 + 300_000).add;
+		expect(dueBatch([held], 1000)).toEqual([]);
+		const { add, remove } = enqueue([held], tag('b'), 'yt:i:x', 2000);
+		expect(remove).toEqual(['a']);
+		expect(dueBatch([add], 2000).map((q) => q.client_id)).toEqual(['b']);
+	});
+
 	it('sends due tags oldest first, at most 50 at a time', () => {
 		const queue = Array.from({ length: 70 }, (_, i) => q(`t${i}`, `yt:i:${i}`, 1000 - i));
 		queue.push(q('later', 'yt:i:later', 5000));

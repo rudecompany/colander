@@ -4,14 +4,14 @@
 	import Heart from '@lucide/svelte/icons/heart';
 	import Check from '@lucide/svelte/icons/check';
 	import { SITE } from '../../lib/env';
-	import { K, type Entitlement } from '../../lib/settings';
+	import { isPlus, K, type Entitlement } from '../../lib/settings';
 	import Card from '../../ui/Card.svelte';
 	import Section from '../../ui/Section.svelte';
 	import { fmtDate, send, stored } from '../../ui/store.svelte';
 
 	const entitlement = stored<Entitlement | undefined>(K.entitlement, undefined);
 	const e = $derived(entitlement.value);
-	const plus = $derived(!!e?.plus && e.exp * 1000 > Date.now());
+	const plus = $derived(isPlus(e));
 	let busy = $state(false);
 	let error = $state('');
 
@@ -23,7 +23,7 @@
 		if (!r.ok) error = r.error ?? 'The trial could not start.';
 	}
 	const FREE = ['Blocking on all four platforms', 'All four strictness levels', 'Tagging, reporting and appeals', 'My list blocks and allows'];
-	const PLUS = ['Sync across browsers', 'Strictness per platform and per topic', 'Keyword and hashtag rules', 'A weekly summary'];
+	const PLUS = ['Sync across browsers', 'Strictness per platform and per topic', 'Keyword and hashtag rules', 'A weekly summary', 'Early access to new platforms'];
 </script>
 
 <Section id="plan" title="Plan" description="Blocking is free for good. Plus buys convenience and control, never influence over a verdict.">

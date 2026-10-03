@@ -8,9 +8,10 @@ import * as db from '../lib/db';
 import { SITE, PUBLIC_KEYS } from '../lib/env';
 import { targetKey } from '../lib/ids';
 import type { ActivityEntry, HelloReply, PageCounts, ReportReply, ReportRequest, TagRequest, ToPage, ToWorker } from '../lib/messages';
-import { ORIGINS } from '../lib/platforms';
+import { offered, ORIGINS } from '../lib/platforms';
 import {
 	dayKey,
+	isPlus,
 	K,
 	withDefaults,
 	type Entitlement,
@@ -56,8 +57,9 @@ function upsert(list: MyListEntry[], key: string, name?: string): MyListEntry[] 
 // ---- Content scripts -------------------------------------------------------------------------
 
 /**
- * Registers scripts only for platforms that are switched on and granted; removes the rest.
- * Calls are serialized: two overlapping runs would both try to register the same IDs.
+ * Registers scripts only for platforms that are switched on, granted and offered (an early
+ * access platform needs Plus); removes the rest. Calls are serialized: two overlapping runs
+ * would both try to register the same IDs.
  */
 let reconciling: Promise<void> = Promise.resolve();
 export function reconcileScripts(): Promise<void> {
@@ -68,10 +70,12 @@ export function reconcileScripts(): Promise<void> {
 
 async function reconcileOnce(): Promise<void> {
 	const s = await getSettings();
+	const got = await chrome.storage.local.get([K.adapterConfig, K.entitlement]);
+	const plus = isPlus(got[K.entitlement] as Entitlement | undefined);
 	const registered = new Set((await chrome.scripting.getRegisteredContentScripts()).map((r) => r.id));
 	for (const p of PLATFORMS) {
 		const granted = await chrome.permissions.contains({ origins: ORIGINS[p] });
-		const want = s.platforms[p] && granted;
+		const want = s.platforms[p] && granted && offered(p, got[K.adapterConfig] as AdapterConfig | undefined, plus);
 		const ids = [`cl-${p}`, `cl-${p}-bridge`];
 		if (want) {
 			const missing = ids.filter((id) => !registered.has(id));
@@ -128,13 +132,18 @@ export async function syncConfig(): Promise<void> {
 
 export async function syncAll(): Promise<void> {
 	await syncList(await keys());
-	await Promise.allSettled([syncConfig(), refreshReports(), refreshEntitlement(), pullSettings(), flushTags()]);
+	await Promise.allSettled([syncConfig(), refreshPendingReports(), refreshEntitlement(), pullSettings(), flushTags()]);
+	// An expired entitlement changes no storage; this keeps early access platforms in step.
+	await reconcileScripts();
 	await refreshIcons();
 }
 
 // ---- Tags --------------------------------------------------------------------------------------
 
-export async function addTag(req: TagRequest): Promise<void> {
+/** How long a tag from an open tag menu waits for its final state before it is sent anyway. */
+const HOLD_MS = 5 * 60_000;
+
+export async function addTag(req: TagRequest, hold = false): Promise<void> {
 	const key = targetKey(req.platform, req.targetType, req.targetId);
 	const own = (await chrome.storage.local.get(K.ownTags))[K.ownTags] as Record<string, OwnTag> | undefined;
 	await chrome.storage.local.set({ [K.ownTags]: { ...own, [key]: { verdict: req.verdict, at: Date.now() } } });
@@ -154,9 +163,10 @@ export async function addTag(req: TagRequest): Promise<void> {
 		if (req.tests?.length) tag.tests = req.tests;
 	}
 	const queue = await db.all<Queued>('tags');
-	const { add, remove } = enqueue(queue, tag, key, Date.now());
+	const { add, remove } = enqueue(queue, tag, key, Date.now() + (hold ? HOLD_MS : 0));
 	for (const id of remove) await db.del('tags', id);
 	await db.put('tags', add);
+	// A held tag is not due yet: this sends any other due tags and sets the alarm for it.
 	await flushTags();
 }
 
@@ -218,15 +228,30 @@ export async function submitReport(r: ReportRequest): Promise<ReportReply> {
 	}
 }
 
-/** Refreshes My reports and raises the attention dot when a verdict lands. */
+async function cachedReports(): Promise<Report[]> {
+	return ((await chrome.storage.local.get(K.reports))[K.reports] as Report[] | undefined) ?? [];
+}
+
+/**
+ * The sync asks for report statuses only while one of this install's reports waits for a
+ * verdict, so an install that never reported never sends its ID on a schedule (P0-11).
+ */
+async function refreshPendingReports(): Promise<void> {
+	if ((await cachedReports()).some((r) => r.status === 'under_review')) await refreshReports();
+}
+
+/** Refreshes My reports: a verdict raises the attention dot, a dismissal only a calm note. */
 export async function refreshReports(): Promise<Report[] | null> {
-	const cached = ((await chrome.storage.local.get(K.reports))[K.reports] as Report[] | undefined) ?? [];
+	const cached = await cachedReports();
 	try {
 		const { reports } = await json<{ reports: Report[] }>(await request('/v1/reports', { auth: { install: true } }));
 		const before = new Map(cached.map((r) => [r.id, r.status]));
-		const landed = reports.some((r) => before.has(r.id) && before.get(r.id) !== r.status && r.status !== 'under_review');
+		const landed = reports.filter((r) => before.has(r.id) && before.get(r.id) !== r.status && r.status !== 'under_review');
 		await chrome.storage.local.set({ [K.reports]: reports });
-		if (landed) await setStatus({ reportsUpdated: true });
+		const patch: Partial<Status> = {};
+		if (landed.some((r) => r.status !== 'dismissed')) patch.reportsUpdated = true;
+		if (landed.some((r) => r.status === 'dismissed')) patch.reportsClosed = true;
+		if (landed.length) await setStatus(patch);
 		return reports;
 	} catch {
 		return null;
@@ -263,28 +288,29 @@ export async function startTrial(): Promise<{ ok: true } | { ok: false; error: s
 }
 
 /**
- * Swaps a paid token for a fresh one in its last week, or after it ran out (the server accepts
- * an expired token whose signature verifies). `404 no_plan` means the plan ended: Plus turns
- * off. Trials are never refreshed; they simply end.
+ * Swaps a paid token for a fresh one once a day, also after it ran out (the server accepts an
+ * expired token whose signature verifies), so a cancel or refund turns Plus off within a day.
+ * `404 no_plan` means the plan ended: Plus turns off. Trials are never refreshed; they end.
  */
 export async function refreshEntitlement(): Promise<void> {
-	const t = (await chrome.storage.local.get(K.planToken))[K.planToken] as string | undefined;
+	const got = await chrome.storage.local.get([K.planToken, K.planCheckedAt]);
+	const t = got[K.planToken] as string | undefined;
 	if (!t) return;
 	const p = await verifyPlanToken(t, await keys());
 	if (!p) {
 		await chrome.storage.local.remove([K.planToken, K.entitlement]);
 		return;
 	}
-	if (p.trial || p.exp * 1000 - Date.now() > 7 * 86_400_000) return;
+	if (p.trial || Date.now() - ((got[K.planCheckedAt] as number | undefined) ?? 0) < 86_400_000) return;
 	try {
 		const { token } = await json<{ token: string }>(await request('/v1/entitlement/refresh', { body: { token: t } }));
-		await applyPlanToken(token);
+		if (await applyPlanToken(token)) await chrome.storage.local.set({ [K.planCheckedAt]: Date.now() });
 	} catch (e) {
-		if (e instanceof ApiError && e.status === 404) {
-			await chrome.storage.local.remove(K.planToken);
+		if (e instanceof ApiError && e.status === 404 && e.code === 'no_plan') {
+			await chrome.storage.local.remove([K.planToken, K.planCheckedAt]);
 			await chrome.storage.local.set({ [K.entitlement]: { plus: false, trial: false, exp: p.exp } satisfies Entitlement });
 		}
-		// Offline or a server error: keep the token until the next hourly try.
+		// Offline or a server error: keep the token and try again on the next hourly sync.
 	}
 }
 
@@ -478,6 +504,7 @@ export function startWorker(): void {
 			}
 		}
 		if (area === 'local' && changes[K.status]) await refreshIcons();
+		if (area === 'local' && (changes[K.entitlement] || changes[K.adapterConfig])) await reconcileScripts();
 	});
 
 	chrome.runtime.onMessage.addListener((m: ToWorker, sender, reply) => {
@@ -527,7 +554,7 @@ async function handle(m: ToWorker, sender: chrome.runtime.MessageSender): Promis
 			await logActivity(m.entries);
 			return { ok: true };
 		case 'tag':
-			await addTag(m.tag);
+			await addTag(m.tag, m.hold);
 			return { ok: true };
 		case 'report':
 			return submitReport(m.report);
@@ -550,7 +577,7 @@ async function handle(m: ToWorker, sender: chrome.runtime.MessageSender): Promis
 			return startTrial();
 		case 'refresh-reports': {
 			const reports = await refreshReports();
-			await setStatus({ reportsUpdated: false });
+			await setStatus({ reportsUpdated: false, reportsClosed: false });
 			return { ok: reports !== null, reports };
 		}
 		case 'set-platform':

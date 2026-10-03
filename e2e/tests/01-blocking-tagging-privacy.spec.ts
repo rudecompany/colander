@@ -83,6 +83,8 @@ test('a tag in two clicks hides the card at once and reaches the server with con
 	const menu = page.locator('colander-ui[data-kind="layer"] .pop');
 	await menu.getByRole('button', { name: /^Slop/ }).click();
 	await expect(target).toHaveAttribute('data-colander', 'hide');
+	// One tag per menu: it is held while type and tests may still change, and sent on Done.
+	await menu.getByRole('button', { name: 'Done' }).click();
 
 	await expect.poll(() => ext.seen.filter((s) => s.method === 'POST' && s.url === `${ORIGIN}/v1/tags`).length).toBe(1);
 	const sent = ext.seen.find((s) => s.method === 'POST' && s.url === `${ORIGIN}/v1/tags`)!;

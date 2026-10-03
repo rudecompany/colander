@@ -8,6 +8,7 @@ import type { Platform } from '@colander/shared/verdicts';
 import defaults from '../../src/adapters/default-config.json';
 import { validateConfig, type AdapterConfig } from '../../src/adapters/schema';
 import { activeSurfaces, extractCard, pageSource, platformForHost } from '../../src/adapters/extract';
+import { offered } from '../../src/lib/platforms';
 
 const config = validateConfig(defaults) as AdapterConfig;
 
@@ -113,5 +114,20 @@ describe('config validation', () => {
 		const bad = structuredClone(defaults) as AdapterConfig;
 		bad.platforms.yt!.surfaces[0]!.path = '(';
 		expect(() => validateConfig(bad)).toThrow('bad regular expression');
+	});
+
+	it('early access is a boolean, off in the bundled config, and needs Plus to be offered', () => {
+		const odd = structuredClone(defaults) as AdapterConfig;
+		(odd.platforms.ig as { early_access?: unknown }).early_access = 'yes';
+		expect(() => validateConfig(odd)).toThrow('early_access');
+		expect(Object.values(config.platforms).some((p) => p.early_access)).toBe(false);
+		const remote = { ...structuredClone(defaults), version: 2 } as AdapterConfig;
+		remote.platforms.ig!.early_access = true;
+		expect(validateConfig(remote).platforms.ig!.early_access).toBe(true);
+		expect(offered('ig', remote, false)).toBe(false);
+		expect(offered('ig', remote, true)).toBe(true);
+		expect(offered('yt', remote, false)).toBe(true);
+		// A remote copy that is not newer than the bundled one does not count.
+		expect(offered('ig', { ...remote, version: 1 }, false)).toBe(true);
 	});
 });

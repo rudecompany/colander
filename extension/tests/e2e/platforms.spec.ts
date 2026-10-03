@@ -10,11 +10,32 @@ test('Instagram feed: Clear stays, the platform label gives AI-made, tags work',
 	await expect(posts.nth(1).locator('header colander-ui[data-kind="chip"]')).toContainText('AI-made');
 	await posts.nth(2).hover();
 	await posts.nth(2).locator('colander-ui[data-kind="tag"] button').click();
-	await page.locator('colander-ui[data-kind="layer"] .pop').getByRole('button', { name: /^Slop/ }).click();
+	const menu = page.locator('colander-ui[data-kind="layer"] .pop');
+	await menu.getByRole('button', { name: /^Slop/ }).click();
 	await expect(posts.nth(2)).toHaveAttribute('data-colander', 'hide');
+	await menu.getByRole('button', { name: 'Done' }).click();
 	await expect.poll(() => ext.api.posted('/v1/tags').length).toBe(1);
 	const tag = (ext.api.posted('/v1/tags')[0]!.body as { tags: Record<string, unknown>[] }).tags[0]!;
 	expect(tag).toMatchObject({ platform: 'ig', target_type: 'item', target_id: 'DAbC_12-xYz', source_id: 'endless.wonders.daily' });
+});
+
+test('Instagram Explore: tiles without a visible source can be tagged too', async ({ ext }) => {
+	await ext.setup({ platforms: ['ig'] });
+	const page = await ext.open('https://www.instagram.com/explore/');
+	const tiles = page.locator('main a[href*="/p/"], main a[href*="/reel/"]');
+	await expect(tiles).toHaveCount(6);
+	await expect(page.locator('main colander-ui[data-kind="tag"]')).toHaveCount(6);
+	await tiles.nth(4).hover();
+	await tiles.nth(4).locator('colander-ui[data-kind="tag"] button').click();
+	const menu = page.locator('colander-ui[data-kind="layer"] .pop');
+	await menu.getByRole('button', { name: /^Slop/ }).click();
+	await expect(tiles.nth(4)).toHaveAttribute('data-colander', 'hide');
+	await expect(page).toHaveURL('https://www.instagram.com/explore/');
+	await menu.getByRole('button', { name: 'Done' }).click();
+	await expect.poll(() => ext.api.posted('/v1/tags').length).toBe(1);
+	const tag = (ext.api.posted('/v1/tags')[0]!.body as { tags: Record<string, unknown>[] }).tags[0]!;
+	expect(tag).toMatchObject({ platform: 'ig', target_type: 'item', target_id: 'C9tile00005', verdict: 'slop' });
+	expect('source_id' in tag).toBe(false);
 });
 
 test('Facebook feed: a listed post is hidden, suggested or not; AI info labels', async ({ ext }) => {

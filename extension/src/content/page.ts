@@ -9,7 +9,8 @@ import { targetKey } from '../lib/ids';
 import { ListIndex } from '../lib/list';
 import { decide, type Decision, type MatchContext } from '../lib/match';
 import type { ActivityEntry, HelloReply, PageAction, PageCounts, PageState, ReportReply, TagRequest, ToPage, ToWorker } from '../lib/messages';
-import { K, withDefaults, type Entitlement, type OwnTag, type Settings, type StoredIndex } from '../lib/settings';
+import { platformConfig } from '../lib/platforms';
+import { isPlus, K, withDefaults, type Entitlement, type OwnTag, type Settings, type StoredIndex } from '../lib/settings';
 import { pageIsDark, reducedMotion, setDark } from './dom';
 import { Layer, bar, chip, cover, reportButton, tagButton, type CardView } from './ui';
 
@@ -66,6 +67,8 @@ export function start(): void {
 	// Registered at document_start, before the page's own scripts, so Escape and the focus trap
 	// of an open popover or dialog are handled before any site shortcut sees the key.
 	addEventListener('keydown', (e) => layer?.onKey(e), true);
+	// Leaving the page closes an open tag menu, which sends its held tag.
+	addEventListener('pagehide', () => layer?.closePop(false));
 
 	let ctx: MatchContext = buildCtx();
 	function buildCtx(): MatchContext {
@@ -87,9 +90,7 @@ export function start(): void {
 	}
 
 	function applyConfig(stored: unknown) {
-		const c = stored as AdapterConfig | undefined;
-		const cfg = c && c.version > bundled.version && c.platforms?.[platform!] ? c : bundled;
-		pc = cfg.platforms[platform!] ?? bundled.platforms[platform!]!;
+		pc = platformConfig(stored as AdapterConfig | undefined, platform!);
 		surfaces = activeSurfaces(pc.surfaces, location.pathname);
 		sendBridge();
 	}
@@ -102,7 +103,7 @@ export function start(): void {
 		index = stored?.entries ? new ListIndex(b64decode(stored.entries)) : null;
 	}
 	function applyEntitlement(e: Entitlement | undefined) {
-		plus = !!e?.plus && e.exp * 1000 > Date.now();
+		plus = isPlus(e);
 	}
 	function applyTags(t: Record<string, OwnTag> | undefined) {
 		ownTags = new Map(Object.entries(t ?? {}).map(([k, v]) => [k, v.verdict]));
@@ -255,7 +256,8 @@ export function start(): void {
 			return true;
 		});
 
-		const taggable = !!st.facts.sourceIds.length;
+		// Every card with an item or a source gets the Tag button, also where the card shows no source.
+		const taggable = !!(st.facts.itemId || st.facts.sourceIds.length);
 		ensure(
 			st,
 			'tag',
@@ -372,40 +374,54 @@ export function start(): void {
 		ui().notice(`Always allowed. ${st.facts.name || 'This source'} is on My list allows.`);
 	}
 
+	/** Item tags carry their source when the card shows one; `source_id` is left out otherwise (contract 6.2). */
 	function tagTarget(st: CardState, sourceLevel: boolean): Omit<TagRequest, 'verdict'> | null {
 		const src = preferredSource(st.facts);
-		if (!src) return null;
 		const item = !sourceLevel && st.facts.itemId;
+		if (!item && !src) return null;
 		return {
 			platform: platform!,
 			targetType: item ? 'item' : 'source',
-			targetId: item || src,
-			sourceId: item ? src : undefined,
+			targetId: item || src!,
+			sourceId: item ? (src ?? undefined) : undefined,
 			platformLabel: st.facts.aiLabel,
 			name: st.facts.name || st.facts.title || undefined
 		};
 	}
 
-	async function tagCard(card: Element, st: CardState, verdict: TagVerdict, sourceLevel = false): Promise<Effective> {
+	async function tagCard(card: Element, st: CardState, verdict: TagVerdict, sourceLevel = false, hold = false): Promise<Effective> {
 		const t = tagTarget(st, sourceLevel);
 		if (!t) return 'none';
 		const key = targetKey(platform!, t.targetType, t.targetId);
 		ownTags = new Map(ownTags).set(key, verdict);
 		changed();
 		reapplyAll();
-		void send({ type: 'tag', tag: { ...t, verdict } });
+		void send({ type: 'tag', tag: { ...t, verdict }, hold });
 		if (verdict === 'not_slop' && sourceLevel) ui().notice('Tagged as not slop. Shown for you, and counted toward the shared list.');
 		return states.get(card) ? effective(states.get(card)!) : 'none';
 	}
 
+	/**
+	 * One tagging session sends one tag (the limit is 60 a minute): Slop applies and is queued at
+	 * once but held while the menu is open, type and tests refine it here, and the final state
+	 * replaces the queued tag when the menu closes.
+	 */
 	function tagMenu(anchor: HTMLElement, card: Element, st: CardState) {
 		const base = tagTarget(st, false);
+		let held: TagRequest | null = null;
 		ui().tagMenu(anchor, {
 			noun: noun(st.surface),
 			reportHelp: pc.reportHelp,
-			tag: (v) => tagCard(card, st, v),
+			tag: (v) => {
+				if (v === 'slop' && base) held = { ...base, verdict: 'slop' };
+				return tagCard(card, st, v, false, v === 'slop');
+			},
 			detail: (slopType: SlopType | null, tests: Test[]) => {
-				if (base) void send({ type: 'tag', tag: { ...base, verdict: 'slop', slopType, tests } });
+				if (held) held = { ...held, slopType, tests };
+			},
+			close: () => {
+				if (held) void send({ type: 'tag', tag: held }).catch(() => undefined);
+				held = null;
 			}
 		});
 	}
