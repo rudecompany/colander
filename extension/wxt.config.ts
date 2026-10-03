@@ -14,7 +14,7 @@ const icons = (state: string) => ({ 16: `/icons/${state}-16.png`, 32: `/icons/${
 export default defineConfig({
 	srcDir: 'src',
 	// The full-stack suite builds against its own server origin, so it builds into its own folder.
-	outDir: process.env.COLANDER_EXT_OUT_DIR || '.output',
+	outDir: process.env.COLANDER_EXT_OUT_DIR || 'dist',
 	modules: ['@wxt-dev/module-svelte'],
 	manifest: ({ mode }) => {
 		const site = (process.env.WXT_COLANDER_SITE || process.env.WXT_COLANDER_API || 'http://localhost:8787').replace(/\/+$/, '');

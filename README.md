@@ -28,10 +28,10 @@ You need Go 1.25 or newer, Node 24 with pnpm 10, and Chrome 137 or newer.
 ```sh
 make setup      # install the workspace and Go modules
 make dev        # build the website, seed demo data, serve everything on http://localhost:8787
-make extension  # build the extension into extension/.output/chrome-mv3
+make extension  # build the extension into extension/dist/chrome-mv3
 ```
 
-Load the extension from `chrome://extensions` with Developer mode on, Load unpacked, and pick `extension/.output/chrome-mv3`.
+Load the extension from `chrome://extensions` with Developer mode on, Load unpacked, and pick `extension/dist/chrome-mv3`.
 Its development ID is `nninnogmbhfebflkcgghlmjmplmpodlc` on every machine.
 The welcome tab asks which platforms to switch on, and Chrome asks for site access for those only.
 

@@ -19,7 +19,7 @@ Only the public half of the RSA key is in the repository; the Chrome Web Store s
 | Command | What it does |
 | --- | --- |
 | `pnpm install` | Installs the workspace (run at the repository root). |
-| `pnpm -C extension build` | Builds `extension/.output/chrome-mv3`. |
+| `pnpm -C extension build` | Builds `extension/dist/chrome-mv3`. |
 | `pnpm -C extension dev` | Builds and reloads on change. |
 | `pnpm -C extension check` | `svelte-check` over every TypeScript and Svelte file, warnings fail. |
 | `pnpm -C extension test` | Vitest unit tests. |
@@ -29,7 +29,7 @@ Only the public half of the RSA key is in the repository; the Chrome Web Store s
 | `pnpm -C extension icons` | Renders `public/icons/*.png` from the brand geometry. |
 | `node extension/scripts/capture-fixtures.ts` | Captures sanitized YouTube and TikTok fixtures from the live sites. |
 
-To load it, open `chrome://extensions`, switch on Developer mode, choose Load unpacked and pick `extension/.output/chrome-mv3`.
+To load it, open `chrome://extensions`, switch on Developer mode, choose Load unpacked and pick `extension/dist/chrome-mv3`.
 The welcome tab opens; choose platforms there, or later in Options under Platforms.
 Chrome 137 or later is required, for Ed25519 in WebCrypto.
 

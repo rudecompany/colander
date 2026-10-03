@@ -8,7 +8,7 @@ import { resolve } from 'node:path';
 import type { Platform } from '@colander/shared/verdicts';
 
 export const ROOT = resolve(import.meta.dirname, '../..');
-export const DIST = resolve(ROOT, '.output/chrome-mv3-e2e');
+export const DIST = resolve(ROOT, 'dist/chrome-mv3-e2e');
 export const EXT_ID = 'nninnogmbhfebflkcgghlmjmplmpodlc';
 export const API = 'http://localhost:8787';
 /** Screenshots in screenshots/ are written only by `pnpm screenshots` (SCREENSHOTS=1), never by a normal run. */

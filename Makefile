@@ -62,4 +62,4 @@ docker:
 	docker build --build-arg PUBLIC_EXTENSION_ID=$(EXTENSION_ID) -t colander .
 
 clean:
-	rm -rf dist web/build extension/.output e2e/.run
+	rm -rf dist web/build extension/dist extension/.output e2e/.run

@@ -12,7 +12,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import type { Platform } from '@colander/shared/verdicts';
 
-const DIST = resolve(import.meta.dirname, '../../.output/chrome-mv3-e2e');
+const DIST = resolve(import.meta.dirname, '../../dist/chrome-mv3-e2e');
 const EXT_ID = 'nninnogmbhfebflkcgghlmjmplmpodlc';
 const STATE: Record<Platform, string | undefined> = {
 	yt: process.env.COLANDER_LIVE_STATE_YT,
