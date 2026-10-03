@@ -203,7 +203,7 @@ func (s *seeder) appeal(platform, alias, email, statement string) *store.Appeal 
 		return nil
 	}
 	if a.Status == store.AppealAwaiting && s.awaitingLink == "" {
-		s.awaitingLink = "/appeals/" + a.ID + "?secret=" + secret
+		s.awaitingLink = "/appeal/status/" + a.ID + "?secret=" + secret
 	}
 	return a
 }
