@@ -93,6 +93,8 @@ for (const scheme of ['light', 'dark'] as const) {
 			// Plain-language chips.
 			await ext.send({ type: 'settings', patch: { plainChips: true } });
 			await expect(cards.nth(2).locator('colander-ui[data-kind="chip"]')).toContainText('Made with AI');
+			// Plain words read neutrally (VERDICT_PLAIN), never "tagged as slop by the community".
+			await expect(cards.nth(1).locator('colander-ui[data-kind="bar"]')).toContainText('Probably low-effort AI content');
 			await cards.nth(2).screenshot({ path: `screenshots/inpage-chip-plain-${scheme}.png`, animations: 'disabled' });
 			await ext.send({ type: 'settings', patch: { plainChips: false } });
 

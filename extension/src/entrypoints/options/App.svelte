@@ -13,7 +13,7 @@ so the popup and in-page notices can link straight to a section (#reports, #plat
 	import Wallet from '@lucide/svelte/icons/wallet';
 	import Flag from '@lucide/svelte/icons/flag';
 	import Database from '@lucide/svelte/icons/database';
-	import Lock from '@lucide/svelte/icons/lock';
+	import ShieldCheck from '@lucide/svelte/icons/shield-check';
 	import type { Component } from 'svelte';
 	import { SITE } from '../../lib/env';
 	import { DEFAULT_STATUS, K, type Status } from '../../lib/settings';
@@ -37,7 +37,7 @@ so the popup and in-page notices can link straight to a section (#reports, #plat
 		{ id: 'plan', label: 'Plan', icon: Wallet, view: Plan },
 		{ id: 'reports', label: 'My reports', icon: Flag, view: Reports },
 		{ id: 'data', label: 'Data', icon: Database, view: Data },
-		{ id: 'privacy', label: 'Privacy', icon: Lock, view: Privacy }
+		{ id: 'privacy', label: 'Privacy', icon: ShieldCheck, view: Privacy }
 	];
 
 	const status = stored<Status>(K.status, DEFAULT_STATUS);
