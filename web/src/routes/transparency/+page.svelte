@@ -218,6 +218,13 @@
 		display: grid;
 		gap: 24px;
 	}
+	/* The 50-dot meters shrink with the card instead of pushing past it on phones. */
+	.two :global(.tally-rows) {
+		grid-template-columns: max-content minmax(0, 300px) max-content;
+	}
+	.two :global(.tally-rows .chart) {
+		width: 100%;
+	}
 	.list-card {
 		display: grid;
 		justify-items: start;

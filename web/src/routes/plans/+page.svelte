@@ -294,6 +294,7 @@
 	}
 	.block {
 		display: grid;
+		grid-template-columns: minmax(0, 1fr);
 		gap: 16px;
 		margin-top: 64px;
 	}
@@ -305,6 +306,9 @@
 		align-items: center;
 		gap: 6px;
 		font-weight: 600;
+	}
+	.cell :global(svg) {
+		flex: none;
 	}
 	.cell.no {
 		color: var(--cl-text-muted);

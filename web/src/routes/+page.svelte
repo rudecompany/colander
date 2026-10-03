@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { onMount } from 'svelte';
 	import { PUBLIC_STORE_URL } from '$app/env/public';
 	import {
 		ACTION_DONE_WORD,
@@ -122,6 +123,11 @@
 		actor_name: null
 	};
 	const noop = () => {};
+
+	// The phone feed is built in the browser, so the prerendered hero ships one feed (the 40 KB
+	// budget); its space is reserved until then. Without JavaScript, phones get the desktop feed.
+	let phoneFeed = $state(false);
+	onMount(() => (phoneFeed = true));
 </script>
 
 <svelte:head>
@@ -180,9 +186,12 @@
 		<div class="frame-desk">
 			<FeedDemo bind:platform bind:level bind:paused height={680} list={listInfo} {listDate} />
 		</div>
-		<div class="frame-phone">
-			<FeedDemo bind:platform bind:level bind:paused bind:open={openPhone} layout="list" items={[3, 6, 1]} popup={false} {listDate} />
+		<div class="frame-phone" class:reserved={!phoneFeed}>
+			{#if phoneFeed}
+				<FeedDemo bind:platform bind:level bind:paused bind:open={openPhone} layout="list" items={[3, 6, 1]} popup={false} {listDate} />
+			{/if}
 		</div>
+		<noscript><style>.frame-desk{display:block!important}.frame-phone{display:none!important}</style></noscript>
 
 		<div class="control">
 			<span class="control-label" aria-hidden="true">Strictness</span>
@@ -609,6 +618,7 @@
 	}
 	.demo {
 		display: grid;
+		grid-template-columns: minmax(0, 1fr);
 		justify-items: center;
 		margin-top: 40px;
 	}
@@ -627,6 +637,9 @@
 	.frame-phone,
 	.popup-phone {
 		display: none;
+	}
+	.reserved {
+		min-height: 565px;
 	}
 	.control {
 		display: flex;
@@ -1294,6 +1307,7 @@
 	}
 	.k {
 		display: none;
+		margin-right: 0.3em;
 		color: var(--cl-text-muted);
 		font-weight: 600;
 	}

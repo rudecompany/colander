@@ -247,6 +247,11 @@ Escape closes it and focus returns to Menu.
 			display: inline-flex;
 		}
 	}
+	@media (max-width: 399px) {
+		.app-title {
+			display: none;
+		}
+	}
 	@media (min-width: 1024px) {
 		.sheet[open] {
 			display: none;

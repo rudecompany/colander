@@ -155,6 +155,7 @@
 <style>
 	.doc {
 		display: grid;
+		grid-template-columns: minmax(0, 1fr);
 		gap: var(--cl-s7);
 		min-width: 0;
 	}

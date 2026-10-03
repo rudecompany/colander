@@ -251,6 +251,7 @@ table.plain tr:last-child > * {
 	border-bottom: 0;
 }
 .table-card {
+	overflow-x: auto;
 	padding: 4px 24px;
 	border: 1px solid var(--cl-border);
 	border-radius: var(--cl-r-card);
@@ -373,4 +374,29 @@ table.plain tr:last-child > * {
 }
 .uin-checkbox .uin-checkbox-box {
 	margin-top: 2px;
+}
+
+@media (max-width: 639px) {
+	.kv {
+		grid-template-columns: minmax(0, 1fr);
+		gap: 2px;
+	}
+	.kv dd + dt {
+		margin-top: 10px;
+	}
+	.kv dd {
+		overflow-wrap: anywhere;
+	}
+}
+
+/* Decision log rows: on the narrowest phones the verdict change gets its own line. */
+@media (max-width: 400px) {
+	.log .row .change {
+		grid-column: 1 / -1;
+	}
+}
+
+/* The shared permissions table's stacked "Why:" and "Never:" labels need a space after them. */
+.perms .k {
+	margin-right: 0.3em;
 }
