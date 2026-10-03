@@ -97,6 +97,7 @@ async function mailTo(side: Side, to: string, mark: number): Promise<string> {
  * server restarts, the Worker runs /__dev/settle); `compare` diffs the stored state and the lists.
  */
 export async function apiStory(sides: [Side, Side], now: string, check: Check, settle: () => Promise<void>, compare: (step: string) => Promise<void>): Promise<void> {
+	const workerSide = sides[1];
 
 	/** One request to both sides; their status and normalized bodies must agree. */
 	async function both(what: string, path: string | ((s: Side, i: number) => string), spec: Spec | ((s: Side, i: number) => Spec) = {}, compareBody = true): Promise<[Reply, Reply]> {
@@ -106,6 +107,9 @@ export async function apiStory(sides: [Side, Side], now: string, check: Check, s
 		check(`${what}: both answer ${g.status}${compareBody ? ' with the same body' : ''}`, same, { go: { status: g.status, body: normalize(g.body) }, worker: { status: w.status, body: normalize(w.body) } });
 		return pair;
 	}
+
+	const stats = await send(workerSide, '/v1/stats');
+	if (stats.status === 404) throw new Error('The Worker does not serve the API routes of contract section 6 yet, so their parity cannot be checked.');
 
 	const install = (n: number) => Buffer.alloc(16, n).toString('base64url');
 	const uuid = (n: number) => `00000000-0000-4000-8000-${n.toString(16).padStart(12, '0')}`;

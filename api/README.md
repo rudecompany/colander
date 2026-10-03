@@ -65,6 +65,19 @@ The Go server keeps serving everything else (and `make e2e`) until the port is c
 - `src/scheduled.ts`, the cron handler:
   - Every 5 minutes the watchdog RPC creates missing recurring jobs, re-arms a lost alarm, asks for a publication when R2 does not hold the head, and returns the status; alerts (`alerts()`, thresholds in `THRESHOLDS`) are mailed through `ALERTS` once each while they last, and a failed mail is retried at the next run.
   - At minute 7 of every hour it sets the last 6 whole hours of `/v1/list/*` requests on this host from `httpRequestsAdaptiveGroups` into `list_requests`.
+- `src/ops.ts`, the ops channel of `docs/deploy.md` behind the `/ops/*` guard: `POST /ops/<command>` with a JSON object body.
+  - `status` reads the heads in the Store and in R2, the pass and dump ages, the dump duration, the rows the last pass read, and `publish_lag_s`, how long the oldest list change not yet in R2 has waited (a sequence R2 lacks, or a verdict change after the head).
+  - `grant-role`, `import-seed` and `sign-config` behave as the Go binary's commands did.
+    `import-seed` imports the whole file in one transaction and starts the chunked scoring pass at once (Go scored inline); `sign-config` signs the file byte for byte with the Worker's key.
+  - `pitr-restore` (`at` typed again as `confirm`, in the last 30 days) calls `getBookmarkForTime` and `onNextSessionRestoreBookmark` and answers the undo bookmark; `restore-dump` (`confirm` equal to `key`) loads a dump into the Store.
+    After either, the edge restarts the Store (`ctx.abort()`), has the new instance publish above R2's sequence, and purges Workers Cache through `ctx.cache`.
+  - `drill` loads the newest dump into the scratch Store `drill`, runs `quick_check` and `foreign_key_check`, compares its row counts with primary's (`countsAgree`), requires the dump to be under 7 hours old, deletes the scratch data, and answers `"ok": true` or `500 drill_failed`.
+  - `purge-cache` (`confirm: "purge-cache"`) purges Workers Cache; local runtimes have none and say so.
+- `src/backup.ts`, the 6-hourly dump job (`jobs.defineDump`): plain SQL that stock `sqlite3` loads (the CREATE statements as created, one INSERT per row with its column names, indexes last), streamed through gzip into an R2 multipart upload of equal 5 MiB parts under `dumps/<ISO time>.sql.gz`, inside `blockConcurrencyWhile`.
+  A restore keeps the Store's own schema and `_migrations` and replaces every table's rows in one transaction, so a dump from older code loads into newer code; it refuses a dump without its final `COMMIT` and tables or columns it does not know.
+- `src/dev.ts`, dev-only routes and the parity clock:
+  - `POST /__dev/seed` ports `colander seed-dev` through the same store, engine and publisher calls; `POST /__dev/settle` does what the Go server does when it starts (publish, full pass, publish); `GET /__dev/dump` answers the backup's SQL uncompressed.
+  - `COLANDER_TEST_NOW` (RFC 3339, honored only with `COLANDER_DEV=1`, as in the Go server) freezes the Store's clock and the edge's `since` check, and then no job runs on its own: the harness settles explicitly.
 - `packages/shared` holds the list format, signing and canonical IDs used here and by the extension.
 
 ## Scripts
@@ -97,16 +110,16 @@ Never put a production key in `.dev.vars`; production secrets are set with `wran
 ## Tests
 
 - `test/*.test.ts` run inside workerd with `@cloudflare/vitest-plugin`: the schema against the Go migrations, migration restarts, `tx` rollback, the router, CORS, `since`, the miss limiter, `/ops/*`, `/__dev/*`, header hygiene, logging, and cache headers on snapshot 200 and delta 200, 204 and 410.
+  - `backup.test.ts` covers the dump round trip through gzip and R2 (equal multipart parts included), the SQL it writes and restores that refuse what they cannot load; `ops.test.ts` every ops command through the edge (Go's `TestImportSeed` among them, and `sign-config` against the contract fixture); `dev.test.ts` the seed (Go's `TestSeedDev`), settle and `COLANDER_TEST_NOW`.
   - `data.test.ts` covers the store ports (Go's `store_test.go` and the behavior of each file), `limits.test.ts` the token buckets, `publisher.test.ts` publication, R2 reconciliation and sequence monotonicity across a simulated restore, `jobs.test.ts` the alarm through `runDurableObjectAlarm`, `rules.test.ts` and `engine.test.ts` the scoring engine (Go's `rules_test.go` and `engine_test.go`, the curator limits, the debounced rescore and a reviewer decision between two chunks of a pass), and `scheduled.test.ts` the watchdog, its alerts and the analytics pull.
 - `../packages/shared/test/*.test.ts` run inside workerd too, so the list encoder, signing and canonical IDs are proven in the runtime that serves them, not only in Node.
-- `test/harness/*.test.ts` run in Node: `site.test.ts` drives the whole Worker with its static assets through `createTestHarness` from Wrangler, and `config.test.ts` guards `wrangler.jsonc` for both environments.
+- `test/harness/*.test.ts` run in Node: `site.test.ts` drives the whole Worker with its static assets through `createTestHarness` from Wrangler, `config.test.ts` guards `wrangler.jsonc` for both environments, and `dev.test.ts` seeds with a frozen clock and loads the dump into stock SQLite with the Go schema.
+- `pnpm -C e2e parity` (`e2e/parity/`) runs the Go server and the Worker through the same story and diffs them; see `e2e/README.md`.
 - A developer's `.dev.vars` never changes test results: the tests pass their own secrets.
 
 ## What the port must add
 
-- `backup.ts`, registered with `this.jobs.defineDump(dump)`; the watchdog alerts on dump age and duration once it exists.
 - Every other route of contract section 6, with the cache policies of hosting plan section 2 added to `src/http.ts`: adapter config (edge `max-age=300, stale-if-error=86400`) and `public, max-age=60` for `/v1/sources/*`, `/v1/log`, `/v1/stats` and `/v1/supporters`.
   Routes that write take their quota with `allow()` in the same `tx`.
-- `/__dev/seed` for the e2e suite, and the ops commands behind the existing `/ops/*` guard.
 - YouTube enrichment at the start of each pass, in `Engine.startPass` before the reputation load and outside any transaction, as Go's `FullPass` did.
-- Mail (Email Sending with the Resend fallback), Stripe billing, YouTube, backups and restore drills, and the parity harness against the Go server.
+- Mail (Email Sending with the Resend fallback), Stripe billing and YouTube.
