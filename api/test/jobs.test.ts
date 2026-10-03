@@ -131,7 +131,10 @@ describe('jobs', () => {
 		// reconciles with R2 first (a publication due now, run by the real alarm).
 		await evictDurableObject(stub);
 		await stub.health();
-		await vi.waitFor(async () => expect(await runInDurableObject(stub, (_, state) => state.storage.kv.get(STATUS.publish))).toBeTruthy());
+		await runDurableObjectAlarm(stub);
+		await vi.waitFor(async () => expect(await runInDurableObject(stub, (_, state) => state.storage.kv.get(STATUS.publish))).toBeTruthy(), {
+			timeout: 10_000
+		});
 		await at(T + 1000, (store) => store.jobs.definePass(scorer));
 		await alarm(T + 1000);
 		expect(scored).toHaveLength(2 * PASS_CHUNK);

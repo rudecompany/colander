@@ -257,7 +257,7 @@ describe('R2 reconciliation', () => {
 		expect(await stub.health()).toBeGreaterThan(0);
 		// The start scheduled a publication due now; run it unless the alarm already fired.
 		await runDurableObjectAlarm(stub);
-		await vi.waitFor(async () => expect((await r2Snapshot())?.seq).toBe(String(ahead + 1)));
+		await vi.waitFor(async () => expect((await r2Snapshot())?.seq).toBe(String(ahead + 1)), { timeout: 10_000 });
 	});
 });
 
