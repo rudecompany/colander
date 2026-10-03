@@ -1,8 +1,10 @@
 // Journeys 1, 2 and 8: passive blocking from the real signed list, a tag that reaches the server,
 // and a privacy audit of every request the extension made along the way.
 import { createHash } from 'node:crypto';
-import { CARD, SEARCH, UNLISTED, card, chip, expect, launch, onboard, test, type Ext } from './harness.ts';
-import { ORIGIN, asStaff, serverLog } from './stack.ts';
+import { CARD, SEARCH, UNLISTED, card, chip, expect, launch, onboard, shownSequence, test, type Ext } from './harness.ts';
+import { BASE_URL, LOCAL_ONLY, ORIGIN, asStaff, serverLog } from './stack.ts';
+
+test.skip(!!BASE_URL, LOCAL_ONLY);
 
 test.describe.configure({ mode: 'serial' });
 
@@ -26,7 +28,7 @@ test('the real signed list hides, collapses and labels by strictness, and Strict
 	expect(count).toBeGreaterThan(30);
 	const options = await ext.page('options.html#lists');
 	const facts = options.locator('dl.facts');
-	await expect(facts.locator('div', { hasText: 'Version' }).locator('dd')).toHaveText(String(sequence));
+	await expect.poll(() => shownSequence(options)).toBe(String(sequence));
 	await expect(facts.locator('div', { hasText: 'Entries' }).locator('dd')).toHaveText(String(count));
 	await options.close();
 
@@ -151,6 +153,6 @@ test('privacy audit: only contract endpoints, no identifiers on list downloads, 
 	const install = await ext.storage<string>('installId');
 	const hash = createHash('sha256').update(`colander-install:${install}`).digest('hex');
 	const log = serverLog();
-	expect(log).toContain('route="POST /v1/tags"');
+	expect(log).toContain('"route":"POST /v1/tags"');
 	for (const secret of [install, hash, UNLISTED.item, UNLISTED.channelId, UNLISTED.handle]) expect(log).not.toContain(secret);
 });

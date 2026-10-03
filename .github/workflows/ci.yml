@@ -138,15 +138,13 @@ jobs:
       - run: pnpm -C extension test
       - run: xvfb-run -a pnpm -C extension test:e2e
 
+  # The Worker under wrangler dev, the website and the extension together in Chromium (e2e/).
   full-stack:
     name: full-stack
     runs-on: ubuntu-latest
-    needs: [api, server, web-and-extension]
+    needs: [api, web-and-extension]
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-go@v7
-        with:
-          go-version-file: server/go.mod
       - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v7
         with:

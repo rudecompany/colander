@@ -49,7 +49,8 @@ test-extension:
 	pnpm -C extension test
 	pnpm -C extension test:e2e
 
-# Full stack: the real server, the built website and the built extension together in Chromium.
+# Full stack: the Worker under wrangler dev, the built website and the built extension together in
+# Chromium. COLANDER_E2E_BASE_URL runs the edge specs against a deployed origin instead.
 e2e:
 	pnpm -C e2e test
 
