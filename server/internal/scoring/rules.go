@@ -158,6 +158,8 @@ type Result struct {
 	SlopType string
 	Tests    uint8
 	Rule     int // the 9.4 rule that matched, 0 when none did
+	// Computed is what rules 3 to 8 say, before a rule 6 cap and before appeals and decisions, so
+	// the review queue shows "scoring says Slop" for a source held at Likely slop.
 	Computed string
 
 	Provenance, Behavior, Rubric, Consensus Layer
@@ -332,15 +334,15 @@ func (th Thresholds) Score(in Input) Result {
 		case in.LapseHold:
 			r.CappedBy = "lapsed"
 		}
-		if r.CappedBy != "" {
-			r.Computed = "likely_slop"
-		}
 	case (r.Behavior.Met || r.Rubric.Met) && (s.S >= 1 || in.Imported == "blocklist") && !r.Mixed:
 		r.Rule, r.Computed, r.Signals = 7, "likely_slop", evidence
 	default:
 		r.Rule, r.Computed, r.Signals = 8, "ai_made", evidence
 	}
 	r.Verdict = r.Computed
+	if r.CappedBy != "" {
+		r.Verdict = "likely_slop"
+	}
 	if r.Verdict == "slop" || r.Verdict == "likely_slop" {
 		r.SlopType, r.Tests = slopType(in.Votes), tests
 	}

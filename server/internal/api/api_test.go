@@ -641,6 +641,38 @@ func TestPendingManualAppealInQueue(t *testing.T) {
 	}
 }
 
+// A source held at Likely slop by the rule 6 cap shows in the queue with the list verdict and what
+// scoring says without the cap, so reviewers see the Slop hint.
+func TestCappedEscalationShowsScoredSlop(t *testing.T) {
+	h := newHarness(t)
+	for i := range 6 {
+		tg := tag(fmt.Sprintf("slop-%d", i), "source", "@farm", "", "slop")
+		tg["tests"] = []string{"low_effort", "mass_produced"}
+		expect(t, h.do("POST", "/v1/tags", map[string]any{"tags": []any{tg}}, installAuth(20+i)...), http.StatusOK)
+	}
+	ref, err := h.srv.Store.FindSource(h.ctx, "yt", "@farm")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Twenty uploads a day, but the channel hides its subscriber count.
+	if _, err := h.srv.Store.SetYouTube(h.ctx, ref, store.YouTubeInfo{ChannelID: "UCzzzzzzzzzzzzzzzzzzzz44", Handle: "@farm",
+		UploadsPerDay: sql.NullFloat64{Float64: 20, Valid: true}}, h.clock.Unix()); err != nil {
+		t.Fatal(err)
+	}
+	h.clock = h.clock.Add(40 * 24 * time.Hour)
+	if _, err := h.srv.Engine.FullPass(h.ctx); err != nil {
+		t.Fatal(err)
+	}
+	staff := h.reviewer("rae@colander.test", "staff", "Rae")
+	w := h.do("GET", "/v1/review/queue?kind=escalations", nil, "Cookie", staff)
+	expect(t, w, http.StatusOK)
+	items := decodeBody[struct{ Items []queueJSON }](t, w).Items
+	if len(items) != 1 || items[0].Verdict == nil || *items[0].Verdict != "likely_slop" || items[0].ComputedVerdict == nil ||
+		*items[0].ComputedVerdict != "slop" || !strings.Contains(items[0].Summary, "audience size unknown") {
+		t.Fatalf("queue = %+v", items)
+	}
+}
+
 func TestCORS(t *testing.T) {
 	h := newHarness(t)
 	w := h.do("OPTIONS", "/v1/tags", nil, "Origin", "chrome-extension://abc", "Access-Control-Request-Method", "POST")

@@ -96,6 +96,7 @@ A few readings of the contract are worth knowing when you work on scoring.
 - Community scoring holds rule 6 Slop at Likely slop, with an escalation, when the source is large, is an unreviewed import, or has an unknown audience size.
 - The audience size is known when the YouTube Data API reported a subscriber count or staff recorded `large` either way, so a TikTok, Instagram or Facebook source reaches Slop only through a reviewer, or after staff recorded its size.
 - The log reason says plainly why a source is held, for example "Held at Likely slop until staff review it, because its audience size is unknown."
+- A queue item's `computed_verdict` is what scoring says before that hold, so a held source shows Slop there while its list verdict stays Likely slop.
 - A source is mixed when at least 5 of its items have evidence and under 80% of them are AI-made.
 - Platform labels on a mixed source's items never count toward the source's own provenance, so it is AI-made only on evidence about the source itself, and otherwise not rated.
 - Items of a mixed source keep their own list entries even when they match the source's verdict, except while an appeal shows the source as Disputed.

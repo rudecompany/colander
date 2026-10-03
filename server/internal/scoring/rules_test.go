@@ -209,6 +209,9 @@ func TestRules(t *testing.T) {
 				t.Fatalf("got verdict %q rule %d capped %q, want %q rule %d capped %q",
 					r.Verdict, r.Rule, r.CappedBy, c.verdict, c.rule, c.capped)
 			}
+			if c.capped != "" && r.Computed != "slop" {
+				t.Errorf("computed %q, want slop: the queue shows what scoring says before the cap", r.Computed)
+			}
 			if r.Signals&c.signals != c.signals {
 				t.Errorf("signals %v missing some of %v", lf.SignalNames(r.Signals), lf.SignalNames(c.signals))
 			}

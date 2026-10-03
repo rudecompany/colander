@@ -162,8 +162,8 @@ func TestTagsAloneNeverMakeSlop(t *testing.T) {
 	}
 
 	label := f.sourceOn("tt", "@labelfarm")
-	if label.State.Verdict != "likely_slop" || label.State.Computed != "likely_slop" || label.State.Signals&lf.SigMostlyAI == 0 {
-		t.Fatalf("labelled TikTok source = %+v, want likely_slop with mostly_ai", label.State)
+	if label.State.Verdict != "likely_slop" || label.State.Computed != "slop" || label.State.Signals&lf.SigMostlyAI == 0 {
+		t.Fatalf("labelled TikTok source = %+v, want likely_slop with mostly_ai, scoring slop", label.State)
 	}
 	if got := f.escalationsOf(label.Ref)["capped"]; !strings.Contains(got, "audience size unknown") {
 		t.Fatalf("capped escalation = %q", got)
