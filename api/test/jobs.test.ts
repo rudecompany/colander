@@ -119,6 +119,7 @@ describe('jobs', () => {
 		await at(T, async (store, state) => {
 			expect(state.storage.kv.get(STATUS.passProgress)).toMatchObject({ cursor: 1000, startedAt: T, sources: 1000, changes: 10 });
 			expect(jobRows(store)).toEqual([
+				{ name: 'dump', due_at: nextDump(T) },
 				{ name: 'pass', due_at: T },
 				{ name: 'prune', due_at: T + PRUNE_INTERVAL }
 			]);
@@ -149,6 +150,7 @@ describe('jobs', () => {
 			expect(state.storage.kv.get(STATUS.passProgress)).toBeUndefined();
 			// The next pass is 5 minutes after this one started, and a publication was requested.
 			expect(jobRows(store)).toEqual([
+				{ name: 'dump', due_at: nextDump(T) },
 				{ name: 'pass', due_at: T + PASS_INTERVAL },
 				{ name: 'prune', due_at: T + PRUNE_INTERVAL },
 				{ name: 'publish', due_at: T + 2000 }
@@ -194,14 +196,14 @@ describe('jobs', () => {
 	it('drop rows of kinds without a handler, and never schedule them', async () => {
 		const warnings = vi.spyOn(console, 'warn').mockImplementation(() => {});
 		await at(T, async (store, state) => {
-			store.jobs.schedule('dump', T);
+			store.jobs.schedule('retired', T);
 			expect(jobRows(store)).toEqual([]);
-			store.db.run("INSERT INTO jobs (name, due_at) VALUES ('dump', ?), ('later:5', ?)", T, T);
+			store.db.run("INSERT INTO jobs (name, due_at) VALUES ('retired', ?), ('later:5', ?)", T, T);
 			await state.storage.setAlarm(T);
 		});
 		await alarm(T);
 		expect(await at(T, jobRows)).toEqual([]);
-		expect(warnings.mock.calls.map((c) => JSON.parse(String(c[0])).job).sort()).toEqual(['dump', 'later']);
+		expect(warnings.mock.calls.map((c) => JSON.parse(String(c[0])).job).sort()).toEqual(['later', 'retired']);
 	});
 
 	it('arm the alarm before answering a request that scheduled a job', async () => {

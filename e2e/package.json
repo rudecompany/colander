@@ -4,7 +4,8 @@
   "type": "module",
   "scripts": {
     "test": "playwright test",
-    "check": "tsc --noEmit"
+    "check": "tsc --noEmit",
+    "parity": "node parity/run.ts"
   },
   "devDependencies": {
     "@colander/api": "workspace:*",

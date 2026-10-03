@@ -536,7 +536,7 @@ describe('jobs', () => {
 	// for the next full pass.
 	it('rescore touched sources after the debounce', async () => {
 		const ref = await at(T, async (f) => {
-			expect(f.store.jobs.kinds()).toEqual(['pass', 'prune', 'publish', 'rescore']);
+			expect(f.store.jobs.kinds()).toEqual(['dump', 'pass', 'prune', 'publish', 'rescore']);
 			let ref = 0;
 			for (let i = 0; i < 3; i++) {
 				const input = { installHash: `i${i}`, clientId: 'r', platform: 'yt', sourceId: '@reported', sourceName: '', examples: [] };

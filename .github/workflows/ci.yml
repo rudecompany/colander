@@ -65,7 +65,7 @@ jobs:
       - run: pnpm -C api deploy:dry
 
   # The Go server stays the reference implementation until the parity harness passes and server/
-  # is deleted (hosting plan section 4); then this job goes too.
+  # is deleted (hosting plan section 4); then this job and parity go too.
   server:
     name: server
     runs-on: ubuntu-latest
@@ -80,6 +80,33 @@ jobs:
       - run: test -z "$(gofmt -l .)"
       - run: go vet ./...
       - run: go test -race ./...
+
+  # The Go server and the Worker through the same story from fresh state, with the clock frozen,
+  # diffed table by table and list file by list file (e2e/parity). It goes with server/.
+  parity:
+    name: parity
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: server/go.mod
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # wrangler dev serves web/build as the Worker's static assets.
+      - run: pnpm -C web build
+      - run: pnpm -C e2e parity
+      - if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: parity-results
+          path: |
+            e2e/.run/parity/report.json
+            e2e/.run/parity/*.log
 
   contract:
     name: contract

@@ -49,6 +49,18 @@ type config struct {
 	YouTubeKey, ResendKey, MailFrom       string
 	ClientIPHeader                        string
 	Stripe                                billing.Config
+	// TestNow freezes every clock that stamps data at this time. Only the parity harness sets it
+	// (COLANDER_TEST_NOW, read only with COLANDER_DEV=1), so the Go server and the Worker sign
+	// byte-identical lists. Background loops keep their real-time schedules.
+	TestNow time.Time
+}
+
+// now is the clock for everything that lands in the database or a signed file.
+func (c config) now() time.Time {
+	if !c.TestNow.IsZero() {
+		return c.TestNow
+	}
+	return time.Now()
 }
 
 func env(name, def string) string {
@@ -58,8 +70,8 @@ func env(name, def string) string {
 	return def
 }
 
-func loadConfig() config {
-	return config{
+func loadConfig() (config, error) {
+	cfg := config{
 		Addr:       env("COLANDER_ADDR", ":8787"),
 		DB:         env("COLANDER_DB", "data/colander.db"),
 		KeyPath:    env("COLANDER_SIGNING_KEY", "data/signing.key"),
@@ -82,6 +94,14 @@ func loadConfig() config {
 			PublicURL:       env("COLANDER_PUBLIC_URL", "http://localhost:8787"),
 		},
 	}
+	if v := os.Getenv("COLANDER_TEST_NOW"); v != "" && cfg.Dev {
+		t, err := time.Parse(time.RFC3339, v)
+		if err != nil {
+			return cfg, fmt.Errorf("COLANDER_TEST_NOW must be an RFC 3339 time: %w", err)
+		}
+		cfg.TestNow = t.UTC()
+	}
+	return cfg, nil
 }
 
 func main() {
@@ -89,7 +109,11 @@ func main() {
 		fmt.Fprint(os.Stderr, usage)
 		os.Exit(2)
 	}
-	cfg := loadConfig()
+	cfg, err := loadConfig()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "colander:", err)
+		os.Exit(2)
+	}
 	var log *slog.Logger
 	if cfg.Dev {
 		log = slog.New(slog.NewTextHandler(os.Stdout, nil))
@@ -99,7 +123,6 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	var err error
 	args := os.Args[2:]
 	switch os.Args[1] {
 	case "serve":
@@ -146,6 +169,7 @@ func serve(ctx context.Context, cfg config, log *slog.Logger) error {
 	defer st.Close()
 
 	pub := lf.NewPublisher(st, key, log)
+	pub.Now = cfg.now
 	if err := pub.Publish(ctx); err != nil {
 		return fmt.Errorf("initial list publication: %w", err)
 	}
@@ -154,8 +178,11 @@ func serve(ctx context.Context, cfg config, log *slog.Logger) error {
 		yt = youtube.New(cfg.YouTubeKey, st)
 	}
 	engine := scoring.NewEngine(st, pub, yt, log)
+	engine.Now = cfg.now
+	a := auth.New(st, cfg.Dev)
+	a.Now = cfg.now
 	srv := api.New(&api.Server{
-		Store: st, Engine: engine, Publisher: pub, Key: key, Auth: auth.New(st, cfg.Dev),
+		Store: st, Engine: engine, Publisher: pub, Key: key, Auth: a, Now: cfg.now,
 		Mail: mail.New(cfg.ResendKey, cfg.MailFrom, cfg.Dev, os.Stdout, log), YouTube: yt,
 		Billing: billing.New(cfg.Stripe, st, log), PublicURL: cfg.PublicURL, SiteDir: cfg.SiteDir,
 		ClientIPHeader: cfg.ClientIPHeader, Log: log,
@@ -179,7 +206,7 @@ func serve(ctx context.Context, cfg config, log *slog.Logger) error {
 	errc := make(chan error, 1)
 	go func() { errc <- hs.ListenAndServe() }()
 	log.Info("colander listening", "addr", cfg.Addr, "dev", cfg.Dev, "key_id", key.KeyIDHex(), "youtube", yt != nil,
-		"billing", cfg.Stripe.SecretKey != "", "managed_payments", cfg.Stripe.ManagedPayments)
+		"billing", cfg.Stripe.SecretKey != "", "managed_payments", cfg.Stripe.ManagedPayments, "test_now", !cfg.TestNow.IsZero())
 
 	select {
 	case err = <-errc:
@@ -242,7 +269,7 @@ func signConfig(ctx context.Context, cfg config, args []string) error {
 	if err != nil {
 		return err
 	}
-	if err := st.SaveAdapterConfig(ctx, version, string(env), time.Now().Unix()); err != nil {
+	if err := st.SaveAdapterConfig(ctx, version, string(env), cfg.now().Unix()); err != nil {
 		return err
 	}
 	fmt.Printf("Signed adapter configuration version %d with key %s. GET /v1/config/adapters now serves it.\n", version, key.KeyIDHex())
@@ -266,7 +293,7 @@ func grantRole(ctx context.Context, cfg config, args []string) error {
 		return err
 	}
 	defer st.Close()
-	a, err := st.GrantRole(ctx, email, role, time.Now().Unix())
+	a, err := st.GrantRole(ctx, email, role, cfg.now().Unix())
 	if err != nil {
 		return err
 	}
@@ -304,11 +331,12 @@ func importSeed(ctx context.Context, cfg config, log *slog.Logger, args []string
 		return err
 	}
 	defer st.Close()
-	imported, skipped, err := readSeed(ctx, st, f, *list, *sourceName, *license, time.Now())
+	imported, skipped, err := readSeed(ctx, st, f, *list, *sourceName, *license, cfg.now())
 	if err != nil {
 		return err
 	}
 	engine := scoring.NewEngine(st, nil, nil, log)
+	engine.Now = cfg.now
 	if _, err := engine.FullPass(ctx); err != nil {
 		return err
 	}

@@ -37,7 +37,7 @@ func seedDev(ctx context.Context, cfg config, log *slog.Logger) error {
 		return err
 	}
 	quiet := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelWarn}))
-	s := &seeder{ctx: ctx, st: st, now: time.Now().UTC().Truncate(time.Second)}
+	s := &seeder{ctx: ctx, st: st, now: cfg.now().UTC().Truncate(time.Second)}
 	s.clock = s.now
 	pub := lf.NewPublisher(st, key, quiet)
 	pub.Now = func() time.Time { return s.clock }

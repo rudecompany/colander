@@ -165,3 +165,21 @@ func TestSeedDev(t *testing.T) {
 		t.Errorf("@catrescuetales entry = %+v, want imported", e)
 	}
 }
+
+// The parity harness's clock: honored only in dev mode, and only as an RFC 3339 time.
+func TestTestNow(t *testing.T) {
+	t.Setenv("COLANDER_TEST_NOW", "2026-05-01T12:00:00Z")
+	t.Setenv("COLANDER_DEV", "")
+	if cfg, err := loadConfig(); err != nil || !cfg.TestNow.IsZero() {
+		t.Fatalf("outside dev mode: TestNow %v, err %v", cfg.TestNow, err)
+	}
+	t.Setenv("COLANDER_DEV", "1")
+	cfg, err := loadConfig()
+	if err != nil || cfg.now().Unix() != 1777636800 || cfg.now() != cfg.now() {
+		t.Fatalf("dev mode: now %v, err %v", cfg.now(), err)
+	}
+	t.Setenv("COLANDER_TEST_NOW", "yesterday")
+	if _, err := loadConfig(); err == nil {
+		t.Fatal("an invalid COLANDER_TEST_NOW was accepted")
+	}
+}
