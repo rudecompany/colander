@@ -1,0 +1,37 @@
+{
+  "name": "@colander/extension",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wxt",
+    "build": "wxt build",
+    "build:e2e": "wxt build --mode e2e",
+    "zip": "wxt zip",
+    "check": "wxt prepare && svelte-check --tsconfig ./tsconfig.json --fail-on-warnings",
+    "test": "vitest run",
+    "test:e2e": "pnpm build:e2e && playwright test --project=e2e",
+    "test:live": "pnpm build:e2e && playwright test --project=live",
+    "icons": "node scripts/make-icons.ts",
+    "postinstall": "wxt prepare"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.63.0",
+    "@types/chrome": "^0.3.4",
+    "@types/jsdom": "^30.0.0",
+    "@types/node": "^26.6.4",
+    "@wxt-dev/module-svelte": "^2.0.5",
+    "fake-indexeddb": "^6.2.5",
+    "jsdom": "^30.1.1",
+    "svelte": "^5.57.1",
+    "svelte-check": "^4.0.0",
+    "typescript": "^5.9.0",
+    "vitest": "^4",
+    "wxt": "^0.21.4"
+  },
+  "dependencies": {
+    "@colander/shared": "workspace:*",
+    "@lucide/svelte": "^1.51.0",
+    "lucide": "^1.51.0"
+  }
+}
