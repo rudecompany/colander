@@ -18,7 +18,7 @@ const shots: Shot[] = [
 	{ name: 'source-disputed', path: '/s/yt/@numisnotes' },
 	{ name: 'source-clear', path: '/s/fb/104729388112' },
 	{ name: 'source-not-rated', path: '/s/yt/@someunknownchannel' },
-	{ name: 'appeal-start', path: '/appeal/yt/@numisnotes' },
+	{ name: 'appeal-start', path: '/appeal/tt/@historybites247' },
 	{
 		name: 'appeal-status-awaiting',
 		path: '/appeal/status/apl_4k9x2m?secret=s3cret',
