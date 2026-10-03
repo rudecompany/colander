@@ -52,14 +52,70 @@ export const DEFAULT_SETTINGS: Settings = {
 	onboarded: false
 };
 
-/** The keys content scripts read. Anything else in storage is service-worker bookkeeping. */
+/** chrome.storage.local keys. Content scripts read the first five; the rest is bookkeeping. */
 export const K = {
 	settings: 'settings',
 	ownTags: 'ownTags',
 	listIndex: 'listIndex',
 	adapterConfig: 'adapterConfig',
-	entitlement: 'entitlement'
+	entitlement: 'entitlement',
+	installId: 'installId',
+	planToken: 'planToken',
+	status: 'status',
+	stats: 'stats',
+	reports: 'reports',
+	reviewerToken: 'reviewerToken',
+	syncState: 'syncState',
+	supportCard: 'supportCard'
 } as const;
+
+export interface Status {
+	listSequence: number;
+	listCount: number;
+	listCreated: number;
+	lastSyncAt: number | null;
+	lastAttemptAt: number | null;
+	lastError: string | null;
+	configVersion: number;
+	/** A report changed status since the user last looked at My reports. */
+	reportsUpdated: boolean;
+}
+
+export const DEFAULT_STATUS: Status = {
+	listSequence: 0,
+	listCount: 0,
+	listCreated: 0,
+	lastSyncAt: null,
+	lastAttemptAt: null,
+	lastError: null,
+	configVersion: 0,
+	reportsUpdated: false
+};
+
+export interface DayStats {
+	hidden: number;
+	collapsed: number;
+	labeled: number;
+}
+
+export interface Stats {
+	firstRunAt: number;
+	/** Keyed by local date, YYYY-MM-DD. */
+	days: Record<string, DayStats>;
+}
+
+export function dayKey(t = Date.now()): string {
+	const d = new Date(t);
+	return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+/** The sync attention dot shows once the list has not refreshed for this long. */
+export const STALE_MS = 6 * 60 * 60_000;
+
+export function needsAttention(s: Status, now = Date.now()): boolean {
+	const stale = !s.lastSyncAt || now - s.lastSyncAt > STALE_MS;
+	return s.reportsUpdated || (!!s.lastError && stale);
+}
 
 export interface StoredIndex {
 	sequence: number;

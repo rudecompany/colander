@@ -17,6 +17,7 @@
   },
   "devDependencies": {
     "@playwright/test": "1.63.0",
+    "@types/chrome": "^0.3.4",
     "@types/jsdom": "^30.0.0",
     "@types/node": "^26.6.4",
     "@wxt-dev/module-svelte": "^2.0.5",
@@ -30,6 +31,7 @@
   },
   "dependencies": {
     "@colander/shared": "workspace:*",
-    "@lucide/svelte": "^1.51.0"
+    "@lucide/svelte": "^1.51.0",
+    "lucide": "^1.51.0"
   }
 }

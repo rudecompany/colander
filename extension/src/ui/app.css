@@ -1,0 +1,297 @@
+/* Extension pages: popup, options, welcome and side panel. Brand tokens from colander.css on
+   top of Mittsu, then the spec's sizes: 32 px controls, 14 px text, nothing under 12 px. */
+@import '@colander/shared/styles/tokens.css';
+@import '@colander/shared/styles/colander.css';
+@import '@colander/shared/components/ui/button/button.css';
+@import '@colander/shared/components/ui/segmented-control/segmented-control.css';
+@import '@colander/shared/components/ui/switch/switch.css';
+@import '@colander/shared/components/ui/checkbox/checkbox.css';
+@import '@colander/shared/components/ui/input/input.css';
+@import '@colander/shared/components/ui/textarea/textarea.css';
+@import '@colander/shared/components/ui/native-select/native-select.css';
+@import '@colander/shared/components/ui/sparkline/sparkline.css';
+@import '@colander/shared/components/ui/badge/badge.css';
+
+html {
+	color-scheme: light dark;
+}
+
+/* colander.css maps Mittsu's tokens onto the brand in :root only, while Mittsu's own dark
+   block has a more specific selector and would win in dark mode. Map them again at the same
+   specificity, after both files, so dark mode wears the brand too. */
+@media (prefers-color-scheme: dark) {
+	:root:not([data-theme='light']) {
+		--uin-fg: var(--cl-text);
+		--uin-fg-mute: var(--cl-text-muted);
+		--uin-fg-dim: color-mix(in srgb, var(--cl-text-muted) 80%, var(--cl-surface));
+		--uin-fg-faint: color-mix(in srgb, var(--cl-text) 22%, transparent);
+		--uin-line: var(--cl-border);
+		--uin-line-strong: color-mix(in srgb, var(--cl-border) 60%, var(--cl-text-muted));
+		--uin-bg-base: var(--cl-paper);
+		--uin-bg-panel: var(--cl-surface);
+		--uin-mat-window: var(--cl-surface);
+		--uin-mat-sidebar: var(--cl-surface-raised);
+		--uin-mat-panel: var(--cl-surface);
+		--uin-mat-row: var(--cl-surface);
+		--uin-mat-hover: color-mix(in srgb, var(--cl-text) 8%, transparent);
+		--uin-mat-selected: color-mix(in srgb, var(--cl-brand) 16%, transparent);
+		--uin-accent: var(--cl-brand);
+		--uin-success: var(--cl-clear);
+		--uin-warn: var(--cl-likely);
+		--uin-danger: var(--cl-slop);
+	}
+}
+:root[data-theme='dark'] {
+	--uin-fg: var(--cl-text);
+	--uin-fg-mute: var(--cl-text-muted);
+	--uin-line: var(--cl-border);
+	--uin-bg-panel: var(--cl-surface);
+	--uin-mat-panel: var(--cl-surface);
+	--uin-mat-row: var(--cl-surface);
+	--uin-accent: var(--cl-brand);
+	--uin-success: var(--cl-clear);
+	--uin-warn: var(--cl-likely);
+	--uin-danger: var(--cl-slop);
+}
+*,
+*::before,
+*::after {
+	box-sizing: border-box;
+}
+body {
+	margin: 0;
+	font: var(--cl-body);
+	color: var(--cl-text);
+	background: var(--cl-surface);
+	-webkit-font-smoothing: antialiased;
+	text-rendering: optimizeLegibility;
+}
+h1,
+h2,
+h3,
+h4,
+p,
+ul,
+ol,
+dl,
+dd,
+figure {
+	margin: 0;
+}
+ul,
+ol {
+	padding: 0;
+	list-style: none;
+}
+a {
+	color: var(--cl-brand);
+	text-underline-offset: 2px;
+	border-radius: 2px;
+}
+a:focus-visible,
+summary:focus-visible,
+[tabindex]:not([tabindex='-1']):focus-visible {
+	outline: 2px solid var(--cl-brand);
+	outline-offset: 2px;
+}
+button {
+	font: inherit;
+}
+svg.lucide {
+	flex: none;
+}
+
+/* Type ramp (spec: Typography). */
+.t-caption {
+	font: var(--cl-caption);
+}
+.t-body-lg {
+	font: var(--cl-body-lg);
+}
+.t-title {
+	font: var(--cl-title);
+}
+.t-display {
+	font: var(--cl-display);
+}
+.muted {
+	color: var(--cl-text-muted);
+}
+.sr-only {
+	position: absolute;
+	width: 1px;
+	height: 1px;
+	overflow: hidden;
+	clip: rect(0 0 0 0);
+	white-space: nowrap;
+}
+
+/* Buttons: primary in brand fill, secondary outlined, quiet as text. */
+.uin-btn {
+	font-weight: 600;
+	border-radius: var(--cl-r-chip);
+	cursor: pointer;
+	gap: 6px;
+}
+.uin-btn-md {
+	height: 32px;
+	padding: 0 14px;
+	font-size: 14px;
+	line-height: 20px;
+}
+.uin-btn-sm {
+	height: 28px;
+	padding: 0 10px;
+	font-size: 12px;
+	line-height: 16px;
+}
+.uin-btn-primary {
+	box-shadow: none;
+}
+.uin-btn-outline {
+	background: var(--cl-surface);
+	border-color: var(--cl-border);
+	color: var(--cl-text);
+}
+.uin-btn-outline:hover:not(:disabled) {
+	background: var(--cl-surface-raised);
+}
+.uin-btn-ghost {
+	color: var(--cl-brand);
+}
+.uin-btn-ghost:hover:not(:disabled) {
+	color: var(--cl-brand);
+	background: color-mix(in srgb, var(--cl-brand) 10%, transparent);
+}
+.uin-btn-ghost.quiet-muted {
+	color: var(--cl-text-muted);
+}
+.uin-btn-ghost.quiet-muted:hover:not(:disabled) {
+	color: var(--cl-text);
+	background: var(--uin-mat-hover);
+}
+.uin-btn-md.uin-btn-ghost {
+	padding: 0 8px;
+}
+.uin-btn-icon.uin-btn-md {
+	width: 32px;
+	padding: 0;
+}
+.uin-btn[aria-busy='true'] {
+	opacity: 0.7;
+	pointer-events: none;
+}
+
+/* Segmented control: four stops, full width, 32 px. */
+.uin-seg {
+	display: flex;
+	width: 100%;
+	border: 1px solid var(--cl-border);
+	border-radius: var(--cl-r-chip);
+	background: var(--cl-surface);
+	padding: 2px;
+	gap: 2px;
+}
+.uin-seg-md .uin-seg-btn {
+	flex: 1 1 0;
+	justify-content: center;
+	height: 28px;
+	padding: 0 6px;
+	font-size: 14px;
+	line-height: 20px;
+	font-weight: 600;
+	border-radius: 4px;
+	color: var(--cl-text-muted);
+	cursor: pointer;
+	white-space: nowrap;
+}
+.uin-seg-btn + .uin-seg-btn {
+	border-left: 0;
+}
+.uin-seg-btn:hover:not(.uin-seg-btn-active):not(:disabled) {
+	color: var(--cl-text);
+	background: var(--uin-mat-hover);
+}
+.uin-seg-md .uin-seg-btn.uin-seg-btn-active {
+	background: var(--cl-brand);
+	color: var(--cl-brand-fg);
+}
+.uin-seg-btn:focus-visible {
+	box-shadow: var(--uin-focus-ring);
+	border-radius: 4px;
+}
+
+/* Inputs: 32 px, outlined in text-muted (spec: Color tokens). */
+.uin-input-md .uin-input-el,
+.uin-nselect-md .uin-nselect-el {
+	height: 32px;
+	font-size: 14px;
+	line-height: 20px;
+	background: var(--cl-surface);
+	border-color: var(--cl-text-muted);
+	border-radius: var(--cl-r-chip);
+}
+.uin-nselect-md .uin-nselect-el {
+	padding: 0 32px 0 12px;
+}
+.uin-nselect-chev {
+	width: 12px;
+	height: 12px;
+}
+.uin-textarea {
+	font-size: 14px;
+	line-height: 20px;
+	background: var(--cl-surface);
+	border-color: var(--cl-text-muted);
+	border-radius: var(--cl-r-chip);
+}
+.uin-input-el:focus,
+.uin-textarea:focus {
+	background: var(--cl-surface);
+}
+.uin-checkbox {
+	font-size: 14px;
+	line-height: 20px;
+	min-height: 24px;
+}
+.uin-checkbox-box {
+	border-color: var(--cl-text-muted);
+}
+.uin-switch {
+	cursor: pointer;
+	flex: none;
+}
+.uin-switch-md .uin-switch-track {
+	width: 40px;
+	height: 24px;
+}
+.uin-switch-md .uin-switch-thumb {
+	width: 18px;
+	height: 18px;
+	left: 3px;
+	background: #ffffff;
+}
+.uin-switch-md.uin-switch-on .uin-switch-thumb {
+	transform: translate(16px, -50%);
+}
+.uin-switch:not(.uin-switch-on) .uin-switch-track {
+	background: color-mix(in srgb, var(--cl-text-muted) 55%, transparent);
+}
+.uin-badge-md,
+.uin-badge-sm {
+	font-size: 12px;
+	line-height: 16px;
+	padding: 2px 8px;
+	font-weight: 600;
+}
+.uin-badge-accent {
+	background: var(--cl-brand-tint);
+	color: var(--cl-brand);
+}
+
+/* The perforation-dot motif (spec: Logo and motif). */
+.dots {
+	background-image: radial-gradient(circle, var(--cl-dot) 1.5px, transparent 1.75px);
+	background-size: 12px 12px;
+	background-position: center;
+}

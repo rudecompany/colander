@@ -71,10 +71,10 @@ describe('list snapshot', () => {
 
 	it('rejects a tampered byte', async () => {
 		const bad = snapshotBytes.slice();
-		bad[42] ^= 1; // first entry's signals
+		bad[42] = bad[42]! ^ 1; // first entry's signals
 		await expect(verifyList(bad, keys)).rejects.toThrow('bad signature');
 		const badSig = snapshotBytes.slice();
-		badSig[badSig.length - 1] ^= 1;
+		badSig[badSig.length - 1] = badSig[badSig.length - 1]! ^ 1;
 		await expect(verifyList(badSig, keys)).rejects.toThrow('bad signature');
 	});
 
