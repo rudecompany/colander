@@ -182,8 +182,11 @@ svg { display: block; flex: none; }
 .choice:hover { background: var(--raised); }
 .choice[aria-pressed='true'], .choice[aria-checked='true'] { background: color-mix(in srgb, var(--brand) 14%, var(--surface)); border-color: var(--brand); color: var(--text); font-weight: 600; }
 .check { display: flex; align-items: center; gap: 8px; min-height: 28px; font-size: 14px; line-height: 20px; cursor: pointer; }
-.check input { width: 16px; height: 16px; margin: 0; accent-color: var(--brand); cursor: pointer; }
-.check .d { color: var(--muted); font-size: 12px; line-height: 16px; }
+.check input { flex: none; width: 16px; height: 16px; margin: 0; accent-color: var(--brand); cursor: pointer; }
+.check.top { align-items: flex-start; padding: 4px 0; }
+.check.top input { margin-top: 2px; }
+.check .t { display: block; }
+.check .d { display: block; color: var(--muted); font-size: 12px; line-height: 16px; }
 
 /* Why popover: five lines at most. */
 .why-sig { margin: 0; padding: 0; list-style: none; }

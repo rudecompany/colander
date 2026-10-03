@@ -41,7 +41,9 @@ export interface PageState {
 	counts: PageCounts;
 	actions: PageAction[];
 	source: { platform: Platform; sourceIds: string[]; name: string } | null;
-	cards: { total: number; withItem: number; withSource: number };
+	cards: { total: number; withItem: number; withSource: number; tracked: number };
+	/** Per active surface, for adapter health checks. Cards include empty placeholders of virtualized feeds. */
+	bySurface: Record<string, { total: number; withItem: number; withSource: number }>;
 	perf: { batches: number; totalMs: number; p95Ms: number; maxMs: number };
 }
 

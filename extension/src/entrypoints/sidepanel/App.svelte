@@ -15,7 +15,6 @@ sent by the website's account page through externally_connectable, or pasted her
 	import type { DecisionInput, QueueItem, ReviewSourceResponse } from '@colander/shared/api';
 	import {
 		PLATFORM_NAME,
-		SIGNALS,
 		SIGNAL_TEXT,
 		SLOP_TYPES,
 		SLOP_TYPE_WORD,
@@ -96,7 +95,7 @@ sent by the website's account page through externally_connectable, or pasted her
 			detail = await review.source(token.value!, q.platform, q.source_id);
 			const s = detail.source;
 			verdict = (q.computed_verdict ?? s.verdict ?? 'slop') as Verdict;
-			signals = [...s.signals];
+			signals = s.signals.filter((g) => RECORDABLE_SET.has(g));
 			slopType = s.slop_type;
 			tests = [...s.tests];
 			large = s.large;
@@ -162,6 +161,13 @@ sent by the website's account page through externally_connectable, or pasted her
 	}
 
 	const toggle = <T,>(list: T[], v: T) => (list.includes(v) ? list.filter((x) => x !== v) : [...list, v]);
+	// Reviewers record evidence for the provenance and behavior layers only. Rubric, consensus,
+	// staff review and appeal signals are computed by the server, which masks anything else out.
+	const RECORDABLE: { name: string; signals: Signal[] }[] = [
+		{ name: 'Provenance', signals: ['platform_label', 'content_credentials', 'creator_statement', 'watermark'] },
+		{ name: 'Source behavior', signals: ['high_volume', 'mostly_ai', 'templated', 'near_duplicates', 'link_funnel', 'cross_posting'] }
+	];
+	const RECORDABLE_SET = new Set(RECORDABLE.flatMap((g) => g.signals));
 	const KIND_WORD = { report: 'Report', appeal: 'Appeal', escalation: 'Escalation' } as const;
 	const LAYERS = [
 		['provenance', 'Provenance', 'Is it AI-made?'],
@@ -216,6 +222,7 @@ sent by the website's account page through externally_connectable, or pasted her
 						{#if s.verdict}<VerdictChip verdict={s.verdict} />{:else}<span class="uin-badge uin-badge-md neutral">Not rated</span>{/if}
 					</div>
 					<p class="t-caption muted">{PLATFORM_NAME[s.platform]} · {s.aliases.join(' · ')}</p>
+					{#if (s as { attribution?: string | null }).attribution}<p class="t-caption muted">Imported from {(s as { attribution?: string | null }).attribution}</p>{/if}
 					<div class="flags">
 						{#if s.large}<span class="uin-badge uin-badge-md neutral">Large source</span>{/if}
 						{#if s.imported}<span class="uin-badge uin-badge-md neutral">Imported, not reviewed</span>{/if}
@@ -309,14 +316,17 @@ sent by the website's account page through externally_connectable, or pasted her
 					<NativeSelect id="verdict" options={[...VERDICTS.map((v) => ({ value: v as string, label: VERDICT_WORD[v] })), { value: 'none', label: 'Not rated' }]} bind:value={verdict} />
 					<label for="reason" class="t-caption muted">Reason, published in the decision log</label>
 					<Textarea id="reason" bind:value={reason} rows={3} maxlength={500} />
-					<fieldset>
-						<legend class="t-caption muted">Signals</legend>
-						<div class="signals">
-							{#each SIGNALS as g (g)}
-								<Checkbox label={SIGNAL_TEXT[g]} checked={signals.includes(g)} onchange={() => (signals = toggle(signals, g))} />
-							{/each}
-						</div>
-					</fieldset>
+					{#each RECORDABLE as group (group.name)}
+						<fieldset>
+							<legend class="t-caption muted">{group.name} signals</legend>
+							<div class="signals">
+								{#each group.signals as g (g)}
+									<Checkbox label={SIGNAL_TEXT[g]} checked={signals.includes(g)} onchange={() => (signals = toggle(signals, g))} />
+								{/each}
+							</div>
+						</fieldset>
+					{/each}
+					<p class="t-caption muted">Rubric, consensus, staff review and appeal signals are computed from tags and decisions.</p>
 					{#if verdict === 'slop' || verdict === 'likely_slop'}
 						<fieldset>
 							<legend class="t-caption muted">Type</legend>

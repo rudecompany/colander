@@ -44,8 +44,14 @@ export function reasonText(d: Decision): string {
 			return 'On My list';
 		case 'topic':
 			return `Your rule: ${d.topic}`;
-		default:
-			return shortReason(d.signals) || 'Core list';
+		case 'platform_label':
+			return 'The platform’s own label';
+		default: {
+			// Never repeat the verdict word ("AI-made · AI-made").
+			const word = d.verdict ? VERDICT_WORD[d.verdict] : '';
+			const words = shortReason(d.signals, 4).split(', ').filter((w) => w && w !== word);
+			return words.slice(0, 2).join(', ') || 'Core list';
+		}
 	}
 }
 
@@ -319,7 +325,7 @@ export class Layer {
 				else tests.delete(t);
 				x.detail(type, [...tests]);
 			});
-			return h('label', { class: 'check' }, input, h('span', {}, TEST_WORD[t], ' ', h('span', { class: 'd' }, TEST_HINT[t])));
+			return h('label', { class: 'check top' }, input, h('span', {}, h('span', { class: 't' }, TEST_WORD[t]), h('span', { class: 'd' }, TEST_HINT[t])));
 		});
 		body.replaceChildren(
 			h('div', { class: 'done', role: 'status' }, icon(Check, 16), h('p', {}, `Tagged. ${ACTION_PHRASE[action]}, and counted toward the shared list.`)),

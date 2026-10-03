@@ -16,9 +16,9 @@ html {
 	color-scheme: light dark;
 }
 
-/* colander.css maps Mittsu's tokens onto the brand in :root only, while Mittsu's own dark
-   block has a more specific selector and would win in dark mode. Map them again at the same
-   specificity, after both files, so dark mode wears the brand too. */
+/* Older copies of colander.css mapped Mittsu's tokens onto the brand in :root only, so Mittsu's
+   more specific dark block won in dark mode. The shared theme now maps them for dark mode
+   itself; these repeat the same values and stay harmless. --uin-line-strong is left to it. */
 @media (prefers-color-scheme: dark) {
 	:root:not([data-theme='light']) {
 		--uin-fg: var(--cl-text);
@@ -26,7 +26,6 @@ html {
 		--uin-fg-dim: color-mix(in srgb, var(--cl-text-muted) 80%, var(--cl-surface));
 		--uin-fg-faint: color-mix(in srgb, var(--cl-text) 22%, transparent);
 		--uin-line: var(--cl-border);
-		--uin-line-strong: color-mix(in srgb, var(--cl-border) 60%, var(--cl-text-muted));
 		--uin-bg-base: var(--cl-paper);
 		--uin-bg-panel: var(--cl-surface);
 		--uin-mat-window: var(--cl-surface);

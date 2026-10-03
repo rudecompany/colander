@@ -146,12 +146,11 @@ export const test = base.extend<{ ext: Ext }>({
 			async open(url, o = {}) {
 				const page = await ctx.newPage();
 				if (o.dark || o.html) {
-					await page.route(url, async (route) => {
-						const res = await route.fetch();
-						let body = o.html ?? (await res.text());
-						if (o.dark) body = body.replace('<html lang="en">', '<html lang="en" dark>');
-						await route.fulfill({ response: res, body });
-					});
+					const u = new URL(url);
+					const name = SITES[u.hostname]?.find(([re]) => re.test(u.pathname))?.[1];
+					let body = o.html ?? (name ? fixtureHtml(name) : '');
+					if (o.dark) body = body.replace('<html lang="en">', '<html lang="en" dark>');
+					await page.route(url, (route) => route.fulfill({ contentType: 'text/html; charset=utf-8', body }));
 				}
 				await page.goto(url);
 				await page.waitForSelector('[data-colander-card]', { state: 'attached' });

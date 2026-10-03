@@ -90,7 +90,7 @@ describe.each(cases)('$fixture', (c) => {
 		expect(n / cards.length).toBeGreaterThanOrEqual(c.sourced);
 	});
 
-	it.runIf(!!c.expect)('reads seeded cards exactly', () => {
+	if (c.expect) it('reads seeded cards exactly', () => {
 		for (const e of c.expect ?? []) {
 			const f = cards[e.card]!.f;
 			if (e.item) expect(f.itemId).toBe(e.item);
@@ -100,7 +100,7 @@ describe.each(cases)('$fixture', (c) => {
 		}
 	});
 
-	it.runIf(!!c.page)('reads the page source', () => {
+	if (c.page) it('reads the page source', () => {
 		expect(pageSource(platform, pc.pages, doc)?.sourceIds).toContain(c.page);
 	});
 });

@@ -262,17 +262,29 @@ export async function startTrial(): Promise<{ ok: true } | { ok: false; error: s
 	}
 }
 
-/** Swaps a paid token for a fresh one in its last week. Trials simply end. */
+/**
+ * Swaps a paid token for a fresh one in its last week, or after it ran out (the server accepts
+ * an expired token whose signature verifies). `404 no_plan` means the plan ended: Plus turns
+ * off. Trials are never refreshed; they simply end.
+ */
 export async function refreshEntitlement(): Promise<void> {
 	const t = (await chrome.storage.local.get(K.planToken))[K.planToken] as string | undefined;
 	if (!t) return;
 	const p = await verifyPlanToken(t, await keys());
-	if (!p || p.trial || p.exp * 1000 - Date.now() > 7 * 86_400_000) return;
+	if (!p) {
+		await chrome.storage.local.remove([K.planToken, K.entitlement]);
+		return;
+	}
+	if (p.trial || p.exp * 1000 - Date.now() > 7 * 86_400_000) return;
 	try {
 		const { token } = await json<{ token: string }>(await request('/v1/entitlement/refresh', { body: { token: t } }));
 		await applyPlanToken(token);
-	} catch {
-		// 404 no_plan: the token runs out at exp on its own.
+	} catch (e) {
+		if (e instanceof ApiError && e.status === 404) {
+			await chrome.storage.local.remove(K.planToken);
+			await chrome.storage.local.set({ [K.entitlement]: { plus: false, trial: false, exp: p.exp } satisfies Entitlement });
+		}
+		// Offline or a server error: keep the token until the next hourly try.
 	}
 }
 
@@ -327,8 +339,10 @@ export async function pullSettings(): Promise<void> {
 	try {
 		const res = await request('/v1/sync', { auth: { plan: token } });
 		if (res.status === 404) return pushSettings();
-		const remote = await json<{ version: number; data: Partial<Settings> }>(res);
-		if (remote && remote.version > st.version) {
+		const remote = await json<{ version: number; data: Partial<Settings> | null }>(res);
+		// An empty blob ({"version": 0, "data": null}) means this account has not synced yet.
+		if (!remote?.data) return pushSettings();
+		if (remote.version > st.version) {
 			await updateSettings((cur) => mergeRemote(cur, remote.data ?? {}, false));
 			await chrome.storage.local.set({ [K.syncState]: { version: remote.version, dirty: false } });
 		}

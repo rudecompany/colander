@@ -19,6 +19,7 @@ section[data-e2e='feed-video'] video { position: absolute; inset: 0; width: 100%
 section[class*='SectionActionBarContainer'] { display: flex; flex-direction: column; justify-content: flex-end; gap: 12px; padding-bottom: 16px; }
 [data-e2e='video-author-avatar'] { display: block; width: 48px; height: 48px; border-radius: 50%; background: #555; }
 [role='button'][data-e2e$='-icon'] { display: grid; place-items: center; width: 48px; height: 48px; border-radius: 50%; background: #2f2f2f; font-size: 0; }
+[role='button'][data-e2e$='-icon'] > *, [data-e2e='feed-follow'] { display: none; }
 strong[data-e2e$='-count'] { font-size: 12px; text-align: center; display: block; }
 /* Profile */
 [data-e2e='user-page'] { padding: 32px; }

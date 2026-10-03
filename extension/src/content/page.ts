@@ -554,11 +554,14 @@ export function start(): void {
 	function pageState(): PageState {
 		const actions: PageAction[] = [];
 		let total = 0, withItem = 0, withSource = 0;
+		const bySurface: PageState['bySurface'] = {};
 		for (const [card, st] of states) {
 			if (!card.isConnected || !surfaces.includes(st.surface)) continue;
+			const b = (bySurface[st.surface.id] ??= { total: 0, withItem: 0, withSource: 0 });
 			total++;
-			if (st.facts.itemId) withItem++;
-			if (st.facts.sourceIds.length) withSource++;
+			b.total++;
+			if (st.facts.itemId) (withItem++, b.withItem++);
+			if (st.facts.sourceIds.length) (withSource++, b.withSource++);
 			const d = st.decision;
 			if (d.action !== 'hide' && d.action !== 'collapse' && d.action !== 'label') continue;
 			actions.push({
@@ -585,7 +588,8 @@ export function start(): void {
 			counts: counts(),
 			actions,
 			source: page ? { platform: platform!, sourceIds: page.sourceIds, name: page.name } : null,
-			cards: { total, withItem, withSource },
+			cards: { total, withItem, withSource, tracked: states.size },
+			bySurface,
 			perf: {
 				batches: sorted.length,
 				totalMs: Math.round(sorted.reduce((a, b) => a + b, 0) * 100) / 100,

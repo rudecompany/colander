@@ -26,7 +26,7 @@
 </script>
 
 <Section id="reports" title="My reports" description="Sources you reported, and what reviewers decided. A verdict reaches every install with the next list update.">
-	<Card>
+	<Card title="Your reports">
 		{#snippet aside()}
 			<Button variant="outline" onclick={refresh} aria-busy={loading}><RefreshCw size={16} strokeWidth={1.75} />Refresh</Button>
 		{/snippet}

@@ -45,6 +45,6 @@ test('queue, evidence and a decision', async ({ ext }) => {
 	await side.getByRole('button', { name: 'Record decision' }).click();
 	await expect(side.getByText('Decision recorded.')).toBeVisible();
 	const d = ext.api.posted('/v1/review/sources/yt/%40catrescuetales/decision')[0]!;
-	expect(d.body).toMatchObject({ verdict: 'slop', reason: 'Staff review confirmed AI narration over generated footage, posted hourly.', signals: ['mostly_ai', 'rubric_hollow'], slop_type: 'deceptive', tests: ['mass_produced', 'hollow'], large: false });
+	expect(d.body).toMatchObject({ verdict: 'slop', reason: 'Staff review confirmed AI narration over generated footage, posted hourly.', signals: ['mostly_ai'], slop_type: 'deceptive', tests: ['mass_produced', 'hollow'], large: false });
 	await side.screenshot({ path: 'screenshots/sidepanel-evidence-light.png', fullPage: true, animations: 'disabled' });
 });

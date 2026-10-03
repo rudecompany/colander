@@ -12,7 +12,7 @@ a { color: inherit; text-decoration: none; }
 #content { padding: 24px; }
 ytd-page-manager > * { max-width: 1284px; margin: 0 auto; }
 img { display: none; }
-[class*='MenuButton'], ytd-menu-renderer, .ytSpecButtonShapeNextIcon, yt-icon-button { display: none !important; }
+.ytLockupMetadataViewModelMenuButton, .shortsLockupViewModelHostOutsideMetadataMenu, ytd-menu-renderer, .ytSpecButtonShapeNextIcon, yt-icon-button { display: none !important; }
 
 /* Thumbnails: tinted boxes in place of images. */
 yt-thumbnail-view-model, ytd-thumbnail { position: relative; aspect-ratio: 16 / 9; border-radius: 12px; background: var(--thumb); overflow: hidden; }
