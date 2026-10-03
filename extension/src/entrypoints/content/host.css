@@ -84,7 +84,8 @@ colander-ui[data-kind='tag'][data-reveal][data-open] {
 	opacity: 1 !important;
 }
 @media (prefers-reduced-motion: reduce) {
-	colander-ui {
+	colander-ui,
+	colander-ui[data-kind='tag'][data-reveal] {
 		transition: none !important;
 	}
 }

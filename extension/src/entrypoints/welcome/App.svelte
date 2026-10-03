@@ -6,6 +6,7 @@ platforms; finishing opens the first one.
 <script lang="ts">
 	import { ColanderMark } from '@colander/shared';
 	import Button from '@colander/shared/components/ui/button/button.svelte';
+	import { radioGroupKeydown } from '@colander/shared/components/ui/segmented-control/segmented-control.svelte';
 	import { PLATFORMS, PLATFORM_NAME, STRICTNESS, STRICTNESS_HINT, STRICTNESS_WORD, type Platform, type Strictness } from '@colander/shared/verdicts';
 	import Check from '@lucide/svelte/icons/check';
 	import type { AdapterConfig } from '../../adapters/schema';
@@ -86,7 +87,7 @@ platforms; finishing opens the first one.
 				<h2 id="s1" class="t-title"><span class="step">1</span>How strict should it be?</h2>
 				<div class="levels" role="radiogroup" aria-labelledby="s1">
 					{#each STRICTNESS as s (s)}
-						<button type="button" role="radio" aria-checked={strictness === s} class="level" class:on={strictness === s} onclick={() => (strictness = s)}>
+						<button type="button" role="radio" aria-checked={strictness === s} tabindex={strictness === s ? 0 : -1} class="level" class:on={strictness === s} onclick={() => (strictness = s)} onkeydown={radioGroupKeydown}>
 							<span class="lh"><span class="lw">{STRICTNESS_WORD[s]}</span>{#if s === 'standard'}<span class="rec">Recommended</span>{/if}</span>
 							<span class="t-caption muted">{STRICTNESS_HINT[s]}</span>
 						</button>

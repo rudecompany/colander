@@ -197,14 +197,15 @@ Show, Always allow and Not slop beside each (P0-12), Report this source, and the
 			{#if sitePaused || tabPaused}
 				<p class="paused" role="status">{sitePaused ? 'Paused on this site.' : 'Paused on this tab.'}</p>
 			{/if}
-			<div class="row">
+			<!-- The whole row is the hit target (popup controls are at least 32 px). -->
+			<label class="row">
 				<span id="pause-site">Pause on this site</span>
 				<Switch checked={sitePaused} aria-labelledby="pause-site" onCheckedChange={toggleSite} />
-			</div>
-			<div class="row">
+			</label>
+			<label class="row" class:off={!page}>
 				<span id="pause-tab">Pause on this tab</span>
 				<Switch checked={tabPaused} aria-labelledby="pause-tab" disabled={!page} onCheckedChange={toggleTab} />
-			</div>
+			</label>
 		</section>
 	{/if}
 
@@ -369,7 +370,20 @@ Show, Always allow and Not slop beside each (P0-12), Report this source, and the
 		display: flex;
 		align-items: center;
 		justify-content: space-between;
-		min-height: 32px;
+		min-height: 36px;
+		margin: 0 -8px;
+		padding: 0 8px;
+		border-radius: var(--cl-r-chip);
+		cursor: pointer;
+	}
+	.row:hover {
+		background: var(--uin-mat-hover);
+	}
+	.row.off {
+		cursor: default;
+	}
+	.row.off:hover {
+		background: none;
 	}
 	.paused {
 		padding: 8px 12px;

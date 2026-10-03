@@ -244,7 +244,7 @@ sent by the website's account page through externally_connectable, or pasted her
 						{#each LAYERS as [key, name, q] (key)}
 							{@const l = detail.layers[key]}
 							<li class:met={l.met}>
-								<span class="state" aria-label={l.met ? 'Met' : 'Not met'}>{#if l.met}<Check size={16} strokeWidth={2} />{:else}<X size={16} strokeWidth={2} />{/if}</span>
+								<span class="state">{#if l.met}<Check size={16} strokeWidth={2} aria-hidden="true" />{:else}<X size={16} strokeWidth={2} aria-hidden="true" />{/if}<span class="sr-only">{l.met ? 'Met' : 'Not met'}</span></span>
 								<div>
 									<p class="strong">{name} <span class="muted t-caption">{q}</span></p>
 									<p class="t-caption">{l.detail}</p>
