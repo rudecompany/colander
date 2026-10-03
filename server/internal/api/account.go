@@ -57,6 +57,10 @@ func (s *Server) authEmail(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid_email", "Enter a valid email address.")
 		return
 	}
+	if ok, retry := allow(s.Now(), s.clientIP(r), 1, s.limits.authEmailIP); !ok {
+		tooMany(w, retry)
+		return
+	}
 	if ok, retry := allow(s.Now(), auth.HashToken(email), 1, s.limits.authEmail); !ok {
 		tooMany(w, retry)
 		return

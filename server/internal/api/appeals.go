@@ -4,7 +4,6 @@ import (
 	"crypto/rand"
 	"crypto/subtle"
 	"errors"
-	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -55,14 +54,6 @@ func appealCode() string {
 	return "colander-" + string(b)
 }
 
-func clientIP(r *http.Request) string {
-	host, _, err := net.SplitHostPort(r.RemoteAddr)
-	if err != nil {
-		return r.RemoteAddr
-	}
-	return host
-}
-
 func (s *Server) postAppeal(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Platform  string `json:"platform"`
@@ -86,7 +77,7 @@ func (s *Server) postAppeal(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid_statement", "Your statement must be 1 to 2,000 characters.")
 		return
 	}
-	ok, retry := allow(s.Now(), clientIP(r), 1, s.limits.appeals)
+	ok, retry := allow(s.Now(), s.clientIP(r), 1, s.limits.appeals)
 	if !ok {
 		tooMany(w, retry)
 		return

@@ -496,6 +496,7 @@ The server counts list snapshot and delta requests per UTC day without any ident
 | `YOUTUBE_API_KEY` | unset | YouTube enrichment and appeal verification |
 | `RESEND_API_KEY`, `COLANDER_MAIL_FROM` | unset | Email delivery |
 | `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_PLUS_MONTHLY`, `STRIPE_PRICE_PLUS_YEARLY` | unset | Billing. Without them billing routes answer `503 billing_unavailable`. |
+| `COLANDER_CLIENT_IP_HEADER` | unset | Header a trusted reverse proxy sets to the client address, such as `CF-Connecting-IP` or `X-Forwarded-For`, for per-IP rate limits |
 
 ## 11. Extension build configuration
 

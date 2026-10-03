@@ -614,3 +614,42 @@ func TestSite(t *testing.T) {
 		t.Fatal("path traversal")
 	}
 }
+
+func TestClientIPHeader(t *testing.T) {
+	cases := []struct {
+		header, values, want string
+	}{
+		{"", "", "192.0.2.1"},
+		{"CF-Connecting-IP", "203.0.113.7", "203.0.113.7"},
+		{"CF-Connecting-IP", "", "192.0.2.1"},
+		{"CF-Connecting-IP", "nonsense", "192.0.2.1"},
+		// The client can write anything on the left; the right-most public hop is the one our proxy saw.
+		{"X-Forwarded-For", "1.1.1.1, 203.0.113.7", "203.0.113.7"},
+		{"X-Forwarded-For", "1.1.1.1, 203.0.113.7, 10.0.0.2, 127.0.0.1", "203.0.113.7"},
+		{"X-Forwarded-For", "spoofed, 203.0.113.7:4711", "203.0.113.7"},
+		{"X-Forwarded-For", "2001:db8::1, ::ffff:10.1.2.3", "2001:db8::1"},
+		// All hops are our own network: the outermost one a trusted proxy reported.
+		{"X-Forwarded-For", "garbage, 10.0.0.9, 10.0.0.2", "10.0.0.9"},
+		{"X-Forwarded-For", "10.0.0.9", "10.0.0.9"},
+	}
+	for _, c := range cases {
+		s := &Server{ClientIPHeader: c.header}
+		r, _ := http.NewRequest("POST", "/v1/appeals", nil)
+		r.RemoteAddr = "192.0.2.1:1234"
+		if c.values != "" {
+			r.Header.Set("X-Forwarded-For", c.values)
+			r.Header.Set("CF-Connecting-IP", c.values)
+		}
+		if got := s.clientIP(r); got != c.want {
+			t.Errorf("%s: %q gives %q, want %q", c.header, c.values, got, c.want)
+		}
+	}
+	// Two X-Forwarded-For lines are one list.
+	r, _ := http.NewRequest("POST", "/", nil)
+	r.RemoteAddr = "10.0.0.2:80"
+	r.Header.Add("X-Forwarded-For", "203.0.113.7")
+	r.Header.Add("X-Forwarded-For", "10.0.0.5")
+	if got := (&Server{ClientIPHeader: "X-Forwarded-For"}).clientIP(r); got != "203.0.113.7" {
+		t.Fatalf("two lines: %q", got)
+	}
+}

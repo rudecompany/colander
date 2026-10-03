@@ -46,6 +46,7 @@ type config struct {
 	Addr, DB, KeyPath, PublicURL, SiteDir string
 	Dev                                   bool
 	YouTubeKey, ResendKey, MailFrom       string
+	ClientIPHeader                        string
 }
 
 func env(name, def string) string {
@@ -66,6 +67,8 @@ func loadConfig() config {
 		YouTubeKey: os.Getenv("YOUTUBE_API_KEY"),
 		ResendKey:  os.Getenv("RESEND_API_KEY"),
 		MailFrom:   os.Getenv("COLANDER_MAIL_FROM"),
+		// Only set behind a reverse proxy that overwrites this header (see server/README.md).
+		ClientIPHeader: os.Getenv("COLANDER_CLIENT_IP_HEADER"),
 	}
 }
 
@@ -142,7 +145,7 @@ func serve(ctx context.Context, cfg config, log *slog.Logger) error {
 	srv := api.New(&api.Server{
 		Store: st, Engine: engine, Publisher: pub, Key: key, Auth: auth.New(st, cfg.Dev),
 		Mail: mail.New(cfg.ResendKey, cfg.MailFrom, cfg.Dev, os.Stdout, log), YouTube: yt,
-		PublicURL: cfg.PublicURL, SiteDir: cfg.SiteDir, Log: log,
+		PublicURL: cfg.PublicURL, SiteDir: cfg.SiteDir, ClientIPHeader: cfg.ClientIPHeader, Log: log,
 	})
 	if _, err := os.Stat(cfg.SiteDir); err != nil {
 		log.Warn("website not found, site paths will answer 404", "dir", cfg.SiteDir)

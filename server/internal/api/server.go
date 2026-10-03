@@ -29,8 +29,11 @@ type Server struct {
 	YouTube   *youtube.Client // nil when not configured
 	PublicURL string
 	SiteDir   string
-	Now       func() time.Time
-	Log       *slog.Logger
+	// ClientIPHeader names the header a trusted reverse proxy puts the client address in, for
+	// per-IP rate limits (COLANDER_CLIENT_IP_HEADER). Empty means the TCP peer address.
+	ClientIPHeader string
+	Now            func() time.Time
+	Log            *slog.Logger
 
 	limits  limits
 	listHit hitCounter
@@ -39,7 +42,7 @@ type Server struct {
 // ponytail: rate limits live in process memory, so they hold per node only. Move them to the
 // database or a shared store before running more than one server.
 type limits struct {
-	tagsMinute, tagsDay, reports, appeals, authEmail *limiter
+	tagsMinute, tagsDay, reports, appeals, authEmail, authEmailIP *limiter
 }
 
 // New finishes wiring a server built from its exported fields and returns it.
@@ -49,11 +52,12 @@ func New(srv *Server) *Server {
 	}
 	srv.PublicURL = strings.TrimRight(srv.PublicURL, "/")
 	srv.limits = limits{
-		tagsMinute: newLimiter(60, time.Minute),
-		tagsDay:    newLimiter(500, 24*time.Hour),
-		reports:    newLimiter(20, 24*time.Hour),
-		appeals:    newLimiter(5, 24*time.Hour),
-		authEmail:  newLimiter(5, time.Hour),
+		tagsMinute:  newLimiter(60, time.Minute),
+		tagsDay:     newLimiter(500, 24*time.Hour),
+		reports:     newLimiter(20, 24*time.Hour),
+		appeals:     newLimiter(5, 24*time.Hour),
+		authEmail:   newLimiter(5, time.Hour),
+		authEmailIP: newLimiter(30, time.Hour),
 	}
 	return srv
 }

@@ -60,6 +60,7 @@ All names and IDs are invented.
 | `YOUTUBE_API_KEY` | unset | YouTube enrichment and automatic appeal verification |
 | `RESEND_API_KEY` | unset | Email delivery through Resend |
 | `COLANDER_MAIL_FROM` | `Colander <hello@colander.local>` | Sender address; set it to a verified domain when using Resend |
+| `COLANDER_CLIENT_IP_HEADER` | unset | Header a trusted reverse proxy puts the client address in, for per-IP rate limits (see below) |
 
 ## How the code is laid out
 
@@ -91,6 +92,16 @@ A few readings of the contract are worth knowing when you work on scoring.
 - When a decision or verdict reaches its 90-day `rescore_at` and scores as Slop again, it is held at Likely slop with an escalation until a reviewer looks again.
 
 Scoring never reads plan, payment or donation state.
+
+## Behind a reverse proxy
+
+Per-IP rate limits (appeals, donations and sign-in emails) key on the TCP peer address.
+Behind a proxy or CDN every request comes from the proxy, so set `COLANDER_CLIENT_IP_HEADER` to the header it puts the client address in.
+
+- `CF-Connecting-IP` for Cloudflare, which holds one address.
+- `X-Forwarded-For` for most load balancers. The server takes the right-most address that is not private, loopback or link-local, because the left part is whatever the client sent.
+
+Only set it when the server is reachable through the proxy alone, or clients can choose their own address and step around the limits.
 
 ## Privacy
 
