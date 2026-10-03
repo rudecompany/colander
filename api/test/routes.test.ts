@@ -14,7 +14,7 @@ import { sha256 } from '@colander/shared/sha256';
 import { utf8 } from '@colander/shared/bytes';
 import type { Appeal, LogEntry, QueueItem, Report, ReviewSourceResponse, Source, Stats } from '@colander/shared/api';
 import { IP_HASH_HEADER } from '../src/http';
-import { CookieName, hashToken, newToken, normalizeEmail } from '../src/routes/auth';
+import { CookieName, hashToken, newToken, normalizeEmail } from '../src/auth';
 import { canonicalSource } from '../src/routes/ids';
 import { decode, goFixed, goQuote, parseRFC3339 } from '../src/routes/respond';
 import { unix } from '../src/scoring/engine';

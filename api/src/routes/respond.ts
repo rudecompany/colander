@@ -1,42 +1,51 @@
-// What the API routes share (Go's internal/api/respond.go): strict JSON request decoding, the time
-// and string forms of the wire, and Go's string, number and listfmt helpers the handlers lean on.
+// What the API routes share (Go's internal/api/respond.go): bounded body reads, strict JSON request
+// decoding, the time and string forms of the wire, and Go's string, number, URL and listfmt helpers
+// the handlers lean on.
 // JSON responses, errors and 429s come from src/http.ts and the token buckets from src/limits.ts.
 import { IP_HASH_HEADER, jsonError } from '../http';
 import { SIGNALS, TESTS, TEST_BIT, VERDICTS, type Signal, type Test } from '@colander/shared/verdicts';
 
-/** Reads at most limit bytes of a body. Null when it is longer. */
-export async function readLimited(body: ReadableStream<Uint8Array> | null, limit: number): Promise<Uint8Array | null> {
-	if (!body) return new Uint8Array();
-	const reader = body.getReader();
+/**
+ * Reads at most limit bytes of a body. over is true when more followed; the rest is never read
+ * (Go's io.LimitReader, and http.MaxBytesReader when the caller refuses over).
+ */
+export async function readBody(body: ReadableStream<Uint8Array> | null, limit: number): Promise<{ bytes: Uint8Array; over: boolean }> {
 	const chunks: Uint8Array[] = [];
 	let size = 0;
-	for (;;) {
-		const { done, value } = await reader.read();
-		if (done) break;
-		size += value.byteLength;
-		if (size > limit) {
-			await reader.cancel();
-			return null;
+	let over = false;
+	if (body) {
+		const reader = body.getReader();
+		for (;;) {
+			const { done, value } = await reader.read();
+			if (done) break;
+			if (size + value.length > limit) {
+				chunks.push(value.subarray(0, limit - size));
+				size = limit;
+				over = true;
+				await reader.cancel();
+				break;
+			}
+			chunks.push(value);
+			size += value.length;
 		}
-		chunks.push(value);
 	}
-	const out = new Uint8Array(size);
-	let at = 0;
+	const bytes = new Uint8Array(size);
+	let o = 0;
 	for (const c of chunks) {
-		out.set(c, at);
-		at += c.byteLength;
+		bytes.set(c, o);
+		o += c.length;
 	}
-	return out;
+	return { bytes, over };
 }
 
 /**
- * Field kinds of a request body, as Go's struct fields decode them: `string` and `bool` keep their
- * zero value on null, `?` kinds are pointers (null or absent is undefined), `strings` is a []string
- * (undefined is nil), `[schema]` a slice of structs. `int?` (a *int64) and `raw` (a
- * json.RawMessage, the value's JSON text) need the value as written, so they work on top-level
- * fields only.
+ * Field kinds of a request body, as Go's struct fields decode them: `string`, `bool` and `int` keep
+ * their zero value on null, `?` kinds are pointers (null or absent is undefined), `strings` is a
+ * []string (undefined is nil), `[schema]` a slice of structs. `int` and `int?` (an int64 and a
+ * *int64) and `raw` (a json.RawMessage, the value's JSON text) need the value as written, so they
+ * work on top-level fields only.
  */
-type Kind = 'string' | 'string?' | 'bool' | 'bool?' | 'int?' | 'strings' | 'raw' | readonly [Schema];
+type Kind = 'string' | 'string?' | 'bool' | 'bool?' | 'int' | 'int?' | 'strings' | 'raw' | readonly [Schema];
 export type Schema = { readonly [field: string]: Kind };
 type Value<K> = K extends 'string'
 	? string
@@ -46,15 +55,17 @@ type Value<K> = K extends 'string'
 			? boolean
 			: K extends 'bool?'
 				? boolean | undefined
-				: K extends 'int?'
-					? number | undefined
-					: K extends 'strings'
-						? string[] | undefined
-						: K extends 'raw'
-							? string
-							: K extends readonly [infer S extends Schema]
-								? Decoded<S>[] | undefined
-								: never;
+				: K extends 'int'
+					? number
+					: K extends 'int?'
+						? number | undefined
+						: K extends 'strings'
+							? string[] | undefined
+							: K extends 'raw'
+								? string
+								: K extends readonly [infer S extends Schema]
+									? Decoded<S>[] | undefined
+									: never;
 export type Decoded<S extends Schema> = { -readonly [F in keyof S]: Value<S[F]> };
 
 /** A body that does not decode: an unknown field (Go's DisallowUnknownFields) or anything else. */
@@ -77,7 +88,7 @@ function fieldFor(schema: Schema, key: string): string | undefined {
 	return Object.keys(schema).find((k) => fold(k) === f);
 }
 
-const zero = (kind: Kind): unknown => (kind === 'string' || kind === 'raw' ? '' : kind === 'bool' ? false : undefined);
+const zero = (kind: Kind): unknown => (kind === 'string' || kind === 'raw' ? '' : kind === 'bool' ? false : kind === 'int' ? 0 : undefined);
 
 const isObject = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
 
@@ -93,9 +104,9 @@ function inInt64(lit: string): boolean {
 }
 
 function decodeValue(kind: Kind, v: unknown, raw: string | undefined, current: unknown): unknown {
-	if ((kind === 'raw' || kind === 'int?') && raw === undefined) throw new Error(`${kind} fields must be top-level`);
+	if ((kind === 'raw' || kind === 'int' || kind === 'int?') && raw === undefined) throw new Error(`${kind} fields must be top-level`);
 	if (kind === 'raw') return raw;
-	if (v === null) return kind === 'string' || kind === 'bool' ? current : undefined;
+	if (v === null) return kind === 'string' || kind === 'bool' || kind === 'int' ? current : undefined;
 	switch (kind) {
 		case 'string':
 		case 'string?':
@@ -104,6 +115,7 @@ function decodeValue(kind: Kind, v: unknown, raw: string | undefined, current: u
 		case 'bool?':
 			if (typeof v !== 'boolean') throw new DecodeError();
 			return v;
+		case 'int':
 		case 'int?':
 			if (!/^-?(?:0|[1-9]\d*)$/.test(raw!) || !inInt64(raw!)) throw new DecodeError();
 			return Number(raw);
@@ -197,8 +209,8 @@ export function compact(t: string): string {
  * fields, trailing data and oversized bodies. Returns the decoded body, or the error response.
  */
 export async function decode<S extends Schema>(request: Request, limit: number, schema: S): Promise<Decoded<S> | Response> {
-	const bytes = await readLimited(request.body, limit);
-	if (!bytes) return jsonError(413, 'too_large', `The request body is larger than ${limit} bytes.`);
+	const { bytes, over } = await readBody(request.body, limit);
+	if (over) return jsonError(413, 'too_large', `The request body is larger than ${limit} bytes.`);
 	// Go's decoder refuses a byte order mark, so keep it in the text.
 	const text = new TextDecoder('utf-8', { fatal: false, ignoreBOM: true }).decode(bytes);
 	try {
@@ -235,6 +247,12 @@ export function pathValue(params: Record<string, string | undefined>, name: stri
 		return v;
 	}
 }
+
+/** Go's url.QueryEscape: spaces become +, and only letters, digits and -_.~ stay as they are. */
+export const queryEscape = (s: string): string =>
+	encodeURIComponent(s)
+		.replace(/[!'()*]/g, (c) => '%' + c.charCodeAt(0).toString(16).toUpperCase())
+		.replace(/%20/g, '+');
 
 /** RFC 3339 in UTC, whole seconds (Go's time.Unix(unix, 0).UTC().Format(time.RFC3339)). */
 export const rfc3339 = (unix: number): string => new Date(unix * 1000).toISOString().replace(/\.\d{3}Z$/, 'Z');

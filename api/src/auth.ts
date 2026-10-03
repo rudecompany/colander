@@ -5,12 +5,12 @@ import { b64url, hex, utf8 } from '@colander/shared/bytes';
 import { lowerSimple } from '@colander/shared/ids';
 import { sha256 } from '@colander/shared/sha256';
 import { jsonError } from './http';
-import { trimSpace } from './request';
+import { trimSpace } from './routes/respond';
 import { createMagicLink, createSession, deleteSession, reviewerAccount, sessionAccount, setReviewerToken, useMagicLink, type Account } from './store/accounts';
 import type { Db } from './store/db';
 
 /** The session cookie. */
-export const COOKIE_NAME = 'colander_session';
+export const CookieName = 'colander_session';
 
 /** A random URL-safe token and its hash. */
 export function newToken(): { raw: string; hash: string } {
@@ -64,13 +64,16 @@ export function safeNext(next: string): string {
 	return next;
 }
 
-/** The value of the session cookie, or "" (Go's Request.Cookie). */
+/** The session cookie's value as Go's Request.Cookie reads it, or "" when there is none. */
 function sessionCookie(request: Request): string {
-	for (const part of (request.headers.get('Cookie') ?? '').split(';')) {
-		const [name, ...rest] = part.trim().split('=');
-		if (name!.trim() !== COOKIE_NAME) continue;
-		const value = rest.join('=');
-		return value.length > 1 && value.startsWith('"') && value.endsWith('"') ? value.slice(1, -1) : value;
+	for (let part of (request.headers.get('Cookie') ?? '').split(';')) {
+		part = part.replace(/^[ \t\r\n]+|[ \t\r\n]+$/g, '');
+		const eq = part.indexOf('=');
+		if ((eq < 0 ? part : part.slice(0, eq)) !== CookieName) continue;
+		let v = eq < 0 ? '' : part.slice(eq + 1);
+		if (v.length > 1 && v.startsWith('"') && v.endsWith('"')) v = v.slice(1, -1);
+		// Go skips a cookie whose value has bytes a cookie value may not hold.
+		if (/^[\x20\x21\x23-\x3a\x3c-\x5b\x5d-\x7e]*$/.test(v)) return v;
 	}
 	return '';
 }
@@ -121,7 +124,7 @@ export class Auth {
 	/** The Set-Cookie value; an empty value clears the cookie. Attribute order follows Go's http.Cookie. */
 	private cookie(value: string, expires: number): string {
 		const life = value === '' ? 'Max-Age=0' : `Expires=${new Date(expires * 1000).toUTCString()}; Max-Age=${expires - this.unix()}`;
-		return `${COOKIE_NAME}=${value}; Path=/; ${life}; HttpOnly${this.dev ? '' : '; Secure'}; SameSite=Lax`;
+		return `${CookieName}=${value}; Path=/; ${life}; HttpOnly${this.dev ? '' : '; Secure'}; SameSite=Lax`;
 	}
 
 	/** Deletes the request's session and returns the Set-Cookie value that clears the cookie. */

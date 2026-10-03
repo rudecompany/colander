@@ -5,7 +5,7 @@ import { lowerSimple } from '@colander/shared/ids';
 import type { Db } from './store/db';
 import { cacheGet, cachePut } from './store/misc';
 import { markYouTubeChecked, setYouTube, youTubeStale, type YouTubeInfo } from './store/sources';
-import { parseRFC3339, readLimited } from './routes/respond';
+import { parseRFC3339, queryEscape, readBody } from './routes/respond';
 
 const DAY = 24 * 3_600_000;
 
@@ -27,12 +27,6 @@ export interface Channel {
 	hiddenCount: boolean;
 	uploadsPlaylist: string;
 }
-
-/** Go's url.QueryEscape: everything but [A-Za-z0-9-_.~] escaped, space as "+". */
-const queryEscape = (s: string): string =>
-	encodeURIComponent(s)
-		.replace(/[!'()*]/g, (c) => '%' + c.charCodeAt(0).toString(16).toUpperCase())
-		.replace(/%20/g, '+');
 
 /** Go's url.Values.Encode: keys sorted, each pair escaped. */
 const encode = (params: Record<string, string>): string =>
@@ -94,11 +88,11 @@ export class YouTube {
 			const message = err instanceof Error ? err.message : String(err);
 			throw new Error(`youtube ${path}: ${this.key ? message.replaceAll(this.key, '***') : message}`);
 		}
-		const body = await readLimited(resp.body, 4 << 20);
+		const { bytes: body, over } = await readBody(resp.body, 4 << 20);
 		if (resp.status !== 200) throw new Error(`youtube ${path}: status ${resp.status}`);
 		let out: unknown;
 		try {
-			if (!body) throw new Error('response larger than 4 MiB');
+			if (over) throw new Error('response larger than 4 MiB');
 			out = JSON.parse(new TextDecoder().decode(body));
 		} catch (err) {
 			throw new Error(`youtube ${path}: ${err instanceof Error ? err.message : String(err)}`);

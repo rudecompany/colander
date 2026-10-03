@@ -11,13 +11,14 @@ import {
 	StripeError,
 	UnavailableError
 } from '../billing';
-import { IP_HASH_HEADER, json, jsonError, tooMany } from '../http';
+import { IP_HASH_HEADER, json, jsonError, setCache, tooMany } from '../http';
 import { allow } from '../limits';
 import { plusCancelled, plusRefunded } from '../mail';
-import { decode, readBody, rfc3339, trimSpace } from '../request';
+import { decode, readBody, rfc3339, trimSpace } from './respond';
 import { supporters } from '../store/billing';
 import type { Store } from '../store/store';
-import { unix, writeAccount, type RouteSpec } from './account';
+import { unix } from '../scoring/engine';
+import { writeAccount, type RouteSpec } from './account';
 
 export function billingRoutes(s: Store): RouteSpec[] {
 	return [
@@ -161,5 +162,5 @@ async function issueToken(s: Store, accountId: string): Promise<Response> {
 /** The same for every viewer and never reads the session, so the edge keeps it a minute (hosting plan section 2). */
 function getSupporters(s: Store): Response {
 	const list = supporters(s.db).map((sp) => ({ name: sp.name, since: rfc3339(sp.since) }));
-	return json(200, { supporters: list }, { 'Cache-Control': 'public, max-age=60' });
+	return json(200, { supporters: list }, setCache(new Headers(), 'public'));
 }

@@ -13,6 +13,7 @@ import { countsAgree, newestDump, restoreDump, tableCounts } from './backup';
 import { json, jsonError } from './http';
 import { STATUS, type DumpStatus, type PassStatus, type PublishStatus } from './jobs';
 import { r2Sequence } from './list/publisher';
+import { rfc3339 } from './routes/respond';
 import { unix } from './scoring/engine';
 import { grantRole, type Account } from './store/accounts';
 import { latestSequence, RETENTION_SECONDS, SNAPSHOT_KEY } from './store/list';
@@ -48,7 +49,6 @@ const fail = (status: number, code: string, message: string, extra: Record<strin
 });
 const send = (a: OpsAnswer): Response => json(a.status, a.body);
 const text = (v: unknown): string => (typeof v === 'string' ? v : '');
-const rfc3339 = (unixSeconds: number): string => new Date(unixSeconds * 1000).toISOString().replace(/\.\d{3}Z$/, 'Z');
 
 /** The edge half: one command, after the edge checked OPS_TOKEN. */
 export async function ops(request: Request, env: Env, cache: CacheContext | undefined): Promise<Response> {

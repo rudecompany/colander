@@ -5,7 +5,8 @@ import { toPlan } from '../billing';
 import { IP_HASH_HEADER, json, jsonError, tooMany } from '../http';
 import { allow } from '../limits';
 import { signIn } from '../mail';
-import { decode, queryEscape, rfc3339, trimSpace } from '../request';
+import { decode, queryEscape, rfc3339, trimSpace } from './respond';
+import { unix } from '../scoring/engine';
 import { setDisplayName, type Account } from '../store/accounts';
 import { current } from '../store/billing';
 import type { Store } from '../store/store';
@@ -24,9 +25,6 @@ export function accountRoutes(s: Store, env: Pick<Env, 'PUBLIC_URL'>): RouteSpec
 		['POST', '/v1/account/reviewer-token', (r) => reviewerToken(s, r)]
 	];
 }
-
-/** Unix seconds of the Store's millisecond clock. */
-export const unix = (ms: number) => Math.floor(ms / 1000);
 
 /** 200 with the account and its plan (null when it never subscribed). */
 export function writeAccount(s: Store, a: Account, headers: HeadersInit = {}): Response {

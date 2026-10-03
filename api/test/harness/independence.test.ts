@@ -70,7 +70,9 @@ describe('independence of verdicts from billing', () => {
 
 	it('keeps the tag, report and review handlers away from billing state', () => {
 		const handlers = modules('routes').filter((f) => !PLAN_ROUTES.includes(f));
-		expect(violations(handlers)).toEqual([]);
+		// The route table (routes/server.ts, Go's server.go) registers sync too; the walk stops at the
+		// plan routes, which may read plans, and checks everything else it reaches.
+		expect(violations(handlers, new Set(PLAN_ROUTES))).toEqual([]);
 	});
 
 	it('catches a module that reaches billing', () => {

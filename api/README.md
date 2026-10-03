@@ -2,8 +2,8 @@
 
 `@colander/api` is the TypeScript Worker that replaces the Go server in `server/`, following `docs/hosting-plan.md`.
 `docs/contracts.md` stays the source of truth for every wire format.
-This package is the foundation: the edge Worker, the `Store` Durable Object with the full schema, and the config for production and staging.
-The Go server keeps serving everything else (and `make e2e`) until the port is complete and the parity harness passes.
+It holds the edge Worker, the `Store` Durable Object with the full schema and every API route of contract section 6, and the config for production and staging.
+`make e2e` runs the full-stack suite against it through `wrangler dev`; the Go server stays in `server/` as the parity reference until it is deleted.
 
 ## What exists
 
@@ -11,7 +11,7 @@ The Go server keeps serving everything else (and `make e2e`) until the port is c
   It configures Workers Static Assets from `../web/build`, Workers Cache with `cross_version_cache`, the `Store` class (SQLite, migration `v1`), the R2 buckets, the `EMAIL` and `ALERTS` send bindings, the `MISSES` rate limiter, cron triggers, and logs without invocation logs or traces.
   Required secrets are `COLANDER_SIGNING_KEY` (base64 of the 32-byte Ed25519 seed), `IP_SALT` and `OPS_TOKEN`.
   `CF_ANALYTICS_TOKEN` is an optional secret: without it, or without the `CF_ZONE_ID` var, the hourly analytics pull is skipped with a log line.
-  `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` and `RESEND_API_KEY` are optional secrets: without the Stripe keys every `/v1/billing/*` route answers `503 billing_unavailable`, and without the Resend key mail has no fallback.
+  `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `RESEND_API_KEY` and `YOUTUBE_API_KEY` are optional secrets: without the Stripe keys every `/v1/billing/*` route answers `503 billing_unavailable`, without the Resend key mail has no fallback, and without the YouTube key passes skip enrichment and appeals wait for staff to check by hand.
   The vars `COLANDER_MAIL_FROM`, `STRIPE_PRICE_PLUS_MONTHLY`, `STRIPE_PRICE_PLUS_YEARLY` and `STRIPE_MANAGED_PAYMENTS` (empty means on, `0` off) configure mail and billing; `STRIPE_API_BASE` may point Stripe calls elsewhere.
   The `ALERTS` destination is a placeholder until the owner verifies the ops address in Email Routing; the `ALERT_ADDRESS` var must equal it (a config test checks).
   The local runtime refuses a send without `to`, so the address is repeated in that var.
@@ -35,7 +35,7 @@ The Go server keeps serving everything else (and `make e2e`) until the port is c
     Every function takes the `Db` first and runs inside the caller's `tx` when there is one; each `s.Tx` became `db.tx(() => ...)`.
   - Lookups return `undefined` where Go returned `ErrNotFound`.
     Writes that Go failed with `ErrNotFound` or `ErrConflict` throw `NotFoundError` or `ConflictError`; `putSync` returns `{ blob, conflict }` because the conflict carries the current blob.
-  - The internal router answers `GET /v1/list/delta` and `GET /v1/list/snapshot` (R2 misses), and `health()` serves `/healthz`.
+  - The internal router answers every route of contract section 6 that the edge forwards (the snapshot only on R2 misses) and the dev-only `/__dev/*` routes, and `health()` serves `/healthz`.
   - `alarm()` runs the jobs; `watchdog()`, `recordAlerts()` and `setListRequests()` are the RPCs the crons call.
 - `src/list/publisher.ts` ports `listfmt.Publisher` with `store.PublishList` (`src/store/list.ts`):
   - One `transactionSync` reads the rated targets, diffs them and records a sequence numbered `max(head + 1, unix seconds, R2 seq + 1)`, so no clock or restore makes it go backwards.
@@ -71,8 +71,11 @@ The Go server keeps serving everything else (and `make e2e`) until the port is c
 - `src/billing.ts` ports `internal/billing` over `fetch` with `Stripe-Version: 2026-04-22.dahlia`: Managed Payments checkout, donations, cancel and refund, entitlements and the webhook, whose signature is checked with WebCrypto HMAC.
   The webhook reads the objects from Stripe first, then applies every write and records the event id in one transaction.
   Paying never reaches scoring, tags, reports or review: `test/harness/independence.test.ts` walks their imports.
-- `src/routes/account.ts` and `src/routes/billing.ts` hold the routes of contracts 6.6 and 6.8, registered in the Store's router; `src/request.ts` holds bounded body reads and Go's request JSON decoding (unknown fields, trailing data and size limits).
-  `GET /v1/supporters` is `public, max-age=60` and never reads the session.
+- `src/routes/` ports `server/internal/api` file for file, with Go's names in camelCase:
+  - `server.ts` is Go's route table for the extension, public, appeal, review, sync and adapter config routes; `account.ts` and `billing.ts` hold the routes of contracts 6.6 and 6.8; the Store registers all three.
+  - `respond.ts` holds bounded body reads, Go's request JSON decoding (unknown fields, trailing data, size limits, first error wins), and Go's string, time, URL and listfmt helpers; `ids.ts` the canonical ID checks.
+  - The public GETs (`/v1/sources/*`, `/v1/log`, `/v1/stats`, `/v1/supporters`) are `public, max-age=60` and never read the session; `test/cache.test.ts` checks the policy of every route.
+- `src/youtube.ts` ports `internal/youtube` over `fetch`, cached in `youtube_cache` for 7 days: `Engine.startPass` refreshes stale sources before the reputation load, outside any transaction, and appeal verification checks channel descriptions.
 - `src/scheduled.ts`, the cron handler:
   - Every 5 minutes the watchdog RPC creates missing recurring jobs, re-arms a lost alarm, asks for a publication when R2 does not hold the head, and returns the status; alerts (`alerts()`, thresholds in `THRESHOLDS`) are mailed through `ALERTS` once each while they last, and a failed mail is retried at the next run.
   - At minute 7 of every hour it sets the last 6 whole hours of `/v1/list/*` requests on this host from `httpRequestsAdaptiveGroups` into `list_requests`.

@@ -12,7 +12,7 @@ import { slopTypeCode } from '../scoring/rules';
 import { ConflictError, newId } from '../store/db';
 import { startTrial } from '../store/misc';
 import { createReport, reportsByInstall, saveTags, type Report as StoredReport, type ReportInput, type TagInput } from '../store/tags';
-import { hashInstall } from './auth';
+import { hashInstall } from '../auth';
 import { canonicalItem, canonicalSource, validPlatform } from './ids';
 import { activeInstalls } from './list';
 import { decode, optString, parseRFC3339, rfc3339, runeCount, testBits, trimSpace, type Decoded } from './respond';

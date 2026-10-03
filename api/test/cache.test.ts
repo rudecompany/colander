@@ -1,15 +1,16 @@
 // Cache-Control on every route, through the whole Worker (hosting plan section 2): list 200 and 204
 // for clients and the edge, delta 410 briefly at the edge only, the adapter configuration for 5
-// minutes, the public GETs for 60 s, and no-store on everything else, errors included. Each row
-// also checks CORS (contract 6: extension routes answer any origin, the rest are same-origin), and
-// the table must name every route of the Store's router, so a new route cannot ship without one.
+// minutes, the public GETs (supporters included) for 60 s, and no-store on everything else, errors
+// included. Each row also checks CORS (contract 6: extension routes answer any origin, the rest are
+// same-origin), and the table must name every route of the Store's router, so a new route cannot
+// ship without one.
 import { env, exports } from 'cloudflare:workers';
 import { runInDurableObject } from 'cloudflare:test';
 import { afterAll, beforeAll, describe, expect, inject, it, vi } from 'vitest';
 import { b64url } from '@colander/shared/bytes';
 import type { Appeal, Report } from '@colander/shared/api';
 import { isCorsPath } from '../src/http';
-import { newToken } from '../src/routes/auth';
+import { newToken } from '../src/auth';
 import { decide } from '../src/scoring/actions';
 import { grantRole, setReviewerToken } from '../src/store/accounts';
 import { ensureSource } from '../src/store/sources';
@@ -155,6 +156,31 @@ describe('Cache-Control on every route', () => {
 			headers: bearer,
 			body: { outcome: 'denied', reasoning: 'The footage is generated.' }
 		});
+
+		// Accounts (contract 6.6): sign-in, the account and its reviewer token, sign-out last.
+		await check('POST /v1/auth/email', 'POST', '/v1/auth/email', 202, 'none', { body: { email: 'cache@example.test', next: '/account' } });
+		const link = await runInDurableObject(primary(), (s: Store) => s.auth.startSignIn('cache@example.test', '/account'));
+		const verified = await check('POST /v1/auth/verify', 'POST', '/v1/auth/verify', 200, 'none', { body: { token: link } });
+		const signedIn = { Cookie: /^[^;]*/.exec(verified.headers.get('Set-Cookie') ?? '')![0], 'X-Colander-CSRF': '1' };
+		await check('GET /v1/account', 'GET', '/v1/account', 200, 'none', { headers: signedIn });
+		await check('PATCH /v1/account', 'PATCH', '/v1/account', 200, 'none', { headers: signedIn, body: { display_name: 'Cache' } });
+		await check('POST /v1/account/reviewer-token', 'POST', '/v1/account/reviewer-token', 403, 'none', { headers: signedIn });
+
+		// Billing and entitlements (contract 6.8): without Stripe keys payments are off; the
+		// supporters page is the same for every viewer.
+		await check('POST /v1/billing/checkout', 'POST', '/v1/billing/checkout', 503, 'none', { headers: signedIn, body: { price: 'plus_yearly' } });
+		await check('POST /v1/billing/donate', 'POST', '/v1/billing/donate', 503, 'none', { body: { amount_cents: 500, recurring: false, credit_name: '' } });
+		await check('POST /v1/billing/cancel', 'POST', '/v1/billing/cancel', 503, 'none', { headers: signedIn, body: { refund: false } });
+		await check('POST /v1/billing/webhook', 'POST', '/v1/billing/webhook', 503, 'none', { body: '{}' });
+		await check('POST /v1/entitlement', 'POST', '/v1/entitlement', 404, 'none', { headers: signedIn });
+		await check('POST /v1/entitlement/refresh', 'POST', '/v1/entitlement/refresh', 400, 'none', { body: { token: 'x' } });
+		await check('GET /v1/supporters', 'GET', '/v1/supporters', 200, 'public');
+		await check('POST /v1/auth/logout', 'POST', '/v1/auth/logout', 204, 'none', { headers: signedIn });
+
+		// Dev-only routes, which exist only with COLANDER_DEV=1.
+		await check('POST /__dev/seed', 'POST', '/__dev/seed', 409, 'none');
+		await check('POST /__dev/settle', 'POST', '/__dev/settle', 200, 'none');
+		await check('GET /__dev/dump', 'GET', '/__dev/dump', 200, 'none');
 
 		await check('GET (unmatched)', 'GET', '/v1/nothing', 404, 'none');
 	});

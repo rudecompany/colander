@@ -23,7 +23,7 @@ import { ensureItem, ensureSource, findItem, getSource, type Source } from '../s
 import { dismissReport, getReport, openReports, reportsBySource, type Report } from '../store/tags';
 import { log, openEscalations } from '../store/verdicts';
 import { toAppeal } from './appeals';
-import { reviewerAccount, session } from './auth';
+import { session } from '../auth';
 import { toReport } from './extension';
 import { canonicalItem, canonicalSource, validPlatform } from './ids';
 import { activeInstalls } from './list';
@@ -37,10 +37,10 @@ function reviewer(api: Api, request: Request): Account | Response {
 	const auth = request.headers.get('Authorization') ?? '';
 	let a: Account | Response;
 	if (auth.startsWith('Bearer ')) {
-		a = reviewerAccount(store.db, trimSpace(auth.slice('Bearer '.length))) ??
+		a = store.auth.reviewerAccount(trimSpace(auth.slice('Bearer '.length))) ??
 			jsonError(401, 'invalid_token', 'The reviewer token is not valid. Create a new one on the website.');
 	} else {
-		a = session(store.db, request, unix(store.now()));
+		a = session(store.auth, request);
 	}
 	if (a instanceof Response) return a;
 	if (a.role !== 'curator' && a.role !== 'staff') return jsonError(403, 'forbidden', 'Only curators and staff can review.');

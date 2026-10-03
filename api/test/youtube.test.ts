@@ -6,7 +6,7 @@ import { runInDurableObject } from 'cloudflare:test';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Appeal } from '@colander/shared/api';
 import { IP_HASH_HEADER } from '../src/http';
-import { CookieName, newToken } from '../src/routes/auth';
+import { CookieName, newToken } from '../src/auth';
 import { rfc3339 } from '../src/routes/respond';
 import { unix } from '../src/scoring/engine';
 import { createSession, grantRole } from '../src/store/accounts';

@@ -2,7 +2,7 @@
 // through the Resend HTTP API when the binding fails for any reason, with no switch to flip
 // (hosting plan section 1.2). In dev mode (COLANDER_DEV=1) messages are printed instead of sent,
 // in the exact block e2e/tests/stack.ts parses from the `wrangler dev` output.
-import { readBody } from './request';
+import { readBody } from './routes/respond';
 
 /** The parts of Env the mailer reads. RESEND_API_KEY is an optional secret. */
 export type MailEnv = Pick<Env, 'EMAIL' | 'COLANDER_DEV' | 'COLANDER_MAIL_FROM'> & { RESEND_API_KEY?: string };

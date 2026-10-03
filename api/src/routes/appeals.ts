@@ -19,7 +19,7 @@ import {
 } from '../store/appeals';
 import { ConflictError } from '../store/db';
 import { getSource } from '../store/sources';
-import { hashToken, newToken, normalizeEmail } from './auth';
+import { hashToken, newToken, normalizeEmail } from '../auth';
 import { validPlatform } from './ids';
 import { findSource } from './public';
 import { clientIP, decode, optString, optTime, pathValue, rfc3339, runeCount, trimSpace } from './respond';
