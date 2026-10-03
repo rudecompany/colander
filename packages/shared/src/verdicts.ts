@@ -43,8 +43,8 @@ export const VERDICT_WORD: Record<Verdict, string> = {
 };
 /** Plain-language long form for the larger, plainer chip option. */
 export const VERDICT_PLAIN: Record<Verdict, string> = {
-	slop: 'Tagged as slop by the community',
-	likely_slop: 'Probably slop',
+	slop: 'Low-effort AI content',
+	likely_slop: 'Probably low-effort AI content',
 	ai_made: 'Made with AI',
 	disputed: 'People disagree about this',
 	clear: 'Checked and fine'

@@ -200,12 +200,13 @@ Cookie-authenticated routes are same-origin only and require the header `X-Colan
 | --- | --- |
 | `client_id` | UUID from the client, used for idempotency |
 | `target_type`, `target_id` | Required. Canonical ID per 2.2 |
-| `source_id` | Required for items: the item's own source, so item evidence can roll up to it. Omitted for source tags. |
+| `source_id` | For items: the item's own source, so item evidence can roll up to it. Required whenever the card shows its source; omitted only where the platform does not expose it on the card (for example the Instagram Explore grid). Never sent on source tags. |
 | `verdict` | `slop`, `ai_fine` (AI-made but fine) or `not_slop` |
 | `slop_type`, `tests` | Only with `verdict: "slop"`. Optional. |
 | `platform_label` | Whether the platform's own AI label was on the item when tagged |
 
 No other fields are accepted (unknown fields are a `400`).
+A tag is rejected with `invalid_field` when `client_id` is not a UUID, when `slop_type` or a non-empty `tests` comes with a verdict other than `slop`, or when a source tag carries `source_id`.
 Response `200`: `{"accepted": ["client_id", ...], "rejected": [{"client_id": "...", "error": "invalid_target"}]}`.
 A later tag from the same install on the same target replaces the earlier one.
 Limits per install: 60 per minute, 500 per day.
@@ -249,6 +250,7 @@ Response `201`: `{"report": Report}`. Limit: 20 per install per day.
 
 `status` is `under_review`, `slop`, `likely_slop`, `ai_made`, `disputed`, `clear` or `dismissed`.
 `protects` is the estimated number of active installs that now receive the verdict (section 9.6), set once a verdict lands.
+A report's status follows its source: it stays `under_review` until a reviewer decides or dismisses it, or until the source's list verdict changes after the report was filed, whichever comes first; it then shows that verdict.
 
 ### 6.4 Public source pages and the decision log
 
@@ -368,7 +370,7 @@ Session cookie or Reviewer bearer token. Curators may decide sources that are no
 | --- | --- |
 | `GET /v1/review/queue?kind=all\|reports\|appeals\|escalations&cursor=` | `{"items": [QueueItem], "next_cursor"}` ordered by priority then age |
 | `GET /v1/review/sources/{platform}/{source_id}` | `{"source": Source, "layers": Layers, "reports": [ReportDetail], "appeals": [Appeal], "items": [ItemSummary], "history": [LogEntry]}` |
-| `POST /v1/review/sources/{platform}/{source_id}/decision` | Body `{"verdict": Verdict \| "none", "reason", "signals": [Signal], "slop_type", "tests", "large": bool?}`. Writes the log and publishes. |
+| `POST /v1/review/sources/{platform}/{source_id}/decision` | Body `{"verdict": Verdict \| "none", "reason", "signals": [Signal], "slop_type", "tests", "large": bool?}`. Writes the log and publishes. Slop and Likely slop need AI evidence: `400 ai_evidence_required` unless the provenance layer is met or the body records a provenance signal. Curators get `403 staff_required` for large sources and for sources with an appeal in `pending_manual` or `under_review`. |
 | `POST /v1/review/items/{platform}/{item_id}/decision` | Same body plus `"source_id"` |
 | `POST /v1/review/reports/{id}/dismiss` `{"reason"}` | Closes a report with no verdict change |
 
@@ -450,7 +452,7 @@ Thresholds here are the starting values the spec asks to calibrate. Keep them in
 
 Each install's latest tag per target counts with weight `w = clamp(0.1 + 0.9 * maturity * accuracy, 0.05, 1.0)`.
 `maturity = min(1, days since the install's first tag / 30)`.
-`accuracy = (agree + 1) / (decided + 2)`, over the install's tags on targets that now hold a staff, appeal or consensus verdict.
+`accuracy = (agree + 1) / (decided + 2)`, over the install's tags on targets that now hold a staff, appeal or consensus verdict (Slop or Likely slop with `community_consensus`, or Clear with `not_slop_consensus`; AI-made verdicts from community AI consensus are excluded because they would feed back into the weights that produced them).
 A tag agrees when `slop` meets Slop or Likely slop, `not_slop` meets Clear, and `ai_fine` meets AI-made.
 Plan, payment and donation state are never inputs.
 
@@ -460,8 +462,8 @@ Plan, payment and donation state are never inputs.
 
 ### 9.3 Layers
 
-- Provenance (AI evidence) is met when any holds: at least 2 distinct installs reported `platform_label` on the target (for a source, on any of its items); staff recorded `platform_label`, `content_credentials`, `creator_statement` or `watermark`; the source is an imported seed entry; or community AI consensus: `S + A >= 3`, `n >= 3` and `(S + A) / T >= 0.7`.
-- Behavior (sources; items inherit their source's) is met when any holds: uploads per day of at least 10 from the YouTube Data API; `ai_item_share >= 0.8` over at least 5 items seen with evidence (Kagi's 80% rule, emitted as `mostly_ai`); or staff recorded `high_volume`, `templated`, `near_duplicates`, `link_funnel` or `cross_posting`. An imported blocklist seed entry also counts as `mostly_ai`.
+- Provenance (AI evidence) is met when any holds: at least 2 distinct installs reported `platform_label` on the target (for a source that is not mixed, on any of its items); staff recorded `platform_label`, `content_credentials`, `creator_statement` or `watermark`; the source is an imported seed entry; or community AI consensus: `S + A >= 3`, `n >= 3` and `(S + A) / T >= 0.7`.
+- Behavior (sources; items inherit their source's) is met when any holds: uploads per day of at least 10 from the YouTube Data API; `ai_item_share >= 0.8` over at least 5 items seen with evidence (Kagi's 80% rule, emitted as `mostly_ai`), where an item counts as AI-made only through independent evidence (platform label reports from 2 or more installs, or a reviewer decision), never through community AI consensus, so tags alone cannot make a source look mass-produced; or staff recorded `high_volume`, `templated`, `near_duplicates`, `link_funnel` or `cross_posting`. An imported blocklist seed entry also counts as `mostly_ai`.
 - Rubric is met when, among slop tags with `S >= 1`, at least two of the three tests are each selected by a weighted share of 0.5 or more. `mass_produced` also counts as selected when Behavior is met. Emits `rubric_low_effort` and `rubric_hollow` where they pass.
 - Consensus for slop: `S >= 3`, `n >= 3`, `S / T >= 0.7`, and the source is not frozen by burst detection. Emits `community_consensus`.
 - Not-slop consensus: `N >= 3` and `N / T >= 0.7`. Emits `not_slop_consensus`.
@@ -474,12 +476,12 @@ Plan, payment and donation state are never inputs.
 3. Not-slop consensus: Clear.
 4. No provenance: not rated (no list entry).
 5. Split: Disputed.
-6. Provenance, Behavior and Consensus all met: Slop, except that a large source or an imported entry nobody has reviewed is capped at Likely slop and raises an escalation.
+6. Provenance, Behavior and Consensus all met: Slop, except that it is capped at Likely slop and raises an escalation when the source is large, when its audience size is unknown (no YouTube Data API figure and no staff `large` decision), or when it is an imported entry nobody has reviewed. Only a reviewer can then make it Slop.
 7. Provenance and (Behavior or Rubric), with `S >= 1` or an imported blocklist seed: Likely slop.
 8. Provenance only: AI-made.
 
 Sources become mixed when at least 5 items have been seen and `ai_item_share < 0.8`.
-A mixed source gets no source-level Slop or Likely slop verdict (it falls to rule 8 or not rated), and its items are scored on their own.
+A mixed source gets no source-level Slop or Likely slop verdict, item label reports do not count toward its provenance (it falls to rule 8 only on source-level evidence, otherwise not rated), and its items are scored on their own and keep their own list entries.
 Item entries are emitted only when an item has its own verdict that differs from its source's list verdict.
 Signals on a list entry are the union of the signals that fired for the layers that were met.
 
@@ -488,7 +490,7 @@ Signals on a list entry are the union of the signals that fired for the layers t
 - Every list verdict carries `rescore_at = changed_at + 90 days`. At expiry, staff and curator decisions lapse and the target is scored again; if the result is Slop it becomes an escalation and stays Likely slop until reviewed.
 - An escalation is raised when: rule 6 is capped; 3 or more open reports exist on a source; a burst is detected; a verdict lapses into Slop.
 - Burst: more than 20 slop tags in one hour on one source from installs younger than 7 days. The consensus layer of that source is frozen for 72 hours and an escalation is raised.
-- A source is large when the YouTube Data API reports 100,000 subscribers or more, or staff set `large`.
+- A source is large when the YouTube Data API reports 100,000 subscribers or more, or staff set `large`. A source whose audience is unknown is treated like a large one for rule 6 only, and is not shown as large.
 - The scoring pass runs every 5 minutes and, debounced by 5 seconds, after any review decision, appeal change or report.
 - Every verdict change writes a decision log entry. Changes made by the scoring pass use actor `community` and a reason generated from the signals.
 
