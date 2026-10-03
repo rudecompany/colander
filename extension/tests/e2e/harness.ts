@@ -11,6 +11,8 @@ export const ROOT = resolve(import.meta.dirname, '../..');
 export const DIST = resolve(ROOT, '.output/chrome-mv3-e2e');
 export const EXT_ID = 'nninnogmbhfebflkcgghlmjmplmpodlc';
 export const API = 'http://localhost:8787';
+/** Screenshots in screenshots/ are written only by `pnpm screenshots` (SCREENSHOTS=1), never by a normal run. */
+export const SHOTS = !!process.env.SCREENSHOTS;
 const REPO = resolve(ROOT, '..');
 const fixture = (name: string) => readFileSync(resolve(ROOT, 'tests/fixtures', name));
 export const fixtureHtml = (name: string) => fixture(`${name}.html`).toString('utf8');

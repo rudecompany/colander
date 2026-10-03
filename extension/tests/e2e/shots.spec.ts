@@ -1,6 +1,9 @@
 // Screenshots of every surface, light and dark, saved to screenshots/ for review.
+// Run with `pnpm screenshots`; skipped in the normal end-to-end run so it never rewrites them.
 import type { Page } from '@playwright/test';
-import { EXT_ID, expect, fixtureHtml, test } from './harness';
+import { EXT_ID, SHOTS, expect, fixtureHtml, test } from './harness';
+
+test.skip(!SHOTS, 'Set SCREENSHOTS=1 (pnpm screenshots) to capture screenshots.');
 
 const shot = (page: Page, name: string, full = false) => page.screenshot({ path: `screenshots/${name}.png`, fullPage: full, animations: 'disabled' });
 

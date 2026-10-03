@@ -25,6 +25,7 @@ Only the public half of the RSA key is in the repository; the Chrome Web Store s
 | `pnpm -C extension test` | Vitest unit tests. |
 | `pnpm -C extension test:e2e` | Builds the end-to-end variant and runs the Playwright suite. |
 | `pnpm -C extension test:live` | Builds the end-to-end variant and checks the adapters against the real sites. |
+| `pnpm -C extension screenshots` | Builds the end-to-end variant and rewrites `screenshots/`, light and dark. A normal `test:e2e` run never touches them. |
 | `pnpm -C extension icons` | Renders `public/icons/*.png` from the brand geometry. |
 | `node extension/scripts/capture-fixtures.ts` | Captures sanitized YouTube and TikTok fixtures from the live sites. |
 
@@ -253,7 +254,7 @@ There is no remote code, no `eval` and no inline script.
 
 - `tests/unit`: the list decoder and verifier against `testdata/contract` (snapshot, delta, tampering, length, sort order, unknown keys, delta on the wrong base), the config envelope and plan token, the synchronous SHA-256 against Node's, canonical IDs per platform from real-looking URLs, matching precedence and the strictness table, the tag queue's offline retry planning, and adapter extraction against a saved fixture of every surface.
 - `tests/e2e`: the built extension in Chromium with fixtures served on the real hostnames and the API mocked by route handlers serving the contract fixtures.
-  It covers hiding, collapsing and labeling per strictness, re-applying within 1 second without a reload (P0-3), pause by site and tab, the badge, delta sync, a tampered list, a signed config fixing a renamed selector, no layout jump during infinite scroll, Tag in two clicks and the exact tag body, the offline queue, keyboard-only use of the tag menu and collapsed bar, Why, Show, Always allow and Not slop, swipe skip with Undo and covers, the welcome flow's permission request, Report source, website messaging, the trial and Plus sync, the side panel, and the performance budgets.
+  It covers hiding, collapsing and labeling per strictness, re-applying within 1 second without a reload (P0-3), pause by site and tab, the badge, delta sync, a tampered list, a signed config fixing a renamed selector, no layout jump during infinite scroll, Tag in two clicks and the exact tag body (one POST per tag menu, item tags without a source on the Instagram Explore grid), the offline queue, keyboard-only use of the tag menu and collapsed bar, Why (every signal that fired, Appeal only for list verdicts), Show, Always allow and Not slop, swipe skip with Undo and covers, the welcome flow's permission request, Report source, website messaging, the trial and Plus sync, Plus early access, the weekly summary and the daily plan check, no install ID on a fresh install's sync, a dismissed report closed calmly, the side panel, and the performance budgets.
 - Performance on a 200-card page: slop cards are hidden 3 ms after insertion at the 95th percentile (budget 150 ms), and the content script adds about 21 ms in total (budget 50 ms).
   On live YouTube pages it adds 7 to 23 ms per page.
 - `tests/live`: the real YouTube and TikTok pages, no login.
@@ -261,7 +262,8 @@ There is no remote code, no `eval` and no inline script.
   `.github/workflows/adapters-daily.yml` runs it every day.
   A surface that finds no cards fails the run, and so does a surface whose platform has a storage state when the site refuses the automated browser.
   Without credentials, such surfaces are skipped as unverified: `tests/live/summary-reporter.ts` lists every surface in the job summary and adds a warning annotation for each unverified one.
-- `tests/e2e/shots.spec.ts` writes the screenshots in `screenshots/`, light and dark.
+- `tests/e2e/shots.spec.ts` (and the side panel test) write the screenshots in `screenshots/`, light and dark, only under `pnpm screenshots` (`SCREENSHOTS=1`).
+- `tests/e2e/a11y.spec.ts` runs axe-core (WCAG 2.2 A and AA) over the popup, every Options section, the welcome page, the side panel and every in-page element (chip, collapsed bar, Tag button, tag menu, Why, report form, skip notice, cover), light and dark, and checks the radio group keys, the popup's 32 px rows and the switches' 3:1 contrast.
 
 ## Fixtures
 
