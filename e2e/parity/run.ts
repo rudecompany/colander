@@ -141,8 +141,10 @@ async function startGo(now: number): Promise<void> {
 }
 
 async function startWorker(now: number): Promise<void> {
-	if (existsSync(resolve(REPO, 'api/.dev.vars'))) throw new Error('api/.dev.vars would override the harness secrets in wrangler dev: move it aside for the parity run.');
 	const vars = { COLANDER_DEV: '1', COLANDER_TEST_NOW: iso(now), COLANDER_SIGNING_KEY: SEED, IP_SALT: 'parity-ip-salt', OPS_TOKEN };
+	// An --env-file keeps a developer's api/.dev.vars out of the run.
+	const envFile = resolve(RUN, 'worker.vars');
+	writeFileSync(envFile, Object.entries(vars).map(([k, v]) => `${k}=${v}\n`).join(''));
 	worker.start(
 		process.execPath,
 		[
@@ -153,10 +155,11 @@ async function startWorker(now: number): Promise<void> {
 			`--inspector-port=${WORKER_PORT + 100}`,
 			`--persist-to=${resolve(RUN, 'wrangler')}`,
 			'--show-interactive-dev-session=false',
+			`--env-file=${envFile}`,
 			...Object.entries(vars).map(([k, v]) => `--var=${k}:${v}`)
 		],
 		// Secrets declared in wrangler.jsonc are read from the process environment too.
-		{ ...vars, CLOUDFLARE_LOAD_DEV_VARS_FROM_DOT_ENV: 'false', WRANGLER_SEND_METRICS: 'false' },
+		{ ...vars, WRANGLER_SEND_METRICS: 'false' },
 		resolve(REPO, 'api')
 	);
 	await worker.ready(`${WORKER}/healthz`);
