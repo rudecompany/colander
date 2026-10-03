@@ -4,9 +4,9 @@ import { PLATFORM_NAME, type Action, type Platform, type SlopType, type TagVerdi
 import defaults from '../adapters/default-config.json';
 import { activeSurfaces, extractCard, pageSource, platformForHost, rx, type Extracted, type PageSource } from '../adapters/extract';
 import type { AdapterConfig, Anchor, PlatformConfig, Surface } from '../adapters/schema';
-import { b64decode } from '../lib/bytes';
-import { targetKey } from '../lib/ids';
-import { ListIndex } from '../lib/list';
+import { b64decode } from '@colander/shared/bytes';
+import { targetKey } from '@colander/shared/ids';
+import { ListIndex } from '@colander/shared/list';
 import { decide, type Decision, type MatchContext } from '../lib/match';
 import type { ActivityEntry, HelloReply, PageAction, PageCounts, PageState, ReportReply, TagRequest, ToPage, ToWorker } from '../lib/messages';
 import { platformConfig } from '../lib/platforms';

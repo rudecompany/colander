@@ -1,7 +1,7 @@
 // Canonical IDs, target keys and list hashes (docs/contracts.md sections 2.2 and 2.3).
 // Adapters must normalize exactly as the contract says, or list matching fails silently,
 // so every platform rule lives here and nowhere else.
-import type { Platform } from '@colander/shared/verdicts';
+import type { Platform } from './verdicts';
 import { sha256 } from './sha256';
 import { utf8 } from './bytes';
 

@@ -32,6 +32,7 @@ test-server:
 
 test-web:
 	pnpm -C packages/shared check
+	pnpm -C packages/shared test
 	pnpm -C web check
 	pnpm -C web test
 

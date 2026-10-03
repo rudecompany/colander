@@ -9,7 +9,7 @@ Behavior described in `docs/product-requirements.md` (the spec) is not repeated 
 
 | Path | What | Stack |
 | --- | --- | --- |
-| `packages/shared` | `@colander/shared`: verdict enums and words, signals, glyphs, the Colander theme (`colander.css`), Mittsu components, API types | TypeScript, Svelte 5 |
+| `packages/shared` | `@colander/shared`: verdict enums and words, signals, glyphs, the Colander theme (`colander.css`), Mittsu components, API types, and the list format, Ed25519 signing and canonical IDs (client and server halves, WebCrypto only) | TypeScript, Svelte 5 |
 | `extension` | The Chrome MV3 extension | WXT, Svelte 5, TypeScript |
 | `server` | Every backend service in one Go binary: list, tag, scoring, review, appeals, public API, accounts, billing | Go, SQLite |
 | `web` | Public website, account pages and the review console, built static and served by the Go binary | SvelteKit (adapter-static), Svelte 5, Mittsu |
@@ -541,5 +541,5 @@ Public keys are the base64 of the raw 32-byte key.
 `list-snapshot.bin` and `list-delta.bin` follow section 3; `list-expected.json` lists their decoded entries (with the target key, hash hex and the ISO date the `updated` day number came from) and the 7 entries left after applying the delta.
 `config-envelope.json` follows section 4 with payload `{"version":7,"note":"contract fixture"}`.
 `plan-token.txt` follows section 5.
-The Go encoder must reproduce `list-snapshot.bin` and `list-delta.bin` byte for byte from `list-expected.json`, and both the Go and TypeScript decoders must verify and decode all fixtures.
+The Go and TypeScript encoders (`packages/shared/src/list.ts`) must reproduce `list-snapshot.bin` and `list-delta.bin` byte for byte from `list-expected.json`, the Go and TypeScript signers must reproduce `config-envelope.json` and `plan-token.txt`, and both the Go and TypeScript decoders must verify and decode all fixtures.
 Never edit the fixtures by hand; change the generator and rerun it.

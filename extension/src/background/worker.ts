@@ -6,7 +6,7 @@ import defaults from '../adapters/default-config.json';
 import { validateConfig, type AdapterConfig } from '../adapters/schema';
 import * as db from '../lib/db';
 import { SITE, PUBLIC_KEYS } from '../lib/env';
-import { targetKey } from '../lib/ids';
+import { targetKey } from '@colander/shared/ids';
 import type { ActivityEntry, HelloReply, PageCounts, ReportReply, ReportRequest, TagRequest, ToPage, ToWorker } from '../lib/messages';
 import { offered, ORIGINS } from '../lib/platforms';
 import {
@@ -21,7 +21,7 @@ import {
 	type Stats,
 	type Status
 } from '../lib/settings';
-import { CONFIG_CONTEXT, importKeys, verifyEnvelope, verifyPlanToken, type TrustedKey } from '../lib/signing';
+import { CONFIG_CONTEXT, importKeys, verifyEnvelope, verifyPlanToken, type TrustedKey } from '@colander/shared/signing';
 import { setGlobalIcon, setTabIcon } from './icons';
 import { clearList, getStatus, setStatus, syncList } from './listsync';
 import { ApiError, installId, json, request } from './net';

@@ -1,7 +1,7 @@
 // Canonical ID normalization per docs/contracts.md 2.2, as a table of real-looking URLs.
 import { describe, expect, it } from 'vitest';
-import type { Platform } from '@colander/shared/verdicts';
-import { canonicalItem, canonicalSource, itemFromUrl, parseTargetKey, sourceFromUrl, targetKey } from '../../src/lib/ids';
+import type { Platform } from '../src/verdicts';
+import { canonicalItem, canonicalSource, itemFromUrl, parseTargetKey, sourceFromUrl, targetKey } from '../src/ids';
 
 const sources: [Platform, string, string | null][] = [
 	['yt', 'https://www.youtube.com/@MrBeast', '@mrbeast'],

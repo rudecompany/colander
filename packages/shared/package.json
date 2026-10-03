@@ -4,15 +4,25 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": { "types": "./src/index.ts", "svelte": "./src/index.ts", "default": "./src/index.ts" },
+    ".": {
+      "types": "./src/index.ts",
+      "svelte": "./src/index.ts",
+      "default": "./src/index.ts"
+    },
     "./verdicts": "./src/verdicts.ts",
     "./glyphs": "./src/glyphs.ts",
     "./api": "./src/api.ts",
+    "./bytes": "./src/bytes.ts",
+    "./sha256": "./src/sha256.ts",
+    "./ids": "./src/ids.ts",
+    "./list": "./src/list.ts",
+    "./signing": "./src/signing.ts",
     "./styles/*": "./src/styles/*",
     "./components/*": "./src/components/*"
   },
   "scripts": {
-    "check": "svelte-check --tsconfig ./tsconfig.json"
+    "check": "svelte-check --tsconfig ./tsconfig.json",
+    "test": "vitest run"
   },
   "peerDependencies": {
     "svelte": "^5.0.0"
@@ -24,6 +34,8 @@
   "devDependencies": {
     "svelte": "^5.57.1",
     "svelte-check": "^4.0.0",
-    "typescript": "^5.9.0"
+    "typescript": "^5.9.0",
+    "@types/node": "^24.19.1",
+    "vitest": "^4.1.11"
   }
 }

@@ -34,7 +34,7 @@ sent by the website's account page through externally_connectable, or pasted her
 	import X from '@lucide/svelte/icons/x';
 	import Scale from '@lucide/svelte/icons/scale';
 	import { SITE } from '../../lib/env';
-	import { idSegment } from '../../lib/ids';
+	import { idSegment } from '@colander/shared/ids';
 	import { K } from '../../lib/settings';
 	import { ReviewError, review } from '../../ui/review';
 	import { ago, fmtDate, stored } from '../../ui/store.svelte';

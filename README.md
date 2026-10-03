@@ -17,7 +17,7 @@ Every interface between the parts is defined in [docs/contracts.md](docs/contrac
 | [extension/](extension/README.md) | The Manifest V3 extension: platform adapters, matching, in-page chips, collapsed bars, Tag and Why, popup, options, welcome page and the curator side panel | WXT, Svelte 5, TypeScript |
 | [server/](server/README.md) | Every backend service in one binary: signed list snapshots and deltas, tags and reports, scoring, review, appeals, accounts, billing, settings sync, and the website itself | Go, SQLite |
 | [web/](web/README.md) | The public website: landing page, definition, source pages, appeals, decision log, plans, support, transparency, account and the review console | SvelteKit (static), Svelte 5 |
-| [packages/shared](packages/shared) | Verdict vocabulary, signal names, verdict glyphs and the brand mark, the Colander theme on top of Mittsu components, and API types | TypeScript, Svelte 5, Mittsu |
+| [packages/shared](packages/shared) | Verdict vocabulary, signal names, verdict glyphs and the brand mark, the Colander theme on top of Mittsu components, API types, and the list format, Ed25519 signing and canonical IDs used by the extension and the server | TypeScript, Svelte 5, Mittsu |
 | [e2e/](e2e/README.md) | Full-stack tests: the real server, website and extension together in Chromium | Playwright |
 | [testdata/contract](testdata/contract) | Signed fixtures that the Go and TypeScript code must both read byte for byte | Node |
 

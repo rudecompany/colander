@@ -24,7 +24,7 @@ Show, Always allow and Not slop beside each (P0-12), Report this source, and the
 	import X from '@lucide/svelte/icons/x';
 	import RefreshCw from '@lucide/svelte/icons/refresh-cw';
 	import { SITE } from '../../lib/env';
-	import { targetKey } from '../../lib/ids';
+	import { targetKey } from '@colander/shared/ids';
 	import type { PageAction, PageState, ToPage } from '../../lib/messages';
 	import { ORIGINS } from '../../lib/platforms';
 	import { dayKey, isPlus, K, needsAttention, withDefaults, DEFAULT_STATUS, type Entitlement, type Settings, type Stats, type Status } from '../../lib/settings';

@@ -13,8 +13,8 @@ import {
 	type TagVerdict,
 	type Verdict
 } from '@colander/shared/verdicts';
-import { targetKey } from './ids';
-import type { ListHit } from './list';
+import { targetKey } from '@colander/shared/ids';
+import type { ListHit } from '@colander/shared/list';
 import { STRICTNESS_RANK, type Topic } from './settings';
 
 export interface CardFacts {

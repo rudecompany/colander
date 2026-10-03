@@ -1,4 +1,5 @@
-// The binary shared list (docs/contracts.md section 3): decode, verify and apply deltas.
+// The binary shared list (docs/contracts.md section 3): decode, verify and apply deltas on the
+// client, and encode and sign snapshots and deltas on the server.
 // Entries stay packed as 16-byte rows in one Uint8Array, sorted by hash, so a 50,000-entry
 // list costs 800 KB in memory and lookups are a binary search with no per-entry objects.
 import {
@@ -13,13 +14,19 @@ import {
 	type Platform,
 	type Test,
 	type Verdict
-} from '@colander/shared/verdicts';
+} from './verdicts';
 import { keyHash } from './ids';
-import { verifyEd25519, type TrustedKey } from './signing';
+import { verifyEd25519, type SigningKey, type TrustedKey } from './signing';
 
 export const HEADER = 32;
 export const ENTRY = 16;
 export const TRAILER = 72;
+
+/** Flag bits in an entry's flags byte; bits 0-2 hold the platform code. */
+export const FLAG_ITEM = 1 << 3;
+export const FLAG_LARGE = 1 << 4;
+export const FLAG_IMPORTED = 1 << 5;
+export const FLAG_STAFF_REVIEWED = 1 << 6;
 
 export class ListError extends Error {}
 
@@ -159,6 +166,73 @@ export function decodeEntry(entries: Uint8Array, at: number): ListHit | null {
 /** Days since 2020-01-01 UTC as a Date. */
 export function dayToDate(day: number): Date {
 	return new Date(Date.UTC(2020, 0, 1) + day * 86_400_000);
+}
+
+/** Whole days since 2020-01-01 UTC for unix seconds, clamped to the u16 field (Go's listfmt.Day). */
+export function dayNumber(unixSeconds: number): number {
+	const day = Math.floor((unixSeconds - 1_577_836_800) / 86_400);
+	return Math.min(Math.max(day, 0), 0xffff);
+}
+
+/** One list entry before encoding. `hash` is keyHash(targetKey); the rest are the wire fields. */
+export interface Entry {
+	hash: Uint8Array;
+	/** 0 = removed (deltas only), otherwise VERDICT_CODE. */
+	verdict: number;
+	flags: number;
+	signals: number;
+	detail: number;
+	/** dayNumber of the last verdict change. */
+	updated: number;
+}
+
+export function encodeEntry(e: Entry): Uint8Array {
+	if (e.hash.length !== 8) throw new ListError('hash must be 8 bytes');
+	const out = new Uint8Array(ENTRY);
+	const view = new DataView(out.buffer);
+	out.set(e.hash, 0);
+	out[8] = e.verdict;
+	out[9] = e.flags;
+	view.setUint16(10, e.signals, true);
+	out[12] = e.detail;
+	view.setUint16(14, e.updated, true);
+	return out;
+}
+
+export interface ListHeader {
+	kind: 'snapshot' | 'delta';
+	sequence: number;
+	/** Delta: the sequence it applies on top of. Snapshot: 0. */
+	base: number;
+	/** Unix seconds. */
+	created: number;
+}
+
+/**
+ * Sorts 16-byte entry rows by hash, writes the file and signs it (Go's listfmt.Encode).
+ * Ed25519 is deterministic, so the same input always gives the same bytes.
+ */
+export async function encodeList(key: SigningKey, header: ListHeader, rows: Uint8Array[]): Promise<Uint8Array> {
+	const sorted = [...rows].sort((a, b) => cmpHash(a, 0, b, 0));
+	for (let i = 0; i < sorted.length; i++) {
+		if (sorted[i]!.length !== ENTRY) throw new ListError('entry must be 16 bytes');
+		if (i > 0 && cmpHash(sorted[i - 1]!, 0, sorted[i]!, 0) === 0) throw new ListError('duplicate hash');
+	}
+	const body = new Uint8Array(HEADER + ENTRY * sorted.length);
+	const view = new DataView(body.buffer);
+	body.set([0x43, 0x4c, 0x44, 0x4c], 0); // "CLDL"
+	body[4] = 1;
+	body[5] = header.kind === 'snapshot' ? 0 : 1;
+	view.setBigUint64(8, BigInt(header.sequence), true);
+	view.setBigUint64(16, BigInt(header.base), true);
+	view.setUint32(24, header.created, true);
+	view.setUint32(28, sorted.length, true);
+	sorted.forEach((row, i) => body.set(row, HEADER + i * ENTRY));
+	const out = new Uint8Array(body.length + TRAILER);
+	out.set(body, 0);
+	out.set(key.id, body.length);
+	out.set(await key.sign(body), body.length + 8);
+	return out;
 }
 
 /**

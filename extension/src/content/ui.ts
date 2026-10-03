@@ -21,8 +21,8 @@ import {
 	type Verdict
 } from '@colander/shared/verdicts';
 import { SITE } from '../lib/env';
-import { idSegment } from '../lib/ids';
-import { dayToDate } from '../lib/list';
+import { idSegment } from '@colander/shared/ids';
+import { dayToDate } from '@colander/shared/list';
 import type { Decision } from '../lib/match';
 import { formatDate, glyph, h, icon, makeHost, reducedMotion, trapFocus } from './dom';
 

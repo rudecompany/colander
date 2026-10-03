@@ -1,9 +1,9 @@
 // Shared list sync: snapshot or delta, verified, applied only on top of the right base,
 // kept in IndexedDB and mirrored as a compact index for content scripts.
-import { b64encode } from '../lib/bytes';
+import { b64encode } from '@colander/shared/bytes';
 import * as db from '../lib/db';
-import { applyDelta, ENTRY, verifyList, type ListFile } from '../lib/list';
-import type { TrustedKey } from '../lib/signing';
+import { applyDelta, ENTRY, verifyList, type ListFile } from '@colander/shared/list';
+import type { TrustedKey } from '@colander/shared/signing';
 import { DEFAULT_STATUS, K, type Status, type StoredIndex } from '../lib/settings';
 import { request } from './net';
 
