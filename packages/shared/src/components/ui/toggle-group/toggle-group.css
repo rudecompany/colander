@@ -1,0 +1,13 @@
+/* ToggleGroup — see ./toggle-group.svelte. */
+
+.uin-toggle-group {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--uin-s-1);
+  flex-wrap: wrap;
+}
+
+.uin-toggle-group-icon {
+  display: inline-flex;
+  align-items: center;
+}

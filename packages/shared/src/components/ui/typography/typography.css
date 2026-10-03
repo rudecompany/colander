@@ -1,0 +1,86 @@
+/* Typography — see ./typography.svelte. */
+
+.uin-type {
+  margin: 0;
+}
+
+/* ---- Variants ---- */
+
+.uin-type-display {
+  font-family: var(--uin-font-display);
+  font-weight: 500;
+  font-size: clamp(28px, 4vw, 38px);
+  line-height: 1.1;
+  letter-spacing: -0.015em;
+}
+
+.uin-type-h1 {
+  font-family: var(--uin-font-display);
+  font-weight: 500;
+  font-size: 28px;
+  line-height: 1.15;
+  letter-spacing: -0.01em;
+}
+
+.uin-type-h2 {
+  font-family: var(--uin-font-display);
+  font-weight: 500;
+  font-size: 20px;
+  line-height: 1.2;
+  letter-spacing: -0.005em;
+}
+
+.uin-type-h3 {
+  font-family: var(--uin-font-display);
+  font-weight: 500;
+  font-size: 17px;
+  line-height: 1.25;
+}
+
+.uin-type-h4 {
+  font-family: var(--uin-font-ui);
+  font-weight: 600;
+  font-size: 14px;
+  line-height: 1.3;
+}
+
+.uin-type-lead {
+  font-family: var(--uin-font-ui);
+  font-weight: 400;
+  font-size: 14.5px;
+  line-height: 1.5;
+}
+
+.uin-type-body {
+  font-family: var(--uin-font-ui);
+  font-weight: 400;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.uin-type-caption {
+  font-family: var(--uin-font-ui);
+  font-weight: 400;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.uin-type-eyebrow {
+  font-family: var(--uin-font-ui);
+  font-weight: 500;
+  font-size: 10.5px;
+  line-height: 1.2;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+/* ---- Tones ---- */
+
+.uin-type-tone-default { color: var(--uin-fg); }
+.uin-type-tone-muted   { color: var(--uin-fg-mute); }
+.uin-type-tone-dim     { color: var(--uin-fg-dim); }
+
+/* Caption + eyebrow read better as muted by default — flip them
+   unless the consumer explicitly picks default. */
+.uin-type-caption.uin-type-tone-default,
+.uin-type-eyebrow.uin-type-tone-default { color: var(--uin-fg-mute); }

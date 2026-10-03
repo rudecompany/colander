@@ -1,0 +1,126 @@
+/*
+ * @a3tai/mittsu — design tokens
+ *
+ * Copy this file into your app once (the CLI's `init` command does it
+ * for you) and import it from a top-level layout. Every component pulls
+ * from these variables; override any of them at any scope to retheme.
+ *
+ * The defaults map to macOS system materials so the components feel at
+ * home inside Wails / Tauri / Electron apps without further work.
+ */
+
+:root {
+  /* ---- Color: foreground ---- */
+  --uin-fg:           rgba(0, 0, 0, 0.88);
+  --uin-fg-mute:      rgba(0, 0, 0, 0.62);
+  --uin-fg-dim:       rgba(0, 0, 0, 0.42);
+  --uin-fg-faint:     rgba(0, 0, 0, 0.18);
+
+  /* ---- Color: lines ---- */
+  --uin-line:         rgba(0, 0, 0, 0.10);
+  --uin-line-strong:  rgba(0, 0, 0, 0.18);
+
+  /* ---- Color: materials (translucent backgrounds) ---- */
+  --uin-bg-base:      #f5f5f7;
+  --uin-bg-panel:     #ffffff;
+  --uin-mat-window:   color-mix(in srgb, #f5f5f7 88%, transparent);
+  --uin-mat-sidebar:  color-mix(in srgb, #ececef 78%, transparent);
+  --uin-mat-panel:    color-mix(in srgb, #ffffff 92%, transparent);
+  --uin-mat-row:      color-mix(in srgb, #ffffff 50%, transparent);
+  --uin-mat-hover:    color-mix(in srgb, #000000 6%, transparent);
+  --uin-mat-selected: color-mix(in srgb, #007aff 14%, transparent);
+
+  /* ---- Color: accents ---- */
+  --uin-accent:       #007aff;        /* macOS blue */
+  --uin-accent-fg:    #ffffff;
+  --uin-success:      #34c759;
+  --uin-warn:         #ffcc00;
+  --uin-danger:       #ff453a;
+
+  /* ---- Type: families ---- */
+  --uin-font-ui:      ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+                      "SF Pro Text", "Helvetica Neue", Helvetica, Arial, sans-serif;
+  --uin-font-display: ui-serif, "New York", "Iowan Old Style", Georgia, "Times New Roman", serif;
+  --uin-font-mono:    ui-monospace, "SF Mono", Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+
+  /* ---- Spacing scale (4px base) ---- */
+  --uin-s-1: 4px;
+  --uin-s-2: 8px;
+  --uin-s-3: 12px;
+  --uin-s-4: 16px;
+  --uin-s-5: 20px;
+  --uin-s-6: 24px;
+  --uin-s-7: 32px;
+  --uin-s-8: 48px;
+
+  /* ---- Radii ---- */
+  --uin-r-sm: 4px;
+  --uin-r-md: 8px;
+  --uin-r-lg: 12px;
+  --uin-r-xl: 16px;
+
+  /* ---- Motion ---- */
+  --uin-dur-1: 120ms;
+  --uin-dur-2: 200ms;
+  --uin-dur-3: 320ms;
+  --uin-ease-standard: cubic-bezier(0.2, 0.0, 0.0, 1.0);
+  --uin-ease-emphasized: cubic-bezier(0.25, 0.46, 0.45, 0.94);
+
+  /* ---- Focus ring ---- */
+  --uin-focus-ring: 0 0 0 3px color-mix(in srgb, var(--uin-accent) 40%, transparent);
+}
+
+/* Dark mode — opt in by adding `data-theme="dark"` to <html> or a
+   region wrapper, or remove this gate entirely if your app is
+   dark-only. The system-preference fallback below picks it up
+   automatically. */
+:root[data-theme="dark"],
+[data-theme="dark"] {
+  --uin-fg:           rgba(255, 255, 255, 0.92);
+  --uin-fg-mute:      rgba(255, 255, 255, 0.65);
+  --uin-fg-dim:       rgba(255, 255, 255, 0.42);
+  --uin-fg-faint:     rgba(255, 255, 255, 0.18);
+
+  --uin-line:         rgba(255, 255, 255, 0.10);
+  --uin-line-strong:  rgba(255, 255, 255, 0.20);
+
+  --uin-bg-base:      #1c1c1e;
+  --uin-bg-panel:     #232326;
+  --uin-mat-window:   color-mix(in srgb, #1c1c1e 88%, transparent);
+  --uin-mat-sidebar:  color-mix(in srgb, #1f1f22 78%, transparent);
+  --uin-mat-panel:    color-mix(in srgb, #232326 92%, transparent);
+  --uin-mat-row:      color-mix(in srgb, #2a2a2d 50%, transparent);
+  --uin-mat-hover:    color-mix(in srgb, #ffffff 8%, transparent);
+  --uin-mat-selected: color-mix(in srgb, #0a84ff 22%, transparent);
+
+  --uin-accent:       #0a84ff;
+  --uin-success:      #30d158;
+  --uin-warn:         #ffd60a;
+  --uin-danger:       #ff453a;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --uin-fg:           rgba(255, 255, 255, 0.92);
+    --uin-fg-mute:      rgba(255, 255, 255, 0.65);
+    --uin-fg-dim:       rgba(255, 255, 255, 0.42);
+    --uin-fg-faint:     rgba(255, 255, 255, 0.18);
+
+    --uin-line:         rgba(255, 255, 255, 0.10);
+    --uin-line-strong:  rgba(255, 255, 255, 0.20);
+
+    --uin-bg-base:      #1c1c1e;
+    --uin-bg-panel:     #232326;
+    --uin-mat-window:   color-mix(in srgb, #1c1c1e 88%, transparent);
+    --uin-mat-sidebar:  color-mix(in srgb, #1f1f22 78%, transparent);
+    --uin-mat-panel:    color-mix(in srgb, #232326 92%, transparent);
+    --uin-mat-row:      color-mix(in srgb, #2a2a2d 50%, transparent);
+    --uin-mat-hover:    color-mix(in srgb, #ffffff 8%, transparent);
+    --uin-mat-selected: color-mix(in srgb, #0a84ff 22%, transparent);
+
+    --uin-accent:       #0a84ff;
+    --uin-success:      #30d158;
+    --uin-warn:         #ffd60a;
+    --uin-danger:       #ff453a;
+  }
+}

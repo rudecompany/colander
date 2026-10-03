@@ -1,0 +1,139 @@
+import { test, expect } from './fixtures.ts';
+import { APPEAL, CURATOR, QUEUE, STAFF, mockApi, reviewSource } from './mocks.ts';
+
+const review = (account: typeof STAFF, extra: Parameters<typeof mockApi>[1] = {}) => ({
+	'GET /v1/account': { json: { account } },
+	'GET /v1/review/queue': { json: { items: QUEUE, next_cursor: null } },
+	'GET /v1/review/sources/*': (c: { path: string }) => {
+		const [, , , , p, id] = c.path.split('/');
+		return { json: reviewSource(`${p}:${decodeURIComponent(id)}`) };
+	},
+	...extra
+});
+
+test('staff move through the queue by keyboard, read the evidence and write a decision', async ({ page }) => {
+	const calls = await mockApi(page, review(STAFF, { 'POST /v1/review/sources/*/decision': { json: {} } }));
+	await page.goto('/console');
+	await expect(page.getByRole('button', { name: /Ancient Facts Daily/ })).toBeVisible();
+
+	await page.locator('body').click({ position: { x: 5, y: 300 } });
+	await page.keyboard.press('j');
+	await page.keyboard.press('j');
+	await expect(page.getByRole('button', { name: /History Bites 24\/7/ })).toBeFocused();
+	await page.keyboard.press('k');
+	await expect(page.getByRole('button', { name: /Numis Notes/ })).toBeFocused();
+	await page.keyboard.press('j');
+	await page.keyboard.press('Enter');
+
+	await expect(page.getByRole('heading', { level: 2, name: 'History Bites 24/7' })).toBeVisible();
+	await expect(page.getByText('6 slop tags from 9 installs, a share of 0.67. Consensus needs 0.7.')).toBeVisible();
+	await expect(page.getByText('Not met')).toBeVisible();
+	await expect(page.getByRole('link', { name: /7421983300112233445/ }).first()).toHaveAttribute('href', 'https://www.tiktok.com/@historybites247/video/7421983300112233445');
+
+	await page.locator('label.verdict-option').filter({ has: page.getByRole('radio', { name: 'Slop', exact: true }) }).click();
+	await page.getByLabel('Reason').fill('Twelve near-identical AI history videos a day with one caption template.');
+	await page.locator('label.uin-checkbox', { hasText: 'Posts at a volume no person could sustain' }).click();
+	await page.getByLabel('Type').selectOption('filler');
+	await page.getByRole('button', { name: 'Review decision' }).click();
+
+	const dialog = page.getByRole('dialog', { name: 'Write this to the public log?' });
+	await expect(dialog).toContainText('Decided by staff member Sam');
+	await expect(dialog.locator('.cl-chip')).toHaveText(['Likely slop', 'Slop']);
+	await dialog.getByRole('button', { name: 'Write to the log' }).click();
+	await expect(page.getByText('Decision written to the public log.')).toBeVisible();
+
+	const post = calls.find((c) => c.method === 'POST' && c.path === '/v1/review/sources/tt/%40historybites247/decision')!;
+	expect(post.headers['x-colander-csrf']).toBe('1');
+	expect(post.body).toEqual({
+		verdict: 'slop',
+		reason: 'Twelve near-identical AI history videos a day with one caption template.',
+		signals: ['platform_label', 'templated', 'near_duplicates', 'high_volume'],
+		slop_type: 'filler',
+		tests: ['mass_produced', 'hollow'],
+		large: false
+	});
+});
+
+test('curators see staff-only limits before submit, and the staff_required answer after', async ({ page }) => {
+	await mockApi(
+		page,
+		review(CURATOR, {
+			'POST /v1/review/sources/*/decision': {
+				status: 403,
+				json: { error: { code: 'staff_required', message: 'This source now has a large audience, so a staff member must decide it.' } }
+			}
+		})
+	);
+	await page.goto('/console');
+
+	await page.getByRole('button', { name: /Ancient Facts Daily/ }).click();
+	await expect(page.getByText('Staff decision needed')).toBeVisible();
+	await expect(page.getByRole('button', { name: 'Review decision' })).toBeDisabled();
+
+	await page.getByRole('button', { name: /History Bites 24\/7/ }).click();
+	await expect(page.getByRole('heading', { level: 2, name: 'History Bites 24/7' })).toBeVisible();
+	await expect(page.getByText('Only staff can mark a source as large.')).toBeVisible();
+	await page.locator('label.verdict-option').filter({ has: page.getByRole('radio', { name: 'No verdict' }) }).click();
+	await page.getByLabel('Reason').fill('Reports describe a different channel with a similar name.');
+	await page.getByRole('button', { name: 'Review decision' }).click();
+	await page.getByRole('dialog').getByRole('button', { name: 'Write to the log' }).click();
+	await expect(page.getByRole('alert').filter({ hasText: 'Staff decision needed' })).toContainText('a staff member must decide it');
+});
+
+test('curators see that an appeal waiting for a manual code check needs staff', async ({ page }) => {
+	const numis = reviewSource('yt:@numisnotes');
+	await mockApi(
+		page,
+		review(CURATOR, {
+			'GET /v1/review/sources/*': {
+				json: { ...numis, source: { ...numis.source, appeal_open: false }, appeals: [{ ...APPEAL, status: 'pending_manual' }] }
+			}
+		})
+	);
+	await page.goto('/console');
+	await page.getByRole('button', { name: /Numis Notes/ }).click();
+	await expect(page.getByRole('status').filter({ hasText: 'Staff decision needed' })).toContainText('An appeal is open on this source');
+	await expect(page.getByRole('button', { name: 'Review decision' })).toBeDisabled();
+});
+
+test('Slop and Likely slop wait for AI evidence, and the server answer is shown', async ({ page }) => {
+	const base = reviewSource('tt:@historybites247');
+	const noAi = {
+		...base,
+		source: { ...base.source, signals: base.source.signals.filter((s) => s !== 'platform_label') },
+		layers: { ...base.layers, provenance: { met: false, signals: [], detail: 'One install reported the platform AI label. Provenance needs 2.' } }
+	};
+	await mockApi(
+		page,
+		review(STAFF, {
+			'GET /v1/review/sources/*': { json: noAi },
+			'POST /v1/review/sources/*/decision': {
+				status: 400,
+				json: { error: { code: 'ai_evidence_required', message: 'Slop and Likely slop need AI evidence on this source.' } }
+			}
+		})
+	);
+	await page.goto('/console');
+	await page.getByRole('button', { name: /History Bites/ }).click();
+
+	const slop = page.getByRole('radio', { name: 'Slop', exact: true });
+	await expect(page.getByText('Slop and Likely slop need AI evidence. The provenance layer is not met')).toBeVisible();
+	await expect(slop).toBeDisabled();
+	await expect(page.getByRole('radio', { name: 'Likely slop' })).toBeDisabled();
+	await expect(page.getByRole('radio', { name: 'AI-made' })).toBeEnabled();
+
+	// Recording a provenance signal is AI evidence, so the verdicts open up.
+	await page.locator('label.uin-checkbox', { hasText: 'The platform labels it AI-generated' }).click();
+	await expect(slop).toBeEnabled();
+	await page.locator('label.verdict-option').filter({ has: slop }).click();
+	await page.getByLabel('Reason').fill('Twelve near-identical AI history videos a day with one caption template.');
+	await page.getByRole('button', { name: 'Review decision' }).click();
+	await page.getByRole('dialog').getByRole('button', { name: 'Write to the log' }).click();
+	await expect(page.getByRole('alert').filter({ hasText: 'AI evidence needed' })).toContainText('need AI evidence on this source');
+});
+
+test('members are told the console is for curators and staff', async ({ page }) => {
+	await mockApi(page, { 'GET /v1/account': { json: { account: { ...STAFF, role: 'member' } } } });
+	await page.goto('/console');
+	await expect(page.getByRole('heading', { name: 'For curators and staff' })).toBeVisible();
+});

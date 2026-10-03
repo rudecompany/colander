@@ -1,0 +1,58 @@
+/* Stat — see ./stat.svelte. */
+
+.uin-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.uin-stat-label {
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--uin-fg-dim);
+  font-weight: 500;
+}
+.uin-stat-value {
+  font-family: var(--uin-font-display);
+  font-size: 17px;
+  font-weight: 500;
+  color: var(--uin-fg);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.uin-stat-lg .uin-stat-value {
+  font-size: 22px;
+}
+.uin-stat-sm .uin-stat-value {
+  font-size: 14px;
+}
+.uin-stat-accent .uin-stat-value {
+  color: var(--uin-accent);
+}
+.uin-stat-hint {
+  font-size: 10px;
+  color: var(--uin-fg-mute);
+  font-weight: 400;
+  letter-spacing: 0;
+  text-transform: none;
+  margin-top: 2px;
+}
+
+/* Grid container for laying out a row of Stats. */
+.uin-stat-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(80px, 1fr));
+  gap: var(--uin-s-3);
+  padding: var(--uin-s-2);
+  border: 1px solid var(--uin-line);
+  border-radius: var(--uin-r-md);
+  background: var(--uin-mat-row);
+}
+.uin-stat-row > .uin-stat + .uin-stat {
+  border-left: 1px solid var(--uin-line);
+  padding-left: var(--uin-s-3);
+}

@@ -1,0 +1,189 @@
+/*
+ * Colander theme: the spec's color, type, spacing, shape and motion tokens (--cl-*),
+ * mapped onto Mittsu's --uin-* tokens so every Mittsu component wears the brand.
+ * Import after tokens.css. Used by the popup, options, side panel, welcome page and website.
+ * In-page elements on host sites do NOT use this file (they use the system font stack).
+ */
+@import '@fontsource-variable/atkinson-hyperlegible-next/wght.css';
+
+:root {
+	/* Surfaces and text (spec: Color tokens, light) */
+	--cl-surface: #ffffff;
+	--cl-surface-raised: #f3f0e9;
+	--cl-border: #d9d5cc;
+	--cl-text: #1a1c1f;
+	--cl-text-muted: #5a5f66;
+	--cl-brand: #1f4e8c;
+	--cl-brand-fg: #ffffff;
+	--cl-brand-tint: #e4eaf1;
+	--cl-paper: #faf7f2;
+	--cl-ink: #1a1c1f;
+	--cl-dot: #d9d5cc;
+
+	/* Verdicts: color on light, tint behind it, color on dark and on media */
+	--cl-slop: #a8380f;
+	--cl-slop-tint: #fbe9e2;
+	--cl-slop-media: #ff8a5c;
+	--cl-likely: #7a5200;
+	--cl-likely-tint: #fbf0d6;
+	--cl-likely-media: #ffc857;
+	--cl-ai: #48535f;
+	--cl-ai-tint: #eceff3;
+	--cl-ai-media: #c2cad6;
+	--cl-disputed: #6b3fa0;
+	--cl-disputed-tint: #f0e8fa;
+	--cl-disputed-media: #c8a6ff;
+	--cl-clear: #1b6e45;
+	--cl-clear-tint: #e3f4ea;
+	--cl-clear-media: #6fd6a3;
+
+	/* Type */
+	--cl-font: 'Atkinson Hyperlegible Next Variable', 'Atkinson Hyperlegible Next', ui-sans-serif, system-ui,
+		-apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+	--cl-font-system: system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+	--cl-chip: 600 12px/16px var(--cl-font);
+	--cl-caption: 400 12px/16px var(--cl-font);
+	--cl-body: 400 14px/20px var(--cl-font);
+	--cl-body-lg: 400 16px/24px var(--cl-font);
+	--cl-title: 600 20px/28px var(--cl-font);
+	--cl-display: 700 32px/40px var(--cl-font);
+
+	/* Spacing steps: 4, 8, 12, 16, 24, 32 */
+	--cl-s1: 4px;
+	--cl-s2: 8px;
+	--cl-s3: 12px;
+	--cl-s4: 16px;
+	--cl-s5: 24px;
+	--cl-s6: 32px;
+
+	/* Shape */
+	--cl-r-chip: 6px;
+	--cl-r-card: 10px;
+	--cl-r-full: 999px;
+	--cl-shadow-pop: 0 8px 28px rgb(26 28 31 / 0.16), 0 1px 3px rgb(26 28 31 / 0.08);
+
+	/* Motion: 120 ms hover and press, 200 ms collapse and reveal, ease-out */
+	--cl-fast: 120ms;
+	--cl-slow: 200ms;
+	--cl-ease: cubic-bezier(0, 0, 0.2, 1);
+}
+
+/*
+ * Mittsu mapping. tokens.css sets its dark colors with (0,2,0) selectors, so the mapping uses
+ * :root:not([data-theme='light']) as well (same specificity, later in the cascade) and plain
+ * :root for forced light. The --cl-* values it points to switch per mode on their own.
+ */
+:root,
+:root:not([data-theme='light']) {
+	--uin-fg: var(--cl-text);
+	--uin-fg-mute: var(--cl-text-muted);
+	--uin-fg-dim: color-mix(in srgb, var(--cl-text-muted) 80%, var(--cl-surface));
+	--uin-fg-faint: color-mix(in srgb, var(--cl-text) 22%, transparent);
+	--uin-line: var(--cl-border);
+	/* Control outlines clear 3:1 against their surface (WCAG 1.4.11). */
+	--uin-line-strong: color-mix(in srgb, var(--cl-text-muted) 75%, var(--cl-surface));
+	--uin-bg-base: var(--cl-paper);
+	--uin-bg-panel: var(--cl-surface);
+	--uin-mat-window: var(--cl-surface);
+	--uin-mat-sidebar: var(--cl-surface-raised);
+	--uin-mat-panel: var(--cl-surface);
+	--uin-mat-row: var(--cl-surface);
+	--uin-mat-hover: color-mix(in srgb, var(--cl-text) 6%, transparent);
+	--uin-mat-selected: color-mix(in srgb, var(--cl-brand) 12%, transparent);
+	--uin-accent: var(--cl-brand);
+	--uin-accent-fg: var(--cl-brand-fg);
+	--uin-success: var(--cl-clear);
+	--uin-warn: var(--cl-likely);
+	--uin-danger: var(--cl-slop);
+	--uin-font-ui: var(--cl-font);
+	--uin-font-display: var(--cl-font);
+	--uin-r-sm: var(--cl-r-chip);
+	--uin-r-md: var(--cl-r-chip);
+	--uin-r-lg: var(--cl-r-card);
+	--uin-r-xl: var(--cl-r-card);
+	--uin-dur-1: var(--cl-fast);
+	--uin-dur-2: var(--cl-slow);
+	--uin-ease-standard: var(--cl-ease);
+	--uin-focus-ring: 0 0 0 2px var(--cl-surface), 0 0 0 4px var(--cl-brand);
+}
+
+:root[data-theme='dark'] {
+	--cl-surface: #15171a;
+	--cl-surface-raised: #1f2226;
+	--cl-border: #3a3e44;
+	--cl-text: #f2f0eb;
+	--cl-text-muted: #a7abb1;
+	--cl-brand: #8fb8f0;
+	--cl-brand-fg: #15171a;
+	--cl-brand-tint: #1f2a3a;
+	--cl-paper: #121417;
+	--cl-dot: #2c3035;
+	--cl-slop: #ff8a5c;
+	--cl-slop-tint: #3a2219;
+	--cl-likely: #ffc857;
+	--cl-likely-tint: #372c14;
+	--cl-ai: #c2cad6;
+	--cl-ai-tint: #2a2e34;
+	--cl-disputed: #c8a6ff;
+	--cl-disputed-tint: #2e2540;
+	--cl-clear: #6fd6a3;
+	--cl-clear-tint: #183026;
+	--cl-shadow-pop: 0 8px 28px rgb(0 0 0 / 0.5), 0 1px 3px rgb(0 0 0 / 0.4);
+}
+
+@media (prefers-color-scheme: dark) {
+	:root:not([data-theme='light']) {
+		--cl-surface: #15171a;
+		--cl-surface-raised: #1f2226;
+		--cl-border: #3a3e44;
+		--cl-text: #f2f0eb;
+		--cl-text-muted: #a7abb1;
+		--cl-brand: #8fb8f0;
+		--cl-brand-fg: #15171a;
+		--cl-brand-tint: #1f2a3a;
+		--cl-paper: #121417;
+		--cl-dot: #2c3035;
+		--cl-slop: #ff8a5c;
+		--cl-slop-tint: #3a2219;
+		--cl-likely: #ffc857;
+		--cl-likely-tint: #372c14;
+		--cl-ai: #c2cad6;
+		--cl-ai-tint: #2a2e34;
+		--cl-disputed: #c8a6ff;
+		--cl-disputed-tint: #2e2540;
+		--cl-clear: #6fd6a3;
+		--cl-clear-tint: #183026;
+		--cl-shadow-pop: 0 8px 28px rgb(0 0 0 / 0.5), 0 1px 3px rgb(0 0 0 / 0.4);
+	}
+}
+
+/* Spec: popup controls and buttons are at least 32 px tall. */
+.uin-btn-md {
+	height: 32px;
+	font-size: 14px;
+}
+.uin-btn-icon {
+	width: 32px;
+	height: 32px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+	*,
+	*::before,
+	*::after {
+		transition-duration: 0ms !important;
+		animation-duration: 0ms !important;
+		scroll-behavior: auto !important;
+	}
+}
+
+/* Counts use tabular figures. */
+.cl-num {
+	font-variant-numeric: tabular-nums;
+}
+
+/* The perforation-dot motif, for empty states, illustrations and loading. */
+.cl-dots {
+	background-image: radial-gradient(var(--cl-dot) 1.5px, transparent 1.6px);
+	background-size: 12px 12px;
+}

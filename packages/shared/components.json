@@ -1,0 +1,9 @@
+{
+  "framework": "svelte5",
+  "registry": "https://raw.githubusercontent.com/a3tai/mittsu/main/packages/svelte5/registry.json",
+  "paths": {
+    "components": "src/components/ui",
+    "tokens": "src/styles",
+    "lib": "src/utils"
+  }
+}

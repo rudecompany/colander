@@ -1,0 +1,16 @@
+/* Kbd — see ./kbd.svelte. */
+
+.uin-kbd {
+  display: inline-flex;
+  align-items: center;
+  height: 18px;
+  padding: 0 6px;
+  border: 1px solid var(--uin-line);
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--uin-fg) 5%, transparent);
+  color: var(--uin-fg-mute);
+  font-family: var(--uin-font-mono);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  line-height: 1;
+}

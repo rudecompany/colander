@@ -1,0 +1,2 @@
+# The extension's dev manifest key is the PUBLIC half of an RSA key; it only pins the unpacked extension ID.
+08bbee6f06e4a3f6a8e7440ab7ab538a612982de:extension/wxt.config.ts:generic-api-key:9

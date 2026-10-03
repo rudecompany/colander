@@ -1,0 +1,35 @@
+/* ProgressBar — see ./progress-bar.svelte. */
+
+.uin-progress {
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--uin-accent) 12%, transparent);
+  overflow: hidden;
+  width: 100%;
+}
+.uin-progress-sm {
+  height: 2px;
+}
+.uin-progress-md {
+  height: 3px;
+}
+.uin-progress-lg {
+  height: 6px;
+}
+.uin-progress-fill {
+  height: 100%;
+  background: var(--uin-accent);
+  transition: width var(--uin-dur-2) var(--uin-ease-standard);
+}
+.uin-progress-indeterminate {
+  position: relative;
+  overflow: hidden;
+}
+.uin-progress-indeterminate .uin-progress-fill {
+  width: 32%;
+  transition: none;
+  animation: uin-bar-slide 1.4s var(--uin-ease-standard) infinite;
+}
+@keyframes uin-bar-slide {
+  0%   { transform: translateX(-100%); }
+  100% { transform: translateX(320%); }
+}

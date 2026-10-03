@@ -1,0 +1,31 @@
+/* Spinner — see ./spinner.svelte. */
+
+.uin-spinner {
+  display: inline-block;
+  border-style: solid;
+  border-color: var(--uin-line-strong);
+  border-top-color: var(--uin-accent);
+  border-radius: 50%;
+  animation: uin-spin 0.8s linear infinite;
+  flex-shrink: 0;
+}
+.uin-spinner-sm {
+  width: 12px;
+  height: 12px;
+  border-width: 1.5px;
+}
+.uin-spinner-md {
+  width: 16px;
+  height: 16px;
+  border-width: 2px;
+}
+.uin-spinner-lg {
+  width: 24px;
+  height: 24px;
+  border-width: 2.5px;
+}
+@keyframes uin-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}

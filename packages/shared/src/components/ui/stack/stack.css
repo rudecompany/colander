@@ -1,0 +1,27 @@
+/* Stack — see ./stack.svelte. */
+
+.uin-stack {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.uin-stack-gap-0 { gap: 0; }
+.uin-stack-gap-1 { gap: var(--uin-s-1); }
+.uin-stack-gap-2 { gap: var(--uin-s-2); }
+.uin-stack-gap-3 { gap: var(--uin-s-3); }
+.uin-stack-gap-4 { gap: var(--uin-s-4); }
+.uin-stack-gap-5 { gap: var(--uin-s-5); }
+.uin-stack-gap-6 { gap: var(--uin-s-6); }
+.uin-stack-gap-7 { gap: var(--uin-s-7); }
+.uin-stack-gap-8 { gap: var(--uin-s-8); }
+
+.uin-stack-align-start    { align-items: flex-start; }
+.uin-stack-align-center   { align-items: center; }
+.uin-stack-align-end      { align-items: flex-end; }
+.uin-stack-align-stretch  { align-items: stretch; }
+
+.uin-stack-justify-start    { justify-content: flex-start; }
+.uin-stack-justify-center   { justify-content: center; }
+.uin-stack-justify-end      { justify-content: flex-end; }
+.uin-stack-justify-between  { justify-content: space-between; }

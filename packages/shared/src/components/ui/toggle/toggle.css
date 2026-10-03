@@ -1,0 +1,49 @@
+/* Toggle — see ./toggle.svelte. */
+
+.uin-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--uin-fg-mute);
+  font-family: var(--uin-font-ui);
+  font-weight: 500;
+  border-radius: var(--uin-r-sm);
+  cursor: pointer;
+  user-select: none;
+  transition:
+    background-color var(--uin-dur-1) var(--uin-ease-standard),
+    border-color var(--uin-dur-1) var(--uin-ease-standard),
+    color var(--uin-dur-1) var(--uin-ease-standard);
+}
+
+.uin-toggle:hover {
+  background: var(--uin-mat-hover);
+  color: var(--uin-fg);
+}
+
+.uin-toggle:focus-visible {
+  outline: none;
+  box-shadow: var(--uin-focus-ring);
+}
+
+.uin-toggle:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.uin-toggle-md { height: 30px; padding: 0 var(--uin-s-3); font-size: 12.5px; }
+.uin-toggle-sm { height: 24px; padding: 0 10px; font-size: 12px; }
+
+.uin-toggle-outline { border-color: var(--uin-line); }
+
+.uin-toggle-pressed {
+  background: var(--uin-mat-selected);
+  color: var(--uin-fg);
+  border-color: var(--uin-line-strong);
+}
+.uin-toggle-pressed:hover {
+  background: var(--uin-mat-selected);
+}

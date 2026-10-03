@@ -1,0 +1,21 @@
+/* Card — see ./card.svelte. */
+
+.uin-card {
+  border: 1px solid var(--uin-line);
+  border-radius: var(--uin-r-md);
+  background: var(--uin-mat-row);
+  color: var(--uin-fg);
+}
+.uin-card-pad {
+  padding: var(--uin-s-3);
+}
+.uin-card-flat {
+  /* nothing extra */
+}
+.uin-card-tinted {
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--uin-accent) 5%, transparent) 0%,
+    color-mix(in srgb, var(--uin-bg-panel) 65%, transparent) 100%
+  );
+}

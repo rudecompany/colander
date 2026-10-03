@@ -1,0 +1,29 @@
+{
+  "name": "@colander/shared",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": { "types": "./src/index.ts", "svelte": "./src/index.ts", "default": "./src/index.ts" },
+    "./verdicts": "./src/verdicts.ts",
+    "./glyphs": "./src/glyphs.ts",
+    "./api": "./src/api.ts",
+    "./styles/*": "./src/styles/*",
+    "./components/*": "./src/components/*"
+  },
+  "scripts": {
+    "check": "svelte-check --tsconfig ./tsconfig.json"
+  },
+  "peerDependencies": {
+    "svelte": "^5.0.0"
+  },
+  "dependencies": {
+    "@fontsource-variable/atkinson-hyperlegible-next": "^5.3.0",
+    "bits-ui": "^2.0.0"
+  },
+  "devDependencies": {
+    "svelte": "^5.57.1",
+    "svelte-check": "^4.0.0",
+    "typescript": "^5.9.0"
+  }
+}

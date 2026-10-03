@@ -1,0 +1,154 @@
+{
+  "key_id": "941afaf31a9c228e",
+  "public_key": "/M2DK/bv47lip44F239fPlUbehIkyv3xaF6OJlkkZPY=",
+  "snapshot": {
+    "sequence": 42,
+    "base": 0,
+    "created": 1790000000,
+    "entries": [
+      {
+        "key": "yt:s:@aihistorydaily",
+        "verdict": "slop",
+        "signals": [
+          "platform_label",
+          "mostly_ai",
+          "community_consensus",
+          "staff_review"
+        ],
+        "slop_type": "filler",
+        "tests": [
+          "low_effort",
+          "mass_produced"
+        ],
+        "staff_reviewed": true,
+        "updated": "2026-09-30T00:00:00Z",
+        "hash": "5398eb83931dffb6"
+      },
+      {
+        "key": "yt:s:UCaaaaaaaaaaaaaaaaaaaaaa",
+        "verdict": "slop",
+        "signals": [
+          "platform_label",
+          "mostly_ai",
+          "community_consensus",
+          "staff_review"
+        ],
+        "slop_type": "filler",
+        "tests": [
+          "low_effort",
+          "mass_produced"
+        ],
+        "staff_reviewed": true,
+        "updated": "2026-09-30T00:00:00Z",
+        "hash": "719a44d7ebc1234c"
+      },
+      {
+        "key": "yt:i:dQw4w9WgXcQ",
+        "verdict": "ai_made",
+        "signals": [
+          "platform_label"
+        ],
+        "updated": "2026-09-15T00:00:00Z",
+        "hash": "a0b06d0c10358f51"
+      },
+      {
+        "key": "tt:s:@sloppyfacts",
+        "verdict": "disputed",
+        "signals": [
+          "platform_label",
+          "open_appeal"
+        ],
+        "large": true,
+        "updated": "2026-10-01T00:00:00Z",
+        "hash": "a8950274c10c09b3"
+      },
+      {
+        "key": "fb:i:pfbid02abcDEF",
+        "verdict": "slop",
+        "signals": [
+          "creator_statement",
+          "link_funnel",
+          "community_consensus"
+        ],
+        "slop_type": "bait",
+        "tests": [
+          "hollow",
+          "low_effort"
+        ],
+        "updated": "2026-09-29T00:00:00Z",
+        "hash": "ad8295628cf7ec15"
+      },
+      {
+        "key": "yt:s:@catrescuetales",
+        "verdict": "likely_slop",
+        "signals": [
+          "mostly_ai",
+          "rubric_hollow"
+        ],
+        "slop_type": "deceptive",
+        "tests": [
+          "mass_produced",
+          "hollow"
+        ],
+        "imported": true,
+        "updated": "2026-08-01T00:00:00Z",
+        "hash": "be6882d5093d9c3f"
+      },
+      {
+        "key": "ig:s:handmadepottery",
+        "verdict": "clear",
+        "signals": [
+          "not_slop_consensus"
+        ],
+        "updated": "2026-07-04T00:00:00Z",
+        "hash": "d9f52fe426c52db3"
+      }
+    ]
+  },
+  "delta": {
+    "sequence": 43,
+    "base": 42,
+    "created": 1790003600,
+    "entries": [
+      {
+        "key": "tt:i:7412345678901234567",
+        "verdict": "likely_slop",
+        "signals": [
+          "platform_label",
+          "rubric_low_effort"
+        ],
+        "tests": [
+          "low_effort",
+          "hollow"
+        ],
+        "updated": "2026-10-02T00:00:00Z",
+        "hash": "6966183b140aef08"
+      },
+      {
+        "key": "yt:i:dQw4w9WgXcQ",
+        "verdict": "removed",
+        "signals": [],
+        "updated": "2026-10-02T00:00:00Z",
+        "hash": "a0b06d0c10358f51"
+      },
+      {
+        "key": "yt:s:@catrescuetales",
+        "verdict": "slop",
+        "signals": [
+          "mostly_ai",
+          "community_consensus",
+          "staff_review"
+        ],
+        "slop_type": "deceptive",
+        "tests": [
+          "mass_produced",
+          "hollow"
+        ],
+        "staff_reviewed": true,
+        "updated": "2026-10-02T00:00:00Z",
+        "hash": "be6882d5093d9c3f"
+      }
+    ]
+  },
+  "after_delta_count": 7
+}

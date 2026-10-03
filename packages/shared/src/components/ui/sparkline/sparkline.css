@@ -1,0 +1,27 @@
+/* Sparkline — see ./sparkline.svelte. */
+
+.uin-spark {
+  display: inline-flex;
+  align-items: center;
+  vertical-align: middle;
+}
+
+.uin-spark-default .uin-spark-line { stroke: var(--uin-accent); }
+.uin-spark-default .uin-spark-area {
+  fill: color-mix(in srgb, var(--uin-accent) 18%, transparent);
+}
+
+.uin-spark-success .uin-spark-line { stroke: var(--uin-success); }
+.uin-spark-success .uin-spark-area {
+  fill: color-mix(in srgb, var(--uin-success) 18%, transparent);
+}
+
+.uin-spark-warn .uin-spark-line { stroke: var(--uin-warn); }
+.uin-spark-warn .uin-spark-area {
+  fill: color-mix(in srgb, var(--uin-warn) 18%, transparent);
+}
+
+.uin-spark-danger .uin-spark-line { stroke: var(--uin-danger); }
+.uin-spark-danger .uin-spark-area {
+  fill: color-mix(in srgb, var(--uin-danger) 18%, transparent);
+}

@@ -1,0 +1,65 @@
+/* Timeline — see ./timeline.svelte. */
+
+.uin-timeline {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  position: relative;
+  font-family: var(--uin-font-ui);
+}
+.uin-timeline::before {
+  content: '';
+  position: absolute;
+  left: 7px;
+  top: 6px;
+  bottom: 6px;
+  width: 1px;
+  background: var(--uin-line);
+}
+
+.uin-tl-event {
+  position: relative;
+  display: grid;
+  grid-template-columns: 16px 1fr;
+  gap: var(--uin-s-3);
+  padding: 0 0 var(--uin-s-4) 0;
+}
+.uin-tl-event:last-child { padding-bottom: 0; }
+
+.uin-tl-marker {
+  position: relative;
+  width: 12px;
+  height: 12px;
+  margin-top: 4px;
+  border-radius: 50%;
+  background: var(--uin-bg-base);
+  border: 2px solid var(--uin-line-strong);
+  z-index: 1;
+}
+.uin-tl-event-default .uin-tl-marker { border-color: var(--uin-fg-mute); }
+.uin-tl-event-success .uin-tl-marker { border-color: var(--uin-success); background: var(--uin-success); }
+.uin-tl-event-warn .uin-tl-marker { border-color: var(--uin-warn); background: var(--uin-warn); }
+.uin-tl-event-danger .uin-tl-marker { border-color: var(--uin-danger); background: var(--uin-danger); }
+
+.uin-tl-body { min-width: 0; }
+.uin-tl-time {
+  margin: 0 0 4px;
+  font-size: 10.5px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--uin-fg-mute);
+  font-weight: 500;
+}
+.uin-tl-title {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--uin-fg);
+  line-height: 1.35;
+}
+.uin-tl-desc {
+  margin: 4px 0 0;
+  font-size: 12.5px;
+  color: var(--uin-fg-mute);
+  line-height: 1.5;
+}

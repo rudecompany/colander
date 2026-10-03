@@ -1,0 +1,316 @@
+{
+	"version": 1,
+	"schema": 1,
+	"platforms": {
+		"yt": {
+			"hosts": ["www.youtube.com", "m.youtube.com"],
+			"navEvents": ["yt-navigate-finish"],
+			"reportHelp": "https://support.google.com/youtube/answer/2802027",
+			"surfaces": [
+				{
+					"id": "yt.shorts",
+					"path": "^/shorts/",
+					"mode": "swipe",
+					"card": "#shorts-inner-container > .reel-video-in-sequence-new",
+					"item": [
+						{ "sel": ".reel-video-in-sequence-thumbnail", "attr": "style", "re": "/vi/([\\w-]{11})/" },
+						{ "sel": "ytd-reel-video-renderer a.ytp-title-link" }
+					],
+					"source": [
+						{ "sel": "ytd-reel-video-renderer yt-reel-channel-bar-view-model a[href^=\"/@\"]" },
+						{ "sel": "ytd-reel-video-renderer yt-reel-channel-bar-view-model a[href^=\"/channel/\"]" }
+					],
+					"name": [{ "sel": "yt-reel-channel-bar-view-model a[href^=\"/@\"]", "attr": "text" }],
+					"title": [{ "sel": "yt-shorts-video-title-view-model h1", "attr": "text" }],
+					"aiLabel": { "sel": "yt-reel-metapanel-view-model *, .ytp-paid-content-overlay", "text": "^\\s*(altered or synthetic content|ai-generated)\\s*$" },
+					"chip": { "sel": "yt-reel-channel-bar-view-model", "place": "append" },
+					"tag": { "sel": "yt-reel-channel-bar-view-model", "place": "append" },
+					"next": "#navigation-button-down button"
+				},
+				{
+					"id": "yt.home",
+					"path": "^/$",
+					"mode": "grid",
+					"card": "ytd-browse[page-subtype=\"home\"] ytd-rich-item-renderer",
+					"item": [{ "sel": "a.ytLockupViewModelContentImage, a#thumbnail, a#video-title-link, a[href*=\"/watch?v=\"], a[href^=\"/shorts/\"]" }],
+					"source": [{ "sel": "a[href^=\"/@\"]" }, { "sel": "a[href^=\"/channel/\"]" }],
+					"name": [
+						{ "sel": ".ytLockupMetadataViewModelAvatar [aria-label]", "attr": "aria-label", "re": "^Go to channel (.+)$" },
+						{ "sel": "ytd-channel-name a", "attr": "text" }
+					],
+					"title": [{ "sel": "h3[title]", "attr": "title" }, { "sel": "#video-title", "attr": "text" }, { "sel": "h3", "attr": "text" }],
+					"aiLabel": { "sel": "badge-shape", "text": "^\\s*(altered or synthetic content|ai-generated)\\s*$" },
+					"chip": { "sel": "yt-thumbnail-view-model, ytd-thumbnail", "place": "overlay" },
+					"tag": { "sel": ".ytLockupMetadataViewModelTextContainer, #details, .shortsLockupViewModelHostOutsideMetadata", "place": "append" }
+				},
+				{
+					"id": "yt.subscriptions",
+					"path": "^/feed/subscriptions",
+					"mode": "grid",
+					"card": "ytd-browse[page-subtype=\"subscriptions\"] ytd-rich-item-renderer",
+					"item": [{ "sel": "a.ytLockupViewModelContentImage, a#thumbnail, a#video-title-link, a[href*=\"/watch?v=\"], a[href^=\"/shorts/\"]" }],
+					"source": [{ "sel": "a[href^=\"/@\"]" }, { "sel": "a[href^=\"/channel/\"]" }],
+					"name": [
+						{ "sel": ".ytLockupMetadataViewModelAvatar [aria-label]", "attr": "aria-label", "re": "^Go to channel (.+)$" },
+						{ "sel": "ytd-channel-name a", "attr": "text" }
+					],
+					"title": [{ "sel": "h3[title]", "attr": "title" }, { "sel": "#video-title", "attr": "text" }, { "sel": "h3", "attr": "text" }],
+					"aiLabel": { "sel": "badge-shape", "text": "^\\s*(altered or synthetic content|ai-generated)\\s*$" },
+					"chip": { "sel": "yt-thumbnail-view-model, ytd-thumbnail", "place": "overlay" },
+					"tag": { "sel": ".ytLockupMetadataViewModelTextContainer, #details, .shortsLockupViewModelHostOutsideMetadata", "place": "append" }
+				},
+				{
+					"id": "yt.channel",
+					"path": "^/(@[^/]+|channel/[^/]+|c/[^/]+|user/[^/]+)",
+					"mode": "grid",
+					"card": "ytd-browse[page-subtype=\"channels\"] ytd-rich-item-renderer, ytd-browse[page-subtype=\"channels\"] yt-horizontal-list-renderer yt-lockup-view-model",
+					"pageSource": true,
+					"item": [{ "sel": "a.ytLockupViewModelContentImage, a#thumbnail, a[href*=\"/watch?v=\"], a[href^=\"/shorts/\"]" }],
+					"source": [{ "sel": "a[href^=\"/@\"]" }, { "sel": "a[href^=\"/channel/\"]" }],
+					"title": [{ "sel": "h3[title]", "attr": "title" }, { "sel": "h3", "attr": "text" }],
+					"aiLabel": { "sel": "badge-shape", "text": "^\\s*(altered or synthetic content|ai-generated)\\s*$" },
+					"chip": { "sel": "yt-thumbnail-view-model, ytd-thumbnail", "place": "overlay" },
+					"tag": { "sel": ".ytLockupMetadataViewModelTextContainer, #details, .shortsLockupViewModelHostOutsideMetadata", "place": "append" }
+				},
+				{
+					"id": "yt.search",
+					"path": "^/results",
+					"mode": "list",
+					"card": "ytd-search ytd-video-renderer, ytd-search yt-lockup-view-model",
+					"item": [{ "sel": "a#thumbnail, a#video-title, a.ytLockupViewModelContentImage, a[href*=\"/watch?v=\"], a[href^=\"/shorts/\"]" }],
+					"source": [{ "sel": "#channel-info a[href^=\"/@\"], ytd-channel-name a[href^=\"/@\"], a[href^=\"/@\"]" }, { "sel": "a[href^=\"/channel/\"]" }],
+					"name": [
+						{ "sel": "#channel-info ytd-channel-name a, ytd-channel-name a", "attr": "text" },
+						{ "sel": ".ytLockupMetadataViewModelAvatar [aria-label]", "attr": "aria-label", "re": "^Go to channel (.+)$" }
+					],
+					"title": [{ "sel": "#video-title", "attr": "text" }, { "sel": "h3[title]", "attr": "title" }],
+					"aiLabel": { "sel": "badge-shape, .badge", "text": "^\\s*(altered or synthetic content|ai-generated)\\s*$" },
+					"chip": { "sel": "ytd-thumbnail, yt-thumbnail-view-model", "place": "overlay" },
+					"tag": { "sel": ".text-wrapper, .ytLockupMetadataViewModelTextContainer", "place": "append" }
+				},
+				{
+					"id": "yt.watch",
+					"path": "^/watch",
+					"mode": "list",
+					"card": "ytd-watch-next-secondary-results-renderer yt-lockup-view-model, ytd-watch-next-secondary-results-renderer ytd-compact-video-renderer",
+					"item": [{ "sel": "a.ytLockupViewModelContentImage, a#thumbnail, a[href*=\"/watch?v=\"], a[href^=\"/shorts/\"]" }],
+					"source": [{ "sel": "a[href^=\"/@\"]" }, { "sel": "a[href^=\"/channel/\"]" }],
+					"name": [
+						{ "sel": ".ytLockupMetadataViewModelAvatar [aria-label]", "attr": "aria-label", "re": "^Go to channel (.+)$" },
+						{ "sel": "ytd-channel-name #text", "attr": "text" },
+						{ "sel": ".ytContentMetadataViewModelMetadataRow:first-child .ytContentMetadataViewModelMetadataText", "attr": "text" }
+					],
+					"title": [{ "sel": "h3[title]", "attr": "title" }, { "sel": "#video-title", "attr": "text" }],
+					"aiLabel": { "sel": "badge-shape", "text": "^\\s*(altered or synthetic content|ai-generated)\\s*$" },
+					"chip": { "sel": "yt-thumbnail-view-model, ytd-thumbnail", "place": "overlay" },
+					"tag": { "sel": ".ytLockupMetadataViewModelTextContainer, #metadata", "place": "append" }
+				},
+				{
+					"id": "yt.shelf",
+					"path": "^/(?!shorts/)",
+					"mode": "grid",
+					"card": "ytm-shorts-lockup-view-model:not(ytd-rich-item-renderer ytm-shorts-lockup-view-model)",
+					"item": [{ "sel": "a[href^=\"/shorts/\"]" }],
+					"source": [{ "sel": "a[href^=\"/@\"]" }],
+					"title": [{ "sel": "h3 a[title]", "attr": "title" }, { "sel": "h3", "attr": "text" }],
+					"chip": { "sel": "yt-thumbnail-view-model", "place": "overlay" },
+					"tag": { "sel": ".shortsLockupViewModelHostOutsideMetadata", "place": "append" }
+				}
+			],
+			"pages": [
+				{
+					"path": "^/(@[^/]+|channel/UC[\\w-]{22})(/|$)",
+					"source": [{ "from": "location" }],
+					"name": [
+						{ "sel": "yt-page-header-view-model h1", "attr": "text" },
+						{ "sel": "#channel-header #channel-name #text", "attr": "text" },
+						{ "from": "title", "re": "^(?:\\(\\d+\\) )?(.+?) - YouTube$" }
+					],
+					"anchor": { "sel": "yt-page-header-view-model yt-flexible-actions-view-model, #channel-header #buttons", "place": "append" }
+				}
+			],
+			"bridges": [
+				{
+					"card": "ytd-rich-item-renderer, ytd-video-renderer, ytd-compact-video-renderer",
+					"props": ["data"],
+					"item": [{ "key": "contentId", "re": "^[\\w-]{11}$" }, { "key": "videoId", "re": "^[\\w-]{11}$" }],
+					"source": [{ "key": "browseId", "re": "^UC[\\w-]{22}$" }, { "key": "canonicalBaseUrl", "re": "^/@" }]
+				},
+				{
+					"card": "yt-lockup-view-model:not(ytd-rich-item-renderer yt-lockup-view-model), ytm-shorts-lockup-view-model:not(ytd-rich-item-renderer ytm-shorts-lockup-view-model)",
+					"props": ["componentProps.data()", "rawProps.data()"],
+					"item": [{ "key": "contentId", "re": "^[\\w-]{11}$" }, { "key": "videoId", "re": "^[\\w-]{11}$" }],
+					"source": [{ "key": "browseId", "re": "^UC[\\w-]{22}$" }, { "key": "canonicalBaseUrl", "re": "^/@" }]
+				},
+				{
+					"card": "#shorts-inner-container > .reel-video-in-sequence-new",
+					"el": "ytd-reel-video-renderer",
+					"props": ["data"],
+					"item": [{ "key": "videoId", "re": "^[\\w-]{11}$" }],
+					"source": [{ "key": "canonicalBaseUrl", "re": "^/@" }]
+				}
+			]
+		},
+		"tt": {
+			"hosts": ["www.tiktok.com"],
+			"reportHelp": "https://support.tiktok.com/en/safety-hc/report-a-problem/report-a-video",
+			"surfaces": [
+				{
+					"id": "tt.feed",
+					"path": "^/(foryou|following|en)?/?$",
+					"mode": "swipe",
+					"card": "article[data-e2e=\"recommend-list-item-container\"]",
+					"item": [
+						{ "sel": "[data-more-menu-item-id]", "attr": "data-more-menu-item-id" },
+						{ "sel": "[id^=\"xgwrapper-\"]", "attr": "id", "re": "^xgwrapper-\\d+-(\\d+)$" },
+						{ "sel": "a[href*=\"/video/\"], a[href*=\"/photo/\"]" }
+					],
+					"source": [{ "sel": "a[data-e2e=\"video-author-avatar\"]" }, { "sel": "[class*=\"CreatorInfoContainer\"] a[href^=\"/@\"]" }],
+					"name": [{ "sel": "[class*=\"CreatorInfoContainer\"] a", "attr": "text" }],
+					"title": [{ "sel": "[data-e2e=\"video-desc\"]", "attr": "text" }],
+					"aiLabel": { "sel": "[class*=\"LeadingTagsContainer\"] *, [class*=\"Aigc\"], [class*=\"AIGC\"], [data-e2e*=\"aigc\"]", "text": "ai-generated" },
+					"chip": { "sel": "[class*=\"CreatorInfoContainer\"]", "place": "append" },
+					"tag": { "sel": "[class*=\"CreatorInfoContainer\"]", "place": "append" },
+					"cover": "section[data-e2e=\"feed-video\"]",
+					"next": "[data-e2e=\"feed-navigation-next\"]"
+				},
+				{
+					"id": "tt.search",
+					"path": "^/search",
+					"mode": "grid",
+					"card": "div:has(> [data-e2e=\"search_top-item\"]), div:has(> [data-e2e=\"search_video-item\"])",
+					"item": [{ "sel": "a[href*=\"/video/\"], a[href*=\"/photo/\"]" }],
+					"source": [{ "sel": "a[data-e2e=\"search-card-user-link\"]" }, { "sel": "a[href*=\"/video/\"], a[href*=\"/photo/\"]" }],
+					"name": [{ "sel": "[data-e2e=\"search-card-user-unique-id\"]", "attr": "text" }],
+					"title": [{ "sel": "[data-e2e=\"search-card-video-caption\"]", "attr": "text" }],
+					"aiLabel": { "sel": "[class*=\"Aigc\"], [class*=\"AIGC\"], [data-e2e*=\"aigc\"]", "text": "ai-generated" },
+					"chip": { "sel": "[data-e2e=\"search_top-item\"], [data-e2e=\"search_video-item\"]", "place": "overlay" },
+					"tag": { "sel": "[data-e2e=\"search-card-desc\"]", "place": "append" }
+				},
+				{
+					"id": "tt.profile",
+					"path": "^/@[^/]+/?$",
+					"mode": "grid",
+					"card": "[data-e2e=\"user-post-item\"]",
+					"pageSource": true,
+					"item": [{ "sel": "a[href*=\"/video/\"], a[href*=\"/photo/\"]" }],
+					"source": [{ "sel": "a[href*=\"/video/\"], a[href*=\"/photo/\"]" }],
+					"title": [{ "sel": "img[alt]", "attr": "alt" }],
+					"chip": { "place": "overlay" },
+					"tag": { "place": "overlay-end" }
+				}
+			],
+			"pages": [
+				{
+					"path": "^/@[^/]+/?$",
+					"source": [{ "from": "location" }],
+					"name": [{ "sel": "[data-e2e=\"user-subtitle\"]", "attr": "text" }, { "sel": "[data-e2e=\"user-title\"]", "attr": "text" }],
+					"anchor": { "sel": "[data-e2e=\"user-more\"]", "place": "before" }
+				}
+			]
+		},
+		"ig": {
+			"hosts": ["www.instagram.com"],
+			"reportHelp": "https://help.instagram.com/192435014247952",
+			"surfaces": [
+				{
+					"id": "ig.feed",
+					"path": "^/$",
+					"mode": "list",
+					"card": "main article",
+					"item": [{ "sel": "a[href*=\"/p/\"]" }, { "sel": "a[href*=\"/reel/\"]" }],
+					"source": [{ "sel": "header a[href^=\"/\"][role=\"link\"]" }, { "sel": "header a[href^=\"/\"]" }],
+					"name": [{ "sel": "header a[href^=\"/\"]:not([href*=\"/explore/\"]):not([href*=\"/reels/audio\"]) span", "attr": "text" }],
+					"title": [{ "sel": "h1", "attr": "text" }, { "sel": "img[alt]", "attr": "alt" }],
+					"aiLabel": { "sel": "header a, header span, header div[role=\"button\"]", "text": "^\\s*AI info\\s*$" },
+					"chip": { "sel": "header", "place": "append" },
+					"tag": { "sel": "header", "place": "append" }
+				},
+				{
+					"id": "ig.reels",
+					"path": "^/reels?/",
+					"mode": "swipe",
+					"card": "main div[role=\"presentation\"]:has(video)",
+					"item": [{ "sel": "a[href*=\"/reel/\"]" }, { "sel": "a[href*=\"/reels/\"]:not([href*=\"/reels/audio\"])" }],
+					"source": [{ "sel": "a[href^=\"/\"][role=\"link\"]:not([href*=\"/reel\"]):not([href*=\"/explore/\"])" }],
+					"name": [{ "sel": "a[href^=\"/\"][role=\"link\"]:not([href*=\"/reel\"]):not([href*=\"/explore/\"])", "attr": "text" }],
+					"title": [{ "sel": "h1, span[dir=\"auto\"]", "attr": "text" }],
+					"aiLabel": { "sel": "a, span, div[role=\"button\"]", "text": "^\\s*AI info\\s*$" },
+					"chip": { "sel": "a[href^=\"/\"][role=\"link\"]:not([href*=\"/reel\"]):not([href*=\"/explore/\"])", "place": "after" },
+					"tag": { "sel": "a[href^=\"/\"][role=\"link\"]:not([href*=\"/reel\"]):not([href*=\"/explore/\"])", "place": "after" }
+				},
+				{
+					"id": "ig.grid",
+					"path": "^/(explore/?$|(?!explore/|reels?/|p/|direct/|accounts/|stories/)[^/]+/?(reels/|tagged/)?$)",
+					"mode": "grid",
+					"card": "main a[href*=\"/p/\"]:has(img), main a[href*=\"/reel/\"]:has(img)",
+					"pageSource": true,
+					"item": [{ "sel": ":scope" }],
+					"title": [{ "sel": "img[alt]", "attr": "alt" }],
+					"chip": { "place": "overlay" },
+					"tag": { "place": "overlay-end" }
+				}
+			],
+			"pages": [
+				{
+					"path": "^/(?!explore/|reels?/|p/|direct/|accounts/|stories/)[^/]+/?(reels/|tagged/)?$",
+					"source": [{ "from": "location" }],
+					"name": [{ "sel": "header h2", "attr": "text" }, { "sel": "header h1", "attr": "text" }],
+					"anchor": { "sel": "header section", "place": "append" }
+				}
+			]
+		},
+		"fb": {
+			"hosts": ["www.facebook.com", "web.facebook.com"],
+			"reportHelp": "https://www.facebook.com/help/1380418588640631",
+			"surfaces": [
+				{
+					"id": "fb.feed",
+					"path": "^/$",
+					"mode": "list",
+					"card": "[role=\"feed\"] [aria-posinset], [data-pagelet^=\"FeedUnit_\"]",
+					"item": [
+						{ "sel": "a[href*=\"/posts/\"]" },
+						{ "sel": "a[href*=\"story_fbid=\"]" },
+						{ "sel": "a[href*=\"/reel/\"]" },
+						{ "sel": "a[href*=\"/videos/\"]" },
+						{ "sel": "a[href*=\"/watch/?v=\"]" },
+						{ "sel": "a[href*=\"fbid=\"]" }
+					],
+					"source": [
+						{ "sel": "h2 a[href], h3 a[href], h4 a[href]" },
+						{ "sel": "a[href*=\"/posts/\"]" },
+						{ "sel": "a[href*=\"profile.php?id=\"]" }
+					],
+					"name": [{ "sel": "h2 a, h3 a, h4 a", "attr": "text" }, { "sel": "h2, h3, h4", "attr": "text" }],
+					"title": [{ "sel": "[data-ad-preview=\"message\"], [data-ad-comet-preview=\"message\"]", "attr": "text" }],
+					"aiLabel": { "sel": "a[role=\"link\"], span[dir=\"auto\"], div[role=\"button\"]", "text": "^\\s*AI info\\s*$" },
+					"chip": { "sel": "h2, h3, h4", "place": "after" },
+					"tag": { "sel": "h2, h3, h4", "place": "after" }
+				},
+				{
+					"id": "fb.reels",
+					"path": "^/reel/",
+					"mode": "swipe",
+					"card": "div[role=\"main\"] [data-video-id]",
+					"item": [{ "sel": ":scope", "attr": "data-video-id" }, { "sel": "a[href*=\"/reel/\"]" }],
+					"source": [{ "sel": "h2 a[href], h3 a[href], a[href*=\"profile.php?id=\"], a[aria-label][href^=\"/\"]:not([href*=\"/reel\"])" }],
+					"name": [{ "sel": "h2 a, h3 a, h2, h3", "attr": "text" }],
+					"title": [{ "sel": "[data-ad-preview=\"message\"], span[dir=\"auto\"]", "attr": "text" }],
+					"aiLabel": { "sel": "a[role=\"link\"], span[dir=\"auto\"], div[role=\"button\"]", "text": "^\\s*AI info\\s*$" },
+					"chip": { "sel": "h2, h3", "place": "after" },
+					"tag": { "sel": "h2, h3", "place": "after" },
+					"next": "div[aria-label=\"Next card\"][role=\"button\"]"
+				}
+			],
+			"pages": [
+				{
+					"path": "^/(profile\\.php|people/[^/]+/\\d+|[A-Za-z0-9.]{5,})/?$",
+					"source": [{ "from": "location" }],
+					"name": [{ "sel": "div[role=\"main\"] h1", "attr": "text" }],
+					"anchor": { "sel": "div[role=\"main\"] h1", "place": "after" }
+				}
+			]
+		}
+	}
+}
