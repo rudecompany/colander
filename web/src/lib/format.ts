@@ -1,5 +1,5 @@
 import { PLATFORMS, type Platform } from '@colander/shared';
-import type { LogEntry } from '@colander/shared/api';
+import type { LogEntry, Source } from '@colander/shared/api';
 
 const dateFmt = new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' });
 const shortFmt = new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' });
@@ -27,6 +27,10 @@ export const sourcePath = (platform: Platform, id: string) =>
 	`/s/${platform}/${encodeURIComponent(id).replace(/^%40/, '@')}`;
 export const appealPath = (platform: Platform, id: string) =>
 	`/appeal/${platform}/${encodeURIComponent(id).replace(/^%40/, '@')}`;
+
+/** A source can be appealed when it has a verdict other than Clear and no appeal is open yet. */
+export const canAppeal = (s: Pick<Source, 'verdict' | 'appeal_open'> | null): boolean =>
+	!!s?.verdict && s.verdict !== 'clear' && !s.appeal_open;
 
 /** The source's own page on its platform (canonical IDs per contracts section 2.2). */
 export function platformSourceUrl(platform: Platform, id: string): string {

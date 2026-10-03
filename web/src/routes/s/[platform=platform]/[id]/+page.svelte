@@ -26,7 +26,7 @@
 	import RefreshCw from '@lucide/svelte/icons/refresh-cw';
 	import { ColanderMark } from '@colander/shared';
 	import { api, ApiError, errorText } from '#lib/api.ts';
-	import { appealPath, fmtDate, fmtNum, fmtPct, platformSourceUrl, plural } from '#lib/format.ts';
+	import { appealPath, canAppeal, fmtDate, fmtNum, fmtPct, platformSourceUrl, plural } from '#lib/format.ts';
 	import { groupSignals } from '#lib/layers.ts';
 	import Loading from '#lib/components/Loading.svelte';
 	import Notice from '#lib/components/Notice.svelte';
@@ -58,6 +58,7 @@
 	const source = $derived(state.kind === 'ok' ? state.data.source : null);
 	const verdict = $derived(source?.verdict ?? null);
 	const name = $derived(source?.name ?? id);
+	const appealable = $derived(canAppeal(source));
 
 	const ACTION_WORD: Record<Action, string> = { hide: 'Hidden', collapse: 'Collapsed', label: 'Labeled', allow: 'Allowed' };
 	const ACTION_ICON = { hide: EyeOff, collapse: ChevronsDownUp, label: Tag, allow: Eye };
@@ -147,9 +148,11 @@
 				{#if evidenceLine}<p class="t-body muted">{evidenceLine} Verdict since {source.updated_at ? fmtDate(source.updated_at) : 'an earlier list'}.</p>{/if}
 			</div>
 			<div class="banner-actions">
-				<a class="uin-btn uin-btn-primary btn-lg" href={appealPath(platform, id)}>
-					<Scale size={16} strokeWidth={1.75} aria-hidden="true" /> Appeal
-				</a>
+				{#if appealable}
+					<a class="uin-btn uin-btn-primary btn-lg" href={appealPath(platform, id)}>
+						<Scale size={16} strokeWidth={1.75} aria-hidden="true" /> Appeal
+					</a>
+				{/if}
 				<a class="icon-line ext" href={platformSourceUrl(platform, source.id)} rel="noreferrer">
 					View on {PLATFORM_NAME[platform]} <ExternalLink size={14} strokeWidth={1.75} aria-hidden="true" />
 				</a>
@@ -159,7 +162,10 @@
 		{#if source.appeal_open}
 			<div class="notice-wrap">
 				<Notice title="An appeal is open">
-					<p>While staff review it, this {noun} is shown to everyone as Disputed, and nothing from it is hidden.</p>
+					<p>
+						The {noun} is shown to everyone while staff review it, and nothing from it is hidden. If you started the appeal,
+						follow it from the link in your email. The outcome is published in the decision log.
+					</p>
 				</Notice>
 			</div>
 		{/if}
@@ -279,23 +285,23 @@
 			</div>
 
 			<aside class="side">
-				<section class="card appeal-card" aria-labelledby="appeal-title">
-					<h2 class="t-title" id="appeal-title">Is this your {noun}? Appeal this verdict.</h2>
-					{#if source.appeal_open}
-						<p class="t-body muted">
-							An appeal is already open. If you started it, follow it from the link in your email. The outcome is published
-							in the decision log.
-						</p>
-					{:else}
+				{#if appealable}
+					<section class="card appeal-card" aria-labelledby="appeal-title">
+						<h2 class="t-title" id="appeal-title">Is this your {noun}? Appeal this verdict.</h2>
 						<p class="t-body muted">
 							Prove the {noun} is yours with a short code, and tell us why the verdict is wrong. Nothing from it is hidden
 							while staff review, and the outcome is published in the decision log.
 						</p>
-					{/if}
-					<a class="uin-btn uin-btn-outline uin-btn-md" href={appealPath(platform, id)}>
-						<Scale size={16} strokeWidth={1.75} aria-hidden="true" /> Start an appeal
-					</a>
-				</section>
+						<a class="uin-btn uin-btn-outline uin-btn-md" href={appealPath(platform, id)}>
+							<Scale size={16} strokeWidth={1.75} aria-hidden="true" /> Start an appeal
+						</a>
+					</section>
+				{:else if verdict === 'clear'}
+					<section class="card appeal-card" aria-labelledby="appeal-title">
+						<h2 class="t-title" id="appeal-title">Nothing to appeal</h2>
+						<p class="t-body muted">Appeals are for verdicts that hide, collapse or label a {noun}. Clear does none of those.</p>
+					</section>
+				{/if}
 
 				<section class="card" aria-labelledby="facts-title">
 					<h2 class="facts-title" id="facts-title">Record</h2>
@@ -308,12 +314,14 @@
 					</dl>
 				</section>
 
-				<section class="card-quiet" aria-labelledby="wrong-title">
-					<h2 class="facts-title" id="wrong-title">Not the creator?</h2>
-					<p class="t-body muted">
-						If you think this is wrong, tag an item Not slop in the extension. Enough counter-tags move a verdict to Disputed.
-					</p>
-				</section>
+				{#if verdict !== 'clear'}
+					<section class="card-quiet" aria-labelledby="wrong-title">
+						<h2 class="facts-title" id="wrong-title">Not the creator?</h2>
+						<p class="t-body muted">
+							If you think this is wrong, tag an item Not slop in the extension. Enough counter-tags move a verdict to Disputed.
+						</p>
+					</section>
+				{/if}
 			</aside>
 		</div>
 	{/if}
