@@ -270,17 +270,45 @@ describe('GET /healthz', () => {
 });
 
 describe('miss limiter', () => {
+	const prod = { COLANDER_DEV: '' };
+
 	it('answers 429 with Retry-After once one address exceeds 120 a minute', async () => {
 		const headers = { 'CF-Connecting-IP': '192.0.2.44' };
 		const statuses: number[] = [];
-		for (let i = 0; i < 125; i++) statuses.push((await get('/v1/list/delta?since=x', { headers })).status);
+		for (let i = 0; i < 125; i++) statuses.push((await getWith(prod, '/v1/list/delta?since=x', { headers })).status);
 		expect(statuses.filter((s) => s === 400)).toHaveLength(120);
-		const res = await get('/v1/list/delta?since=x', { headers });
+		const res = await getWith(prod, '/v1/list/delta?since=x', { headers });
 		expect(res.status).toBe(429);
 		expect(res.headers.get('Retry-After')).toBe('60');
 		expect(res.headers.get('Access-Control-Allow-Origin')).toBe('*');
 		// Other addresses are unaffected.
-		expect((await get('/v1/list/delta?since=x', { headers: { 'CF-Connecting-IP': '192.0.2.45' } })).status).toBe(400);
+		expect((await getWith(prod, '/v1/list/delta?since=x', { headers: { 'CF-Connecting-IP': '192.0.2.45' } })).status).toBe(400);
+	});
+
+	it('stays out of dev mode, where every request is a miss', async () => {
+		const headers = { 'CF-Connecting-IP': '192.0.2.46' };
+		const statuses = new Set<number>();
+		for (let i = 0; i < 125; i++) statuses.add((await get('/v1/list/delta?since=x', { headers })).status);
+		expect([...statuses]).toEqual([400]);
+	});
+});
+
+describe('list request counts', () => {
+	const counted = () => runInDurableObject(primary(), (s: Store) => s.db.get<{ n: number }>('SELECT ifnull(sum(count), 0) AS n FROM list_requests')!.n);
+
+	it('come from edge analytics in production, so the edge counts nothing', async () => {
+		const before = await counted();
+		await getWith({ COLANDER_DEV: '' }, '/v1/list/delta?since=x');
+		expect(await counted()).toBe(before);
+	});
+
+	it('are counted at the edge in dev mode, every snapshot and delta request as Go did', async () => {
+		const before = await counted();
+		await get('/v1/list/snapshot', { method: 'HEAD' });
+		await get('/v1/list/delta?since=x');
+		await get('/v1/list/delta?since=1');
+		await get('/v1/stats');
+		expect(await counted()).toBe(before + 3);
 	});
 });
 

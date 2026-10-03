@@ -52,11 +52,16 @@ async function handle(request: Request, url: URL, env: Env, ctx: ExecutionContex
 		// Outside dev mode these routes do not exist: answer like any unknown path.
 		return { route: `${method} (site)`, res: await env.ASSETS.fetch(request) };
 	}
+	const dev = env.COLANDER_DEV === '1';
 	const ipHash = await hashIp(request.headers.get('cf-connecting-ip') ?? '', env.IP_SALT);
-	const { success } = await env.MISSES.limit({ key: ipHash });
-	if (!success) return { route: `${method} (rate limited)`, res: tooMany(60) };
+	// The limiter shields the Store from cache misses. Local runtimes have no Workers Cache, so every
+	// request would be a miss and one developer's browser would trip it: dev mode goes without.
+	if (!dev && !(await env.MISSES.limit({ key: ipHash })).success) return { route: `${method} (rate limited)`, res: tooMany(60) };
 
 	const read = method === 'GET' || method === 'HEAD';
+	// In production edge analytics count list requests, cache hits included (src/scheduled.ts).
+	// Local runtimes have no analytics, so dev mode counts them here, as the Go server did.
+	if (dev && read && (path === '/v1/list/snapshot' || path === '/v1/list/delta')) await primary(env).countListRequest();
 	if (path === '/healthz' && read) return { route: 'GET /healthz', res: await health(env) };
 	if (path === '/ops' || path.startsWith('/ops/')) return { route: `${method} /ops/*`, res: await ops(request, env, ctx) };
 	if (path === '/v1/list/snapshot' && read) {

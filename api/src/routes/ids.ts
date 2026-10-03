@@ -18,6 +18,9 @@ const fbPost = /^[A-Za-z0-9_-]{1,100}$/;
 
 export const validPlatform = (p: string): p is Platform => (PLATFORMS as string[]).includes(p);
 
+/** What a source is called on each platform, in emails (Go's sourceNoun). */
+export const sourceNoun: Record<Platform, string> = { yt: 'channel', tt: 'profile', ig: 'profile', fb: 'page' };
+
 /** Go's url.PathUnescape, keeping the input when it does not decode. */
 function pathUnescape(s: string): string {
 	try {

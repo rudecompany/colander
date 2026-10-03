@@ -34,13 +34,17 @@ const DAY = 24 * 3_600_000;
 type Body = Record<string, unknown>;
 type ErrorBody = { error: { code: string; message: string } };
 
-/** Go's harness: one Store, a clock the Store reads, and requests through the Store's router. */
+/** Go's harness: one Store, a clock the Store reads, dev mail captured, and requests through the Store's router. */
 class Harness {
+	/** Dev mail printed so far, as Go's harness kept it in a buffer. */
+	mail = '';
+
 	constructor(
 		readonly store: Store,
 		public clock = Date.UTC(2026, 9, 1, 12)
 	) {
 		store.now = () => this.clock;
+		store.mailer.out = (text) => void (this.mail += text + '\n');
 	}
 
 	get db() {
@@ -386,7 +390,7 @@ describe('appeals', () => {
 			h.clock += 1000;
 			const seq = await h.publish();
 
-			// The creator appeals; the secret comes back once.
+			// The creator appeals; the secret comes back once and by email.
 			const w = await expectStatus(
 				h.do('POST', '/v1/appeals', { platform: 'yt', source_id: channel, email: 'Studio@Example.test', statement: 'We film our own dives.' }),
 				201
@@ -394,6 +398,9 @@ describe('appeals', () => {
 			const created = (await w.json()) as { appeal: Appeal; secret: string };
 			expect(created.appeal).toMatchObject({ status: 'awaiting_verification', source_id: channel, source_name: 'Ocean Mysteries', outcome: null });
 			expect(created.appeal.code).toMatch(/^colander-[23456789ABCDEFGHJKMNPQRSTVWXYZ]{8}$/);
+			expect(h.mail).toContain('To: studio@example.test\nSubject: Your Colander appeal for Ocean Mysteries\n');
+			expect(h.mail).toContain(`add this code to its description:\n\n    ${created.appeal.code}\n`);
+			expect(h.mail).toContain(`https://getcolander.com/appeal/status/${created.appeal.id}?secret=${created.secret}\n`);
 			await expectStatus(h.do('GET', `/v1/appeals/${created.appeal.id}?secret=wrong`), 404);
 			await expectStatus(h.do('GET', `/v1/appeals/${created.appeal.id}?secret=${created.secret}`), 200);
 			// Without a YouTube key, the creator's verify request moves the appeal to staff.

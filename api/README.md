@@ -18,6 +18,8 @@ It holds the edge Worker, the `Store` Durable Object with the full schema and ev
 - `src/index.ts`, the edge Worker, which runs only for `/v1/*`, `/ops/*`, `/healthz` and `/__dev/*` (static assets never reach it):
   - CORS preflights for the extension routes of contract section 6, answered without the Store.
   - The miss rate limiter, keyed by an HMAC of the client address with `IP_SALT`.
+    Dev mode (`COLANDER_DEV=1`) goes without it, because a local runtime has no edge cache and every request would count as a miss.
+  - In dev mode, every `GET` or `HEAD` of `/v1/list/snapshot` and `/v1/list/delta` is counted into `list_requests` (`Store.countListRequest`), as the Go server did, because local runtimes have no edge analytics.
   - `GET /v1/list/snapshot` from R2 (`list/snapshot.bin`, sequence from `customMetadata.seq`), without the Store.
     When R2 has no valid snapshot it goes to the Store, which serves its head.
   - `GET /v1/list/delta` accepts only `?since=N` in canonical decimal, no later than now plus 60 seconds.

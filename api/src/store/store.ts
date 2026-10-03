@@ -20,7 +20,7 @@ import { routes as apiRoutes } from '../routes/server';
 import { Engine } from '../scoring/engine';
 import { YouTube } from '../youtube';
 import { Db } from './db';
-import { latestSequence, setListRequests, SNAPSHOT_KEY, type Sequence } from './list';
+import { addListRequests, latestSequence, setListRequests, SNAPSHOT_KEY, type Sequence } from './list';
 import { migrate } from './migrations';
 
 interface Route {
@@ -117,7 +117,7 @@ export class Store extends DurableObject<Env> {
 			route('GET', '/v1/list/delta', (_, url) => this.listDelta(url)),
 			route('GET', '/v1/list/snapshot', () => this.listSnapshot()),
 			...[
-				...apiRoutes({ store: this, key: this.signingKey }),
+				...apiRoutes({ store: this, key: this.signingKey, publicUrl: env.PUBLIC_URL.replace(/\/+$/, '') }),
 				...accountRoutes(this, env),
 				...billingRoutes(this),
 				...devRoutes(this, ctx, env)
@@ -204,6 +204,11 @@ export class Store extends DurableObject<Env> {
 	async ops(command: string, args: string): Promise<{ status: number; json: string }> {
 		const a = await storeOps(this, this.ctx, this.env, command, JSON.parse(args) as OpsArgs);
 		return { status: a.status, json: JSON.stringify(a.body) };
+	}
+
+	/** Dev mode's stand-in for edge analytics: one list request in the current unix hour (Go's hitCounter). */
+	countListRequest(): void {
+		addListRequests(this.db, Math.floor(this.now() / 3_600_000), 1);
 	}
 
 	/** The hourly analytics pull: list requests per unix hour, replacing what was there. */

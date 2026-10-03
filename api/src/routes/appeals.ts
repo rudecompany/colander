@@ -6,6 +6,7 @@ import type { Platform } from '@colander/shared/verdicts';
 import { utf8 } from '@colander/shared/bytes';
 import { json, jsonError, tooMany } from '../http';
 import { allow } from '../limits';
+import { appeal as appealMail } from '../mail';
 import { verifyAppeal as engineVerifyAppeal } from '../scoring/actions';
 import { unix } from '../scoring/engine';
 import {
@@ -20,9 +21,9 @@ import {
 import { ConflictError } from '../store/db';
 import { getSource } from '../store/sources';
 import { hashToken, newToken, normalizeEmail } from '../auth';
-import { validPlatform } from './ids';
+import { sourceNoun, validPlatform } from './ids';
 import { findSource } from './public';
-import { clientIP, decode, optString, optTime, pathValue, rfc3339, runeCount, trimSpace } from './respond';
+import { clientIP, decode, optString, optTime, pathValue, queryEscape, rfc3339, runeCount, trimSpace } from './respond';
 import type { Api, Params } from './server';
 
 /** An appeal on the wire. */
@@ -67,7 +68,7 @@ export async function postAppeal(api: Api, request: Request): Promise<Response> 
 	const now = api.store.now();
 	const secret = newToken();
 	// The quota is spent on unknown and unrated sources too, as in Go; a failed write gives it back.
-	const res = db.tx((): Response | Appeal => {
+	const res = db.tx((): Response | [Appeal, string] => {
 		const wait = allow(db, now, clientIP(request), 1, 'appeals');
 		if (wait > 0) return tooMany(wait / 1000);
 		const ref = findSource(api, body.platform, body.source_id);
@@ -84,10 +85,19 @@ export async function postAppeal(api: Api, request: Request): Promise<Response> 
 			createdAt: unix(now)
 		});
 		jobs.touch([ref], now);
-		return a;
+		return [a, src.name || src.canonicalId];
 	});
 	if (res instanceof Response) return res;
-	return json(201, { appeal: toAppeal(res), secret: secret.raw });
+	const [a, name] = res;
+	// The creator gets the code and the status link by email too; the mail goes out after the commit.
+	const link = `${api.publicUrl}/appeal/status/${a.id}?secret=${queryEscape(secret.raw)}`;
+	const [subject, text] = appealMail(name, sourceNoun[a.platform as Platform], a.code, link);
+	try {
+		await api.store.mailer.send(email, subject, text);
+	} catch (err) {
+		console.error(JSON.stringify({ message: 'appeal email not sent', error: String(err) }));
+	}
+	return json(201, { appeal: toAppeal(a), secret: secret.raw });
 }
 
 /** Loads an appeal and checks its secret. A wrong secret looks like a missing appeal. */

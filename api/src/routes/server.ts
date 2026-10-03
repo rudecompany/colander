@@ -20,10 +20,12 @@ import {
 } from './review';
 import { getSync, putSync } from './sync';
 
-/** What a handler works with: the Store it runs in and the signing key. */
+/** What a handler works with: the Store it runs in, the signing key and the site's address. */
 export interface Api {
 	store: Store;
 	key: () => Promise<SigningKey>;
+	/** PUBLIC_URL without a trailing slash, for links in emails (Go's Server.PublicURL). */
+	publicUrl: string;
 }
 
 /** URLPattern groups, still percent-encoded; read them with pathValue. */
