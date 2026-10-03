@@ -21,9 +21,18 @@ type accountJSON struct {
 	CreatedAt   string  `json:"created_at"`
 }
 
-// toAccount renders an account. Plans arrive with billing; until then plan is always null.
-func toAccount(a *store.Account) accountJSON {
-	return accountJSON{ID: a.ID, Email: a.Email, DisplayName: optString(a.DisplayName), Role: a.Role, CreatedAt: rfc3339(a.CreatedAt)}
+// writeAccount answers 200 with the account and its plan (null when it never subscribed).
+func (s *Server) writeAccount(w http.ResponseWriter, r *http.Request, a *store.Account) {
+	sub, err := s.Billing.Current(r.Context(), a.ID)
+	if err != nil {
+		s.internalError(w, r, err)
+		return
+	}
+	out := accountJSON{ID: a.ID, Email: a.Email, DisplayName: optString(a.DisplayName), Role: a.Role, CreatedAt: rfc3339(a.CreatedAt)}
+	if p := toPlan(sub, s.Now()); p != nil {
+		out.Plan = p
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"account": out})
 }
 
 // session returns the signed-in account. Writes need the CSRF header as well as the cookie.
@@ -96,7 +105,7 @@ func (s *Server) authVerify(w http.ResponseWriter, r *http.Request) {
 		s.internalError(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"account": toAccount(a)})
+	s.writeAccount(w, r, a)
 }
 
 func (s *Server) authLogout(w http.ResponseWriter, r *http.Request) {
@@ -116,7 +125,7 @@ func (s *Server) getAccount(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"account": toAccount(a)})
+	s.writeAccount(w, r, a)
 }
 
 func (s *Server) patchAccount(w http.ResponseWriter, r *http.Request) {
@@ -143,7 +152,7 @@ func (s *Server) patchAccount(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	a.DisplayName = name
-	writeJSON(w, http.StatusOK, map[string]any{"account": toAccount(a)})
+	s.writeAccount(w, r, a)
 }
 
 func (s *Server) reviewerToken(w http.ResponseWriter, r *http.Request) {

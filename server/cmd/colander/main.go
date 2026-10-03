@@ -20,6 +20,7 @@ import (
 
 	"github.com/rudecompany/colander/server/internal/api"
 	"github.com/rudecompany/colander/server/internal/auth"
+	"github.com/rudecompany/colander/server/internal/billing"
 	lf "github.com/rudecompany/colander/server/internal/listfmt"
 	"github.com/rudecompany/colander/server/internal/mail"
 	"github.com/rudecompany/colander/server/internal/scoring"
@@ -47,6 +48,7 @@ type config struct {
 	Dev                                   bool
 	YouTubeKey, ResendKey, MailFrom       string
 	ClientIPHeader                        string
+	Stripe                                billing.Config
 }
 
 func env(name, def string) string {
@@ -69,6 +71,16 @@ func loadConfig() config {
 		MailFrom:   os.Getenv("COLANDER_MAIL_FROM"),
 		// Only set behind a reverse proxy that overwrites this header (see server/README.md).
 		ClientIPHeader: os.Getenv("COLANDER_CLIENT_IP_HEADER"),
+		Stripe: billing.Config{
+			SecretKey:     os.Getenv("STRIPE_SECRET_KEY"),
+			WebhookSecret: os.Getenv("STRIPE_WEBHOOK_SECRET"),
+			PriceMonthly:  os.Getenv("STRIPE_PRICE_PLUS_MONTHLY"),
+			PriceYearly:   os.Getenv("STRIPE_PRICE_PLUS_YEARLY"),
+			// Managed Payments needs Stripe's approval; set 0 to sell Plus as your own merchant.
+			ManagedPayments: os.Getenv("STRIPE_MANAGED_PAYMENTS") != "0" && os.Getenv("STRIPE_MANAGED_PAYMENTS") != "false",
+			APIBase:         env("STRIPE_API_BASE", "https://api.stripe.com"),
+			PublicURL:       env("COLANDER_PUBLIC_URL", "http://localhost:8787"),
+		},
 	}
 }
 
@@ -145,7 +157,8 @@ func serve(ctx context.Context, cfg config, log *slog.Logger) error {
 	srv := api.New(&api.Server{
 		Store: st, Engine: engine, Publisher: pub, Key: key, Auth: auth.New(st, cfg.Dev),
 		Mail: mail.New(cfg.ResendKey, cfg.MailFrom, cfg.Dev, os.Stdout, log), YouTube: yt,
-		PublicURL: cfg.PublicURL, SiteDir: cfg.SiteDir, ClientIPHeader: cfg.ClientIPHeader, Log: log,
+		Billing: billing.New(cfg.Stripe, st, log), PublicURL: cfg.PublicURL, SiteDir: cfg.SiteDir,
+		ClientIPHeader: cfg.ClientIPHeader, Log: log,
 	})
 	if _, err := os.Stat(cfg.SiteDir); err != nil {
 		log.Warn("website not found, site paths will answer 404", "dir", cfg.SiteDir)
@@ -165,7 +178,8 @@ func serve(ctx context.Context, cfg config, log *slog.Logger) error {
 		ReadTimeout: 30 * time.Second, WriteTimeout: 60 * time.Second, IdleTimeout: 2 * time.Minute}
 	errc := make(chan error, 1)
 	go func() { errc <- hs.ListenAndServe() }()
-	log.Info("colander listening", "addr", cfg.Addr, "dev", cfg.Dev, "key_id", key.KeyIDHex(), "youtube", yt != nil)
+	log.Info("colander listening", "addr", cfg.Addr, "dev", cfg.Dev, "key_id", key.KeyIDHex(), "youtube", yt != nil,
+		"billing", cfg.Stripe.SecretKey != "", "managed_payments", cfg.Stripe.ManagedPayments)
 
 	select {
 	case err = <-errc:

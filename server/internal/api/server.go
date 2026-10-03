@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/rudecompany/colander/server/internal/auth"
+	"github.com/rudecompany/colander/server/internal/billing"
 	lf "github.com/rudecompany/colander/server/internal/listfmt"
 	"github.com/rudecompany/colander/server/internal/mail"
 	"github.com/rudecompany/colander/server/internal/scoring"
@@ -26,7 +27,8 @@ type Server struct {
 	Key       *sign.Key
 	Auth      *auth.Auth
 	Mail      *mail.Mailer
-	YouTube   *youtube.Client // nil when not configured
+	YouTube   *youtube.Client  // nil when not configured
+	Billing   *billing.Service // when nil, New sets one with Stripe switched off
 	PublicURL string
 	SiteDir   string
 	// ClientIPHeader names the header a trusted reverse proxy puts the client address in, for
@@ -42,7 +44,7 @@ type Server struct {
 // ponytail: rate limits live in process memory, so they hold per node only. Move them to the
 // database or a shared store before running more than one server.
 type limits struct {
-	tagsMinute, tagsDay, reports, appeals, authEmail, authEmailIP *limiter
+	tagsMinute, tagsDay, reports, appeals, authEmail, authEmailIP, donate *limiter
 }
 
 // New finishes wiring a server built from its exported fields and returns it.
@@ -58,6 +60,10 @@ func New(srv *Server) *Server {
 		appeals:     newLimiter(5, 24*time.Hour),
 		authEmail:   newLimiter(5, time.Hour),
 		authEmailIP: newLimiter(30, time.Hour),
+		donate:      newLimiter(10, time.Hour),
+	}
+	if srv.Billing == nil {
+		srv.Billing = billing.New(billing.Config{PublicURL: srv.PublicURL}, srv.Store, srv.Log)
 	}
 	return srv
 }
@@ -113,6 +119,14 @@ func (s *Server) Handler() http.Handler {
 	route("GET /v1/account", s.getAccount)
 	route("PATCH /v1/account", s.patchAccount)
 	route("POST /v1/account/reviewer-token", s.reviewerToken)
+
+	route("POST /v1/billing/checkout", s.billingCheckout)
+	route("POST /v1/billing/donate", s.billingDonate)
+	route("POST /v1/billing/cancel", s.billingCancel)
+	route("POST /v1/billing/webhook", s.billingWebhook)
+	route("POST /v1/entitlement", s.postEntitlement)
+	route("POST /v1/entitlement/refresh", s.refreshEntitlement)
+	route("GET /v1/supporters", s.getSupporters)
 
 	route("GET /v1/review/queue", s.reviewQueue)
 	route("GET /v1/review/sources/{platform}/{source_id}", s.reviewSource)

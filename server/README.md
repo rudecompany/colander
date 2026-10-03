@@ -1,9 +1,8 @@
 # Colander server
 
-One Go binary that runs every Colander backend service: the signed shared list, tags and reports, scoring, the review console API, appeals, accounts, settings sync and the static website.
+One Go binary that runs every Colander backend service: the signed shared list, tags and reports, scoring, the review console API, appeals, accounts, Stripe billing, settings sync and the static website.
 It implements `docs/contracts.md`, which is the source of truth for every route, shape and rule.
 State lives in one SQLite file.
-Stripe billing (contracts 6.8, except `POST /v1/trial` and `/v1/sync`) is not built yet.
 
 ## Running it locally
 
@@ -61,6 +60,11 @@ All names and IDs are invented.
 | `RESEND_API_KEY` | unset | Email delivery through Resend |
 | `COLANDER_MAIL_FROM` | `Colander <hello@colander.local>` | Sender address; set it to a verified domain when using Resend |
 | `COLANDER_CLIENT_IP_HEADER` | unset | Header a trusted reverse proxy puts the client address in, for per-IP rate limits (see below) |
+| `STRIPE_SECRET_KEY` | unset | Stripe secret or restricted key; billing routes answer `503 billing_unavailable` without it |
+| `STRIPE_WEBHOOK_SECRET` | unset | Signing secret of the webhook endpoint |
+| `STRIPE_PRICE_PLUS_MONTHLY`, `STRIPE_PRICE_PLUS_YEARLY` | unset | Price IDs of the $3 monthly and $30 yearly Plus prices |
+| `STRIPE_MANAGED_PAYMENTS` | on | Plus checkout with Stripe Managed Payments as merchant of record; `0` sells Plus as your own merchant |
+| `STRIPE_API_BASE` | `https://api.stripe.com` | Stripe API origin; tests point it at a fake |
 
 ## How the code is laid out
 
@@ -73,8 +77,9 @@ All names and IDs are invented.
 | `internal/scoring` | `rules.go` is the pure part of contracts section 9: reputation, tag sums, the four layers and the verdict rules in order, with every threshold in one `Thresholds` struct. `engine.go` runs it against the store, writes a decision log entry with a plain-language reason for every verdict change, raises escalations and asks for list publication. |
 | `internal/youtube` | A small YouTube Data API v3 client: handle and channel ID resolution, subscriber counts, uploads per day over 14 days and appeal code checks. Responses are cached in the database for 7 days. |
 | `internal/auth` | Email sign-in links (20 minutes, single use), sessions (30 days, `colander_session` cookie), reviewer bearer tokens, install ID hashing and the CSRF header check. Every secret is stored as a SHA-256 hash. |
-| `internal/mail` | Sends sign-in and appeal emails through the Resend HTTP API, or prints them in dev mode. |
-| `internal/api` | Every route in contracts section 6 except billing, CORS, rate limits, request logging and the static website. |
+| `internal/mail` | Sends sign-in, appeal and billing emails through the Resend HTTP API, or prints them in dev mode. |
+| `internal/billing` | Stripe over plain `net/http`: Plus and donation checkout, cancel and refund, webhook verification and events, the subscription state behind paid plan tokens, and supporters. `billingtest` is an in-memory Stripe fake for tests. |
+| `internal/api` | Every route in contracts section 6, CORS, rate limits, request logging and the static website. |
 
 ## Scoring in practice
 
@@ -91,7 +96,39 @@ A few readings of the contract are worth knowing when you work on scoring.
 - Reviewers can record provenance and behavior signals; the other signals are always computed.
 - When a decision or verdict reaches its 90-day `rescore_at` and scores as Slop again, it is held at Likely slop with an escalation until a reviewer looks again.
 
-Scoring never reads plan, payment or donation state.
+Scoring never reads plan, payment or donation state, and `TestIndependence` in `internal/billing` fails if scoring, or the tag, report and review handlers, ever import the billing package or name its tables.
+
+## Billing
+
+Billing implements contracts section 6.8 on Stripe.
+The server calls the Stripe REST API with `net/http`, pinned to API version `2026-04-22.dahlia`, because it uses a handful of endpoints and the SDK would add nothing but weight.
+Without `STRIPE_SECRET_KEY` every `/v1/billing/*` route answers `503 billing_unavailable`, and the website says calmly that payments are switched off.
+
+- Plus checkout creates a Checkout Session in subscription mode with `managed_payments[enabled]=true`, so Stripe is the merchant of record and handles sales tax and VAT.
+- It sends the account ID as `client_reference_id` and as subscription metadata, and the account email or, for a returning account, its earlier Stripe customer.
+- It never sends tax, shipping or payment method parameters, which Managed Payments rejects.
+- Donations use a regular Checkout Session without Managed Payments, because a gift is not a product sale: `mode=payment` once, or `mode=subscription` with a monthly price, with metadata `kind=donation` and the optional credit name.
+- Webhooks are verified (HMAC-SHA256 over `t.payload`, any `v1` value, 5 minutes of tolerance, constant-time comparison) and applied once per event ID.
+- Every subscription event reads the subscription fresh from Stripe, so events that arrive out of order do no harm.
+- `invoice.paid` stores the PaymentIntent that paid the invoice, so Cancel and refund can refund it within 30 days.
+- Cancel sets `cancel_at_period_end` and sends a short confirmation email.
+- Cancel and refund refunds first and then ends the subscription now, so a failure in between never leaves someone charged without Plus; a retry finishes the cancel without refunding twice.
+- Paid plan tokens carry the account ID as `sub` and expire 3 days after the paid period ends; the extension renews them with `POST /v1/entitlement/refresh`.
+- Billing state lives in its own tables (`subscriptions`, `donations`, `billing_events`) and never includes card data.
+
+### Setting up Stripe
+
+1. Create a product, Colander Plus, and give it a product tax code that the Dashboard labels Eligible for Managed Payments, such as the software as a service code for personal use.
+2. Add two recurring prices to it, $3 a month and $30 a year, and put their IDs in `STRIPE_PRICE_PLUS_MONTHLY` and `STRIPE_PRICE_PLUS_YEARLY`.
+3. In Settings, Managed Payments, accept the Managed Payments terms of service and check that the account and product are eligible.
+   Until Stripe approves it, run with `STRIPE_MANAGED_PAYMENTS=0`, which sells Plus with you as the merchant, so sales tax is then yours to handle.
+4. Add a webhook endpoint at `{COLANDER_PUBLIC_URL}/v1/billing/webhook` on API version `2026-04-22.dahlia` with these events: `checkout.session.completed`, `checkout.session.async_payment_succeeded`, `customer.subscription.created`, `customer.subscription.updated`, `customer.subscription.deleted`, `invoice.paid`, `invoice.payment_failed` and `charge.refunded`.
+   Put its signing secret in `STRIPE_WEBHOOK_SECRET`.
+5. Put a secret key in `STRIPE_SECRET_KEY`, or a restricted key that can create Checkout Sessions and Refunds and read and update Subscriptions and invoice payments.
+6. Set a support email in the public business details, because Stripe receipts show it and monthly donors use it to change or stop a donation.
+
+To try it locally, use test mode keys and forward webhooks with `stripe listen --forward-to localhost:8787/v1/billing/webhook`.
+The Go tests never call Stripe: they run against `internal/billing/billingtest`, which records every request and pays checkout sessions the way Stripe would.
 
 ## Behind a reverse proxy
 
@@ -129,7 +166,7 @@ go test ./... -race
 ```
 
 The contract fixture test in `internal/listfmt` rebuilds `testdata/contract/list-snapshot.bin` and `list-delta.bin` byte for byte from `list-expected.json`.
-API tests run against `httptest` and a temporary SQLite file, and the YouTube client is tested against an `httptest` fake.
+API tests run against `httptest` and a temporary SQLite file, and the YouTube client and billing are tested against `httptest` fakes.
 No test calls a real external service.
 
 ## Running more than one node
