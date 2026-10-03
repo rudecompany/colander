@@ -1,0 +1,18 @@
+# actionlint settings (CI job "workflows").
+# Every configuration variable the workflows read; docs/deploy.md says where each one is set.
+config-variables:
+  - CLOUDFLARE_ACCOUNT_ID
+  - COLANDER_PUBLIC_KEYS
+  - STAGING_PUBLIC_KEYS
+  - CWS_ITEM_ID
+  - CWS_PUBLISHER_ID
+  - GCP_WORKLOAD_IDENTITY_PROVIDER
+  - GCP_SERVICE_ACCOUNT
+  - RELEASE_APP_CLIENT_ID
+paths:
+  .github/workflows/release.yml:
+    ignore:
+      # actionlint 1.7.12 predates create-github-app-token 3.x, where client-id replaced the
+      # deprecated app-id input.
+      - 'missing input "app-id" which is required by action "actions/create-github-app-token@v3"'
+      - 'input "client-id" is not defined in action "actions/create-github-app-token@v3"'
