@@ -232,7 +232,9 @@ describe('sign-config', () => {
 		['{"version": 12, "selectors": {"version": "x"}}', 12],
 		['{"Version": "8"}', 8],
 		['{"version": 1, "VERSION": 3}', 3],
-		['{"version": -2}', -2]
+		['{"version": -2}', -2],
+		// Go's json.Decoder read the first object and ignored the rest; kept for parity.
+		['  {"version": 9, "s": "}{\\"x"} and then {not json', 9]
 	])('reads the version of %s as Go did', async (file, version) => {
 		const res = await inStore(fresh(), T, 'sign-config', { file });
 		expect(res.status).toBe(200);

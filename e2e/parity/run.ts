@@ -261,7 +261,8 @@ const seedList = [
 	'@dailymotivationmachine'
 ].join('\n');
 const warnList = ['@aimadebutfine', '@catrescuetales', '@SlopFactoryOne'].join('\n');
-const configs = ['{"version":7,"note":"contract fixture"}', '{\n  "version": 8,\n  "note": "naïve ✓ <selectors> & more"\n}\n'];
+// The third has text after its object, which Go's json.Decoder ignored (a bug both keep for now).
+const configs = ['{"version":7,"note":"contract fixture"}', '{\n  "version": 8,\n  "note": "naïve ✓ <selectors> & more"\n}\n', '{"Version": "9"} and then text\n'];
 
 async function main(): Promise<void> {
 	rmSync(RUN, { recursive: true, force: true });

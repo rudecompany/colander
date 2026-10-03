@@ -323,6 +323,27 @@ function importSeedFile(store: Store, a: OpsArgs): OpsAnswer {
 }
 
 /**
+ * The text of the object a file starts with, as Go's json.Decoder read it: whatever follows that
+ * object is ignored. That lets sign-config sign a file the extension cannot parse; Go did the same,
+ * and parity keeps it until it is fixed on both sides.
+ */
+function firstObject(file: string): string {
+	const start = file.search(/\S/);
+	if (file[start] !== '{') return file;
+	let depth = 0;
+	for (let i = start, inString = false; i < file.length; i++) {
+		const c = file[i];
+		if (inString) {
+			if (c === '\\') i++;
+			else if (c === '"') inString = false;
+		} else if (c === '"') inString = true;
+		else if (c === '{' || c === '[') depth++;
+		else if ((c === '}' || c === ']') && --depth === 0) return file.slice(0, i + 1);
+	}
+	return file;
+}
+
+/**
  * The top-level integer version the way Go's sign-config decoded it into a json.Number: keys match
  * "version" ignoring case and the last one wins, null is ignored, a string must hold a JSON number,
  * and anything else fails the decode (Go then reported the file as not a JSON object). The number
@@ -342,7 +363,7 @@ function configVersion(file: string): number | undefined | 'not_object' {
 			}
 			return value;
 		};
-		root = JSON.parse(file, reviver as (key: string, value: unknown) => unknown);
+		root = JSON.parse(firstObject(file), reviver as (key: string, value: unknown) => unknown);
 	} catch {
 		return 'not_object';
 	}
