@@ -246,17 +246,23 @@ func (e *Engine) evaluate(d *store.SourceData, reps map[string]store.Rep, now ti
 	weight := e.weights(reps, now)
 	src := d.Source
 	ev := &Evaluation{Data: d}
+	// The source with an empty ID holds items tagged without their source: each is scored on its
+	// own, and nothing rolls up to it or freezes it.
+	unattributed := src.CanonicalID == ""
 
 	// Tag sums are per target (9.2): the source's sums come from tags on the source itself, one per
 	// install even when it tagged two aliases. Item evidence reaches the source only through platform
 	// labels and the 80% rule (9.3).
 	perInstall := map[string]store.Vote{}
-	labelInstalls := map[string]bool{}
+	labelInstalls, rollupLabels := map[string]bool{}, map[string]bool{}
 	byItem := map[int64][]store.Vote{}
 	burst := 0
 	for _, v := range d.Votes {
 		if v.PlatformLabel {
-			labelInstalls[v.Install] = true
+			rollupLabels[v.Install] = true
+			if v.ItemRef == 0 {
+				labelInstalls[v.Install] = true
+			}
 		}
 		if v.ItemRef != 0 {
 			byItem[v.ItemRef] = append(byItem[v.ItemRef], v)
@@ -273,11 +279,13 @@ func (e *Engine) evaluate(d *store.SourceData, reps map[string]store.Rep, now ti
 	}
 
 	frozen := src.FrozenUntil > now.Unix()
-	if !frozen && burst > e.Th.BurstTags {
+	if !frozen && !unattributed && burst > e.Th.BurstTags {
 		ev.Burst, frozen = true, true
 	}
 
-	// Items first: their AI evidence feeds the source's 80% rule.
+	// Items first: their AI evidence feeds the source's 80% rule. Only independent evidence makes an
+	// item count as AI-made there: platform labels from enough installs or a reviewer decision, never
+	// tags agreeing it is AI, so tags alone cannot make a source look mass-produced (9.3).
 	aiItems, seen := 0, 0
 	for _, it := range d.Items {
 		in := Input{Item: true, Decision: toDecision(d.Decisions[it.Ref]), AppealOpen: d.AppealOpen, Frozen: frozen,
@@ -288,29 +296,39 @@ func (e *Engine) evaluate(d *store.SourceData, reps map[string]store.Rep, now ti
 				in.LabelInstalls++
 			}
 		}
-		r := e.Th.Score(in)
+		sums := SumVotes(in.Votes)
 		dec := in.Decision
 		switch {
-		case r.Provenance.Met || (dec != nil && (dec.Verdict == "slop" || dec.Verdict == "likely_slop" || dec.Verdict == "ai_made")):
+		case dec != nil && (dec.Verdict == "slop" || dec.Verdict == "likely_slop" || dec.Verdict == "ai_made"):
 			aiItems++
 			seen++
-		case (r.Sums.N > 0 && r.Sums.N > r.Sums.S+r.Sums.A) || (dec != nil && dec.Verdict == "clear"):
+		case dec != nil && dec.Verdict == "clear":
+			seen++
+		case in.LabelInstalls >= e.Th.LabelInstalls:
+			aiItems++
+			seen++
+		case sums.N > 0 && sums.N > sums.S+sums.A:
 			seen++
 		}
 		ev.Items = append(ev.Items, ItemEvaluation{Item: it, Input: in, lapsing: isLapsing(it.State, now.Unix())})
 	}
 
+	if unattributed {
+		aiItems, seen, rollupLabels = 0, 0, nil
+	}
 	in := Input{
-		Decision:      toDecision(d.Decisions[0]),
-		AppealOpen:    d.AppealOpen,
-		Frozen:        frozen,
-		Imported:      src.ImportList,
-		Reviewed:      src.ReviewedAt > 0,
-		Large:         src.LargeStaff || (src.Subscribers.Valid && src.Subscribers.Int64 >= e.Th.LargeSubscribers),
-		UploadsPerDay: -1,
-		ItemsSeen:     seen,
-		AIItems:       aiItems,
-		LabelInstalls: len(labelInstalls),
+		Decision:            toDecision(d.Decisions[0]),
+		AppealOpen:          d.AppealOpen,
+		Frozen:              frozen,
+		Imported:            src.ImportList,
+		Reviewed:            src.ReviewedAt > 0,
+		Large:               src.LargeStaff || (src.Subscribers.Valid && src.Subscribers.Int64 >= e.Th.LargeSubscribers),
+		AudienceKnown:       src.Subscribers.Valid || src.SizeReviewedAt > 0,
+		UploadsPerDay:       -1,
+		ItemsSeen:           seen,
+		AIItems:             aiItems,
+		LabelInstalls:       len(labelInstalls),
+		RollupLabelInstalls: len(rollupLabels),
 	}
 	if src.UploadsPerDay.Valid {
 		in.UploadsPerDay = src.UploadsPerDay.Float64
@@ -325,6 +343,7 @@ func (e *Engine) evaluate(d *store.SourceData, reps map[string]store.Rep, now ti
 	for i := range ev.Items {
 		ev.Items[i].Input.SourceBehavior = ev.Result.Behavior
 		ev.Items[i].Input.SourceVerdict = ev.Result.Verdict
+		ev.Items[i].Input.SourceMixed = ev.Result.Mixed
 		ev.Items[i].Result = e.Th.Score(ev.Items[i].Input)
 	}
 	return ev
@@ -335,6 +354,7 @@ func (e *Engine) nextState(old store.State, r Result, in Input, dec *store.Decis
 	st := store.State{Verdict: r.Verdict, Signals: r.Signals, Detail: lf.SlopTypeCode(r.SlopType) | r.Tests,
 		Computed: r.Computed, ChangedAt: old.ChangedAt, RescoreAt: old.RescoreAt}
 	if !in.Item {
+		st.Mixed = r.Mixed
 		if in.Large {
 			st.Flags |= lf.FlagLarge
 		}
@@ -443,14 +463,24 @@ func (e *Engine) scoreSource(ctx context.Context, ref int64, reps map[string]sto
 	}
 	want := map[string]string{}
 	switch r := ev.Result; {
-	case r.Rule == 6 && (r.CappedBy == "large" || r.CappedBy == "imported"):
-		want["capped"] = escalationSummary(r.CappedBy)
 	case r.Rule == 6 && r.CappedBy == "lapsed":
 		want["lapsed"] = escalationSummary("lapsed")
+	case r.Rule == 6 && r.CappedBy != "":
+		want["capped"] = escalationSummary(r.CappedBy)
 	}
-	if d.OpenReports >= e.Th.ReportEscalation {
+	// A new list verdict closes the open reports (6.3), so they no longer count.
+	openReports := d.OpenReports
+	if ev.Result.Verdict != "" && ev.Result.Verdict != src.State.Verdict {
+		openReports = 0
+	}
+	if openReports >= e.Th.ReportEscalation {
 		want["reports"] = fmt.Sprintf("%d or more open reports", e.Th.ReportEscalation)
 	}
-	err = e.Store.SyncEscalations(ctx, ref, 0, []string{"capped", "lapsed", "reports"}, want, now.Unix())
+	// An appeal whose code staff must check by hand is kept, not expired: the creator did their part.
+	// Once it has waited as long as an unverified appeal may, it is escalated so it cannot sit forever.
+	if d.PendingManualSince > 0 && now.Unix()-d.PendingManualSince >= int64(e.Th.AppealExpiry.Seconds()) {
+		want["appeal"] = fmt.Sprintf("Appeal filed more than %d days ago still waits for staff to check its code", int(e.Th.AppealExpiry.Hours()/24))
+	}
+	err = e.Store.SyncEscalations(ctx, ref, 0, []string{"capped", "lapsed", "reports", "appeal"}, want, now.Unix())
 	return changed, err
 }

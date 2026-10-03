@@ -46,6 +46,8 @@ type SourceData struct {
 	Decisions   map[int64]*Decision // the active decision per item ref, 0 for the source
 	AppealOpen  bool                // a verified appeal is under review
 	OpenReports int
+	// PendingManualSince is when the oldest appeal waiting for staff to check its code was filed, 0 when none.
+	PendingManualSince int64
 }
 
 // LoadSourceData loads a source with its items, tags, active decisions, appeal and report state.
@@ -85,7 +87,9 @@ func (s *Store) LoadSourceData(ctx context.Context, ref, now int64) (*SourceData
 	}
 	err = s.DB.QueryRowContext(ctx, `SELECT
 		(SELECT count(*) FROM appeals WHERE source_id = ? AND status = 'under_review'),
-		(SELECT count(*) FROM reports WHERE source_id = ? AND status = 'open')`, ref, ref).Scan(&d.AppealOpen, &d.OpenReports)
+		(SELECT count(*) FROM reports WHERE source_id = ? AND status = 'open'),
+		(SELECT ifnull(min(created_at), 0) FROM appeals WHERE source_id = ? AND status = 'pending_manual')`,
+		ref, ref, ref).Scan(&d.AppealOpen, &d.OpenReports, &d.PendingManualSince)
 	return d, err
 }
 
@@ -268,6 +272,17 @@ func (s *Store) ApplyUpdate(ctx context.Context, u Update) (bool, error) {
 		if err != nil {
 			return err
 		}
+		if u.ItemRef == 0 {
+			if _, err := tx.ExecContext(ctx, `UPDATE sources SET mixed = ? WHERE id = ?`, st.Mixed, id); err != nil {
+				return err
+			}
+			// A report follows its source: once the list verdict changes after it was filed, it shows that verdict (6.3).
+			if st.Verdict != "" && st.Verdict != cur && u.Log != nil {
+				if err := closeReports(ctx, tx, u.SourceRef, st.Verdict, u.Log.Reason, u.Log.At); err != nil {
+					return err
+				}
+			}
+		}
 		if u.Log != nil {
 			if err := addLog(ctx, tx, u.Log); err != nil {
 				return err
@@ -304,7 +319,8 @@ func (s *Store) AddDecision(ctx context.Context, d Decision, large *bool) (int64
 			return err
 		}
 		if large != nil {
-			if _, err := tx.ExecContext(ctx, `UPDATE sources SET large_staff = ? WHERE id = ?`, *large, d.SourceRef); err != nil {
+			if _, err := tx.ExecContext(ctx, `UPDATE sources SET large_staff = ?, size_reviewed_at = ? WHERE id = ?`,
+				*large, d.CreatedAt, d.SourceRef); err != nil {
 				return err
 			}
 		}
@@ -322,6 +338,25 @@ func (s *Store) AddDecision(ctx context.Context, d Decision, large *bool) (int64
 	return id, err
 }
 
+// VoidCuratorDecisions ends the curator decisions on a source itself made at or after since, so a
+// denied appeal never restores a curator verdict set while the appeal was open. reviewed_at falls
+// back to the latest decision still standing.
+func (s *Store) VoidCuratorDecisions(ctx context.Context, sourceRef, since, now int64) error {
+	return s.Tx(ctx, func(tx *sql.Tx) error {
+		res, err := tx.ExecContext(ctx, `UPDATE decisions SET expires_at = created_at WHERE source_id = ? AND item_id IS NULL
+			AND actor = 'curator' AND created_at >= ? AND expires_at > ?`, sourceRef, since, now)
+		if err != nil {
+			return err
+		}
+		if n, _ := res.RowsAffected(); n == 0 {
+			return nil
+		}
+		_, err = tx.ExecContext(ctx, `UPDATE sources SET reviewed_at = (SELECT max(created_at) FROM decisions
+			WHERE source_id = ? AND item_id IS NULL AND expires_at > created_at) WHERE id = ?`, sourceRef, sourceRef)
+		return err
+	})
+}
+
 // LatestDecisions lists the latest decision per target of a source, active or not.
 func (s *Store) LatestDecisions(ctx context.Context, sourceRef int64) ([]Decision, error) {
 	return s.decisions(ctx, `id IN (SELECT max(id) FROM decisions WHERE source_id = ? GROUP BY ifnull(item_id, 0))`, sourceRef)
@@ -332,7 +367,7 @@ type Escalation struct {
 	ID        int64
 	SourceRef int64
 	ItemRef   int64
-	Kind      string // capped | lapsed | reports | burst
+	Kind      string // capped | lapsed | reports | burst | appeal
 	Summary   string
 	CreatedAt int64
 }

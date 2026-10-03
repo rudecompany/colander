@@ -14,15 +14,16 @@ type ListTarget struct {
 	ID            string // the alias or item ID
 	State         State
 	SourceVerdict string // for items: their source's verdict
+	SourceMixed   bool   // for items: their source is mixed, so they keep their own entries
 }
 
 // ListTargets returns one row per alias of every rated source and one per rated item.
 func (s *Store) ListTargets(ctx context.Context) ([]ListTarget, error) {
 	rows, err := s.DB.QueryContext(ctx, `
-		SELECT a.platform, 'source', a.alias, s.verdict, s.signals, s.detail, s.flags, ifnull(s.changed_at, 0), ''
+		SELECT a.platform, 'source', a.alias, s.verdict, s.signals, s.detail, s.flags, ifnull(s.changed_at, 0), '', 0
 		FROM sources s JOIN source_aliases a ON a.source_id = s.id WHERE s.verdict IS NOT NULL
 		UNION ALL
-		SELECT i.platform, 'item', i.item_id, i.verdict, i.signals, i.detail, i.flags, ifnull(i.changed_at, 0), ifnull(s.verdict, '')
+		SELECT i.platform, 'item', i.item_id, i.verdict, i.signals, i.detail, i.flags, ifnull(i.changed_at, 0), ifnull(s.verdict, ''), s.mixed
 		FROM items i JOIN sources s ON s.id = i.source_id WHERE i.verdict IS NOT NULL`)
 	if err != nil {
 		return nil, err
@@ -32,7 +33,7 @@ func (s *Store) ListTargets(ctx context.Context) ([]ListTarget, error) {
 	for rows.Next() {
 		var t ListTarget
 		if err := rows.Scan(&t.Platform, &t.TargetType, &t.ID, &t.State.Verdict, &t.State.Signals, &t.State.Detail,
-			&t.State.Flags, &t.State.ChangedAt, &t.SourceVerdict); err != nil {
+			&t.State.Flags, &t.State.ChangedAt, &t.SourceVerdict, &t.SourceMixed); err != nil {
 			return nil, err
 		}
 		out = append(out, t)

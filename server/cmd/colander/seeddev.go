@@ -376,7 +376,6 @@ func (s *seeder) run(pub *lf.Publisher) error {
 	for i := range 3 {
 		s.report(m[60+i], "tt", "@newsflash24ai", "Newsflash 24 AI", "Invented news events with a synthetic anchor voice.", "deceptive", hollow)
 	}
-	s.report(m[63], "ig", "fitness.tips.ai", "Fitness Tips AI", "Every post pushes the same supplement link.", "bait", hollow)
 	s.report(m[64], "fb", "veterans.tribute.page", "Veterans Tribute Page", "Generated photos of veterans presented as real, with a donation link.", "deceptive", hollow|low)
 	_ = rptAW1
 
@@ -396,9 +395,11 @@ func (s *seeder) run(pub *lf.Publisher) error {
 		s.fail(st.DismissReport(ctx, rptGrandpa, "Original workshop footage with the creator on camera.", s.clock.Unix()))
 	}
 	s.decide(s.staff, "yt", "@grandpasworkshop", "", "clear", "Original footage and the creator's own narration.", 0, "", 0, nil)
-	large := true
+	large, small := true, false
 	s.at(s.days(20))
 	s.decide(s.staff, "tt", "@sloppyfacts", "", "likely_slop", "Generated facts videos with frequent errors; large audience, so held at Likely slop.", lf.SigPlatformLabel, "filler", hollow, &large)
+	// TikTok reports no audience size, so community scoring holds Pet Pals at Likely slop until staff look.
+	s.decide(s.staff, "tt", "@petpalsai", "", "slop", "Staff review confirmed generated pet clips posted around the clock to a small audience.", 0, "filler", low|mass, &small)
 	s.decide(s.staff, "ig", "luxury.life.ai", "", "slop", "Generated lifestyle images that funnel to a course sales page.", lf.SigLinkFunnel, "bait", hollow|low, nil)
 
 	// Appeals in every state, in the order they happened.
@@ -416,6 +417,10 @@ func (s *seeder) run(pub *lf.Publisher) error {
 		s.fail(st.TransitionAppeal(ctx, luxury.ID, []string{store.AppealAwaiting}, store.AppealPendingManual, store.AppealChange{}))
 		s.at(s.days(16))
 		s.fail(s.eng.VerifyAppeal(ctx, luxury))
+	}
+	// An appeal staff have left waiting for a manual code check: it is kept and escalated.
+	if a := s.appeal("fb", "kindness.stories.daily", "admin@kindness.example.test", "A small team writes these stories; we use AI only for the images."); a != nil {
+		s.fail(st.TransitionAppeal(ctx, a.ID, []string{store.AppealAwaiting}, store.AppealPendingManual, store.AppealChange{}))
 	}
 	s.at(s.days(15))
 	if priya != nil {
@@ -435,10 +440,6 @@ func (s *seeder) run(pub *lf.Publisher) error {
 		s.at(s.days(3.8))
 		s.fail(s.eng.VerifyAppeal(ctx, a))
 	}
-	s.at(s.days(3))
-	if a := s.appeal("fb", "kindness.stories.daily", "admin@kindness.example.test", "A small team writes these stories; we use AI only for the images."); a != nil {
-		s.fail(st.TransitionAppeal(ctx, a.ID, []string{store.AppealAwaiting}, store.AppealPendingManual, store.AppealChange{}))
-	}
 	s.at(s.days(2))
 	s.appeal("ig", "garden.with.ana", "ana@garden.example.test", "I photograph my own garden every morning.")
 
@@ -451,6 +452,11 @@ func (s *seeder) run(pub *lf.Publisher) error {
 	if s.err == nil {
 		s.fail(pub.Publish(ctx))
 	}
+
+	// A report filed after the last verdict change stays open for a reviewer. Reports filed earlier on a
+	// source whose verdict has since changed already show that verdict.
+	s.at(s.now.Add(-3 * time.Hour))
+	s.report(m[63], "ig", "fitness.tips.ai", "Fitness Tips AI", "Every post pushes the same supplement link.", "bait", hollow)
 
 	// Two hours ago, a burst of slop tags from brand-new installs: consensus freezes and staff are asked to look.
 	s.at(s.now.Add(-2 * time.Hour))

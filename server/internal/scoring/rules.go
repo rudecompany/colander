@@ -113,7 +113,7 @@ type Decision struct {
 type Input struct {
 	Item          bool
 	Votes         []Vote // one per install
-	LabelInstalls int    // distinct installs that saw a platform AI label (for a source: on it or any item)
+	LabelInstalls int    // distinct installs that saw a platform AI label on the target itself
 	Decision      *Decision
 	AppealOpen    bool
 	Frozen        bool // burst detection froze the consensus layer
@@ -122,13 +122,18 @@ type Input struct {
 	Imported      string // blocklist | warnlist | ""
 	Reviewed      bool   // a staff or curator decision was ever recorded
 	Large         bool
+	AudienceKnown bool    // the YouTube Data API reported subscribers, or staff recorded the source's size
 	UploadsPerDay float64 // < 0 when unknown
 	ItemsSeen     int     // items with evidence either way
-	AIItems       int     // of those, items with AI evidence
+	AIItems       int     // of those, items with independent AI evidence (labels from 2 installs or a reviewer)
+	// RollupLabelInstalls counts distinct installs that saw a platform AI label on the source or any
+	// of its items. Item labels count toward provenance only while the source is not mixed.
+	RollupLabelInstalls int
 
-	// Items only: the behavior layer and verdict of the item's source.
+	// Items only: the behavior layer, verdict and mixedness of the item's source.
 	SourceBehavior Layer
 	SourceVerdict  string
+	SourceMixed    bool
 
 	// LapseHold keeps a lapsed Slop verdict at Likely slop until a reviewer looks again.
 	LapseHold bool
@@ -153,13 +158,15 @@ type Result struct {
 	SlopType string
 	Tests    uint8
 	Rule     int // the 9.4 rule that matched, 0 when none did
+	// Computed is what rules 3 to 8 say, before a rule 6 cap and before appeals and decisions, so
+	// the review queue shows "scoring says Slop" for a source held at Likely slop.
 	Computed string
 
 	Provenance, Behavior, Rubric, Consensus Layer
 	NotSlop, Split, Mixed                   bool
 	Sums                                    Sums
-	// CappedBy is why rule 6 held Slop at Likely slop: "large", "imported" or "lapsed".
-	// It raises an escalation only while rule 6 decides (Rule == 6).
+	// CappedBy is why rule 6 held Slop at Likely slop: "large", "imported", "audience" (size
+	// unknown) or "lapsed". It raises an escalation only while rule 6 decides (Rule == 6).
 	CappedBy string
 }
 
@@ -181,9 +188,13 @@ func SumVotes(votes []Vote) Sums {
 	return s
 }
 
-func (th Thresholds) provenance(in Input, s Sums) Layer {
+func (th Thresholds) provenance(in Input, s Sums, mixed bool) Layer {
 	var l Layer
-	if in.LabelInstalls >= th.LabelInstalls {
+	labels := in.LabelInstalls
+	if !in.Item && !mixed {
+		labels = max(labels, in.RollupLabelInstalls)
+	}
+	if labels >= th.LabelInstalls {
 		l.Met, l.Signals = true, lf.SigPlatformLabel
 	}
 	if in.Decision != nil && in.Decision.Signals&lf.ProvenanceSignals != 0 {
@@ -288,7 +299,8 @@ var severity = map[string]int{"ai_made": 1, "likely_slop": 2, "slop": 3}
 func (th Thresholds) Score(in Input) Result {
 	s := SumVotes(in.Votes)
 	r := Result{Sums: s}
-	r.Provenance = th.provenance(in, s)
+	r.Mixed = !in.Item && in.ItemsSeen >= th.MostlyAIMinItems && float64(in.AIItems)/float64(in.ItemsSeen) < th.MostlyAIShare
+	r.Provenance = th.provenance(in, s, r.Mixed)
 	r.Behavior = th.behavior(in)
 	tests := th.passingTests(in.Votes, s, r.Behavior.Met)
 	r.Rubric = th.rubric(tests, s)
@@ -297,7 +309,6 @@ func (th Thresholds) Score(in Input) Result {
 	}
 	r.NotSlop = s.N >= th.NotSlopSum && s.T > 0 && s.N/s.T >= th.NotSlopRatio
 	r.Split = s.S >= th.SplitSlop && s.N+s.A >= th.SplitOther && s.T > 0 && s.S/s.T >= th.SplitLow && s.S/s.T <= th.SplitHigh
-	r.Mixed = !in.Item && in.ItemsSeen >= th.MostlyAIMinItems && float64(in.AIItems)/float64(in.ItemsSeen) < th.MostlyAIShare
 
 	// Only met layers carry signals, so this is the union of the signals of the met layers.
 	evidence := r.Provenance.Signals | r.Behavior.Signals | r.Rubric.Signals | r.Consensus.Signals
@@ -312,16 +323,16 @@ func (th Thresholds) Score(in Input) Result {
 		r.Rule, r.Computed, r.Signals = 5, "disputed", evidence
 	case r.Behavior.Met && r.Consensus.Met && !r.Mixed:
 		r.Rule, r.Computed, r.Signals = 6, "slop", evidence
+		// Only a reviewer makes a source Slop when it is large, imported and unreviewed, or of unknown size.
 		switch {
 		case !in.Item && in.Large:
 			r.CappedBy = "large"
 		case !in.Item && in.Imported != "" && !in.Reviewed:
 			r.CappedBy = "imported"
+		case !in.Item && !in.AudienceKnown:
+			r.CappedBy = "audience"
 		case in.LapseHold:
 			r.CappedBy = "lapsed"
-		}
-		if r.CappedBy != "" {
-			r.Computed = "likely_slop"
 		}
 	case (r.Behavior.Met || r.Rubric.Met) && (s.S >= 1 || in.Imported == "blocklist") && !r.Mixed:
 		r.Rule, r.Computed, r.Signals = 7, "likely_slop", evidence
@@ -329,6 +340,9 @@ func (th Thresholds) Score(in Input) Result {
 		r.Rule, r.Computed, r.Signals = 8, "ai_made", evidence
 	}
 	r.Verdict = r.Computed
+	if r.CappedBy != "" {
+		r.Verdict = "likely_slop"
+	}
 	if r.Verdict == "slop" || r.Verdict == "likely_slop" {
 		r.SlopType, r.Tests = slopType(in.Votes), tests
 	}
@@ -365,8 +379,10 @@ func (th Thresholds) Score(in Input) Result {
 
 	// An item has its own verdict only when it says more than its source's. An item of a Slop
 	// source that scores Likely slop alone, or an item under a source shown as Disputed for an
-	// appeal, is covered by the source. Reviewer decisions on items always stand.
-	if in.Item && r.Rule != 2 && (r.Verdict == in.SourceVerdict || (r.Rule >= 6 && severity[r.Verdict] <= severity[in.SourceVerdict])) {
+	// appeal, is covered by the source. Reviewer decisions on items always stand, and items of a
+	// mixed source keep their own verdicts except under an appeal.
+	covered := r.Verdict == in.SourceVerdict || (r.Rule >= 6 && severity[r.Verdict] <= severity[in.SourceVerdict])
+	if in.Item && r.Rule != 2 && covered && (r.Rule == 1 || !in.SourceMixed) {
 		r.Verdict, r.Signals, r.SlopType, r.Tests = "", 0, "", 0
 	}
 	return r

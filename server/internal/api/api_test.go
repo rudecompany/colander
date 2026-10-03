@@ -3,6 +3,7 @@ package api
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"database/sql"
 	"encoding/base64"
 	"encoding/json"
@@ -162,8 +163,14 @@ func (h *harness) reviewer(email, role, name string) string {
 	return h.signIn(email)
 }
 
+// uuid turns a readable test name into a stable client UUID.
+func uuid(name string) string {
+	h := fmt.Sprintf("%x", sha256.Sum256([]byte(name)))
+	return h[:8] + "-" + h[8:12] + "-" + h[12:16] + "-" + h[16:20] + "-" + h[20:32]
+}
+
 func tag(clientID, targetType, target, source, verdict string) map[string]any {
-	t := map[string]any{"client_id": clientID, "platform": "yt", "target_type": targetType, "target_id": target,
+	t := map[string]any{"client_id": uuid(clientID), "platform": "yt", "target_type": targetType, "target_id": target,
 		"verdict": verdict, "platform_label": true, "created_at": "2026-10-01T11:00:00Z", "ext_version": "1.0.0"}
 	if source != "" {
 		t["source_id"] = source
@@ -181,20 +188,43 @@ func TestTagValidation(t *testing.T) {
 	}
 	expect(t, h.do("POST", "/v1/tags", map[string]any{"tags": []any{tag("a", "source", "@x", "", "slop")}}), http.StatusUnauthorized)
 
+	notUUID := tag("x", "source", "@somechannel", "", "slop")
+	notUUID["client_id"] = "not-a-uuid"
+	typedNotSlop := tag("typed-not-slop", "source", "@somechannel", "", "not_slop")
+	typedNotSlop["slop_type"] = "filler"
+	testedAIFine := tag("tested-ai-fine", "item", "abcdefghijk", "@somechannel", "ai_fine")
+	testedAIFine["tests"] = []string{"hollow"}
+	emptyExtras := tag("empty-extras", "source", "@other", "", "not_slop")
+	emptyExtras["slop_type"], emptyExtras["tests"] = "", []string{}
 	w = h.do("POST", "/v1/tags", map[string]any{"tags": []any{
 		tag("ok-1", "item", "abcdefghijk", "@somechannel", "slop"),
-		tag("no-source", "item", "abcdefghijk", "", "slop"),
+		tag("no-source", "item", "bcdefghijkl", "", "slop"), // the card did not show the source
+		emptyExtras,
 		tag("bad-target", "source", "not a handle", "", "slop"),
 		tag("bad-verdict", "source", "@somechannel", "", "fake"),
+		notUUID,
+		typedNotSlop,
+		testedAIFine,
+		tag("source-with-source", "source", "@somechannel", "@somechannel", "slop"),
 	}}, installAuth(1)...)
 	expect(t, w, http.StatusOK)
 	got := decodeBody[struct {
 		Accepted []string    `json:"accepted"`
 		Rejected []rejection `json:"rejected"`
 	}](t, w)
-	want := []rejection{{"no-source", "missing_source"}, {"bad-target", "invalid_target"}, {"bad-verdict", "invalid_verdict"}}
-	if fmt.Sprint(got.Accepted) != "[ok-1]" || fmt.Sprint(got.Rejected) != fmt.Sprint(want) {
+	wantAccepted := []string{uuid("ok-1"), uuid("no-source"), uuid("empty-extras")}
+	want := []rejection{{uuid("bad-target"), "invalid_target"}, {uuid("bad-verdict"), "invalid_verdict"}, {"not-a-uuid", "invalid_field"},
+		{uuid("typed-not-slop"), "invalid_field"}, {uuid("tested-ai-fine"), "invalid_field"}, {uuid("source-with-source"), "invalid_field"}}
+	if fmt.Sprint(got.Accepted) != fmt.Sprint(wantAccepted) || fmt.Sprint(got.Rejected) != fmt.Sprint(want) {
 		t.Fatalf("accepted %v rejected %v", got.Accepted, got.Rejected)
+	}
+	// The item without a source is kept apart from every real source.
+	it, err := h.srv.Store.FindItem(h.ctx, "yt", "bcdefghijkl")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if src, _ := h.srv.Store.GetSource(h.ctx, it.SourceRef); src.CanonicalID != "" {
+		t.Fatalf("unattributed item filed under %q", src.CanonicalID)
 	}
 }
 
@@ -270,7 +300,7 @@ func TestReportLifecycle(t *testing.T) {
 
 	staff := h.reviewer("rae@colander.test", "staff", "Rae")
 	decision := map[string]any{"verdict": "slop", "reason": "Staff review confirmed mass-produced narration.",
-		"signals": []string{"high_volume", "community_consensus"}, "slop_type": "filler", "tests": []string{"mass_produced", "low_effort"}}
+		"signals": []string{"high_volume", "community_consensus", "watermark"}, "slop_type": "filler", "tests": []string{"mass_produced", "low_effort"}}
 	expect(t, h.do("POST", "/v1/review/sources/yt/@ancientwondersdaily/decision", decision, "Cookie", staff, "X-Colander-CSRF", "1"), http.StatusOK)
 
 	w = h.do("GET", "/v1/reports", nil, installAuth(1)...)
@@ -329,7 +359,7 @@ func TestAppealFlow(t *testing.T) {
 	staff := h.reviewer("rae@colander.test", "staff", "Rae")
 	csrf := []string{"Cookie", staff, "X-Colander-CSRF", "1"}
 	expect(t, h.do("POST", "/v1/review/sources/yt/@oceanmysteries/decision",
-		map[string]any{"verdict": "slop", "reason": "Generated narration over stock clips.", "signals": []string{"templated"}}, csrf...), http.StatusOK)
+		map[string]any{"verdict": "slop", "reason": "Generated narration over stock clips.", "signals": []string{"templated", "watermark"}}, csrf...), http.StatusOK)
 	h.publish()
 	_, seq := h.srv.Publisher.Snapshot()
 
@@ -398,7 +428,8 @@ func TestDeltaStatuses(t *testing.T) {
 
 	staff := h.reviewer("rae@colander.test", "staff", "Rae")
 	expect(t, h.do("POST", "/v1/review/sources/tt/@petpalsai/decision",
-		map[string]any{"verdict": "slop", "reason": "Generated pet clips around the clock."}, "Cookie", staff, "X-Colander-CSRF", "1"), http.StatusOK)
+		map[string]any{"verdict": "slop", "reason": "Generated pet clips around the clock.", "signals": []string{"creator_statement"}},
+		"Cookie", staff, "X-Colander-CSRF", "1"), http.StatusOK)
 	h.publish()
 
 	w = h.do("GET", fmt.Sprintf("/v1/list/delta?since=%d", seq.Seq), nil)
@@ -497,12 +528,23 @@ func TestCuratorLimitsAndReviewerToken(t *testing.T) {
 	expect(t, h.do("GET", "/v1/review/queue", nil, "Authorization", "Bearer nope"), http.StatusUnauthorized)
 	expect(t, h.do("GET", "/v1/review/queue", nil, "Cookie", member), http.StatusForbidden)
 
-	decision := map[string]any{"verdict": "slop", "reason": "Generated gossip narration."}
+	decision := map[string]any{"verdict": "slop", "reason": "Generated gossip narration.", "signals": []string{"watermark"}}
 	w = h.do("POST", "/v1/review/sources/yt/@gossipnarrated/decision", decision, bearer...)
 	expect(t, w, http.StatusForbidden)
 	if errorCode(t, w) != "staff_required" {
 		t.Fatal("want staff_required for a large source")
 	}
+	// Slop needs AI evidence: without a provenance signal or met provenance layer it is refused.
+	for _, v := range []string{"slop", "likely_slop"} {
+		w = h.do("POST", "/v1/review/sources/yt/@smallslopfarm/decision", map[string]any{"verdict": v, "reason": "Looks generated."}, bearer...)
+		expect(t, w, http.StatusBadRequest)
+		if errorCode(t, w) != "ai_evidence_required" {
+			t.Fatalf("%s: want ai_evidence_required", v)
+		}
+	}
+	w = h.do("POST", "/v1/review/items/yt/abcdefghijk/decision", map[string]any{"verdict": "slop", "reason": "Looks generated.",
+		"source_id": "@smallslopfarm"}, bearer...)
+	expect(t, w, http.StatusBadRequest)
 	// Curators may decide sources that are not large, by bearer token without CSRF.
 	expect(t, h.do("POST", "/v1/review/sources/yt/@smallslopfarm/decision", decision, bearer...), http.StatusOK)
 	expect(t, h.do("POST", "/v1/review/sources/yt/@smallslopfarm/decision", map[string]any{"verdict": "slop", "reason": "x", "large": true},
@@ -517,6 +559,118 @@ func TestCuratorLimitsAndReviewerToken(t *testing.T) {
 		t.Fatal("want staff_required for appeals")
 	}
 	expect(t, h.do("POST", "/v1/review/appeals/"+id+"/resolve", map[string]string{"outcome": "denied", "reasoning": "x"}, bearer...), http.StatusForbidden)
+
+	// An appeal awaiting verification is unproven, so curators may still decide. Once the creator has
+	// done their part (pending_manual, then under_review) only staff decide the source.
+	clear := map[string]any{"verdict": "clear", "reason": "Original work."}
+	expect(t, h.do("POST", "/v1/review/sources/yt/@smallslopfarm/decision", decision, bearer...), http.StatusOK)
+	w = h.do("POST", "/v1/appeals", map[string]string{"platform": "yt", "source_id": "@smallslopfarm", "email": "a@example.test", "statement": "Not slop."})
+	appeal := decodeBody[struct {
+		Appeal appealJSON
+		Secret string
+	}](t, w)
+	expect(t, h.do("POST", "/v1/appeals/"+appeal.Appeal.ID+"/verify", map[string]string{"secret": appeal.Secret}), http.StatusOK)
+	w = h.do("POST", "/v1/review/sources/yt/@smallslopfarm/decision", clear, bearer...)
+	expect(t, w, http.StatusForbidden)
+	if errorCode(t, w) != "staff_required" {
+		t.Fatal("want staff_required for a source with a pending_manual appeal")
+	}
+	staff := h.reviewer("rae@colander.test", "staff", "Rae")
+	expect(t, h.do("POST", "/v1/review/appeals/"+appeal.Appeal.ID+"/verify", nil, "Cookie", staff, "X-Colander-CSRF", "1"), http.StatusOK)
+	w = h.do("POST", "/v1/review/sources/yt/@smallslopfarm/decision", clear, bearer...)
+	expect(t, w, http.StatusForbidden)
+	expect(t, h.do("POST", "/v1/review/sources/yt/@smallslopfarm/decision", clear, "Cookie", staff, "X-Colander-CSRF", "1"), http.StatusOK)
+}
+
+// A report follows its source: once the list verdict changes after it was filed, it shows that verdict.
+func TestReportFollowsCommunityVerdict(t *testing.T) {
+	h := newHarness(t)
+	w := h.do("POST", "/v1/reports", map[string]any{"client_id": uuid("r-1"), "platform": "yt", "source_id": "@farm",
+		"reason": "Generated narration.", "ext_version": "1.0.0"}, installAuth(1)...)
+	expect(t, w, http.StatusCreated)
+	for range 24 {
+		expect(t, h.do("GET", "/v1/list/snapshot", nil), http.StatusOK)
+	}
+	var tags []any
+	for i := range 3 {
+		tg := tag(fmt.Sprintf("ai-%d", i), "source", "@farm", "", "ai_fine")
+		expect(t, h.do("POST", "/v1/tags", map[string]any{"tags": []any{tg}}, installAuth(10+i)...), http.StatusOK)
+		tags = append(tags, tg)
+	}
+	if _, err := h.srv.Engine.FullPass(h.ctx); err != nil {
+		t.Fatal(err)
+	}
+	w = h.do("GET", "/v1/reports", nil, installAuth(1)...)
+	expect(t, w, http.StatusOK)
+	list := decodeBody[struct{ Reports []reportJSON }](t, w).Reports
+	if len(list) != 1 || list[0].Status != "ai_made" || list[0].Verdict == nil || *list[0].Verdict != "ai_made" || list[0].Protects != 1 {
+		t.Fatalf("report after the community verdict = %+v", list)
+	}
+}
+
+// An appeal staff must check by hand stays in the queue and, once it has waited 14 days, is also
+// escalated at the top priority.
+func TestPendingManualAppealInQueue(t *testing.T) {
+	h := newHarness(t)
+	staff := h.reviewer("rae@colander.test", "staff", "Rae")
+	csrf := []string{"Cookie", staff, "X-Colander-CSRF", "1"}
+	expect(t, h.do("POST", "/v1/review/sources/yt/@farm/decision", map[string]any{"verdict": "ai_made", "reason": "Labelled AI.",
+		"signals": []string{"platform_label"}}, csrf...), http.StatusOK)
+	w := h.do("POST", "/v1/appeals", map[string]string{"platform": "yt", "source_id": "@farm", "email": "a@example.test", "statement": "Mine."})
+	appeal := decodeBody[struct {
+		Appeal appealJSON
+		Secret string
+	}](t, w)
+	expect(t, h.do("POST", "/v1/appeals/"+appeal.Appeal.ID+"/verify", map[string]string{"secret": appeal.Secret}), http.StatusOK)
+	h.clock = h.clock.Add(15 * 24 * time.Hour)
+	if _, err := h.srv.Engine.FullPass(h.ctx); err != nil {
+		t.Fatal(err)
+	}
+	w = h.do("GET", "/v1/review/queue", nil, csrf...)
+	expect(t, w, http.StatusOK)
+	items := decodeBody[struct{ Items []queueJSON }](t, w).Items
+	var kinds []string
+	for _, q := range items {
+		if q.Priority != 1 {
+			t.Errorf("%s %q has priority %d, want 1", q.Kind, q.Summary, q.Priority)
+		}
+		kinds = append(kinds, q.Kind)
+	}
+	if fmt.Sprint(kinds) != "[appeal escalation]" || !strings.Contains(items[1].Summary, "waits for staff to check its code") {
+		t.Fatalf("queue = %+v", items)
+	}
+}
+
+// A source held at Likely slop by the rule 6 cap shows in the queue with the list verdict and what
+// scoring says without the cap, so reviewers see the Slop hint.
+func TestCappedEscalationShowsScoredSlop(t *testing.T) {
+	h := newHarness(t)
+	for i := range 6 {
+		tg := tag(fmt.Sprintf("slop-%d", i), "source", "@farm", "", "slop")
+		tg["tests"] = []string{"low_effort", "mass_produced"}
+		expect(t, h.do("POST", "/v1/tags", map[string]any{"tags": []any{tg}}, installAuth(20+i)...), http.StatusOK)
+	}
+	ref, err := h.srv.Store.FindSource(h.ctx, "yt", "@farm")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Twenty uploads a day, but the channel hides its subscriber count.
+	if _, err := h.srv.Store.SetYouTube(h.ctx, ref, store.YouTubeInfo{ChannelID: "UCzzzzzzzzzzzzzzzzzzzz44", Handle: "@farm",
+		UploadsPerDay: sql.NullFloat64{Float64: 20, Valid: true}}, h.clock.Unix()); err != nil {
+		t.Fatal(err)
+	}
+	h.clock = h.clock.Add(40 * 24 * time.Hour)
+	if _, err := h.srv.Engine.FullPass(h.ctx); err != nil {
+		t.Fatal(err)
+	}
+	staff := h.reviewer("rae@colander.test", "staff", "Rae")
+	w := h.do("GET", "/v1/review/queue?kind=escalations", nil, "Cookie", staff)
+	expect(t, w, http.StatusOK)
+	items := decodeBody[struct{ Items []queueJSON }](t, w).Items
+	if len(items) != 1 || items[0].Verdict == nil || *items[0].Verdict != "likely_slop" || items[0].ComputedVerdict == nil ||
+		*items[0].ComputedVerdict != "slop" || !strings.Contains(items[0].Summary, "audience size unknown") {
+		t.Fatalf("queue = %+v", items)
+	}
 }
 
 func TestCORS(t *testing.T) {

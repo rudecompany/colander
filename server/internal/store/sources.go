@@ -17,9 +17,12 @@ type State struct {
 	RescoreAt int64
 	LapseHold bool
 	Computed  string
+	Mixed     bool // sources only: the source is mixed, so its items keep their own list entries
 }
 
-// Source is a channel, profile or page.
+// Source is a channel, profile or page. The source with an empty canonical ID on a platform holds
+// the items tagged where the card does not show their source; it is never rated and nothing rolls
+// up to it (contracts 6.2).
 type Source struct {
 	Ref              int64
 	Platform         string
@@ -32,6 +35,7 @@ type Source struct {
 	ImportedAt       int64
 	ReviewedAt       int64
 	LargeStaff       bool
+	SizeReviewedAt   int64 // when staff last recorded the source's size, 0 when never
 	Subscribers      sql.NullInt64
 	UploadsPerDay    sql.NullFloat64
 	YouTubeCheckedAt int64
@@ -51,16 +55,16 @@ type Item struct {
 }
 
 const sourceCols = `id, platform, canonical_id, ifnull(name, ''), ifnull(import_list, ''), ifnull(import_source, ''),
-	ifnull(import_license, ''), ifnull(imported_at, 0), ifnull(reviewed_at, 0), large_staff, subscribers, uploads_per_day,
-	ifnull(youtube_checked_at, 0), ifnull(frozen_until, 0), ifnull(verdict, ''), signals, detail, flags,
-	ifnull(changed_at, 0), ifnull(rescore_at, 0), lapse_hold, ifnull(computed, ''), created_at`
+	ifnull(import_license, ''), ifnull(imported_at, 0), ifnull(reviewed_at, 0), large_staff, ifnull(size_reviewed_at, 0),
+	subscribers, uploads_per_day, ifnull(youtube_checked_at, 0), ifnull(frozen_until, 0), ifnull(verdict, ''), signals, detail,
+	flags, ifnull(changed_at, 0), ifnull(rescore_at, 0), lapse_hold, ifnull(computed, ''), mixed, created_at`
 
 func scanSource(row interface{ Scan(...any) error }) (*Source, error) {
 	var s Source
 	err := row.Scan(&s.Ref, &s.Platform, &s.CanonicalID, &s.Name, &s.ImportList, &s.ImportSource, &s.ImportLicense,
-		&s.ImportedAt, &s.ReviewedAt, &s.LargeStaff, &s.Subscribers, &s.UploadsPerDay, &s.YouTubeCheckedAt,
+		&s.ImportedAt, &s.ReviewedAt, &s.LargeStaff, &s.SizeReviewedAt, &s.Subscribers, &s.UploadsPerDay, &s.YouTubeCheckedAt,
 		&s.FrozenUntil, &s.State.Verdict, &s.State.Signals, &s.State.Detail, &s.State.Flags, &s.State.ChangedAt,
-		&s.State.RescoreAt, &s.State.LapseHold, &s.State.Computed, &s.CreatedAt)
+		&s.State.RescoreAt, &s.State.LapseHold, &s.State.Computed, &s.State.Mixed, &s.CreatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -167,11 +171,26 @@ func (s *Store) SourceRefs(ctx context.Context) ([]int64, error) {
 	return refs, rows.Err()
 }
 
-// ensureItem returns the item, creating it under sourceRef when unknown. An item keeps its first source.
+// ensureItem returns the item, creating it under sourceRef when unknown. An item keeps its first
+// source, except that an item first seen without one joins the first source a later tag names.
 func ensureItem(ctx context.Context, q querier, platform, itemID string, sourceRef, now int64) (int64, error) {
-	var ref int64
-	err := q.QueryRowContext(ctx, `SELECT id FROM items WHERE platform = ? AND item_id = ?`, platform, itemID).Scan(&ref)
+	var ref, cur int64
+	var unattributed bool
+	err := q.QueryRowContext(ctx, `SELECT i.id, i.source_id, s.canonical_id = '' FROM items i JOIN sources s ON s.id = i.source_id
+		WHERE i.platform = ? AND i.item_id = ?`, platform, itemID).Scan(&ref, &cur, &unattributed)
 	if err == nil {
+		if unattributed && cur != sourceRef {
+			for _, stmt := range []string{
+				`UPDATE items SET source_id = ? WHERE id = ?`,
+				`UPDATE tags SET source_id = ? WHERE item_id = ?`,
+				`UPDATE decisions SET source_id = ? WHERE item_id = ?`,
+				`UPDATE OR IGNORE escalations SET source_id = ? WHERE item_id = ?`,
+			} {
+				if _, err := q.ExecContext(ctx, stmt, sourceRef, ref); err != nil {
+					return 0, err
+				}
+			}
+		}
 		return ref, nil
 	}
 	if !errors.Is(err, sql.ErrNoRows) {
@@ -238,6 +257,7 @@ func mergeSources(ctx context.Context, tx *sql.Tx, keep, drop int64) error {
 		imported_at = coalesce(sources.imported_at, d.imported_at),
 		reviewed_at = max(ifnull(sources.reviewed_at, 0), ifnull(d.reviewed_at, 0)),
 		large_staff = max(sources.large_staff, d.large_staff),
+		size_reviewed_at = max(ifnull(sources.size_reviewed_at, 0), ifnull(d.size_reviewed_at, 0)),
 		frozen_until = max(ifnull(sources.frozen_until, 0), ifnull(d.frozen_until, 0))
 		FROM (SELECT * FROM sources WHERE id = ?) AS d WHERE sources.id = ?`, drop, keep)
 	if err != nil {
@@ -298,8 +318,8 @@ func (s *Store) MarkYouTubeChecked(ctx context.Context, ref, now int64) error {
 
 // YouTubeStale lists YouTube sources not checked since before, oldest first.
 func (s *Store) YouTubeStale(ctx context.Context, before int64, limit int) ([]Source, error) {
-	rows, err := s.DB.QueryContext(ctx, `SELECT id FROM sources WHERE platform = 'yt' AND ifnull(youtube_checked_at, 0) < ?
-		ORDER BY ifnull(youtube_checked_at, 0), id LIMIT ?`, before, limit)
+	rows, err := s.DB.QueryContext(ctx, `SELECT id FROM sources WHERE platform = 'yt' AND canonical_id != ''
+		AND ifnull(youtube_checked_at, 0) < ? ORDER BY ifnull(youtube_checked_at, 0), id LIMIT ?`, before, limit)
 	if err != nil {
 		return nil, err
 	}

@@ -150,6 +150,9 @@ func (s *Server) reviewQueue(w http.ResponseWriter, r *http.Request) {
 		}
 		for _, e := range escalations {
 			q := queueJSON{ID: "q_esc_" + strconv.FormatInt(e.ID, 10), Kind: "escalation", Priority: 2, Summary: e.Summary, created: e.CreatedAt}
+			if e.Kind == "appeal" {
+				q.Priority = 1 // an appeal staff have left waiting
+			}
 			if err := add(e.SourceRef, q); err != nil {
 				s.internalError(w, r, err)
 				return
@@ -206,8 +209,15 @@ type layerJSON struct {
 func layers(ev *scoring.Evaluation) map[string]layerJSON {
 	r, in, src := ev.Result, ev.Input, ev.Data.Source
 	var prov []string
-	if in.LabelInstalls > 0 {
-		prov = append(prov, fmt.Sprintf("%d installs saw a platform AI label", in.LabelInstalls))
+	labels := in.RollupLabelInstalls
+	if r.Mixed {
+		labels = in.LabelInstalls
+	}
+	if labels > 0 {
+		prov = append(prov, fmt.Sprintf("%d installs saw a platform AI label", labels))
+	}
+	if r.Mixed && in.RollupLabelInstalls > in.LabelInstalls {
+		prov = append(prov, "labels on its items do not count, because the source is mixed")
 	}
 	if src.ImportList != "" {
 		prov = append(prov, fmt.Sprintf("imported from %s (%s) as a %s entry", src.ImportSource, src.ImportLicense, src.ImportList))
@@ -416,12 +426,40 @@ func (s *Server) reviewSourceDecision(w http.ResponseWriter, r *http.Request) {
 		staffRequired(w, "Large sources")
 		return
 	}
+	if a.Role != "staff" {
+		appeals, err := s.Store.AppealsBySource(ctx, ref)
+		if err != nil {
+			s.internalError(w, r, err)
+			return
+		}
+		for _, ap := range appeals {
+			if ap.Status == store.AppealPendingManual || ap.Status == store.AppealUnderReview {
+				staffRequired(w, "Sources with an open appeal")
+				return
+			}
+		}
+	}
 	in.SourceRef = ref
-	if err := s.Engine.Decide(ctx, in); err != nil {
-		s.internalError(w, r, err)
+	if !s.decide(w, r, in) {
 		return
 	}
 	s.writeReviewSource(w, r, ref)
+}
+
+// decide applies a reviewer decision, answering 400 ai_evidence_required for Slop or Likely slop
+// without AI evidence.
+func (s *Server) decide(w http.ResponseWriter, r *http.Request, in scoring.DecisionInput) bool {
+	err := s.Engine.Decide(r.Context(), in)
+	if errors.Is(err, scoring.ErrAIEvidenceRequired) {
+		writeError(w, http.StatusBadRequest, "ai_evidence_required",
+			"Slop and Likely slop need AI evidence. Record a provenance signal: platform_label, content_credentials, creator_statement or watermark.")
+		return false
+	}
+	if err != nil {
+		s.internalError(w, r, err)
+		return false
+	}
+	return true
 }
 
 func (s *Server) reviewItemDecision(w http.ResponseWriter, r *http.Request) {
@@ -456,24 +494,20 @@ func (s *Server) reviewItemDecision(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusBadRequest, "missing_source", "source_id is required for an item Colander has not seen.")
 			return
 		}
-		ref, err := s.Store.EnsureSource(ctx, platform, sourceID, "", now)
-		if err != nil {
-			s.internalError(w, r, err)
-			return
+		var ref int64
+		if ref, err = s.Store.EnsureSource(ctx, platform, sourceID, "", now); err == nil {
+			_, err = s.Store.EnsureItem(ctx, platform, itemID, ref, now)
 		}
-		if _, err := s.Store.EnsureItem(ctx, platform, itemID, ref, now); err != nil {
-			s.internalError(w, r, err)
-			return
+		if err == nil {
+			item, err = s.Store.FindItem(ctx, platform, itemID)
 		}
-		item, err = s.Store.FindItem(ctx, platform, itemID)
 	}
 	if err != nil {
 		s.internalError(w, r, err)
 		return
 	}
 	in.SourceRef, in.ItemRef = item.SourceRef, item.Ref
-	if err := s.Engine.Decide(ctx, in); err != nil {
-		s.internalError(w, r, err)
+	if !s.decide(w, r, in) {
 		return
 	}
 	s.writeReviewSource(w, r, item.SourceRef)

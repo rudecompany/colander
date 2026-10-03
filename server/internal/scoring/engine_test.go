@@ -3,14 +3,17 @@ package scoring
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
 	lf "github.com/rudecompany/colander/server/internal/listfmt"
+	"github.com/rudecompany/colander/server/internal/sign"
 	"github.com/rudecompany/colander/server/internal/store"
 )
 
@@ -40,21 +43,35 @@ func newFixture(t *testing.T) *fixture {
 func (f *fixture) tags(n int, source, verdict string, label bool) []string {
 	var installs []string
 	for range n {
-		f.n++
-		h := fmt.Sprintf("install-%04d", f.n)
-		installs = append(installs, h)
-		_, err := f.st.SaveTags(f.ctx, h, []store.TagInput{{ClientID: fmt.Sprintf("c%d", f.n), Platform: "yt", TargetType: "source",
-			TargetID: source, SourceID: source, Verdict: verdict, Tests: lf.TestLowEffort | lf.TestMassProduced,
-			PlatformLabel: label, CreatedAt: f.clock.Unix()}}, f.clock.Unix())
-		if err != nil {
-			f.t.Fatal(err)
-		}
+		installs = append(installs, fmt.Sprintf("install-%04d", f.n+len(installs)+1))
 	}
+	f.tagAs(installs, "yt", "source", source, "", verdict, label)
 	return installs
 }
 
-func (f *fixture) source(alias string) *store.Source {
-	ref, err := f.st.FindSource(f.ctx, "yt", alias)
+// tagAs has each install tag a target. source is an item's source, "" for source tags and for items
+// tagged where the card does not show their source.
+func (f *fixture) tagAs(installs []string, platform, targetType, target, source, verdict string, label bool) {
+	if targetType == "source" {
+		source = target
+	}
+	for _, h := range installs {
+		f.n++
+		in := store.TagInput{ClientID: fmt.Sprintf("c%d", f.n), Platform: platform, TargetType: targetType, TargetID: target,
+			SourceID: source, Verdict: verdict, PlatformLabel: label, CreatedAt: f.clock.Unix()}
+		if verdict == "slop" {
+			in.Tests = lf.TestLowEffort | lf.TestMassProduced
+		}
+		if _, err := f.st.SaveTags(f.ctx, h, []store.TagInput{in}, f.clock.Unix()); err != nil {
+			f.t.Fatal(err)
+		}
+	}
+}
+
+func (f *fixture) source(alias string) *store.Source { return f.sourceOn("yt", alias) }
+
+func (f *fixture) sourceOn(platform, alias string) *store.Source {
+	ref, err := f.st.FindSource(f.ctx, platform, alias)
 	if err != nil {
 		f.t.Fatal(err)
 	}
@@ -83,12 +100,290 @@ func (f *fixture) escalations() map[string]bool {
 	return out
 }
 
-// highVolume records YouTube data showing 20 uploads a day, the behavior layer.
+// escalationsOf returns the open escalations on a source itself, kind to summary.
+func (f *fixture) escalationsOf(ref int64) map[string]string {
+	list, err := f.st.OpenEscalations(f.ctx)
+	if err != nil {
+		f.t.Fatal(err)
+	}
+	out := map[string]string{}
+	for _, e := range list {
+		if e.SourceRef == ref && e.ItemRef == 0 {
+			out[e.Kind] = e.Summary
+		}
+	}
+	return out
+}
+
+// highVolume records YouTube data showing 20 uploads a day (the behavior layer) and 50,000 subscribers.
 func (f *fixture) highVolume(alias string) {
 	ref := f.source(alias).Ref
 	if _, err := f.st.SetYouTube(f.ctx, ref, store.YouTubeInfo{ChannelID: "UCzzzzzzzzzzzzzzzzzzzzz1", Handle: alias,
-		UploadsPerDay: sql.NullFloat64{Float64: 20, Valid: true}}, f.clock.Unix()); err != nil {
+		Subscribers: sql.NullInt64{Int64: 50_000, Valid: true}, UploadsPerDay: sql.NullFloat64{Float64: 20, Valid: true}},
+		f.clock.Unix()); err != nil {
 		f.t.Fatal(err)
+	}
+}
+
+func installs(from, n int) []string {
+	var out []string
+	for i := range n {
+		out = append(out, fmt.Sprintf("install-%04d", 1000+from+i))
+	}
+	return out
+}
+
+// Six mature installs tagging a TikTok source and five of its items as slop never make it Slop.
+// Without platform labels, tags alone never count an item as AI-made for the 80% rule; with labels,
+// the source is still held at Likely slop because its audience size is unknown, until staff decide.
+// A YouTube source with API uploads a day and a known audience under 100,000 can reach Slop.
+func TestTagsAloneNeverMakeSlop(t *testing.T) {
+	f := newFixture(t)
+	six := installs(0, 6)
+	for k, src := range []struct {
+		alias string
+		label bool
+	}{{"@petfarm", false}, {"@labelfarm", true}} {
+		f.tagAs(six, "tt", "source", src.alias, "", "slop", false)
+		for i := range 5 {
+			f.tagAs(six, "tt", "item", fmt.Sprintf("74%017d", 10*k+i), src.alias, "slop", src.label)
+		}
+	}
+	f.tagAs(six, "yt", "source", "@ytfarm", "", "slop", true)
+	f.highVolume("@ytfarm")
+	f.clock = f.clock.Add(40 * 24 * time.Hour)
+	f.pass()
+	f.pass()
+
+	pet := f.sourceOn("tt", "@petfarm")
+	if pet.State.Verdict != "likely_slop" || pet.State.Signals&lf.SigMostlyAI != 0 {
+		t.Fatalf("tag-only TikTok source = %q with %v, want likely_slop without mostly_ai",
+			pet.State.Verdict, lf.SignalNames(pet.State.Signals))
+	}
+
+	label := f.sourceOn("tt", "@labelfarm")
+	if label.State.Verdict != "likely_slop" || label.State.Computed != "slop" || label.State.Signals&lf.SigMostlyAI == 0 {
+		t.Fatalf("labelled TikTok source = %+v, want likely_slop with mostly_ai, scoring slop", label.State)
+	}
+	if got := f.escalationsOf(label.Ref)["capped"]; !strings.Contains(got, "audience size unknown") {
+		t.Fatalf("capped escalation = %q", got)
+	}
+	log, err := f.st.Log(f.ctx, store.LogFilter{SourceRef: label.Ref, Limit: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(log) != 1 || !strings.Contains(log[0].Reason, "Held at Likely slop until staff review it, because its audience size is unknown.") {
+		t.Fatalf("log = %+v", log)
+	}
+	// Only a reviewer makes it Slop.
+	small := false
+	if err := f.eng.Decide(f.ctx, DecisionInput{SourceRef: label.Ref, Verdict: "slop", Reason: "Generated pet clips.", Actor: "staff",
+		Large: &small}); err != nil {
+		t.Fatal(err)
+	}
+	if v := f.sourceOn("tt", "@labelfarm").State.Verdict; v != "slop" {
+		t.Fatalf("after staff review: %q, want slop", v)
+	}
+
+	yt := f.source("@ytfarm")
+	if yt.State.Verdict != "slop" || len(f.escalationsOf(yt.Ref)) != 0 {
+		t.Fatalf("YouTube source = %+v, escalations %v; want community slop", yt.State, f.escalationsOf(yt.Ref))
+	}
+}
+
+// A mixed source: platform labels on its items never count toward its own provenance, and its items
+// keep their own list entries even when they match its verdict.
+func TestMixedSourceItems(t *testing.T) {
+	f := newFixture(t)
+	f.tagAs(installs(0, 3), "yt", "source", "@mixedchan", "", "slop", false)
+	for i := range 10 {
+		item := fmt.Sprintf("mixedItem%02d", i)
+		if i < 3 {
+			f.tagAs(installs(10+2*i, 2), "yt", "item", item, "@mixedchan", "ai_fine", true)
+		} else {
+			f.tagAs(installs(10+2*i, 2), "yt", "item", item, "@mixedchan", "not_slop", false)
+		}
+	}
+	f.highVolume("@mixedchan")
+	f.clock = f.clock.Add(40 * 24 * time.Hour)
+	f.pass()
+	if st := f.source("@mixedchan").State; st.Verdict != "" || !st.Mixed {
+		t.Fatalf("mixed source with labels only on items = %+v, want not rated", st)
+	}
+
+	// With AI evidence on the source itself it is AI-made, and its AI-made items stay listed.
+	f.tagAs(installs(40, 2), "yt", "source", "@mixedchan", "", "ai_fine", true)
+	f.pass()
+	if v := f.source("@mixedchan").State.Verdict; v != "ai_made" {
+		t.Fatalf("mixed source with its own labels = %q, want ai_made", v)
+	}
+	key, err := sign.LoadKey("../../testdata/dev-signing.key")
+	if err != nil {
+		t.Fatal(err)
+	}
+	pub := lf.NewPublisher(f.st, key, f.eng.Log)
+	if err := pub.Publish(f.ctx); err != nil {
+		t.Fatal(err)
+	}
+	body, _ := pub.Snapshot()
+	snap, err := lf.Decode(body, key.Public)
+	if err != nil {
+		t.Fatal(err)
+	}
+	listed := map[[8]byte]uint8{}
+	for _, e := range snap.Entries {
+		listed[e.Hash] = e.Verdict
+	}
+	for i := range 3 {
+		if v, ok := listed[lf.Hash(fmt.Sprintf("yt:i:mixedItem%02d", i))]; !ok || v != lf.VerdictCode("ai_made") {
+			t.Errorf("item %d: listed %v as %d, want its own ai_made entry", i, ok, v)
+		}
+	}
+}
+
+// Items tagged where the card does not show their source are scored on their own: nothing rolls up
+// to the placeholder that holds them, and an item joins its source once a tag names it.
+func TestItemsWithoutSource(t *testing.T) {
+	f := newFixture(t)
+	for i := range 5 {
+		f.tagAs(installs(0, 3), "ig", "item", fmt.Sprintf("Cexplore%d", i), "", "ai_fine", true)
+	}
+	f.clock = f.clock.Add(40 * 24 * time.Hour)
+	f.pass()
+	holder := f.sourceOn("ig", "")
+	if holder.State.Verdict != "" || holder.State.Computed != "" {
+		t.Fatalf("placeholder source = %+v, want never rated", holder.State)
+	}
+	it, err := f.st.FindItem(f.ctx, "ig", "Cexplore0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if it.State.Verdict != "ai_made" {
+		t.Fatalf("unattributed item = %+v, want its own ai_made", it.State)
+	}
+
+	f.tagAs(installs(10, 1), "ig", "item", "Cexplore0", "dreamy.pics", "slop", false)
+	it, _ = f.st.FindItem(f.ctx, "ig", "Cexplore0")
+	if src := f.sourceOn("ig", "dreamy.pics"); it.SourceRef != src.Ref {
+		t.Fatalf("item stayed under source %d, want %d", it.SourceRef, src.Ref)
+	}
+	d, err := f.st.LoadSourceData(f.ctx, it.SourceRef, f.clock.Unix())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(d.Votes) != 4 {
+		t.Fatalf("%d tags moved with the item, want 4", len(d.Votes))
+	}
+}
+
+// A curator decision made while an appeal is open is never what a denied appeal restores.
+func TestAppealDeniedIgnoresCuratorDecision(t *testing.T) {
+	f := newFixture(t)
+	f.tags(8, "@farm", "slop", true)
+	f.highVolume("@farm")
+	f.clock = f.clock.Add(40 * 24 * time.Hour)
+	f.pass()
+	ref := f.source("@farm").Ref
+	a, err := f.st.CreateAppeal(f.ctx, store.Appeal{Platform: "yt", SourceRef: ref, Email: "x@example.test", Statement: "Not slop.",
+		Code: "colander-TEST0002", SecretHash: "h", CreatedAt: f.clock.Unix()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.clock = f.clock.Add(time.Hour)
+	if err := f.eng.Decide(f.ctx, DecisionInput{SourceRef: ref, Verdict: "clear", Reason: "Looks fine to me.", Actor: "curator"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.eng.VerifyAppeal(f.ctx, a); err != nil {
+		t.Fatal(err)
+	}
+	rae, err := f.st.GrantRole(f.ctx, "rae@colander.test", "staff", f.clock.Unix())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := f.eng.ResolveAppeal(f.ctx, a, "denied", "Twenty generated uploads a day.", rae); err != nil {
+		t.Fatal(err)
+	}
+	if v := f.source("@farm").State.Verdict; v != "slop" {
+		t.Fatalf("denied appeal restored %q, want the scored slop", v)
+	}
+}
+
+// Slop and Likely slop decisions need AI evidence: the target's provenance layer, or a provenance signal.
+func TestDecisionNeedsAIEvidence(t *testing.T) {
+	f := newFixture(t)
+	f.tags(1, "@quiet", "slop", false)
+	ref := f.source("@quiet").Ref
+	for _, v := range []string{"slop", "likely_slop"} {
+		err := f.eng.Decide(f.ctx, DecisionInput{SourceRef: ref, Verdict: v, Reason: "Looks generated.", Actor: "staff"})
+		if !errors.Is(err, ErrAIEvidenceRequired) {
+			t.Fatalf("%s without AI evidence: %v", v, err)
+		}
+	}
+	if err := f.eng.Decide(f.ctx, DecisionInput{SourceRef: ref, Verdict: "slop", Reason: "The creator says so.", Actor: "staff",
+		Signals: lf.SigCreatorStatement}); err != nil {
+		t.Fatal(err)
+	}
+	// The recorded signal is not evidence for the next decision, which replaces it.
+	err := f.eng.Decide(f.ctx, DecisionInput{SourceRef: ref, Verdict: "likely_slop", Reason: "Softer.", Actor: "staff"})
+	if !errors.Is(err, ErrAIEvidenceRequired) {
+		t.Fatalf("decision leaning on the one it replaces: %v", err)
+	}
+	f.tagAs(installs(0, 2), "yt", "source", "@quiet", "", "ai_fine", true)
+	if err := f.eng.Decide(f.ctx, DecisionInput{SourceRef: ref, Verdict: "likely_slop", Reason: "Labelled.", Actor: "curator"}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// A new list verdict closes the reports filed before it, showing that verdict.
+func TestReportsFollowCommunityVerdict(t *testing.T) {
+	f := newFixture(t)
+	rp, _, err := f.st.CreateReport(f.ctx, store.ReportInput{InstallHash: "reporter", ClientID: "r", Platform: "yt", SourceID: "@farm",
+		Reason: "Generated narration.", Examples: []string{}}, f.clock.Unix())
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.tags(8, "@farm", "slop", true)
+	f.highVolume("@farm")
+	f.clock = f.clock.Add(40 * 24 * time.Hour)
+	f.pass()
+	got, err := f.st.GetReport(f.ctx, rp.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Status != "decided" || got.Verdict != "slop" {
+		t.Fatalf("report after the community verdict = %+v", got)
+	}
+}
+
+// An appeal waiting for staff to check its code by hand is kept, and escalated once it has waited
+// as long as an unverified appeal may.
+func TestPendingManualAppealEscalates(t *testing.T) {
+	f := newFixture(t)
+	f.tags(8, "@farm", "slop", true)
+	f.highVolume("@farm")
+	f.clock = f.clock.Add(40 * 24 * time.Hour)
+	f.pass()
+	ref := f.source("@farm").Ref
+	a, err := f.st.CreateAppeal(f.ctx, store.Appeal{Platform: "yt", SourceRef: ref, Email: "x@example.test", Statement: "Not slop.",
+		Code: "colander-TEST0003", SecretHash: "h", CreatedAt: f.clock.Unix()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := f.st.TransitionAppeal(f.ctx, a.ID, []string{store.AppealAwaiting}, store.AppealPendingManual, store.AppealChange{}); err != nil {
+		t.Fatal(err)
+	}
+	f.clock = f.clock.Add(13 * 24 * time.Hour)
+	f.pass()
+	if _, ok := f.escalationsOf(ref)["appeal"]; ok {
+		t.Fatal("escalated before the appeal waited 14 days")
+	}
+	f.clock = f.clock.Add(2 * 24 * time.Hour)
+	f.pass()
+	if a, _ = f.st.GetAppeal(f.ctx, a.ID); a.Status != store.AppealPendingManual {
+		t.Fatalf("appeal status %s, want it kept pending_manual", a.Status)
+	}
+	if _, ok := f.escalationsOf(ref)["appeal"]; !ok {
+		t.Fatal("no escalation for an appeal waiting 15 days")
 	}
 }
 

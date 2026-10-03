@@ -46,14 +46,19 @@ func TestRules(t *testing.T) {
 		},
 		{
 			name:    "provenance, behavior and consensus make Slop",
-			in:      Input{Votes: slop5, LabelInstalls: 2, UploadsPerDay: 14},
+			in:      Input{Votes: slop5, LabelInstalls: 2, UploadsPerDay: 14, AudienceKnown: true},
 			verdict: "slop", rule: 6,
 			signals: lf.SigPlatformLabel | lf.SigHighVolume | lf.SigCommunityConsensus,
 		},
 		{
 			name:    "80% rule over at least 5 items counts as behavior",
-			in:      Input{Votes: slop5, LabelInstalls: 2, UploadsPerDay: -1, ItemsSeen: 5, AIItems: 4},
+			in:      Input{Votes: slop5, RollupLabelInstalls: 2, UploadsPerDay: -1, ItemsSeen: 5, AIItems: 4, AudienceKnown: true},
 			verdict: "slop", rule: 6, signals: lf.SigMostlyAI,
+		},
+		{
+			name:    "a source of unknown size is capped at Likely slop and escalated",
+			in:      Input{Votes: slop5, LabelInstalls: 2, UploadsPerDay: 14},
+			verdict: "likely_slop", rule: 6, capped: "audience",
 		},
 		{
 			name:    "large source is capped at Likely slop and escalated",
@@ -67,7 +72,7 @@ func TestRules(t *testing.T) {
 		},
 		{
 			name:    "reviewed import can reach Slop",
-			in:      Input{Votes: slop5, Imported: "blocklist", Reviewed: true, UploadsPerDay: -1},
+			in:      Input{Votes: slop5, Imported: "blocklist", Reviewed: true, UploadsPerDay: -1, AudienceKnown: true},
 			verdict: "slop", rule: 6,
 		},
 		{
@@ -81,9 +86,20 @@ func TestRules(t *testing.T) {
 			verdict: "ai_made", rule: 8,
 		},
 		{
-			name:    "mixed source gets no source-level slop verdict",
-			in:      Input{Votes: slop5, LabelInstalls: 2, UploadsPerDay: 14, ItemsSeen: 10, AIItems: 3},
+			name:    "mixed source with source-level AI evidence is AI-made, never slop",
+			in:      Input{Votes: slop5, LabelInstalls: 2, UploadsPerDay: 14, ItemsSeen: 10, AIItems: 3, AudienceKnown: true},
 			verdict: "ai_made", rule: 8,
+		},
+		{
+			name: "item labels do not count toward a mixed source's provenance",
+			in: Input{Votes: votes(2, "slop", 1, lowHollow), RollupLabelInstalls: 6, UploadsPerDay: 14, ItemsSeen: 10, AIItems: 3,
+				AudienceKnown: true},
+			verdict: "", rule: 4,
+		},
+		{
+			name:    "item labels count toward provenance of a source that is not mixed",
+			in:      Input{Votes: votes(2, "slop", 1, lowHollow), RollupLabelInstalls: 2, UploadsPerDay: -1},
+			verdict: "likely_slop", rule: 7, signals: lf.SigPlatformLabel,
 		},
 		{
 			name:    "split tags are Disputed",
@@ -92,7 +108,7 @@ func TestRules(t *testing.T) {
 		},
 		{
 			name:    "verified appeal is Disputed whatever the evidence",
-			in:      Input{Votes: slop5, LabelInstalls: 2, UploadsPerDay: 14, AppealOpen: true},
+			in:      Input{Votes: slop5, LabelInstalls: 2, UploadsPerDay: 14, AppealOpen: true, AudienceKnown: true},
 			verdict: "disputed", rule: 1, signals: lf.SigOpenAppeal | lf.SigCommunityConsensus,
 		},
 		{
@@ -102,17 +118,18 @@ func TestRules(t *testing.T) {
 		},
 		{
 			name:    "staff decision wins over the computed verdict",
-			in:      Input{Votes: slop5, LabelInstalls: 2, UploadsPerDay: 14, Decision: &Decision{Verdict: "clear"}},
+			in:      Input{Votes: slop5, LabelInstalls: 2, UploadsPerDay: 14, Decision: &Decision{Verdict: "clear"}, AudienceKnown: true},
 			verdict: "clear", rule: 2, signals: lf.SigStaffReview, excluded: lf.SigCommunityConsensus,
 		},
 		{
 			name:    "staff decision none removes the rating",
-			in:      Input{Votes: slop5, LabelInstalls: 2, UploadsPerDay: 14, Decision: &Decision{Verdict: "none"}},
+			in:      Input{Votes: slop5, LabelInstalls: 2, UploadsPerDay: 14, Decision: &Decision{Verdict: "none"}, AudienceKnown: true},
 			verdict: "", rule: 2,
 		},
 		{
-			name:    "staff behavior signals count as the behavior layer",
-			in:      Input{Votes: slop5, LabelInstalls: 2, UploadsPerDay: -1, Decision: &Decision{Verdict: "slop", Signals: lf.SigLinkFunnel}},
+			name: "staff behavior signals count as the behavior layer",
+			in: Input{Votes: slop5, LabelInstalls: 2, UploadsPerDay: -1, Decision: &Decision{Verdict: "slop", Signals: lf.SigLinkFunnel},
+				AudienceKnown: true},
 			verdict: "slop", rule: 2, signals: lf.SigLinkFunnel | lf.SigStaffReview | lf.SigCommunityConsensus,
 		},
 		{
@@ -142,7 +159,7 @@ func TestRules(t *testing.T) {
 		},
 		{
 			name:    "lapsed Slop holds at Likely slop until reviewed",
-			in:      Input{Votes: slop5, LabelInstalls: 2, UploadsPerDay: 14, LapseHold: true},
+			in:      Input{Votes: slop5, LabelInstalls: 2, UploadsPerDay: 14, LapseHold: true, AudienceKnown: true},
 			verdict: "likely_slop", rule: 6, capped: "lapsed",
 		},
 		{
@@ -164,6 +181,17 @@ func TestRules(t *testing.T) {
 			verdict: "likely_slop", rule: 7,
 		},
 		{
+			name:    "items of a mixed source keep their own entries even when they match the source",
+			in:      Input{Item: true, Votes: votes(3, "ai_fine", 1, 0), LabelInstalls: 2, SourceVerdict: "ai_made", SourceMixed: true},
+			verdict: "ai_made", rule: 8,
+		},
+		{
+			name: "items of a mixed source are covered by the source under an appeal",
+			in: Input{Item: true, Votes: votes(3, "ai_fine", 1, 0), LabelInstalls: 2, SourceVerdict: "disputed", SourceMixed: true,
+				AppealOpen: true},
+			verdict: "", rule: 1,
+		},
+		{
 			name:    "large and imported caps never apply to items",
 			in:      Input{Item: true, Votes: slop5, LabelInstalls: 2, Large: true, Imported: "blocklist", SourceBehavior: Layer{Met: true}},
 			verdict: "slop", rule: 6,
@@ -180,6 +208,9 @@ func TestRules(t *testing.T) {
 			if r.Verdict != c.verdict || r.Rule != c.rule || r.CappedBy != c.capped {
 				t.Fatalf("got verdict %q rule %d capped %q, want %q rule %d capped %q",
 					r.Verdict, r.Rule, r.CappedBy, c.verdict, c.rule, c.capped)
+			}
+			if c.capped != "" && r.Computed != "slop" {
+				t.Errorf("computed %q, want slop: the queue shows what scoring says before the cap", r.Computed)
 			}
 			if r.Signals&c.signals != c.signals {
 				t.Errorf("signals %v missing some of %v", lf.SignalNames(r.Signals), lf.SignalNames(c.signals))

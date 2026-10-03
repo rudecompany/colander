@@ -82,6 +82,8 @@ func communityReason(r Result, in Input, importSource string) string {
 		out += " Held at Likely slop until staff review it, because it has a large audience."
 	case r.CappedBy == "imported":
 		out += " Held at Likely slop until staff review the imported entry."
+	case r.CappedBy == "audience":
+		out += " Held at Likely slop until staff review it, because its audience size is unknown."
 	case r.CappedBy == "lapsed":
 		out += " Held at Likely slop until staff review it again, because the earlier verdict expired."
 	}
@@ -95,6 +97,8 @@ func escalationSummary(cappedBy string) string {
 		return "Scores as Slop, held at Likely slop: large source needs staff review"
 	case "imported":
 		return "Scores as Slop, held at Likely slop: imported entry not yet reviewed"
+	case "audience":
+		return "Scores as Slop, held at Likely slop: audience size unknown, needs staff review"
 	default:
 		return "Verdict expired and scores as Slop again: held at Likely slop until reviewed"
 	}

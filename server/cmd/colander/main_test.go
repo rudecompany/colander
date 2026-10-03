@@ -106,6 +106,27 @@ func TestSeedDev(t *testing.T) {
 	if open, _ := st.OpenReports(ctx); len(open) == 0 {
 		t.Error("no open reports")
 	}
+	// The curator journey in e2e/ decides Fitness Tips AI from an open report in the side panel.
+	ref, _ := st.FindSource(ctx, "ig", "fitness.tips.ai")
+	if reports, _ := st.ReportsBySource(ctx, ref); len(reports) != 1 || reports[0].Status != "open" {
+		t.Errorf("Fitness Tips AI reports = %+v, want one open report", reports)
+	}
+	var decided int
+	if err := st.DB.QueryRowContext(ctx, `SELECT count(*) FROM reports WHERE status = 'decided'`).Scan(&decided); err != nil || decided == 0 {
+		t.Errorf("no report closed with a verdict (err %v)", err)
+	}
+	escalations := map[string]bool{}
+	if list, err := st.OpenEscalations(ctx); err == nil {
+		for _, e := range list {
+			escalations[e.Kind+": "+e.Summary] = true
+		}
+	}
+	for _, want := range []string{"capped: Scores as Slop, held at Likely slop: audience size unknown, needs staff review",
+		"appeal: Appeal filed more than 14 days ago still waits for staff to check its code"} {
+		if !escalations[want] {
+			t.Errorf("no open escalation %q in %v", want, escalations)
+		}
+	}
 
 	engine := scoring.NewEngine(st, nil, nil, log)
 	if n, err := engine.FullPass(ctx); err != nil || n != 0 {
@@ -129,7 +150,8 @@ func TestSeedDev(t *testing.T) {
 	for key, want := range map[string]string{
 		"yt:s:@aihistorydaily": "slop", "yt:s:UCaaaaaaaaaaaaaaaaaaaaaa": "slop", "yt:s:@catrescuetales": "likely_slop",
 		"tt:s:@sloppyfacts": "disputed", "ig:s:handmadepottery": "clear", "fb:i:pfbid02abcDEF": "slop",
-		"tt:i:7412345678901234567": "likely_slop",
+		"tt:i:7412345678901234567": "likely_slop", "tt:s:@petpalsai": "slop", "fb:s:100087654321098": "likely_slop",
+		"yt:s:@galaxyfacts4k": "ai_made", "yt:i:demoGF00000": "ai_made", // a mixed source keeps its items' entries
 	} {
 		e, ok := byHash[lf.Hash(key)]
 		if !ok || lf.Verdicts[e.Verdict] != want {

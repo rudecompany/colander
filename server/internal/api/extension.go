@@ -1,8 +1,6 @@
 package api
 
 import (
-	"bytes"
-	"encoding/json"
 	"errors"
 	"net/http"
 	"regexp"
@@ -31,7 +29,10 @@ func installHash(w http.ResponseWriter, r *http.Request) (string, bool) {
 	return h, true
 }
 
-var clientIDPattern = regexp.MustCompile(`^[A-Za-z0-9-]{1,64}$`)
+var (
+	clientIDPattern = regexp.MustCompile(`^[A-Za-z0-9-]{1,64}$`)
+	uuidPattern     = regexp.MustCompile(`^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$`)
+)
 
 type tagJSON struct {
 	ClientID      string   `json:"client_id"`
@@ -53,11 +54,12 @@ type rejection struct {
 }
 
 // validateTag returns the stored form of a tag, or a machine-readable rejection code.
+// invalid_field marks a field the contract forbids in that place (6.2).
 func validateTag(t tagJSON, now time.Time) (store.TagInput, string) {
 	in := store.TagInput{ClientID: t.ClientID, Platform: t.Platform, TargetType: t.TargetType, Verdict: t.Verdict,
 		PlatformLabel: t.PlatformLabel, ExtVersion: t.ExtVersion, CreatedAt: now.Unix()}
-	if !clientIDPattern.MatchString(t.ClientID) {
-		return in, "invalid_client_id"
+	if !uuidPattern.MatchString(t.ClientID) {
+		return in, "invalid_field"
 	}
 	if !validPlatform(t.Platform) {
 		return in, "invalid_platform"
@@ -68,16 +70,19 @@ func validateTag(t tagJSON, now time.Time) (store.TagInput, string) {
 		if in.TargetID, ok = CanonicalSource(t.Platform, t.TargetID); !ok {
 			return in, "invalid_target"
 		}
+		if t.SourceID != "" {
+			return in, "invalid_field"
+		}
 		in.SourceID = in.TargetID
 	case "item":
 		if in.TargetID, ok = CanonicalItem(t.Platform, t.TargetID); !ok {
 			return in, "invalid_target"
 		}
-		if t.SourceID == "" {
-			return in, "missing_source"
-		}
-		if in.SourceID, ok = CanonicalSource(t.Platform, t.SourceID); !ok {
-			return in, "invalid_source"
+		// Without a source (the card did not show it) the item is scored on its own and rolls up nowhere.
+		if t.SourceID != "" {
+			if in.SourceID, ok = CanonicalSource(t.Platform, t.SourceID); !ok {
+				return in, "invalid_source"
+			}
 		}
 	default:
 		return in, "invalid_target"
@@ -97,6 +102,9 @@ func validateTag(t tagJSON, now time.Time) (store.TagInput, string) {
 		in.Tests = tests
 	case "ai_fine", "not_slop":
 		// Type and tests only mean something on a slop tag.
+		if (t.SlopType != nil && *t.SlopType != "") || len(t.Tests) > 0 {
+			return in, "invalid_field"
+		}
 	default:
 		return in, "invalid_verdict"
 	}
@@ -288,13 +296,16 @@ func (s *Server) getReports(w http.ResponseWriter, r *http.Request) {
 
 const trialLength = 14 * 24 * time.Hour
 
+// trialPrefix is the ID prefix of every install trial token's sub; paid tokens carry an account ID.
+const trialPrefix = "trl"
+
 func (s *Server) postTrial(w http.ResponseWriter, r *http.Request) {
 	install, ok := installHash(w, r)
 	if !ok {
 		return
 	}
 	now := s.Now()
-	claims := sign.PlanClaims{V: 1, Sub: store.NewID("trl"), Plan: "plus", Trial: true, IAT: now.Unix(), EXP: now.Add(trialLength).Unix()}
+	claims := sign.PlanClaims{V: 1, Sub: store.NewID(trialPrefix), Plan: "plus", Trial: true, IAT: now.Unix(), EXP: now.Add(trialLength).Unix()}
 	err := s.Store.StartTrial(r.Context(), install, claims.Sub, claims.IAT, claims.EXP)
 	if errors.Is(err, store.ErrConflict) {
 		writeError(w, http.StatusConflict, "trial_used", "This install has already used its free trial.")
@@ -310,89 +321,4 @@ func (s *Server) postTrial(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"token": token})
-}
-
-// plan verifies "Authorization: Plan <token>" with the server's own key.
-func (s *Server) plan(w http.ResponseWriter, r *http.Request) (sign.PlanClaims, bool) {
-	token, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Plan ")
-	if !ok {
-		writeError(w, http.StatusUnauthorized, "plan_required", "Settings sync needs a Plus plan token.")
-		return sign.PlanClaims{}, false
-	}
-	c, err := sign.VerifyPlanToken(s.Key.Public, token, s.Now())
-	if errors.Is(err, sign.ErrExpired) {
-		writeError(w, http.StatusUnauthorized, "plan_expired", "The Plus plan behind this token has ended.")
-		return c, false
-	}
-	if err != nil {
-		writeError(w, http.StatusUnauthorized, "invalid_plan", "The plan token is not valid.")
-		return c, false
-	}
-	return c, true
-}
-
-const syncLimit = 64 << 10
-
-func syncBody(b store.SyncBlob) map[string]any {
-	var data json.RawMessage
-	if b.Data != "" {
-		data = json.RawMessage(b.Data)
-	}
-	return map[string]any{"version": b.Version, "data": data, "updated_at": optTime(b.UpdatedAt)}
-}
-
-func (s *Server) getSync(w http.ResponseWriter, r *http.Request) {
-	c, ok := s.plan(w, r)
-	if !ok {
-		return
-	}
-	b, err := s.Store.GetSync(r.Context(), c.Sub)
-	if err != nil {
-		s.internalError(w, r, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, syncBody(b))
-}
-
-func (s *Server) putSync(w http.ResponseWriter, r *http.Request) {
-	c, ok := s.plan(w, r)
-	if !ok {
-		return
-	}
-	var body struct {
-		Version *int64          `json:"version"`
-		Data    json.RawMessage `json:"data"`
-	}
-	if !decode(w, r, syncLimit+1024, &body) {
-		return
-	}
-	data := bytes.TrimSpace(body.Data)
-	switch {
-	case body.Version == nil || *body.Version < 0:
-		writeError(w, http.StatusBadRequest, "invalid_version", "version must be the version you last saw (0 when none).")
-		return
-	case len(data) == 0 || data[0] != '{':
-		writeError(w, http.StatusBadRequest, "invalid_data", "data must be a JSON object.")
-		return
-	case len(data) > syncLimit:
-		writeError(w, http.StatusRequestEntityTooLarge, "too_large", "Synced settings must be at most 64 KB.")
-		return
-	}
-	var compact bytes.Buffer
-	if err := json.Compact(&compact, data); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_data", "data must be a JSON object.")
-		return
-	}
-	b, err := s.Store.PutSync(r.Context(), c.Sub, *body.Version, compact.String(), s.Now().Unix())
-	if errors.Is(err, store.ErrConflict) {
-		out := syncBody(b)
-		out["error"] = apiError{Code: "version_conflict", Message: "Settings changed elsewhere. Merge with the current copy and try again."}
-		writeJSON(w, http.StatusConflict, out)
-		return
-	}
-	if err != nil {
-		s.internalError(w, r, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, syncBody(b))
 }
