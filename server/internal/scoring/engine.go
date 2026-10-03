@@ -108,6 +108,8 @@ func (e *Engine) requestPublish() {
 
 // FullPass expires stale appeals, refreshes YouTube data and rescores every source.
 // It returns the number of sources and items whose stored state changed.
+// ponytail: every pass rescores every source (about 1 second per 13,000 sources); score only
+// sources with new tags, due rescores or changed reputation once passes approach a minute.
 func (e *Engine) FullPass(ctx context.Context) (int, error) {
 	now := e.Now()
 	if _, err := e.Store.ExpireAppeals(ctx, now.Add(-e.Th.AppealExpiry).Unix(), now.Unix()); err != nil {
@@ -121,6 +123,7 @@ func (e *Engine) FullPass(ctx context.Context) (int, error) {
 	}
 	e.mu.Lock()
 	defer e.mu.Unlock()
+	start := time.Now()
 	reps, err := e.Store.Reputation(ctx, 0)
 	if err != nil {
 		return 0, err
@@ -140,9 +143,7 @@ func (e *Engine) FullPass(ctx context.Context) (int, error) {
 		}
 		changed += n
 	}
-	if changed > 0 {
-		e.Log.Info("scoring pass", "sources", len(refs), "changes", changed)
-	}
+	e.Log.Info("scoring pass", "sources", len(refs), "changes", changed, "ms", time.Since(start).Milliseconds())
 	// Always ask: the publisher only writes a sequence when the list really differs.
 	e.requestPublish()
 	return changed, nil
@@ -161,13 +162,12 @@ func (e *Engine) Rescore(ctx context.Context, ref int64, cause *Cause) error {
 
 // Evaluation is the scoring outcome for one source and its items, without writing anything.
 type Evaluation struct {
-	Data      *store.SourceData
-	Input     Input
-	Result    Result
-	Items     []ItemEvaluation
-	Burst     bool
-	lapsing   bool
-	itemVotes map[int64]int
+	Data    *store.SourceData
+	Input   Input
+	Result  Result
+	Items   []ItemEvaluation
+	Burst   bool
+	lapsing bool
 }
 
 // ItemEvaluation is the scoring outcome for one item.
@@ -208,9 +208,6 @@ func (ev *Evaluation) Evidence() Evidence {
 	return out
 }
 
-// ItemTagCounts returns the number of installs that tagged an item.
-func (ev *Evaluation) ItemTagCounts(itemRef int64) int { return ev.itemVotes[itemRef] }
-
 // Explain evaluates a source with fresh reputation data and returns the outcome without writing.
 func (e *Engine) Explain(ctx context.Context, ref int64) (*Evaluation, error) {
 	reps, err := e.Store.Reputation(ctx, ref)
@@ -248,7 +245,7 @@ func isLapsing(st store.State, now int64) bool {
 func (e *Engine) evaluate(d *store.SourceData, reps map[string]store.Rep, now time.Time) *Evaluation {
 	weight := e.weights(reps, now)
 	src := d.Source
-	ev := &Evaluation{Data: d, itemVotes: map[int64]int{}}
+	ev := &Evaluation{Data: d}
 
 	// Tag sums are per target (9.2): the source's sums come from tags on the source itself, one per
 	// install even when it tagged two aliases. Item evidence reaches the source only through platform
@@ -291,7 +288,6 @@ func (e *Engine) evaluate(d *store.SourceData, reps map[string]store.Rep, now ti
 				in.LabelInstalls++
 			}
 		}
-		ev.itemVotes[it.Ref] = len(in.Votes)
 		r := e.Th.Score(in)
 		dec := in.Decision
 		switch {
@@ -435,7 +431,7 @@ func (e *Engine) scoreSource(ctx context.Context, ref int64, reps map[string]sto
 			return changed, err
 		}
 		want := map[string]string{}
-		if it.Result.Rule == 6 && it.Result.CappedBy == "lapsed" {
+		if it.Result.Rule == 6 && it.Result.CappedBy == "lapsed" && it.Result.Verdict != "" {
 			want["lapsed"] = "Item " + it.Item.ItemID + ": " + escalationSummary("lapsed")
 		}
 		if err := e.Store.SyncEscalations(ctx, ref, it.Item.Ref, []string{"lapsed"}, want, now.Unix()); err != nil {
@@ -453,7 +449,7 @@ func (e *Engine) scoreSource(ctx context.Context, ref int64, reps map[string]sto
 		want["lapsed"] = escalationSummary("lapsed")
 	}
 	if d.OpenReports >= e.Th.ReportEscalation {
-		want["reports"] = fmt.Sprintf("%d open reports", d.OpenReports)
+		want["reports"] = fmt.Sprintf("%d or more open reports", e.Th.ReportEscalation)
 	}
 	err = e.Store.SyncEscalations(ctx, ref, 0, []string{"capped", "lapsed", "reports"}, want, now.Unix())
 	return changed, err

@@ -91,9 +91,7 @@ func (s *Server) postAppeal(w http.ResponseWriter, r *http.Request) {
 		tooMany(w, retry)
 		return
 	}
-	r.SetPathValue("platform", body.Platform)
-	r.SetPathValue("source_id", body.SourceID)
-	ref, found := s.lookupSource(w, r)
+	ref, found := s.findSource(w, r, body.Platform, body.SourceID)
 	if !found {
 		return
 	}

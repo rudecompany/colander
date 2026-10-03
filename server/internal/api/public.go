@@ -100,10 +100,14 @@ func toSource(ev *scoring.Evaluation) sourceJSON {
 	return out
 }
 
-// lookupSource resolves a platform and any alias to a source ref, answering 404 not_rated itself.
+// lookupSource resolves the {platform} and {source_id} path values to a source ref.
 func (s *Server) lookupSource(w http.ResponseWriter, r *http.Request) (int64, bool) {
-	platform := r.PathValue("platform")
-	id, ok := CanonicalSource(platform, r.PathValue("source_id"))
+	return s.findSource(w, r, r.PathValue("platform"), r.PathValue("source_id"))
+}
+
+// findSource resolves a platform and any alias to a source ref, answering 404 not_rated itself.
+func (s *Server) findSource(w http.ResponseWriter, r *http.Request, platform, alias string) (int64, bool) {
+	id, ok := CanonicalSource(platform, alias)
 	if ok {
 		ref, err := s.Store.FindSource(r.Context(), platform, id)
 		if err == nil {
