@@ -334,6 +334,27 @@ func TestDecisionNeedsAIEvidence(t *testing.T) {
 	}
 }
 
+// A new list verdict closes the reports filed before it, showing that verdict.
+func TestReportsFollowCommunityVerdict(t *testing.T) {
+	f := newFixture(t)
+	rp, _, err := f.st.CreateReport(f.ctx, store.ReportInput{InstallHash: "reporter", ClientID: "r", Platform: "yt", SourceID: "@farm",
+		Reason: "Generated narration.", Examples: []string{}}, f.clock.Unix())
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.tags(8, "@farm", "slop", true)
+	f.highVolume("@farm")
+	f.clock = f.clock.Add(40 * 24 * time.Hour)
+	f.pass()
+	got, err := f.st.GetReport(f.ctx, rp.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Status != "decided" || got.Verdict != "slop" {
+		t.Fatalf("report after the community verdict = %+v", got)
+	}
+}
+
 // A staff Slop decision lapses after 90 days; scored again as Slop, the source holds at Likely
 // slop with an escalation until staff look again.
 func TestExpiryLapse(t *testing.T) {

@@ -272,6 +272,12 @@ func (s *Store) ApplyUpdate(ctx context.Context, u Update) (bool, error) {
 			if _, err := tx.ExecContext(ctx, `UPDATE sources SET mixed = ? WHERE id = ?`, st.Mixed, id); err != nil {
 				return err
 			}
+			// A report follows its source: once the list verdict changes after it was filed, it shows that verdict (6.3).
+			if st.Verdict != "" && st.Verdict != cur && u.Log != nil {
+				if err := closeReports(ctx, tx, u.SourceRef, st.Verdict, u.Log.Reason, u.Log.At); err != nil {
+					return err
+				}
+			}
 		}
 		if u.Log != nil {
 			if err := addLog(ctx, tx, u.Log); err != nil {

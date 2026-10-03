@@ -582,6 +582,32 @@ func TestCuratorLimitsAndReviewerToken(t *testing.T) {
 	expect(t, h.do("POST", "/v1/review/sources/yt/@smallslopfarm/decision", clear, "Cookie", staff, "X-Colander-CSRF", "1"), http.StatusOK)
 }
 
+// A report follows its source: once the list verdict changes after it was filed, it shows that verdict.
+func TestReportFollowsCommunityVerdict(t *testing.T) {
+	h := newHarness(t)
+	w := h.do("POST", "/v1/reports", map[string]any{"client_id": uuid("r-1"), "platform": "yt", "source_id": "@farm",
+		"reason": "Generated narration.", "ext_version": "1.0.0"}, installAuth(1)...)
+	expect(t, w, http.StatusCreated)
+	for range 24 {
+		expect(t, h.do("GET", "/v1/list/snapshot", nil), http.StatusOK)
+	}
+	var tags []any
+	for i := range 3 {
+		tg := tag(fmt.Sprintf("ai-%d", i), "source", "@farm", "", "ai_fine")
+		expect(t, h.do("POST", "/v1/tags", map[string]any{"tags": []any{tg}}, installAuth(10+i)...), http.StatusOK)
+		tags = append(tags, tg)
+	}
+	if _, err := h.srv.Engine.FullPass(h.ctx); err != nil {
+		t.Fatal(err)
+	}
+	w = h.do("GET", "/v1/reports", nil, installAuth(1)...)
+	expect(t, w, http.StatusOK)
+	list := decodeBody[struct{ Reports []reportJSON }](t, w).Reports
+	if len(list) != 1 || list[0].Status != "ai_made" || list[0].Verdict == nil || *list[0].Verdict != "ai_made" || list[0].Protects != 1 {
+		t.Fatalf("report after the community verdict = %+v", list)
+	}
+}
+
 func TestCORS(t *testing.T) {
 	h := newHarness(t)
 	w := h.do("OPTIONS", "/v1/tags", nil, "Origin", "chrome-extension://abc", "Access-Control-Request-Method", "POST")

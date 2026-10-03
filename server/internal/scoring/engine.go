@@ -468,7 +468,12 @@ func (e *Engine) scoreSource(ctx context.Context, ref int64, reps map[string]sto
 	case r.Rule == 6 && r.CappedBy != "":
 		want["capped"] = escalationSummary(r.CappedBy)
 	}
-	if d.OpenReports >= e.Th.ReportEscalation {
+	// A new list verdict closes the open reports (6.3), so they no longer count.
+	openReports := d.OpenReports
+	if ev.Result.Verdict != "" && ev.Result.Verdict != src.State.Verdict {
+		openReports = 0
+	}
+	if openReports >= e.Th.ReportEscalation {
 		want["reports"] = fmt.Sprintf("%d or more open reports", e.Th.ReportEscalation)
 	}
 	err = e.Store.SyncEscalations(ctx, ref, 0, []string{"capped", "lapsed", "reports"}, want, now.Unix())
