@@ -30,7 +30,10 @@ test('choose strictness and platforms, then Chrome asks for those sites only', a
 	await page.getByRole('button', { name: 'Start using Colander' }).click();
 	const requested = await page.evaluate(() => (window as unknown as { requested: { origins: string[] }[] }).requested);
 	expect(requested).toEqual([{ origins: ['*://www.youtube.com/*', '*://m.youtube.com/*', '*://www.tiktok.com/*', '*://m.tiktok.com/*'] }]);
-	expect((await opened).url()).toBe('https://www.youtube.com/');
+	// YouTube opens in a new tab. Its first navigation can start before routes attach, and nothing
+	// leaves the machine, so check where Chrome sent the tab rather than what loaded in it.
+	await opened;
+	await expect.poll(() => ext.ctl.evaluate(async () => (await chrome.tabs.query({})).map((t) => t.pendingUrl ?? t.url))).toContain('https://www.youtube.com/');
 	await expect(page.getByRole('heading', { name: 'You are set' })).toBeVisible();
 	const s = await ext.storage<{ platforms: Record<string, boolean>; strictness: string; onboarded: boolean }>('settings');
 	expect(s.platforms).toEqual({ yt: true, tt: true, ig: false, fb: false });
