@@ -36,6 +36,8 @@ test('an open appeal is explained instead of offering another', async ({ page })
 	await page.goto('/s/yt/@numisnotes');
 	const notice = page.getByRole('status').filter({ hasText: 'An appeal is open' });
 	await expect(notice).toContainText('The channel is shown to everyone while staff review it');
+	// Already Disputed, so the counter-tag hint has nothing left to do.
+	await expect(page.getByRole('heading', { name: 'Not the creator?' })).toHaveCount(0);
 });
 
 test('a Clear source says there is nothing to appeal', async ({ page }) => {

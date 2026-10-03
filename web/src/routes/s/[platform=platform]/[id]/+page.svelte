@@ -317,7 +317,7 @@
 					</dl>
 				</section>
 
-				{#if verdict !== 'clear'}
+				{#if verdict !== 'clear' && verdict !== 'disputed'}
 					<section class="card-quiet" aria-labelledby="wrong-title">
 						<h2 class="facts-title" id="wrong-title">Not the creator?</h2>
 						<p class="t-body muted">
