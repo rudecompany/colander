@@ -8,7 +8,9 @@ import { SigningKey } from '@colander/shared/signing';
 import { jsonError, notFound, ROUTE_HEADER, setCache } from '../http';
 import { Jobs, prune, STATUS, type DumpStatus, type PassStatus, type PublishStatus } from '../jobs';
 import { Publisher, r2Sequence } from '../list/publisher';
+import { routes as apiRoutes } from '../routes/server';
 import { Engine } from '../scoring/engine';
+import { YouTube } from '../youtube';
 import { Db } from './db';
 import { latestSequence, setListRequests, SNAPSHOT_KEY, type Sequence } from './list';
 import { migrate } from './migrations';
@@ -55,7 +57,8 @@ export class Store extends DurableObject<Env> {
 	/** The clock in unix milliseconds. Tests replace it. */
 	now = (): number => Date.now();
 	private key?: Promise<SigningKey>;
-	private readonly routes: Route[];
+	/** The internal router's table; the Cache-Control test checks it covers every route. */
+	readonly routes: Route[];
 
 	constructor(ctx: DurableObjectState, env: Env) {
 		super(ctx, env);
@@ -69,6 +72,8 @@ export class Store extends DurableObject<Env> {
 		this.engine = new Engine(this.db, this.jobs, () => this.now());
 		this.jobs.definePass(this.engine);
 		this.jobs.define('rescore', (ref) => (this.engine.rescore(Number(ref)), null));
+		const youtubeKey = (env as Env & { YOUTUBE_API_KEY?: string }).YOUTUBE_API_KEY;
+		if (youtubeKey) this.engine.youtube = new YouTube(youtubeKey, this.db, () => this.now());
 		// Runs before any request or RPC is delivered. A failure resets the object, so no request
 		// ever sees a half-migrated schema.
 		void ctx.blockConcurrencyWhile(async () => {
@@ -91,7 +96,8 @@ export class Store extends DurableObject<Env> {
 		// forwards only when COLANDER_DEV=1.
 		this.routes = [
 			route('GET', '/v1/list/delta', (_, url) => this.listDelta(url)),
-			route('GET', '/v1/list/snapshot', () => this.listSnapshot())
+			route('GET', '/v1/list/snapshot', () => this.listSnapshot()),
+			...apiRoutes({ store: this, key: this.signingKey }).map(([method, pattern, handler]) => route(method, pattern, handler))
 		];
 	}
 

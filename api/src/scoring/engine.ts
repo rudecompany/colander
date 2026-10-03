@@ -20,6 +20,7 @@ import {
 	type Update,
 	type Vote as StoreVote
 } from '../store/verdicts';
+import type { YouTube } from '../youtube';
 import { communityReason, escalationSummary } from './reason';
 import { Default, newInput, SlopTypes, slopTypeCode, sumVotes, type Decision, type Input, type Result, type Thresholds, type Vote } from './rules';
 
@@ -114,6 +115,8 @@ const sameState = (a: State, b: State): boolean =>
 
 export class Engine implements PassScorer {
 	th: Thresholds = Default;
+	/** Set when YOUTUBE_API_KEY is: each pass starts by refreshing stale YouTube sources. */
+	youtube?: YouTube;
 	/** The full pass's reputation, loaded at its start and kept across its chunks. A restart mid-pass reloads it. */
 	private passReps?: Map<string, Rep>;
 
@@ -126,12 +129,19 @@ export class Engine implements PassScorer {
 	) {}
 
 	/**
-	 * The start of a full pass (Go's FullPass before its loop): expires stale appeals and loads the
-	 * reputation every source of the pass is scored with.
-	 * YouTube enrichment (network, outside any transaction) joins here with the YouTube port.
+	 * The start of a full pass (Go's FullPass before its loop): expires stale appeals, refreshes up
+	 * to 50 stale YouTube sources and loads the reputation every source of the pass is scored with.
 	 */
 	async startPass(now: number): Promise<void> {
 		expireAppeals(this.db, unix(now - this.th.appealExpiry), unix(now));
+		if (this.youtube) {
+			// Network calls happen outside any transaction. A failure only delays enrichment.
+			try {
+				await this.youtube.enrichStale(this.db, now, 50);
+			} catch (err) {
+				console.warn(JSON.stringify({ message: 'youtube enrichment failed', error: String(err) }));
+			}
+		}
 		this.passReps = reputation(this.db, 0);
 	}
 
