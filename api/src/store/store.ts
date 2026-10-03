@@ -5,9 +5,14 @@
 import { DurableObject } from 'cloudflare:workers';
 import { b64decode } from '@colander/shared/bytes';
 import { SigningKey } from '@colander/shared/signing';
+import { Auth } from '../auth';
+import { Billing, billingConfig } from '../billing';
 import { jsonError, notFound, ROUTE_HEADER, setCache } from '../http';
 import { Jobs, prune, STATUS, type DumpStatus, type PassStatus, type PublishStatus } from '../jobs';
 import { Publisher, r2Sequence } from '../list/publisher';
+import { Mailer } from '../mail';
+import { accountRoutes } from '../routes/account';
+import { billingRoutes } from '../routes/billing';
 import { Engine } from '../scoring/engine';
 import { Db } from './db';
 import { latestSequence, setListRequests, SNAPSHOT_KEY, type Sequence } from './list';
@@ -52,6 +57,10 @@ export class Store extends DurableObject<Env> {
 	readonly jobs: Jobs;
 	readonly publisher: Publisher;
 	readonly engine: Engine;
+	readonly auth: Auth;
+	/** Tests replace the mailer and billing, as Go's tests set Server.Mail and Server.Billing. */
+	mailer: Mailer;
+	billing: Billing;
 	/** The clock in unix milliseconds. Tests replace it. */
 	now = (): number => Date.now();
 	private key?: Promise<SigningKey>;
@@ -69,6 +78,9 @@ export class Store extends DurableObject<Env> {
 		this.engine = new Engine(this.db, this.jobs, () => this.now());
 		this.jobs.definePass(this.engine);
 		this.jobs.define('rescore', (ref) => (this.engine.rescore(Number(ref)), null));
+		this.auth = new Auth(this.db, () => this.now(), env.COLANDER_DEV === '1');
+		this.mailer = new Mailer(env);
+		this.billing = new Billing(this.db, billingConfig(env));
 		// Runs before any request or RPC is delivered. A failure resets the object, so no request
 		// ever sees a half-migrated schema.
 		void ctx.blockConcurrencyWhile(async () => {
@@ -91,7 +103,8 @@ export class Store extends DurableObject<Env> {
 		// forwards only when COLANDER_DEV=1.
 		this.routes = [
 			route('GET', '/v1/list/delta', (_, url) => this.listDelta(url)),
-			route('GET', '/v1/list/snapshot', () => this.listSnapshot())
+			route('GET', '/v1/list/snapshot', () => this.listSnapshot()),
+			...[...accountRoutes(this, env), ...billingRoutes(this)].map(([method, pattern, handler]) => route(method, pattern, handler))
 		];
 	}
 
@@ -177,7 +190,7 @@ export class Store extends DurableObject<Env> {
 		});
 	}
 
-	private signingKey = (): Promise<SigningKey> =>
+	readonly signingKey = (): Promise<SigningKey> =>
 		(this.key ??= SigningKey.fromSeed(b64decode(this.env.COLANDER_SIGNING_KEY)).catch((err) => {
 			this.key = undefined;
 			throw err;
