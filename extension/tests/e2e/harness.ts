@@ -122,7 +122,9 @@ export const test = base.extend<{ ext: Ext }>({
 			colorScheme: colorScheme ?? 'light',
 			reducedMotion: reducedMotion ?? 'no-preference',
 			viewport: { width: 1280, height: 900 },
-			args: [`--disable-extensions-except=${DIST}`, `--load-extension=${DIST}`]
+			// Nothing leaves the machine: routes answer for the platforms and the API, and a request they
+			// do not catch (a tab the extension opens can navigate before routing attaches) fails to resolve.
+			args: [`--disable-extensions-except=${DIST}`, `--load-extension=${DIST}`, '--host-resolver-rules=MAP * ~NOTFOUND']
 		});
 		const api = new MockApi();
 		await ctx.route(`${API}/**`, (r) => api.handle(r));
