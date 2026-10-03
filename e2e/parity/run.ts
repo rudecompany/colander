@@ -6,10 +6,11 @@
 //   pnpm -C e2e parity
 //
 // The story: the seed-dev demo data; the operator commands (grant-role, sign-config, import-seed);
-// then the clock moves on 15, 40, 80 and 200 days, so appeals expire, the burst freeze thaws,
-// old list versions leave the 30-day window, and reviewer and community verdicts lapse and are
-// scored again. Each step ends the way the Go server starts (publish, full pass, publish), which
-// the Worker does through /__dev/settle.
+// a day later the HTTP API (api.ts), with every answer compared too; then the clock moves on
+// 15, 40, 66, 80, 95 and 200 days, so appeals expire, the burst freeze thaws, old list versions
+// leave the 30-day window, and reviewer and community verdicts lapse and are scored again. Each
+// step ends the way the Go server starts (publish, full pass, publish), which the Worker does
+// through /__dev/settle.
 //
 // Go listens on 127.0.0.1:8845 and the Worker on 8846 (inspector 8946); PARITY_GO_PORT and
 // PARITY_WORKER_PORT move them. State and logs live in e2e/.run/parity, and report.json there
@@ -17,6 +18,7 @@
 import { execFileSync, spawn, type ChildProcess } from 'node:child_process';
 import { existsSync, mkdirSync, openSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { apiStory, type Side } from './api.ts';
 import { devKey, diffState, explainLists, readList, renumber, state } from './compare.ts';
 
 // node:sqlite still announces itself as experimental on Node 24; that notice is expected here.
@@ -103,7 +105,9 @@ const goEnv = (now: number) => ({
 	COLANDER_TEST_NOW: iso(now),
 	COLANDER_ADDR: `127.0.0.1:${GO_PORT}`,
 	COLANDER_PUBLIC_URL: GO,
-	COLANDER_SITE_DIR: resolve(RUN, 'no-site')
+	COLANDER_SITE_DIR: resolve(RUN, 'no-site'),
+	// The harness names the client address, as Cloudflare does for the Worker.
+	COLANDER_CLIENT_IP_HEADER: 'CF-Connecting-IP'
 });
 
 /** Runs an operator command of the Go binary; returns whether it succeeded. */
@@ -322,8 +326,38 @@ async function main(): Promise<void> {
 	head = next;
 	await compareListEdges(step, head, first);
 
-	// 3. Time passes: expiries, thaws, the 30-day window and lapses.
-	for (const days of [15, 40, 80, 200]) {
+	// 3. A day later, the HTTP API: tags, reports, trials, sync, appeals and reviewers.
+	now = T0 + DAY;
+	step = 'api';
+	console.log(`\n${step} at ${iso(now)}`);
+	await go.stop();
+	await worker.stop();
+	await startGo(now);
+	await startWorker(now);
+	await settleWorker();
+	const sides: [Side, Side] = [
+		{ name: 'go', origin: GO, log: goLog },
+		{ name: 'worker', origin: WORKER, log: worker.log }
+	];
+	await apiStory(
+		sides,
+		iso(now),
+		(what, ok, detail) => check(step, what, ok, detail),
+		async () => {
+			await go.stop();
+			await startGo(now);
+			await settleWorker();
+		},
+		async (name) => {
+			next = await compare(name);
+			await compareDelta(name, 'delta from the step before', head, next);
+			head = next;
+		}
+	);
+	await compareListEdges(step, head, first);
+
+	// 4. Time passes: expiries, thaws, the 30-day window and lapses.
+	for (const days of [15, 40, 66, 80, 95, 200]) {
 		now = T0 + days * DAY;
 		step = `+${days} days`;
 		console.log(`\n${step} at ${iso(now)}`);
