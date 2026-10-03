@@ -113,7 +113,10 @@ sent by the website's account page through externally_connectable, or pasted her
 			return;
 		}
 		saving = true;
-		const body: DecisionInput = { verdict, reason: reason.trim(), signals, slop_type: verdict === 'slop' || verdict === 'likely_slop' ? slopType : null, tests, large };
+		const body: DecisionInput = { verdict, reason: reason.trim(), signals, slop_type: verdict === 'slop' || verdict === 'likely_slop' ? slopType : null, tests };
+		// Only staff may change "large", and the server refuses a curator's decision that carries it
+		// at all, so it goes along only when the switch was changed.
+		if (large !== detail.source.large) body.large = large;
 		try {
 			await review.decideSource(token.value!, open.platform, open.source_id, body);
 			saved = 'Decision recorded. It reaches every install with the next list update.';

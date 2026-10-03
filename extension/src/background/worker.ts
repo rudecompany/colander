@@ -316,6 +316,8 @@ export async function refreshEntitlement(): Promise<void> {
 
 const SYNCED = ['strictness', 'perPlatform', 'topics', 'allows', 'blocks', 'plainChips'] as const;
 type SyncState = { version: number; dirty: boolean };
+/** Synced settings just taken from the server, so the change listener does not echo them back. */
+let pulled = '';
 
 async function syncState(): Promise<SyncState> {
 	return { version: 0, dirty: false, ...((await chrome.storage.local.get(K.syncState))[K.syncState] as Partial<SyncState>) };
@@ -369,8 +371,15 @@ export async function pullSettings(): Promise<void> {
 		// An empty blob ({"version": 0, "data": null}) means this account has not synced yet.
 		if (!remote?.data) return pushSettings();
 		if (remote.version > st.version) {
-			await updateSettings((cur) => mergeRemote(cur, remote.data ?? {}, false));
-			await chrome.storage.local.set({ [K.syncState]: { version: remote.version, dirty: false } });
+			const merged = await updateSettings((cur) => {
+				const m = mergeRemote(cur, remote.data ?? {}, false);
+				pulled = JSON.stringify(pick(m));
+				return m;
+			});
+			// Send back only what this browser adds, such as allows the server did not have yet.
+			const ahead = SYNCED.some((k) => JSON.stringify(merged[k]) !== JSON.stringify(remote.data?.[k]));
+			await chrome.storage.local.set({ [K.syncState]: { version: remote.version, dirty: ahead } });
+			if (ahead) await pushSettings();
 		}
 	} catch {
 		// Offline: try again on the next hourly sync.
@@ -486,8 +495,12 @@ export function startWorker(): void {
 			if (PLATFORMS.some((p) => before.platforms[p] !== after.platforms[p])) await reconcileScripts();
 			if (before.pausedSites.join() !== after.pausedSites.join()) await refreshIcons();
 			if (SYNCED.some((k) => JSON.stringify(before[k]) !== JSON.stringify(after[k]))) {
-				await chrome.storage.local.set({ [K.syncState]: { ...(await syncState()), dirty: true } });
-				void pushSettings();
+				const fromServer = JSON.stringify(pick(after)) === pulled;
+				pulled = '';
+				if (!fromServer) {
+					await chrome.storage.local.set({ [K.syncState]: { ...(await syncState()), dirty: true } });
+					void pushSettings();
+				}
 			}
 		}
 		if (area === 'local' && changes[K.status]) await refreshIcons();
