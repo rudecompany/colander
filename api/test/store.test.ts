@@ -92,7 +92,7 @@ describe('tx', () => {
 
 describe('router', () => {
 	it('answers unknown routes with the contract 404 and names the route for the edge log', async () => {
-		const res = await env.STORE.getByName('router').fetch('https://store/v1/sources/yt/@someone');
+		const res = await env.STORE.getByName('router').fetch('https://store/v1/nothing/yt/@someone');
 		expect(res.status).toBe(404);
 		expect(await res.json()).toEqual({ error: { code: 'not_found', message: 'There is no API route for this method and path.' } });
 		expect(res.headers.get('x-colander-route')).toBe('GET (unmatched)');

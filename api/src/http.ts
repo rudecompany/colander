@@ -15,7 +15,11 @@ const POLICIES = {
 	/** List 200 and 204: 15 s at the edge keeps a verified appeal under a minute to installs. */
 	list: { client: 'public, max-age=60', edge: 'public, max-age=15, stale-if-error=86400' },
 	/** Delta 410: briefly at the edge only; without a header the edge would keep it 3 minutes. */
-	gone: { client: 'no-store', edge: 'public, max-age=15' }
+	gone: { client: 'no-store', edge: 'public, max-age=15' },
+	/** The signed adapter configuration; the extension rarely asks and keeps its bundled copy meanwhile. */
+	config: { client: 'public, max-age=300', edge: 'public, max-age=300, stale-if-error=86400' },
+	/** GETs that are the same for every viewer: /v1/sources/*, /v1/log, /v1/stats and /v1/supporters. */
+	public: { client: 'public, max-age=60', edge: 'public, max-age=60' }
 } as const;
 
 export type CachePolicy = keyof typeof POLICIES;

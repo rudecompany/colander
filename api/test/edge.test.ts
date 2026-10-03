@@ -244,7 +244,7 @@ describe('forwarding to the Store', () => {
 			['ms', 'route', 'status'],
 			['ms', 'route', 'status']
 		]);
-		expect(lines.map((l) => JSON.parse(l).route)).toEqual(['GET (unmatched)', 'GET /v1/list/delta']);
+		expect(lines.map((l) => JSON.parse(l).route)).toEqual(['GET /v1/sources/:platform/:source_id', 'GET /v1/list/delta']);
 		for (const secret of ['private-channel-name', 'secret', '198.51.100.9', '1700000123']) expect(lines.join('\n')).not.toContain(secret);
 	});
 

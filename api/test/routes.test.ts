@@ -1,0 +1,926 @@
+// The API routes of the extension, the public site, appeals and review (src/routes/*): the port of
+// server/internal/api/api_test.go and ids_test.go for these routes, run against a fresh Store
+// inside workerd through its own router, plus the strict request decoding of respond.go. The
+// edge in front of them (CORS, cache headers on every route) is covered in cache.test.ts.
+import { env } from 'cloudflare:workers';
+import { runInDurableObject } from 'cloudflare:test';
+import { afterEach, beforeEach, describe, expect, inject, it, vi } from 'vitest';
+import { b64url, hex } from '@colander/shared/bytes';
+import { keyHash, targetKey } from '@colander/shared/ids';
+import { decodeEntry, ENTRY, verifyList } from '@colander/shared/list';
+import { importKeys, issuePlanToken, SigningKey, verifyPlanToken } from '@colander/shared/signing';
+import { b64decode } from '@colander/shared/bytes';
+import { sha256 } from '@colander/shared/sha256';
+import { utf8 } from '@colander/shared/bytes';
+import type { Appeal, LogEntry, QueueItem, Report, ReviewSourceResponse, Source, Stats } from '@colander/shared/api';
+import { IP_HASH_HEADER } from '../src/http';
+import { CookieName, hashToken, newToken, normalizeEmail } from '../src/routes/auth';
+import { canonicalSource } from '../src/routes/ids';
+import { decode, goFixed, goQuote, parseRFC3339 } from '../src/routes/respond';
+import { unix } from '../src/scoring/engine';
+import { createSession, grantRole, setDisplayName, setReviewerToken } from '../src/store/accounts';
+import { saveSubscription } from '../src/store/billing';
+import { latestSequence, setListRequests, SNAPSHOT_KEY } from '../src/store/list';
+import { saveAdapterConfig } from '../src/store/misc';
+import { ensureSource, findItem, findSource, getSource, setYouTube } from '../src/store/sources';
+import { loadSourceData } from '../src/store/verdicts';
+import type { Store } from '../src/store/store';
+
+const files = inject('contract');
+const keys = await importKeys([files.devPublicKey]);
+const ORIGIN = 'https://getcolander.com';
+const DAY = 24 * 3_600_000;
+
+type Body = Record<string, unknown>;
+type ErrorBody = { error: { code: string; message: string } };
+
+/** Go's harness: one Store, a clock the Store reads, and requests through the Store's router. */
+class Harness {
+	constructor(
+		readonly store: Store,
+		public clock = Date.UTC(2026, 9, 1, 12)
+	) {
+		store.now = () => this.clock;
+	}
+
+	get db() {
+		return this.store.db;
+	}
+
+	/** Sends a request as the edge forwards it, from one client address unless headers say otherwise. */
+	do(method: string, path: string, body?: unknown, headers: Record<string, string> = {}): Promise<Response> {
+		const h = new Headers(headers);
+		if (!h.has(IP_HASH_HEADER)) h.set(IP_HASH_HEADER, 'hash-of-192.0.2.1');
+		return this.store.fetch(
+			new Request(ORIGIN + path, { method, headers: h, body: body === undefined ? undefined : typeof body === 'string' ? body : JSON.stringify(body) })
+		);
+	}
+
+	async publish(): Promise<number> {
+		await this.store.publisher.publish(this.clock);
+		return latestSequence(this.db).seq;
+	}
+
+	/** A session for email, as the magic link flow leaves one: the Cookie header. */
+	signIn(email: string): string {
+		const account = grantRole(this.db, email, 'member', unix(this.clock));
+		return this.session(account.id);
+	}
+
+	session(accountId: string): string {
+		const { raw, hash } = newToken();
+		createSession(this.db, hash, accountId, unix(this.clock), unix(this.clock + 30 * DAY));
+		return `${CookieName}=${raw}`;
+	}
+
+	/** Signs in a curator or staff member; the headers a review console write sends. */
+	reviewer(email: string, role: string, name: string): Record<string, string> {
+		const account = grantRole(this.db, email, role, unix(this.clock));
+		setDisplayName(this.db, account.id, name);
+		return { Cookie: this.session(account.id), 'X-Colander-CSRF': '1' };
+	}
+
+	/** A reviewer bearer token, as POST /v1/account/reviewer-token issues one. */
+	bearer(email: string, role: string, name: string): Record<string, string> {
+		const account = grantRole(this.db, email, role, unix(this.clock));
+		setDisplayName(this.db, account.id, name);
+		const { raw, hash } = newToken();
+		setReviewerToken(this.db, account.id, hash, unix(this.clock));
+		return { Authorization: 'Bearer ' + raw };
+	}
+}
+
+let stores = 0;
+const withHarness = (fn: (h: Harness) => Promise<void>) =>
+	runInDurableObject(env.STORE.getByName(`routes-${++stores}`), async (store: Store) => {
+		const h = new Harness(store);
+		await h.publish();
+		await fn(h);
+	});
+
+const code = async (res: Response): Promise<string> => ((await res.json()) as ErrorBody).error.code;
+
+async function expectStatus(res: Response | Promise<Response>, status: number): Promise<Response> {
+	const r = await res;
+	if (r.status !== status) throw new Error(`status ${r.status}, want ${status}: ${await r.text()}`);
+	return r;
+}
+
+function installID(n: number): string {
+	const b = new Uint8Array(16);
+	b[0] = n;
+	return b64url(b);
+}
+
+const installAuth = (n: number) => ({ Authorization: 'Install ' + installID(n) });
+
+/** A readable test name as a stable client UUID. */
+function uuid(name: string): string {
+	const h = hex(sha256(utf8(name)));
+	return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20, 32)}`;
+}
+
+function tag(clientId: string, targetType: string, target: string, source: string, verdict: string): Body {
+	const t: Body = {
+		client_id: uuid(clientId),
+		platform: 'yt',
+		target_type: targetType,
+		target_id: target,
+		verdict,
+		platform_label: true,
+		created_at: '2026-10-01T11:00:00Z',
+		ext_version: '1.0.0'
+	};
+	if (source !== '') t.source_id = source;
+	return t;
+}
+
+/** A delta's entries by hex hash. */
+async function listEntries(res: Response) {
+	const file = await verifyList(new Uint8Array(await res.arrayBuffer()), keys);
+	const out = new Map<string, ReturnType<typeof decodeEntry>>();
+	for (let i = 0; i < file.count; i++) out.set(hex(file.entries.subarray(i * ENTRY, i * ENTRY + 8)), decodeEntry(file.entries, i * ENTRY));
+	return { file, entries: out };
+}
+
+const sourceHash = (alias: string) => hex(keyHash(targetKey('yt', 'source', alias)));
+
+beforeEach(async () => {
+	// Every Store in this file publishes to the same bucket; start each test without a snapshot.
+	await env.LISTS.delete(SNAPSHOT_KEY);
+	vi.spyOn(console, 'log').mockImplementation(() => {});
+});
+
+afterEach(() => vi.restoreAllMocks());
+
+describe('tags', () => {
+	it('validates each tag and rejects unknown fields (TestTagValidation)', () =>
+		withHarness(async (h) => {
+			const unknown = `{"tags":[{"client_id":"a","platform":"yt","target_type":"source","target_id":"@x","verdict":"slop","page_url":"https://example.com"}]}`;
+			const w = await expectStatus(h.do('POST', '/v1/tags', unknown, installAuth(1)), 400);
+			expect(await w.json()).toEqual({
+				error: { code: 'unknown_field', message: 'The request has a field this API does not accept: "page_url".' }
+			});
+			await expectStatus(h.do('POST', '/v1/tags', { tags: [tag('a', 'source', '@x', '', 'slop')] }), 401);
+
+			const notUUID = { ...tag('x', 'source', '@somechannel', '', 'slop'), client_id: 'not-a-uuid' };
+			const typedNotSlop = { ...tag('typed-not-slop', 'source', '@somechannel', '', 'not_slop'), slop_type: 'filler' };
+			const testedAIFine = { ...tag('tested-ai-fine', 'item', 'abcdefghijk', '@somechannel', 'ai_fine'), tests: ['hollow'] };
+			const emptyExtras = { ...tag('empty-extras', 'source', '@other', '', 'not_slop'), slop_type: '', tests: [] };
+			const res = await expectStatus(
+				h.do(
+					'POST',
+					'/v1/tags',
+					{
+						tags: [
+							tag('ok-1', 'item', 'abcdefghijk', '@somechannel', 'slop'),
+							tag('no-source', 'item', 'bcdefghijkl', '', 'slop'), // the card did not show the source
+							emptyExtras,
+							tag('bad-target', 'source', 'not a handle', '', 'slop'),
+							tag('bad-verdict', 'source', '@somechannel', '', 'fake'),
+							notUUID,
+							typedNotSlop,
+							testedAIFine,
+							tag('source-with-source', 'source', '@somechannel', '@somechannel', 'slop')
+						]
+					},
+					installAuth(1)
+				),
+				200
+			);
+			expect(await res.json()).toEqual({
+				accepted: [uuid('ok-1'), uuid('no-source'), uuid('empty-extras')],
+				rejected: [
+					{ client_id: uuid('bad-target'), error: 'invalid_target' },
+					{ client_id: uuid('bad-verdict'), error: 'invalid_verdict' },
+					{ client_id: 'not-a-uuid', error: 'invalid_field' },
+					{ client_id: uuid('typed-not-slop'), error: 'invalid_field' },
+					{ client_id: uuid('tested-ai-fine'), error: 'invalid_field' },
+					{ client_id: uuid('source-with-source'), error: 'invalid_field' }
+				]
+			});
+			// The item without a source is kept apart from every real source.
+			const it = findItem(h.db, 'yt', 'bcdefghijkl');
+			expect(getSource(h.db, it!.sourceRef)!.canonicalId).toBe('');
+		}));
+
+	it('rejects malformed fields with their own codes', () =>
+		withHarness(async (h) => {
+			const res = await expectStatus(
+				h.do(
+					'POST',
+					'/v1/tags',
+					{
+						tags: [
+							{ ...tag('p', 'source', '@a', '', 'slop'), platform: 'xx' },
+							{ ...tag('s', 'item', 'abcdefghijk', 'not a handle', 'slop') },
+							{ ...tag('t', 'source', '@a', '', 'slop'), slop_type: 'spam' },
+							{ ...tag('u', 'source', '@a', '', 'slop'), tests: ['boring'] },
+							{ ...tag('c', 'source', '@a', '', 'slop'), created_at: 'yesterday' },
+							{ ...tag('e', 'source', '@a', '', 'slop'), ext_version: 'x'.repeat(33) }
+						]
+					},
+					installAuth(1)
+				),
+				200
+			);
+			const body = (await res.json()) as { rejected: { error: string }[] };
+			expect(body.rejected.map((r) => r.error)).toEqual([
+				'invalid_platform',
+				'invalid_source',
+				'invalid_slop_type',
+				'invalid_tests',
+				'invalid_created_at',
+				'invalid_ext_version'
+			]);
+			await expectStatus(h.do('POST', '/v1/tags', { tags: [] }, installAuth(1)), 400);
+			const big = Array.from({ length: 51 }, (_, i) => tag(`b${i}`, 'source', '@a', '', 'slop'));
+			expect(await code(await h.do('POST', '/v1/tags', { tags: big }, installAuth(1)))).toBe('invalid_batch');
+			expect(await code(await h.do('POST', '/v1/tags', { tags: [] }, { Authorization: 'Install short' }))).toBe('invalid_install');
+		}));
+
+	it('keeps the latest tag per install and target (TestTagIdempotencyAndLatestWins)', () =>
+		withHarness(async (h) => {
+			const send = (clientId: string, verdict: string, at: string) =>
+				expectStatus(h.do('POST', '/v1/tags', { tags: [{ ...tag(clientId, 'source', '@somechannel', '', verdict), created_at: at }] }, installAuth(1)), 200);
+			await send('c1', 'slop', '2026-10-01T10:00:00Z');
+			await send('c1', 'slop', '2026-10-01T10:00:00Z'); // a retry
+			await send('c2', 'not_slop', '2026-10-01T10:30:00Z');
+			await send('c0', 'ai_fine', '2026-10-01T09:00:00Z'); // older, delivered late: ignored
+			const ref = findSource(h.db, 'yt', '@somechannel')!;
+			const votes = loadSourceData(h.db, ref, unix(h.clock))!.votes;
+			expect(votes.map((v) => v.verdict)).toEqual(['not_slop']);
+		}));
+
+	it('limits tags per install (TestTagRateLimit)', () =>
+		withHarness(async (h) => {
+			const batch = (prefix: string) => ({
+				tags: Array.from({ length: 40 }, (_, i) => tag(`${prefix}-${i}`, 'source', `@channel${i}`, '', 'slop'))
+			});
+			await expectStatus(h.do('POST', '/v1/tags', batch('a'), installAuth(1)), 200);
+			const w = await expectStatus(h.do('POST', '/v1/tags', batch('b'), installAuth(1)), 429);
+			expect(Number(w.headers.get('Retry-After'))).toBeGreaterThan(0);
+			expect(await code(w)).toBe('rate_limited');
+			// Another install is not affected, and the first recovers as time passes.
+			await expectStatus(h.do('POST', '/v1/tags', batch('c'), installAuth(2)), 200);
+			h.clock += 60_000;
+			await expectStatus(h.do('POST', '/v1/tags', batch('d'), installAuth(1)), 200);
+		}));
+});
+
+describe('reports', () => {
+	it('follows a report from filing to a staff verdict (TestReportLifecycle)', () =>
+		withHarness(async (h) => {
+			const report = {
+				client_id: 'r-1',
+				platform: 'yt',
+				source_id: '@AncientWondersDaily',
+				source_name: 'Ancient Wonders Daily AI',
+				examples: ['abcdefghijk'],
+				reason: 'Posts 40 AI history videos a day with the same voice.',
+				slop_type: 'filler',
+				tests: ['mass_produced'],
+				ext_version: '1.0.0'
+			};
+			const w = await expectStatus(h.do('POST', '/v1/reports', report, installAuth(1)), 201);
+			const created = ((await w.json()) as { report: Report }).report;
+			expect(created).toMatchObject({ status: 'under_review', verdict: null, source_id: '@ancientwondersdaily', protects: 0 });
+			// The same client_id again is the same report.
+			const again = await h.do('POST', '/v1/reports', report, installAuth(1));
+			expect(((await again.json()) as { report: Report }).report.id).toBe(created.id);
+			// 48 list syncs in the last 24 hours means 2 active installs.
+			setListRequests(h.db, Math.floor(unix(h.clock) / 3600), 48);
+
+			const staff = h.reviewer('rae@colander.test', 'staff', 'Rae');
+			const decision = {
+				verdict: 'slop',
+				reason: 'Staff review confirmed mass-produced narration.',
+				signals: ['high_volume', 'community_consensus', 'watermark'],
+				slop_type: 'filler',
+				tests: ['mass_produced', 'low_effort']
+			};
+			await expectStatus(h.do('POST', '/v1/review/sources/yt/@ancientwondersdaily/decision', decision, staff), 200);
+
+			const list = ((await (await expectStatus(h.do('GET', '/v1/reports', undefined, installAuth(1)), 200)).json()) as { reports: Report[] }).reports;
+			expect(list).toHaveLength(1);
+			expect(list[0]).toMatchObject({ status: 'slop', verdict: 'slop', protects: 2 });
+			// Another install sees none of them.
+			const other = (await (await h.do('GET', '/v1/reports', undefined, installAuth(2))).json()) as { reports: Report[] };
+			expect(other.reports).toHaveLength(0);
+			// The decision is public, with the reviewer's reason and name.
+			const page = (await (await expectStatus(h.do('GET', '/v1/sources/yt/@ancientwondersdaily'), 200)).json()) as {
+				source: Source;
+				history: LogEntry[];
+			};
+			expect(page.source.verdict).toBe('slop');
+			expect(page.history).toHaveLength(1);
+			expect(page.history[0]).toMatchObject({ actor: 'staff', actor_name: 'Rae' });
+			// Hand-set community_consensus is ignored; staff_review is computed.
+			expect(page.source.signals).toContain('staff_review');
+			expect(page.source.signals).not.toContain('community_consensus');
+		}));
+
+	it('validates reports', () =>
+		withHarness(async (h) => {
+			const base = { client_id: 'r-2', platform: 'yt', source_id: '@chan', reason: 'Generated.', ext_version: '1.0.0' };
+			const cases: [Body, string][] = [
+				[{ ...base, client_id: 'not a uuid!' }, 'invalid_client_id'],
+				[{ ...base, platform: 'xx' }, 'invalid_platform'],
+				[{ ...base, reason: '   ' }, 'invalid_reason'],
+				[{ ...base, reason: 'é'.repeat(501) }, 'invalid_reason'],
+				[{ ...base, source_name: 'n'.repeat(121) }, 'invalid_source_name'],
+				[{ ...base, examples: ['abcdefghijk', 'abcdefghijl', 'abcdefghijm', 'abcdefghijn'] }, 'invalid_examples'],
+				[{ ...base, ext_version: 'v'.repeat(33) }, 'invalid_ext_version'],
+				[{ ...base, source_id: 'no handle' }, 'invalid_source'],
+				[{ ...base, examples: ['short'] }, 'invalid_examples'],
+				[{ ...base, slop_type: 'spam' }, 'invalid_slop_type'],
+				[{ ...base, tests: ['boring'] }, 'invalid_tests']
+			];
+			for (const [body, want] of cases) expect(await code(await expectStatus(h.do('POST', '/v1/reports', body, installAuth(1)), 400)), want).toBe(want);
+			// 500 characters, counted as characters, not bytes, are fine.
+			await expectStatus(h.do('POST', '/v1/reports', { ...base, reason: 'é'.repeat(500) }, installAuth(1)), 201);
+		}));
+
+	it('limits reports to 20 per install per day', () =>
+		withHarness(async (h) => {
+			for (let i = 0; i < 20; i++) {
+				await expectStatus(h.do('POST', '/v1/reports', { client_id: `r-${i}`, platform: 'yt', source_id: '@chan', reason: 'Generated.' }, installAuth(1)), 201);
+			}
+			const w = await expectStatus(h.do('POST', '/v1/reports', { client_id: 'r-20', platform: 'yt', source_id: '@chan', reason: 'Generated.' }, installAuth(1)), 429);
+			expect(Number(w.headers.get('Retry-After'))).toBe(4320);
+		}));
+
+	it('follows the community verdict once it lands (TestReportFollowsCommunityVerdict)', () =>
+		withHarness(async (h) => {
+			await expectStatus(
+				h.do('POST', '/v1/reports', { client_id: uuid('r-1'), platform: 'yt', source_id: '@farm', reason: 'Generated narration.', ext_version: '1.0.0' }, installAuth(1)),
+				201
+			);
+			setListRequests(h.db, Math.floor(unix(h.clock) / 3600), 24);
+			for (let i = 0; i < 3; i++) {
+				await expectStatus(h.do('POST', '/v1/tags', { tags: [tag(`ai-${i}`, 'source', '@farm', '', 'ai_fine')] }, installAuth(10 + i)), 200);
+			}
+			await h.store.engine.fullPass(h.clock);
+			const list = ((await (await h.do('GET', '/v1/reports', undefined, installAuth(1))).json()) as { reports: Report[] }).reports;
+			expect(list).toHaveLength(1);
+			expect(list[0]).toMatchObject({ status: 'ai_made', verdict: 'ai_made', protects: 1 });
+		}));
+});
+
+describe('appeals', () => {
+	it('runs an appeal from filing to upheld (TestAppealFlow)', () =>
+		withHarness(async (h) => {
+			const channel = 'UCzzzzzzzzzzzzzzzzzzzz42';
+			const ref = ensureSource(h.db, 'yt', '@oceanmysteries', 'Ocean Mysteries', unix(h.clock));
+			setYouTube(h.db, ref, { channelId: channel, handle: '@oceanmysteries', title: '', subscribers: null, uploadsPerDay: null }, unix(h.clock));
+			const staff = h.reviewer('rae@colander.test', 'staff', 'Rae');
+			await expectStatus(
+				h.do(
+					'POST',
+					'/v1/review/sources/yt/@oceanmysteries/decision',
+					{ verdict: 'slop', reason: 'Generated narration over stock clips.', signals: ['templated', 'watermark'] },
+					staff
+				),
+				200
+			);
+			h.clock += 1000;
+			const seq = await h.publish();
+
+			// The creator appeals; the secret comes back once.
+			const w = await expectStatus(
+				h.do('POST', '/v1/appeals', { platform: 'yt', source_id: channel, email: 'Studio@Example.test', statement: 'We film our own dives.' }),
+				201
+			);
+			const created = (await w.json()) as { appeal: Appeal; secret: string };
+			expect(created.appeal).toMatchObject({ status: 'awaiting_verification', source_id: channel, source_name: 'Ocean Mysteries', outcome: null });
+			expect(created.appeal.code).toMatch(/^colander-[23456789ABCDEFGHJKMNPQRSTVWXYZ]{8}$/);
+			await expectStatus(h.do('GET', `/v1/appeals/${created.appeal.id}?secret=wrong`), 404);
+			await expectStatus(h.do('GET', `/v1/appeals/${created.appeal.id}?secret=${created.secret}`), 200);
+			// Without a YouTube key, the creator's verify request moves the appeal to staff.
+			const v = await expectStatus(h.do('POST', `/v1/appeals/${created.appeal.id}/verify`, { secret: created.secret }), 200);
+			expect(((await v.json()) as { appeal: Appeal }).appeal.status).toBe('pending_manual');
+
+			// Staff confirm the code: Disputed at once, and the next delta carries it for every alias.
+			await expectStatus(h.do('POST', `/v1/review/appeals/${created.appeal.id}/verify`, undefined, staff), 200);
+			h.clock += 1000;
+			await h.publish();
+			const delta = await expectStatus(h.do('GET', `/v1/list/delta?since=${seq}`), 200);
+			const { entries } = await listEntries(delta);
+			for (const alias of [channel, '@oceanmysteries']) {
+				expect(entries.get(sourceHash(alias)), alias).toMatchObject({ verdict: 'disputed' });
+				expect(entries.get(sourceHash(alias))!.signals).toContain('open_appeal');
+			}
+
+			// Staff uphold it: Clear, with the reasoning in the public log.
+			const reason = 'The creator films original dive footage.';
+			const r = await expectStatus(h.do('POST', `/v1/review/appeals/${created.appeal.id}/resolve`, { outcome: 'upheld', reasoning: reason }, staff), 200);
+			const resolved = ((await r.json()) as { appeal: Appeal }).appeal;
+			expect(resolved).toMatchObject({ status: 'upheld', outcome: 'upheld', reasoning: reason });
+			expect(resolved.resolved_at).not.toBeNull();
+			const entry = ((await (await h.do('GET', '/v1/log?limit=1')).json()) as { entries: LogEntry[] }).entries[0]!;
+			expect(entry).toMatchObject({ to: 'clear', from: 'disputed', actor: 'appeal' });
+			expect(entry.reason).toContain(reason);
+			h.clock += 1000;
+			const seq2 = await h.publish();
+			const coalesced = await listEntries(await h.do('GET', `/v1/list/delta?since=${seq}`));
+			expect(coalesced.entries.get(sourceHash('@oceanmysteries'))).toMatchObject({ verdict: 'clear' });
+			expect(seq2).toBeGreaterThan(seq);
+			// A closed appeal cannot be verified again.
+			expect(await code(await h.do('POST', `/v1/appeals/${created.appeal.id}/verify`, { secret: created.secret }))).toBe('appeal_closed');
+		}));
+
+	it('validates appeals and limits them per client address', () =>
+		withHarness(async (h) => {
+			const base = { platform: 'yt', source_id: '@nobody', email: 'a@example.test', statement: 'Mine.' };
+			expect(await code(await h.do('POST', '/v1/appeals', { ...base, platform: 'xx' }))).toBe('invalid_platform');
+			expect(await code(await h.do('POST', '/v1/appeals', { ...base, email: 'A <a@example.test>' }))).toBe('invalid_email');
+			expect(await code(await h.do('POST', '/v1/appeals', { ...base, statement: ' ' }))).toBe('invalid_statement');
+			expect(await code(await h.do('POST', '/v1/appeals', { ...base, statement: 'x'.repeat(2001) }))).toBe('invalid_statement');
+			// Unknown and unrated sources are 404 not_rated, and spend the quota as in Go.
+			expect(await code(await expectStatus(h.do('POST', '/v1/appeals', base), 404))).toBe('not_rated');
+			ensureSource(h.db, 'yt', '@unrated', '', unix(h.clock));
+			const unrated = await expectStatus(h.do('POST', '/v1/appeals', { ...base, source_id: '@unrated' }), 404);
+			expect(((await unrated.json()) as ErrorBody).error.message).toBe('This source has no verdict to appeal.');
+			for (let i = 0; i < 3; i++) await expectStatus(h.do('POST', '/v1/appeals', base), 404);
+			const limited = await expectStatus(h.do('POST', '/v1/appeals', base), 429);
+			expect(Number(limited.headers.get('Retry-After'))).toBe(17280);
+			// Another address still may.
+			await expectStatus(h.do('POST', '/v1/appeals', base, { [IP_HASH_HEADER]: 'hash-of-another' }), 404);
+			expect(await code(await h.do('GET', '/v1/appeals/apl_nothing?secret=x'))).toBe('not_found');
+		}));
+});
+
+describe('lists', () => {
+	it('answers deltas with 200, 204 and 410 (TestDeltaStatuses)', () =>
+		withHarness(async (h) => {
+			const seq = latestSequence(h.db).seq;
+			const head = await expectStatus(h.do('GET', `/v1/list/delta?since=${seq}`), 204);
+			expect(head.headers.get('Cache-Control')).toBe('public, max-age=60');
+
+			const staff = h.reviewer('rae@colander.test', 'staff', 'Rae');
+			await expectStatus(
+				h.do('POST', '/v1/review/sources/tt/@petpalsai/decision', { verdict: 'slop', reason: 'Generated pet clips around the clock.', signals: ['creator_statement'] }, staff),
+				200
+			);
+			await h.publish();
+			const w = await expectStatus(h.do('GET', `/v1/list/delta?since=${seq}`), 200);
+			const sequence = w.headers.get('X-Colander-Sequence');
+			const { file } = await listEntries(w);
+			expect(file).toMatchObject({ kind: 'delta', base: seq, count: 1 });
+			expect(sequence).toBe(String(file.sequence));
+			await expectStatus(h.do('GET', '/v1/list/delta?since=999'), 410);
+			await expectStatus(h.do('GET', '/v1/list/delta?since=0'), 410);
+			// Sequences older than 30 days are gone too.
+			h.clock += 31 * DAY;
+			await expectStatus(h.do('GET', `/v1/list/delta?since=${seq}`), 410);
+
+			const snap = await expectStatus(h.do('GET', '/v1/list/snapshot'), 200);
+			expect(snap.headers.get('Cache-Control')).toBe('public, max-age=60');
+			const snapshot = await verifyList(new Uint8Array(await snap.arrayBuffer()), keys);
+			expect(snapshot).toMatchObject({ kind: 'snapshot', count: 1 });
+		}));
+
+	it('serves the signed adapter configuration, or 404 so the extension keeps its own', () =>
+		withHarness(async (h) => {
+			expect(await code(await expectStatus(h.do('GET', '/v1/config/adapters'), 404))).toBe('no_config');
+			saveAdapterConfig(h.db, 7, files.configEnvelope, unix(h.clock));
+			const w = await expectStatus(h.do('GET', '/v1/config/adapters'), 200);
+			expect(w.headers.get('Content-Type')).toBe('application/json');
+			expect(w.headers.get('Cache-Control')).toBe('public, max-age=300');
+			expect(w.headers.get('Cloudflare-CDN-Cache-Control')).toBe('public, max-age=300, stale-if-error=86400');
+			expect(await w.text()).toBe(files.configEnvelope);
+		}));
+});
+
+describe('public pages', () => {
+	it('pages through the decision log and checks its filters', () =>
+		withHarness(async (h) => {
+			const staff = h.reviewer('rae@colander.test', 'staff', 'Rae');
+			for (const alias of ['@one', '@two', '@three']) {
+				await expectStatus(h.do('POST', `/v1/review/sources/yt/${alias}/decision`, { verdict: 'ai_made', reason: 'Labelled AI.', signals: ['platform_label'] }, staff), 200);
+			}
+			await expectStatus(h.do('POST', '/v1/review/sources/tt/@four/decision', { verdict: 'clear', reason: 'Original.' }, staff), 200);
+			const first = (await (await expectStatus(h.do('GET', '/v1/log?limit=2&platform=yt'), 200)).json()) as { entries: LogEntry[]; next_cursor: string };
+			expect(first.entries.map((e) => e.target_id)).toEqual(['@three', '@two']);
+			expect(first.next_cursor).toBe(first.entries[1]!.id);
+			const rest = (await (await h.do('GET', `/v1/log?limit=2&platform=yt&cursor=${first.next_cursor}`)).json()) as { entries: LogEntry[]; next_cursor: null };
+			expect(rest.entries.map((e) => e.target_id)).toEqual(['@one']);
+			expect(rest.next_cursor).toBeNull();
+			const clear = (await (await h.do('GET', '/v1/log?verdict=clear')).json()) as { entries: LogEntry[] };
+			expect(clear.entries.map((e) => e.target_id)).toEqual(['@four']);
+			expect(clear.entries[0]).toMatchObject({ platform: 'tt', from: null, to: 'clear', actor: 'staff', actor_name: 'Rae', source_name: null });
+			for (const [query, want] of [
+				['platform=xx', 'invalid_platform'],
+				['verdict=removed', 'invalid_verdict'],
+				['cursor=log_0', 'invalid_cursor'],
+				['cursor=abc', 'invalid_cursor'],
+				['limit=0', 'invalid_limit'],
+				['limit=x', 'invalid_limit']
+			]) {
+				expect(await code(await expectStatus(h.do('GET', `/v1/log?${query}`), 400)), query).toBe(want);
+			}
+		}));
+
+	it('shows a source by any alias, with its evidence, and 404 not_rated for unknown ones', () =>
+		withHarness(async (h) => {
+			const ref = ensureSource(h.db, 'yt', '@farm', 'The Farm', unix(h.clock));
+			setYouTube(h.db, ref, { channelId: 'UCzzzzzzzzzzzzzzzzzzzz45', handle: '@farm', title: '', subscribers: 1000, uploadsPerDay: 14.237 }, unix(h.clock));
+			for (let i = 0; i < 3; i++) {
+				await expectStatus(h.do('POST', '/v1/tags', { tags: [tag(`ai-${i}`, 'source', '@farm', '', 'ai_fine')] }, installAuth(10 + i)), 200);
+			}
+			await h.store.engine.fullPass(h.clock);
+			const byHandle = (await (await expectStatus(h.do('GET', '/v1/sources/yt/@Farm'), 200)).json()) as { source: Source; history: LogEntry[] };
+			const byID = (await (await expectStatus(h.do('GET', '/v1/sources/yt/UCzzzzzzzzzzzzzzzzzzzz45'), 200)).json()) as { source: Source };
+			expect(byID.source).toEqual(byHandle.source);
+			expect(byHandle.source).toMatchObject({
+				platform: 'yt',
+				id: 'UCzzzzzzzzzzzzzzzzzzzz45',
+				aliases: ['UCzzzzzzzzzzzzzzzzzzzz45', '@farm'],
+				name: 'The Farm',
+				verdict: 'ai_made',
+				large: false,
+				imported: false,
+				attribution: null,
+				appeal_open: false,
+				evidence: { taggers: 3, tags: { slop: 0, ai_fine: 3, not_slop: 0 }, items_seen: 0, ai_item_share: null, uploads_per_day: 14.24 }
+			});
+			expect(byHandle.source.updated_at).toBe('2026-10-01T12:00:00Z');
+			expect(byHandle.history[0]).toMatchObject({ actor: 'community', to: 'ai_made', source_id: 'UCzzzzzzzzzzzzzzzzzzzz45' });
+			for (const path of ['/v1/sources/yt/@nobody', '/v1/sources/yt/not%20a%20handle', '/v1/sources/xx/@farm']) {
+				expect(await code(await expectStatus(h.do('GET', path), 404)), path).toBe('not_rated');
+			}
+			// Percent-encoded handles resolve like the raw ones.
+			const named = ensureSource(h.db, 'yt', '@caféhistoire', '', unix(h.clock));
+			expect(findSource(h.db, 'yt', '@caféhistoire')).toBe(named);
+			await expectStatus(h.do('GET', '/v1/sources/yt/@Caf%C3%A9Histoire'), 200);
+		}));
+
+	it('counts verdicts, decisions, appeals and installs for the website', () =>
+		withHarness(async (h) => {
+			const staff = h.reviewer('rae@colander.test', 'staff', 'Rae');
+			await expectStatus(h.do('POST', '/v1/review/sources/yt/@one/decision', { verdict: 'slop', reason: 'Generated.', signals: ['watermark'] }, staff), 200);
+			await expectStatus(h.do('POST', '/v1/review/sources/yt/@two/decision', { verdict: 'clear', reason: 'Original.' }, staff), 200);
+			await expectStatus(h.do('POST', '/v1/appeals', { platform: 'yt', source_id: '@one', email: 'a@example.test', statement: 'Mine.' }), 201);
+			setListRequests(h.db, Math.floor(unix(h.clock) / 3600) - 1, 2400);
+			h.clock += 1000;
+			const seq = await h.publish();
+			const stats = (await (await expectStatus(h.do('GET', '/v1/stats'), 200)).json()) as Stats;
+			expect(stats).toEqual({
+				sources: { slop: 1, likely_slop: 0, ai_made: 0, disputed: 0, clear: 1 },
+				items: 0,
+				decisions_7d: 2,
+				appeals: { open: 1, median_days: null },
+				active_installs: 100,
+				list_sequence: seq,
+				list_updated_at: new Date(h.clock - (h.clock % 1000)).toISOString().replace('.000Z', 'Z')
+			});
+		}));
+});
+
+describe('review', () => {
+	it('enforces the curator limits, bearer tokens and AI evidence (TestCuratorLimitsAndReviewerToken)', () =>
+		withHarness(async (h) => {
+			const ref = ensureSource(h.db, 'yt', '@gossipnarrated', 'Celebrity Gossip Narrated', unix(h.clock));
+			setYouTube(
+				h.db,
+				ref,
+				{ channelId: 'UCzzzzzzzzzzzzzzzzzzzz43', handle: '@gossipnarrated', title: '', subscribers: 1_200_000, uploadsPerDay: null },
+				unix(h.clock)
+			);
+			const member = h.signIn('maya@example.test');
+			const bearer = h.bearer('sam@colander.test', 'curator', 'Sam');
+
+			await expectStatus(h.do('GET', '/v1/review/queue', undefined, bearer), 200);
+			expect(await code(await expectStatus(h.do('GET', '/v1/review/queue', undefined, { Authorization: 'Bearer nope' }), 401))).toBe('invalid_token');
+			expect(await code(await expectStatus(h.do('GET', '/v1/review/queue', undefined, { Cookie: member }), 403))).toBe('forbidden');
+			expect(await code(await expectStatus(h.do('GET', '/v1/review/queue'), 401))).toBe('signed_out');
+
+			const decision = { verdict: 'slop', reason: 'Generated gossip narration.', signals: ['watermark'] };
+			const large = await expectStatus(h.do('POST', '/v1/review/sources/yt/@gossipnarrated/decision', decision, bearer), 403);
+			expect(await large.json()).toEqual({ error: { code: 'staff_required', message: 'Large sources need staff review.' } });
+			// Slop needs AI evidence: without a provenance signal or met provenance layer it is refused.
+			for (const v of ['slop', 'likely_slop']) {
+				const w = await expectStatus(h.do('POST', '/v1/review/sources/yt/@smallslopfarm/decision', { verdict: v, reason: 'Looks generated.' }, bearer), 400);
+				expect(await code(w), v).toBe('ai_evidence_required');
+			}
+			await expectStatus(
+				h.do('POST', '/v1/review/items/yt/abcdefghijk/decision', { verdict: 'slop', reason: 'Looks generated.', source_id: '@smallslopfarm' }, bearer),
+				400
+			);
+			// Curators may decide sources that are not large, by bearer token without CSRF.
+			await expectStatus(h.do('POST', '/v1/review/sources/yt/@smallslopfarm/decision', decision, bearer), 200);
+			await expectStatus(h.do('POST', '/v1/review/sources/yt/@smallslopfarm/decision', { verdict: 'slop', reason: 'x', large: true }, bearer), 403);
+
+			let w = await expectStatus(h.do('POST', '/v1/appeals', { platform: 'yt', source_id: '@smallslopfarm', email: 'a@example.test', statement: 'Not slop.' }), 201);
+			const id = ((await w.json()) as { appeal: Appeal }).appeal.id;
+			w = await expectStatus(h.do('POST', `/v1/review/appeals/${id}/verify`, undefined, bearer), 403);
+			expect(await w.json()).toEqual({ error: { code: 'staff_required', message: 'Appeals need staff review.' } });
+			await expectStatus(h.do('POST', `/v1/review/appeals/${id}/resolve`, { outcome: 'denied', reasoning: 'x' }, bearer), 403);
+
+			// An appeal awaiting verification is unproven, so curators may still decide. Once the creator
+			// has done their part (pending_manual, then under_review) only staff decide the source.
+			const clear = { verdict: 'clear', reason: 'Original work.' };
+			await expectStatus(h.do('POST', '/v1/review/sources/yt/@smallslopfarm/decision', decision, bearer), 200);
+			w = await h.do('POST', '/v1/appeals', { platform: 'yt', source_id: '@smallslopfarm', email: 'a@example.test', statement: 'Not slop.' });
+			const appeal = (await w.json()) as { appeal: Appeal; secret: string };
+			await expectStatus(h.do('POST', `/v1/appeals/${appeal.appeal.id}/verify`, { secret: appeal.secret }), 200);
+			w = await expectStatus(h.do('POST', '/v1/review/sources/yt/@smallslopfarm/decision', clear, bearer), 403);
+			expect(await w.json()).toEqual({ error: { code: 'staff_required', message: 'Sources with an open appeal need staff review.' } });
+			const staff = h.reviewer('rae@colander.test', 'staff', 'Rae');
+			await expectStatus(h.do('POST', `/v1/review/appeals/${appeal.appeal.id}/verify`, undefined, staff), 200);
+			await expectStatus(h.do('POST', '/v1/review/sources/yt/@smallslopfarm/decision', clear, bearer), 403);
+			await expectStatus(h.do('POST', '/v1/review/sources/yt/@smallslopfarm/decision', clear, staff), 200);
+			// Verifying twice is a state conflict.
+			expect(await code(await expectStatus(h.do('POST', `/v1/review/appeals/${appeal.appeal.id}/verify`, undefined, staff), 409))).toBe('appeal_state');
+		}));
+
+	it('requires the CSRF header on cookie writes, never on bearer ones', () =>
+		withHarness(async (h) => {
+			const staff = h.reviewer('rae@colander.test', 'staff', 'Rae');
+			const body = { verdict: 'clear', reason: 'Original.' };
+			const w = await expectStatus(h.do('POST', '/v1/review/sources/yt/@chan/decision', body, { Cookie: staff.Cookie! }), 403);
+			expect(await code(w)).toBe('csrf_required');
+			await expectStatus(h.do('GET', '/v1/review/queue', undefined, { Cookie: staff.Cookie! }), 200);
+			await expectStatus(h.do('POST', '/v1/review/sources/yt/@chan/decision', body, staff), 200);
+			// An expired session is signed out.
+			h.clock += 31 * DAY;
+			expect(await code(await expectStatus(h.do('GET', '/v1/review/queue', undefined, { Cookie: staff.Cookie! }), 401))).toBe('signed_out');
+		}));
+
+	it('keeps a pending_manual appeal in the queue and escalates it after 14 days (TestPendingManualAppealInQueue)', () =>
+		withHarness(async (h) => {
+			const staff = h.reviewer('rae@colander.test', 'staff', 'Rae');
+			await expectStatus(h.do('POST', '/v1/review/sources/yt/@farm/decision', { verdict: 'ai_made', reason: 'Labelled AI.', signals: ['platform_label'] }, staff), 200);
+			const w = await h.do('POST', '/v1/appeals', { platform: 'yt', source_id: '@farm', email: 'a@example.test', statement: 'Mine.' });
+			const appeal = (await w.json()) as { appeal: Appeal; secret: string };
+			await expectStatus(h.do('POST', `/v1/appeals/${appeal.appeal.id}/verify`, { secret: appeal.secret }), 200);
+			h.clock += 15 * DAY;
+			await h.store.engine.fullPass(h.clock);
+			const items = ((await (await expectStatus(h.do('GET', '/v1/review/queue', undefined, staff), 200)).json()) as { items: QueueItem[] }).items;
+			expect(items.map((q) => [q.kind, q.priority])).toEqual([
+				['appeal', 1],
+				['escalation', 1]
+			]);
+			expect(items[0]!.summary).toBe('Appeal waiting for a manual check of code ' + appeal.appeal.code);
+			expect(items[1]!.summary).toContain('waits for staff to check its code');
+		}));
+
+	it('shows a capped source with the scored Slop hint (TestCappedEscalationShowsScoredSlop)', () =>
+		withHarness(async (h) => {
+			for (let i = 0; i < 6; i++) {
+				const t = { ...tag(`slop-${i}`, 'source', '@farm', '', 'slop'), tests: ['low_effort', 'mass_produced'] };
+				await expectStatus(h.do('POST', '/v1/tags', { tags: [t] }, installAuth(20 + i)), 200);
+			}
+			// Twenty uploads a day, but the channel hides its subscriber count.
+			const ref = findSource(h.db, 'yt', '@farm')!;
+			setYouTube(h.db, ref, { channelId: 'UCzzzzzzzzzzzzzzzzzzzz44', handle: '@farm', title: '', subscribers: null, uploadsPerDay: 20 }, unix(h.clock));
+			h.clock += 40 * DAY;
+			await h.store.engine.fullPass(h.clock);
+			const staff = h.reviewer('rae@colander.test', 'staff', 'Rae');
+			const items = ((await (await expectStatus(h.do('GET', '/v1/review/queue?kind=escalations', undefined, { Cookie: staff.Cookie! }), 200)).json()) as {
+				items: QueueItem[];
+			}).items;
+			expect(items).toHaveLength(1);
+			expect(items[0]).toMatchObject({ kind: 'escalation', verdict: 'likely_slop', computed_verdict: 'slop', large: false, report_count: 0 });
+			expect(items[0]!.summary).toContain('audience size unknown');
+
+			// The review page explains each layer in a sentence.
+			const page = (await (await expectStatus(h.do('GET', '/v1/review/sources/yt/@farm', undefined, staff), 200)).json()) as ReviewSourceResponse;
+			expect(page.layers.provenance).toEqual({ met: true, signals: ['platform_label'], detail: '6 installs saw a platform AI label.' });
+			expect(page.layers.behavior).toEqual({ met: true, signals: ['high_volume'], detail: 'About 20.0 uploads a day over the last 14 days.' });
+			expect(page.layers.rubric.detail).toBe('Tests chosen: low effort, mass produced.');
+			// Reputation is fresh here: the installs agreed with the consensus verdict, so they weigh more (Go gives the same).
+			expect(page.layers.consensus).toEqual({
+				met: true,
+				signals: ['community_consensus'],
+				detail: 'Weighted tags: slop 4.2, AI-made but fine 0.0, not slop 0.0 from 6 installs.'
+			});
+			expect(page.layers.rubric.signals).toEqual(['rubric_low_effort']);
+			expect(page.source.evidence).toEqual({ taggers: 6, tags: { slop: 6, ai_fine: 0, not_slop: 0 }, items_seen: 0, ai_item_share: null, uploads_per_day: 20 });
+			expect(page.history[0]!.reason).toBe(
+				'Likely slop. The platform labels it AI-generated, it posts at a volume no person could sustain, taggers found little human effort, and it is tagged as slop by the community. Held at Likely slop until staff review it, because its audience size is unknown.'
+			);
+			expect(page.source.verdict).toBe('likely_slop');
+		}));
+
+	it('queues reports, decides items, dismisses reports and pages the queue', () =>
+		withHarness(async (h) => {
+			const staff = h.reviewer('rae@colander.test', 'staff', 'Rae');
+			for (const [i, reason] of ['Same   voice\nevery video, forty times a day across all of the channel uploads.', 'Second.'].entries()) {
+				await expectStatus(h.do('POST', '/v1/reports', { client_id: `r-${i}`, platform: 'yt', source_id: '@chan', reason }, installAuth(1 + i)), 201);
+			}
+			const queue = (await (await h.do('GET', '/v1/review/queue?kind=reports', undefined, staff)).json()) as { items: QueueItem[]; next_cursor: null };
+			expect(queue.next_cursor).toBeNull();
+			expect(queue.items).toHaveLength(1);
+			expect(queue.items[0]).toMatchObject({ kind: 'report', priority: 3, source_id: '@chan', report_count: 2, verdict: null });
+			expect(queue.items[0]!.summary).toBe('2 reports: Same voice every video, forty times a day across all of the…');
+			expect(await code(await h.do('GET', '/v1/review/queue?kind=nothing', undefined, staff))).toBe('invalid_kind');
+			expect(await code(await h.do('GET', '/v1/review/queue?cursor=-1', undefined, staff))).toBe('invalid_cursor');
+
+			// An item Colander has not seen needs its source; then it is decided on its own.
+			const item = { verdict: 'ai_made', reason: 'Labelled AI.', signals: ['platform_label'] };
+			expect(await code(await expectStatus(h.do('POST', '/v1/review/items/yt/abcdefghijk/decision', item, staff), 400))).toBe('missing_source');
+			expect(await code(await h.do('POST', '/v1/review/items/yt/abcdefghijk/decision', { ...item, large: false, source_id: '@chan' }, staff))).toBe('invalid_large');
+			expect(await code(await h.do('POST', '/v1/review/items/yt/short/decision', { ...item, source_id: '@chan' }, staff))).toBe('invalid_target');
+			const decided = (await (
+				await expectStatus(h.do('POST', '/v1/review/items/yt/abcdefghijk/decision', { ...item, source_id: '@chan' }, staff), 200)
+			).json()) as ReviewSourceResponse;
+			expect(decided.items).toEqual([
+				{ platform: 'yt', id: 'abcdefghijk', verdict: 'ai_made', signals: ['platform_label', 'staff_review'], tags: { slop: 0, ai_fine: 0, not_slop: 0 }, platform_label_reports: 0 }
+			]);
+			expect(decided.reports.map((r) => [r.status, r.reason])).toEqual([
+				['under_review', 'Second.'],
+				['under_review', 'Same   voice\nevery video, forty times a day across all of the channel uploads.']
+			]);
+			expect(decided.layers).toEqual({
+				provenance: { met: false, signals: [], detail: 'No AI evidence yet.' },
+				behavior: { met: false, signals: [], detail: '1 of 1 items with evidence carry AI evidence.' },
+				rubric: { met: false, signals: [], detail: 'Needs slop tags with at least two tests chosen by half the weight.' },
+				consensus: { met: false, signals: [], detail: 'Weighted tags: slop 0.0, AI-made but fine 0.0, not slop 0.0 from 0 installs.' }
+			});
+			expect(decided.source.evidence).toMatchObject({ items_seen: 1, ai_item_share: 1 });
+			expect(decided.history[0]).toMatchObject({ target_type: 'item', target_id: 'abcdefghijk', source_id: '@chan', actor: 'staff', actor_name: 'Rae', reason: 'Labelled AI.' });
+
+			const reportId = decided.reports[1]!.id;
+			const dismissed = await expectStatus(h.do('POST', `/v1/review/reports/${reportId}/dismiss`, { reason: 'Not enough to go on.' }, staff), 200);
+			expect(((await dismissed.json()) as { report: Report }).report).toMatchObject({ id: reportId, status: 'dismissed' });
+			expect(await code(await expectStatus(h.do('POST', `/v1/review/reports/${reportId}/dismiss`, { reason: 'Again.' }, staff), 409))).toBe('report_closed');
+			expect(await code(await expectStatus(h.do('POST', '/v1/review/reports/rpt_nothing/dismiss', { reason: 'x' }, staff), 404))).toBe('not_found');
+			expect(await code(await h.do('POST', `/v1/review/reports/${reportId}/dismiss`, { reason: '' }, staff))).toBe('invalid_reason');
+
+			// Decision bodies are checked before anything is written.
+			for (const [body, want] of [
+				[{ verdict: 'great', reason: 'x' }, 'invalid_verdict'],
+				[{ verdict: 'none', reason: '' }, 'invalid_reason'],
+				[{ verdict: 'none', reason: 'x', signals: ['nice'] }, 'invalid_signals'],
+				[{ verdict: 'none', reason: 'x', slop_type: 'spam' }, 'invalid_slop_type'],
+				[{ verdict: 'none', reason: 'x', tests: ['boring'] }, 'invalid_tests']
+			] as const) {
+				expect(await code(await expectStatus(h.do('POST', '/v1/review/sources/yt/@chan/decision', body, staff), 400)), want).toBe(want);
+			}
+			const signals = await h.do('POST', '/v1/review/sources/yt/@chan/decision', { verdict: 'none', reason: 'x', signals: ['nice'] }, staff);
+			expect(((await signals.json()) as ErrorBody).error.message).toBe('unknown signal "nice"');
+			expect(await code(await h.do('POST', '/v1/review/sources/yt/not%20valid/decision', { verdict: 'none', reason: 'x' }, staff))).toBe('invalid_source');
+
+			// 51 open report sources page at 50.
+			for (let i = 0; i < 51; i++) {
+				await expectStatus(h.do('POST', '/v1/reports', { client_id: `p-${i}`, platform: 'yt', source_id: `@page${i}`, reason: 'Generated.' }, installAuth(100 + i)), 201);
+			}
+			const p1 = (await (await h.do('GET', '/v1/review/queue', undefined, staff)).json()) as { items: QueueItem[]; next_cursor: string };
+			expect(p1.items).toHaveLength(50);
+			expect(p1.next_cursor).toBe('50');
+			const p2 = (await (await h.do('GET', '/v1/review/queue?cursor=50', undefined, staff)).json()) as { items: QueueItem[]; next_cursor: null };
+			expect(p2.items).toHaveLength(2);
+			expect(p2.next_cursor).toBeNull();
+			const past = (await (await h.do('GET', '/v1/review/queue?cursor=500', undefined, staff)).json()) as { items: QueueItem[] };
+			expect(past.items).toEqual([]);
+		}));
+
+	it('resolves a denied appeal and checks the resolve body', () =>
+		withHarness(async (h) => {
+			const staff = h.reviewer('rae@colander.test', 'staff', 'Rae');
+			await expectStatus(h.do('POST', '/v1/review/sources/yt/@farm/decision', { verdict: 'slop', reason: 'Generated.', signals: ['watermark'] }, staff), 200);
+			const w = await h.do('POST', '/v1/appeals', { platform: 'yt', source_id: '@farm', email: 'a@example.test', statement: 'Mine.' });
+			const id = ((await w.json()) as { appeal: Appeal }).appeal.id;
+			expect(await code(await h.do('POST', `/v1/review/appeals/${id}/resolve`, { outcome: 'maybe', reasoning: 'x' }, staff))).toBe('invalid_outcome');
+			expect(await code(await h.do('POST', `/v1/review/appeals/${id}/resolve`, { outcome: 'denied', reasoning: ' ' }, staff))).toBe('invalid_reasoning');
+			expect(await code(await h.do('POST', '/v1/review/appeals/apl_nothing/resolve', { outcome: 'denied', reasoning: 'x' }, staff))).toBe('not_found');
+			expect(await code(await h.do('POST', `/v1/review/appeals/${id}/verify`, '{"x":1}', { ...staff, 'Content-Length': '7' }))).toBe('unknown_field');
+			const r = await expectStatus(h.do('POST', `/v1/review/appeals/${id}/resolve`, { outcome: 'denied', reasoning: 'The footage is generated.' }, staff), 200);
+			expect(((await r.json()) as { appeal: Appeal }).appeal).toMatchObject({ status: 'denied', outcome: 'denied' });
+			expect(getSource(h.db, findSource(h.db, 'yt', '@farm')!)!.state.verdict).toBe('slop');
+		}));
+});
+
+describe('trial and sync', () => {
+	it('gives one trial per install (TestTrialOncePerInstall)', () =>
+		withHarness(async (h) => {
+			const w = await expectStatus(h.do('POST', '/v1/trial', undefined, installAuth(1)), 200);
+			const token = ((await w.json()) as { token: string }).token;
+			const c = await verifyPlanToken(token, keys);
+			expect(c).toMatchObject({ v: 1, plan: 'plus', trial: true, iat: unix(h.clock) });
+			expect(c!.exp - c!.iat).toBe(14 * 24 * 3600);
+			expect(c!.sub).toMatch(/^trl_[a-z2-9]{16}$/);
+			const again = await expectStatus(h.do('POST', '/v1/trial', undefined, installAuth(1)), 409);
+			expect(await code(again)).toBe('trial_used');
+			expect(await code(await expectStatus(h.do('POST', '/v1/trial'), 401))).toBe('install_required');
+		}));
+
+	it('syncs settings by version (TestSyncVersions)', () =>
+		withHarness(async (h) => {
+			const token = ((await (await h.do('POST', '/v1/trial', undefined, installAuth(1))).json()) as { token: string }).token;
+			const plan = { Authorization: 'Plan ' + token };
+			expect(await code(await expectStatus(h.do('GET', '/v1/sync'), 401))).toBe('plan_required');
+			expect(await code(await expectStatus(h.do('GET', '/v1/sync', undefined, { Authorization: 'Plan x.y' }), 401))).toBe('invalid_plan');
+
+			let w = await expectStatus(h.do('GET', '/v1/sync', undefined, plan), 200);
+			expect(await w.json()).toEqual({ data: null, updated_at: null, version: 0 });
+			w = await expectStatus(h.do('PUT', '/v1/sync', '{"version": 0, "data": { "strictness": "strict", "n": 1.0 }}', plan), 200);
+			// Stored compact, tokens as written.
+			expect(await w.text()).toBe('{"data":{"strictness":"strict","n":1.0},"updated_at":"2026-10-01T12:00:00Z","version":1}\n');
+			w = await expectStatus(h.do('PUT', '/v1/sync', { version: 0, data: { strictness: 'label' } }, plan), 409);
+			expect(await w.json()).toEqual({
+				data: { strictness: 'strict', n: 1 },
+				error: { code: 'version_conflict', message: 'Settings changed elsewhere. Merge with the current copy and try again.' },
+				updated_at: '2026-10-01T12:00:00Z',
+				version: 1
+			});
+			expect(await code(await expectStatus(h.do('PUT', '/v1/sync', { version: 1, data: { x: 'a'.repeat(70_000) } }, plan), 413))).toBe('too_large');
+			expect(await code(await expectStatus(h.do('PUT', '/v1/sync', { version: 1, data: [1] }, plan), 400))).toBe('invalid_data');
+			expect(await code(await expectStatus(h.do('PUT', '/v1/sync', { version: 1, data: null }, plan), 400))).toBe('invalid_data');
+			expect(await code(await expectStatus(h.do('PUT', '/v1/sync', { data: {} }, plan), 400))).toBe('invalid_version');
+			expect(await code(await expectStatus(h.do('PUT', '/v1/sync', { version: -1, data: {} }, plan), 400))).toBe('invalid_version');
+			expect(await code(await expectStatus(h.do('PUT', '/v1/sync', '{"version": 1.0, "data": {}}', plan), 400))).toBe('invalid_json');
+
+			h.clock += 15 * DAY;
+			expect(await code(await expectStatus(h.do('GET', '/v1/sync', undefined, plan), 401))).toBe('plan_expired');
+		}));
+
+	it('stops a paid token as soon as its plan ends', () =>
+		withHarness(async (h) => {
+			const account = grantRole(h.db, 'maya@example.test', 'member', unix(h.clock));
+			const now = unix(h.clock);
+			const sub = { id: 'sub_1', accountId: account.id, customerId: 'cus_1', status: 'active', interval: 'month', periodStart: now - 86400, periodEnd: now + 29 * 86400, ending: false, startDate: now - 86400 };
+			saveSubscription(h.db, sub, now);
+			const key = await SigningKey.fromSeed(b64decode(files.devSeed));
+			const token = await issuePlanToken(key, { v: 1, sub: account.id, plan: 'plus', trial: false, iat: now, exp: now + 32 * 86400 });
+			const plan = { Authorization: 'Plan ' + token };
+			await expectStatus(h.do('GET', '/v1/sync', undefined, plan), 200);
+			// past_due runs until the start of the unpaid period plus 3 days of grace.
+			saveSubscription(h.db, { ...sub, status: 'past_due' }, now);
+			await expectStatus(h.do('GET', '/v1/sync', undefined, plan), 200);
+			h.clock += 2 * DAY + 1000;
+			expect(await code(await expectStatus(h.do('GET', '/v1/sync', undefined, plan), 403))).toBe('no_plan');
+			saveSubscription(h.db, { ...sub, status: 'canceled' }, now);
+			h.clock -= 2 * DAY;
+			expect(await code(await expectStatus(h.do('GET', '/v1/sync', undefined, plan), 403))).toBe('no_plan');
+		}));
+});
+
+describe('respond.go and ids.go', () => {
+	it('passes the canonical ID contract vectors (TestCanonicalSourceVectors)', () => {
+		const vectors = JSON.parse(files.canonicalIds) as { sources: { platform: string; raw: string; source: string | null }[] };
+		for (const v of vectors.sources) expect(canonicalSource(v.platform, v.raw) ?? null, `${v.platform} ${v.raw}`).toBe(v.source);
+	});
+
+	it('decodes request bodies as strictly as Go', async () => {
+		const schema = { name: 'string', flag: 'bool', note: 'string?', list: 'strings', version: 'int?', data: 'raw' } as const;
+		const run = (body: BodyInit | null, limit = 1024) => decode(new Request(ORIGIN, { method: 'POST', body }), limit, schema);
+		const err = async (body: BodyInit | null) => {
+			const res = await run(body);
+			return res instanceof Response ? [(await res.json()) as ErrorBody, res.status] : res;
+		};
+		expect(await run('{"Name":"a","FLAG":true,"note":null,"list":["x",null],"version":7,"data":{ "a" : [1, 2.50] }}')).toEqual({
+			name: 'a',
+			flag: true,
+			note: undefined,
+			list: ['x', ''],
+			version: 7,
+			data: '{ "a" : [1, 2.50] }'
+		});
+		// Null is the zero struct, as in Go.
+		expect(await run('null')).toEqual({ name: '', flag: false, note: undefined, list: undefined, version: undefined, data: '' });
+		// The long s folds to S, as Go matches field names.
+		expect(await run('{"LI\u017fT":[]}')).toMatchObject({ list: [] });
+		expect(await run('{"name":"\\ud800"}')).toMatchObject({ name: '�' });
+		for (const bad of ['', '[]', '"x"', '{"name":1}', '{"flag":"yes"}', '{"list":[1]}', '{"version":1.5}', '{"version":9223372036854775808}', '{} {}', '﻿{}']) {
+			expect(await err(bad), bad).toEqual([{ error: { code: 'invalid_json', message: 'The request body is not valid JSON for this route.' } }, 400]);
+		}
+		expect(await err('{"name":1,"extra":2}')).toEqual([{ error: { code: 'invalid_json', message: 'The request body is not valid JSON for this route.' } }, 400]);
+		expect(await err('{"extra\\n":2,"name":1}')).toEqual([
+			{ error: { code: 'unknown_field', message: 'The request has a field this API does not accept: "extra\\n".' } },
+			400
+		]);
+		expect(await err('{"name":"' + 'x'.repeat(1100) + '"}')).toEqual([
+			{ error: { code: 'too_large', message: 'The request body is larger than 1024 bytes.' } },
+			413
+		]);
+	});
+
+	it("formats as Go's fmt and strconv do", () => {
+		expect(goFixed(0.25, 1)).toBe('0.2');
+		expect(goFixed(0.75, 1)).toBe('0.8');
+		expect(goFixed(0.05, 1)).toBe('0.1');
+		expect(goFixed(14.2, 1)).toBe('14.2');
+		expect(goFixed(0, 1)).toBe('0.0');
+		expect(goFixed(9.96, 1)).toBe('10.0');
+		expect(goFixed(2.5, 0)).toBe('2');
+		expect(goQuote('a"b\\c\n\x07\x7f­\u{1F600}é')).toBe('"a\\"b\\\\c\\n\\a\\x7f\\u00ad\u{1F600}é"');
+		expect(parseRFC3339('2026-10-03T12:00:00Z')).toBe(Date.UTC(2026, 9, 3, 12) / 1000);
+		expect(parseRFC3339('2026-10-03T14:00:00.5+02:00')).toBe(Date.UTC(2026, 9, 3, 12) / 1000 + 0.5);
+		for (const bad of ['2026-02-29T00:00:00Z', '2026-10-03T24:00:00Z', '2026-10-03 12:00:00Z', '2026-10-03T12:00:00', 'yesterday']) {
+			expect(parseRFC3339(bad), bad).toBeUndefined();
+		}
+		expect(parseRFC3339('2028-02-29T00:00:00Z')).toBe(Date.UTC(2028, 1, 29) / 1000);
+	});
+
+	it('normalizes email addresses as Go does', () => {
+		expect(normalizeEmail('  Maya@Example.TEST ')).toBe('maya@example.test');
+		expect(normalizeEmail('o.k+tag@[192.0.2.1]')).toBe('o.k+tag@[192.0.2.1]');
+		expect(normalizeEmail('josé@exämple.test')).toBe('josé@exämple.test');
+		for (const bad of ['', 'a', 'a@', '@b', 'a@b@c', '.a@b', 'a..b@c', 'a.@b', '"a"@b', 'A <a@b>', 'a@b (c)', 'a b@c', 'a@[1.2.3]', 'a@[01.2.3.4]', 'x'.repeat(250) + '@b.cd']) {
+			expect(normalizeEmail(bad), bad).toBeUndefined();
+		}
+		expect(hashToken('x')).toBe(hex(sha256(utf8('x'))));
+	});
+});
