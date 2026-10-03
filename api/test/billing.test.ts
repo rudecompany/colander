@@ -234,7 +234,9 @@ describe('billing routes', () => {
 			[{ amount_cents: 100001 }, 'invalid_amount'],
 			[{ amount_cents: 500, credit_name: 'two\nlines' }, 'invalid_credit_name'],
 			[{ amount_cents: 500, credit_name: 'x'.repeat(81) }, 'invalid_credit_name'],
-			[{ amount_cents: 5.5 }, 'invalid_json']
+			[{ amount_cents: 5.5 }, 'invalid_json'],
+			['{"amount_cents": 500.0}', 'invalid_json'],
+			['{"amount_cents": 5e2}', 'invalid_json']
 		] as const) {
 			res = await h.do('POST', '/v1/billing/donate', bad);
 			await expectStatus(res, 400);

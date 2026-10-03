@@ -67,7 +67,11 @@ export async function decode<const F extends Record<string, Kind>>(request: Requ
 	const invalid = () => jsonError(400, 'invalid_json', 'The request body is not valid JSON for this route.');
 	let body: unknown;
 	try {
-		body = JSON.parse(new TextDecoder().decode(bytes));
+		// Go decodes 500.0 and 5e2 into an int64 field as a type error: such numbers become NaN,
+		// which no field accepts. The reviver's source text is V8's JSON.parse source access.
+		body = JSON.parse(new TextDecoder().decode(bytes), (_key, value: unknown, context?: { source?: string }) =>
+			typeof value === 'number' && /[.eE]/.test(context?.source ?? '') ? NaN : value
+		);
 	} catch {
 		return invalid();
 	}
@@ -87,6 +91,13 @@ export async function decode<const F extends Record<string, Kind>>(request: Requ
 	}
 	return out as Decoded<F>;
 }
+
+// Go's unicode.IsSpace: JavaScript's \s without U+FEFF, plus U+0085.
+const SPACE = '[\\t\\n\\v\\f\\r \\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]';
+const TRIM = new RegExp(`^${SPACE}+|${SPACE}+$`, 'g');
+
+/** Go's strings.TrimSpace. */
+export const trimSpace = (s: string): string => s.replace(TRIM, '');
 
 /** Unix seconds as RFC 3339 in UTC, without fractions (Go's time.RFC3339). */
 export const rfc3339 = (unix: number): string => new Date(unix * 1000).toISOString().replace(/\.\d{3}Z$/, 'Z');

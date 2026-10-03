@@ -5,7 +5,7 @@ import { toPlan } from '../billing';
 import { IP_HASH_HEADER, json, jsonError, tooMany } from '../http';
 import { allow } from '../limits';
 import { signIn } from '../mail';
-import { decode, queryEscape, rfc3339 } from '../request';
+import { decode, queryEscape, rfc3339, trimSpace } from '../request';
 import { setDisplayName, type Account } from '../store/accounts';
 import { current } from '../store/billing';
 import type { Store } from '../store/store';
@@ -69,7 +69,7 @@ async function authEmail(s: Store, publicUrl: string, request: Request): Promise
 async function authVerify(s: Store, request: Request): Promise<Response> {
 	const body = await decode(request, 4 << 10, { token: 'string' });
 	if (body instanceof Response) return body;
-	const signedIn = s.auth.finishSignIn(body.token.trim());
+	const signedIn = s.auth.finishSignIn(trimSpace(body.token));
 	if (!signedIn) return jsonError(400, 'link_invalid', 'This sign-in link has expired or was already used. Ask for a new one.');
 	return writeAccount(s, signedIn.account, { 'Set-Cookie': signedIn.cookie });
 }
@@ -89,7 +89,7 @@ async function patchAccount(s: Store, request: Request): Promise<Response> {
 	if (a instanceof Response) return a;
 	const body = await decode(request, 4 << 10, { display_name: 'string?' });
 	if (body instanceof Response) return body;
-	const name = (body.display_name ?? '').trim();
+	const name = trimSpace(body.display_name ?? '');
 	if ([...name].length > 60 || /[\r\n\t]/.test(name)) {
 		return jsonError(400, 'invalid_display_name', 'The display name must be one line of at most 60 characters.');
 	}

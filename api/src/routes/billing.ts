@@ -14,7 +14,7 @@ import {
 import { IP_HASH_HEADER, json, jsonError, tooMany } from '../http';
 import { allow } from '../limits';
 import { plusCancelled, plusRefunded } from '../mail';
-import { decode, readBody, rfc3339 } from '../request';
+import { decode, readBody, rfc3339, trimSpace } from '../request';
 import { supporters } from '../store/billing';
 import type { Store } from '../store/store';
 import { unix, writeAccount, type RouteSpec } from './account';
@@ -65,7 +65,7 @@ async function billingDonate(s: Store, request: Request): Promise<Response> {
 	const body = await decode(request, 2 << 10, { amount_cents: 'int', recurring: 'bool', credit_name: 'string' });
 	if (body instanceof Response) return body;
 	if (!s.billing.enabled()) return billingUnavailable();
-	const name = body.credit_name.trim();
+	const name = trimSpace(body.credit_name);
 	if (body.amount_cents < 100 || body.amount_cents > 100000) {
 		return jsonError(400, 'invalid_amount', 'Choose an amount from $1 to $1,000.');
 	}

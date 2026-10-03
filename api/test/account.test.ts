@@ -17,6 +17,10 @@ describe('auth helpers', () => {
 		const vectors: [string, string | null][] = [
 			['Maya@Example.test', 'maya@example.test'],
 			['  sam@colander.test ', 'sam@colander.test'],
+			// Go's TrimSpace: U+0085, U+00A0 and U+3000 are space, U+FEFF is not.
+			['\u0085a@b.c\u3000', 'a@b.c'],
+			['\u00a0a@b.c', 'a@b.c'],
+			['\ufeffa@b.c', '\ufeffa@b.c'],
 			['a@b', 'a@b'],
 			['a.b@c.d', 'a.b@c.d'],
 			['.a@b.c', null],

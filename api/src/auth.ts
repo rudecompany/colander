@@ -5,6 +5,7 @@ import { b64url, hex, utf8 } from '@colander/shared/bytes';
 import { lowerSimple } from '@colander/shared/ids';
 import { sha256 } from '@colander/shared/sha256';
 import { jsonError } from './http';
+import { trimSpace } from './request';
 import { createMagicLink, createSession, deleteSession, reviewerAccount, sessionAccount, setReviewerToken, useMagicLink, type Account } from './store/accounts';
 import type { Db } from './store/db';
 
@@ -43,7 +44,7 @@ const EMAIL = new RegExp(`^${DOT_ATOM}@(?:${DOT_ATOM}|\\[${OCTET}(?:\\.${OCTET})
  * dot-atom domain or IPv4 literal, at most 254 bytes.
  */
 export function normalizeEmail(s: string): string | undefined {
-	s = lowerSimple(s.trim());
+	s = lowerSimple(trimSpace(s));
 	if (utf8(s).length > 254 || !EMAIL.test(s)) return undefined;
 	return s;
 }

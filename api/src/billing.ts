@@ -6,7 +6,7 @@
 // paying or donating can never change a verdict. test/harness/independence.test.ts enforces it.
 import type { PlanTokenPayload } from '@colander/shared/api';
 import { concat, utf8 } from '@colander/shared/bytes';
-import { readBody, rfc3339 } from './request';
+import { readBody, rfc3339, trimSpace } from './request';
 import type { Account } from './store/accounts';
 import {
 	billingEventSeen,
@@ -396,7 +396,7 @@ export class Billing {
 							amountCents: int(o.amount_total),
 							currency: str(o.currency),
 							recurring: o.mode === 'subscription',
-							creditName: str(m.credit_name).trim(),
+							creditName: trimSpace(str(m.credit_name)),
 							payment: str(o.payment_intent),
 							subscriptionId: str(o.subscription),
 							createdAt: created
