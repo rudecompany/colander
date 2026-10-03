@@ -38,11 +38,11 @@
 						<tr>
 							<th scope="row">Tags</th>
 							<td data-label="Carries">Platform, whether it is an item or a source, its ID, your tag, the optional type and tests, whether the platform showed an AI label, the time, the extension version and your install ID.</td>
-							<td data-label="When">When you tag</td>
+							<td data-label="When">On each tag</td>
 						</tr>
-						<tr><th scope="row">Reports</th><td data-label="Carries">The source, up to three example items, your reason, and your install ID.</td><td data-label="When">When you report a source</td></tr>
-						<tr><th scope="row">Report status</th><td data-label="Carries">Your install ID, to list your own reports.</td><td data-label="When">When you open My reports</td></tr>
-						<tr><th scope="row">Trial</th><td data-label="Carries">Your install ID, so a trial is given once per install.</td><td data-label="When">When you start a trial</td></tr>
+						<tr><th scope="row">Reports</th><td data-label="Carries">The source, up to three example items, your reason, and your install ID.</td><td data-label="When">On each report</td></tr>
+						<tr><th scope="row">Report status</th><td data-label="Carries">Your install ID, to list your own reports.</td><td data-label="When">On opening My reports</td></tr>
+						<tr><th scope="row">Trial</th><td data-label="Carries">Your install ID, so a trial is given once per install.</td><td data-label="When">On starting a trial</td></tr>
 						<tr><th scope="row">Plan refresh and settings sync</th><td data-label="Carries">Your signed plan token and your settings.</td><td data-label="When">Plus only</td></tr>
 						<tr><th scope="row">Review queue</th><td data-label="Carries">Your reviewer token.</td><td data-label="When">Curators and staff only</td></tr>
 					</tbody>

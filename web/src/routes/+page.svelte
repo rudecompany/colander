@@ -757,6 +757,8 @@
 		background: var(--cl-ink);
 		color: #f2f0eb;
 		font: var(--cl-body);
+		/* Keeps the ink notice's edge visible on the dark theme too. */
+		box-shadow: 0 0 0 1px rgb(242 240 235 / 0.16);
 	}
 	.spec-notice .spec-link {
 		color: #8fb8f0;
