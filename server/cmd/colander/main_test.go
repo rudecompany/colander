@@ -106,6 +106,15 @@ func TestSeedDev(t *testing.T) {
 	if open, _ := st.OpenReports(ctx); len(open) == 0 {
 		t.Error("no open reports")
 	}
+	// The curator journey in e2e/ decides Fitness Tips AI from an open report in the side panel.
+	ref, _ := st.FindSource(ctx, "ig", "fitness.tips.ai")
+	if reports, _ := st.ReportsBySource(ctx, ref); len(reports) != 1 || reports[0].Status != "open" {
+		t.Errorf("Fitness Tips AI reports = %+v, want one open report", reports)
+	}
+	var decided int
+	if err := st.DB.QueryRowContext(ctx, `SELECT count(*) FROM reports WHERE status = 'decided'`).Scan(&decided); err != nil || decided == 0 {
+		t.Errorf("no report closed with a verdict (err %v)", err)
+	}
 	escalations := map[string]bool{}
 	if list, err := st.OpenEscalations(ctx); err == nil {
 		for _, e := range list {

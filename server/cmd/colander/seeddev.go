@@ -376,7 +376,6 @@ func (s *seeder) run(pub *lf.Publisher) error {
 	for i := range 3 {
 		s.report(m[60+i], "tt", "@newsflash24ai", "Newsflash 24 AI", "Invented news events with a synthetic anchor voice.", "deceptive", hollow)
 	}
-	s.report(m[63], "ig", "fitness.tips.ai", "Fitness Tips AI", "Every post pushes the same supplement link.", "bait", hollow)
 	s.report(m[64], "fb", "veterans.tribute.page", "Veterans Tribute Page", "Generated photos of veterans presented as real, with a donation link.", "deceptive", hollow|low)
 	_ = rptAW1
 
@@ -453,6 +452,11 @@ func (s *seeder) run(pub *lf.Publisher) error {
 	if s.err == nil {
 		s.fail(pub.Publish(ctx))
 	}
+
+	// A report filed after the last verdict change stays open for a reviewer. Reports filed earlier on a
+	// source whose verdict has since changed already show that verdict.
+	s.at(s.now.Add(-3 * time.Hour))
+	s.report(m[63], "ig", "fitness.tips.ai", "Fitness Tips AI", "Every post pushes the same supplement link.", "bait", hollow)
 
 	// Two hours ago, a burst of slop tags from brand-new installs: consensus freezes and staff are asked to look.
 	s.at(s.now.Add(-2 * time.Hour))
