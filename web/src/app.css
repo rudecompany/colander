@@ -6,7 +6,8 @@
 :root {
 	/* A hero size that sits above Display (32/40) on the same 8 px rhythm. */
 	--w-hero: 700 56px/64px var(--cl-font);
-	--w-lede: 400 20px/30px var(--cl-font);
+	/* Lede: the Title size at regular weight; Body large on phones. */
+	--w-lede: 400 20px/28px var(--cl-font);
 	--w-max: 1120px;
 	--w-prose: 680px;
 	--w-gutter: 24px;
@@ -23,7 +24,7 @@
 @media (max-width: 720px) {
 	:root {
 		--w-hero: 700 40px/48px var(--cl-font);
-		--w-lede: 400 18px/28px var(--cl-font);
+		--w-lede: var(--cl-body-lg);
 		--w-gutter: 16px;
 		--w-section: 64px;
 	}
@@ -100,7 +101,6 @@ a:hover {
 :focus-visible {
 	outline: 2px solid var(--cl-brand);
 	outline-offset: 2px;
-	border-radius: 2px;
 }
 
 ::selection {
@@ -150,7 +150,7 @@ a:hover {
 }
 .prose ul,
 .prose ol {
-	padding-left: 20px;
+	padding-left: var(--cl-s5);
 }
 .prose li + li {
 	margin-top: var(--cl-s2);
@@ -197,7 +197,8 @@ a:hover {
 }
 .mono {
 	font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
-	font-size: 0.92em;
+	/* Monospace runs large, so it sits a little smaller than the text around it, but never below 12 px. */
+	font-size: max(12px, 0.92em);
 	overflow-wrap: anywhere;
 }
 
@@ -225,11 +226,6 @@ a:hover {
 	gap: var(--cl-s3);
 	max-width: 760px;
 	margin-bottom: var(--cl-s6);
-}
-.section-head .t-lede {
-	font: var(--cl-body-lg);
-	font-size: 18px;
-	line-height: 28px;
 }
 
 /* A perforated rule: the dot motif as a divider. */
@@ -285,19 +281,19 @@ a.uin-btn-primary {
 }
 .uin-btn-md {
 	height: 36px;
-	padding: 0 14px;
+	padding: 0 var(--cl-s4);
 	font-size: 14px;
 }
 .uin-btn-sm {
-	height: 28px;
-	padding: 0 10px;
-	font-size: 13px;
+	height: 32px;
+	padding: 0 var(--cl-s3);
+	font-size: 14px;
 }
 .btn-lg.uin-btn {
 	height: 44px;
-	padding: 0 20px;
+	padding: 0 var(--cl-s5);
 	font-size: 16px;
-	gap: 10px;
+	gap: var(--cl-s2);
 }
 .uin-btn-primary {
 	box-shadow: none;
@@ -324,12 +320,12 @@ a.uin-btn-primary {
 .uin-nselect-el {
 	background: var(--cl-surface);
 	border-color: var(--w-control-border);
-	font-size: 15px;
+	font-size: 16px;
 }
 .uin-input-md .uin-input-el,
 .uin-nselect-md .uin-nselect-el {
 	height: 40px;
-	font-size: 15px;
+	font-size: 16px;
 }
 .uin-nselect-sm .uin-nselect-el {
 	height: 32px;
@@ -337,7 +333,7 @@ a.uin-btn-primary {
 }
 .uin-textarea {
 	line-height: 24px;
-	padding: 8px 12px;
+	padding: var(--cl-s2) var(--cl-s3);
 }
 .uin-input-el:focus,
 .uin-textarea:focus {
@@ -353,7 +349,9 @@ a.uin-btn-primary {
 	position: relative;
 	font: var(--cl-body);
 	align-items: flex-start;
-	gap: 10px;
+	gap: var(--cl-s2);
+	/* A 32 px row for one line of 20 px text: the whole label is the hit target. Stack checkboxes with no gap. */
+	padding-block: 6px;
 }
 .uin-checkbox-md {
 	font-size: 14px;
@@ -376,7 +374,8 @@ a.uin-btn-primary {
 }
 .uin-seg-btn {
 	cursor: pointer;
-	border-radius: 4px;
+	/* Concentric with the 6 px control around it (2 px padding). */
+	border-radius: calc(var(--cl-r-chip) - 2px);
 	font-weight: 600;
 }
 .uin-seg-btn + .uin-seg-btn {
@@ -384,13 +383,13 @@ a.uin-btn-primary {
 }
 .uin-seg-md .uin-seg-btn {
 	min-height: 32px;
-	padding: 4px 14px;
+	padding: var(--cl-s1) var(--cl-s4);
 	font-size: 14px;
 }
 .uin-seg-sm .uin-seg-btn {
-	min-height: 28px;
-	padding: 2px 10px;
-	font-size: 13px;
+	min-height: 32px;
+	padding: var(--cl-s1) var(--cl-s3);
+	font-size: 14px;
 }
 .uin-seg-btn-active {
 	background: var(--cl-brand);
@@ -402,7 +401,7 @@ a.uin-btn-primary {
 
 .field {
 	display: grid;
-	gap: 6px;
+	gap: var(--cl-s2);
 }
 .field-label {
 	font: 600 14px/20px var(--cl-font);
@@ -418,11 +417,12 @@ a.uin-btn-primary {
 
 /* ---------- Small pieces ---------- */
 
+/* Same box as the verdict chip (2 px by 8 px inside a 1 px border), so the two line up side by side. */
 .chip-none {
 	display: inline-flex;
 	align-items: center;
 	gap: 6px;
-	padding: 1px 7px;
+	padding: 2px 8px;
 	border-radius: var(--cl-r-chip);
 	border: 1px dashed var(--w-control-border);
 	color: var(--cl-text-muted);
@@ -444,7 +444,7 @@ a.uin-btn-primary {
 .icon-line {
 	display: inline-flex;
 	align-items: center;
-	gap: 6px;
+	gap: var(--cl-s2);
 }
 
 .link-quiet {
@@ -471,7 +471,7 @@ a.uin-btn-primary {
 	z-index: 100;
 	background: var(--cl-brand);
 	color: var(--cl-brand-fg);
-	padding: 8px 14px;
+	padding: var(--cl-s2) var(--cl-s4);
 	border-radius: var(--cl-r-chip);
 	font: 600 14px/20px var(--cl-font);
 	text-decoration: none;
@@ -537,7 +537,7 @@ table.plain tr:last-child th {
 /* Mittsu pieces that need the web type ramp: nothing below 12 px. */
 .uin-kbd {
 	height: 20px;
-	padding: 0 6px;
+	padding: 0 var(--cl-s1);
 	font-size: 12px;
 	border-color: var(--w-control-border);
 	color: var(--cl-text);

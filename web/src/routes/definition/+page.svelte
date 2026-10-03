@@ -59,7 +59,7 @@
 		['Columbia IGP, "AI Slop and the Information Ecosystem", June 2026', 'https://igp.sipa.columbia.edu/sites/igp/files/2026-06/AI%20Slop%20and%20the%20Information%20Ecosystem_IGP%20Report.pdf', 'Slop as a high-volume subset of AI content, between benign and deliberately harmful.'],
 		['Madsen and Puyt, "The 7Vs of AI Slop", 2025', 'https://papers.ssrn.com/sol3/papers.cfm?abstract_id=5558018', 'Seven dimensions, including volume and velocity.'],
 		['Deepfake-Eval-2024 benchmark', 'https://arxiv.org/abs/2503.02857v1', 'Open-source detectors lose about half their accuracy on real social media.'],
-		['Liang et al., 2023', 'https://pmc.ncbi.nlm.nih.gov/articles/PMC10382961/', 'Seven detectors flagged 61.3% of essays by non-native English writers as AI-written.'],
+		['Liang et al., 2023', 'https://pmc.ncbi.nlm.nih.gov/articles/PMC10382961/', 'Seven detectors misjudged 61.3% of essays by non-native English writers as AI-written.'],
 		['Kagi SlopStop', 'https://help.kagi.com/kagi/features/slopstop.html', 'The 80% rule for sources, and item labels for mixed sources.'],
 		['Community Notes bridging', 'https://arxiv.org/pdf/2512.19947', 'Agreement between people who usually disagree.'],
 		['SponsorBlock', 'https://web.sponsor.ajay.app/about', 'Random per-install IDs, votes and reputation instead of accounts.']
@@ -141,7 +141,7 @@
 			<h2>Why an AI detector cannot be the method</h2>
 			<ul>
 				<li>Open-source detectors lose about half their accuracy on real social media. On one benchmark, accuracy fell 50% for video, 48% for audio and 45% for images.</li>
-				<li>Text detectors punish the wrong people. Seven detectors flagged 61.3% of essays by non-native English writers as AI-written.</li>
+				<li>Text detectors punish the wrong people. Seven detectors misjudged 61.3% of essays by non-native English writers as AI-written.</li>
 				<li>Detecting AI is not detecting slop. They are different tasks, and standard automatic measures did not reproduce editors' judgments.</li>
 				<li>Labels and watermarks can be stripped, covered or never applied.</li>
 			</ul>
@@ -308,12 +308,13 @@
 	.toc ol {
 		list-style: none;
 		display: grid;
-		gap: 2px;
 		border-left: 1px solid var(--cl-border);
 	}
 	.toc a {
-		display: block;
-		padding: 4px 0 4px 14px;
+		display: flex;
+		align-items: center;
+		min-height: 32px;
+		padding-left: var(--cl-s4);
 		margin-left: -1px;
 		border-left: 2px solid transparent;
 		color: var(--cl-text-muted);
@@ -340,7 +341,7 @@
 		margin-top: 0;
 	}
 	.lead {
-		font: 400 20px/30px var(--cl-font);
+		font: var(--w-lede);
 		padding-left: var(--cl-s4);
 		border-left: 3px solid var(--cl-text);
 	}
@@ -368,22 +369,22 @@
 	.layer-head {
 		display: flex;
 		align-items: center;
-		gap: 10px;
+		gap: var(--cl-s2);
 		font: var(--cl-title);
 	}
 	.layer-n {
 		display: inline-grid;
 		place-items: center;
-		width: 28px;
-		height: 28px;
+		width: 24px;
+		height: 24px;
 		border-radius: 50%;
 		border: 1.5px solid var(--cl-text);
-		font: 700 13px/1 var(--cl-font);
+		font: 700 12px/1 var(--cl-font);
 	}
 	.signals {
 		font: var(--cl-body);
 		color: var(--cl-text-muted);
-		padding-left: 18px !important;
+		padding-left: var(--cl-s4) !important;
 	}
 	.signals li + li {
 		margin-top: 2px !important;

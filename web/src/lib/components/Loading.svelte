@@ -12,18 +12,18 @@
 	.loading {
 		display: inline-flex;
 		align-items: center;
-		gap: 10px;
+		gap: var(--cl-s2);
 		color: var(--cl-text-muted);
 		font: var(--cl-body);
 		padding-block: var(--cl-s4);
 	}
 	.dots {
 		display: inline-flex;
-		gap: 5px;
+		gap: var(--cl-s1);
 	}
 	i {
-		width: 7px;
-		height: 7px;
+		width: 8px;
+		height: 8px;
 		border-radius: 50%;
 		background: currentColor;
 		animation: pulse 1.2s var(--cl-ease) infinite;

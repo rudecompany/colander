@@ -256,7 +256,7 @@
 					</div>
 				</div>
 				<h3 class="icon-line t-title"><Tag size={16} strokeWidth={1.75} aria-hidden="true" /> Label</h3>
-				<p class="t-body muted">A small chip on the thumbnail, or beside the creator name in a swipe feed. Nothing is removed.</p>
+				<p class="t-body muted">A small chip on the thumbnail, or beside the creator name in a swipe feed. Nothing is hidden.</p>
 			</article>
 			<article class="card treatment">
 				<div class="specimen">
@@ -278,7 +278,7 @@
 					</div>
 				</div>
 				<h3 class="icon-line t-title"><EyeOff size={16} strokeWidth={1.75} aria-hidden="true" /> Hide</h3>
-				<p class="t-body muted">The card is removed and the grid closes up. The toolbar count goes up, and the popup lists it with Show beside it.</p>
+				<p class="t-body muted">The card is hidden and the grid closes up. The toolbar count goes up, and the popup lists it with Show beside it.</p>
 			</article>
 		</div>
 
@@ -494,7 +494,7 @@
 	.hero {
 		position: relative;
 		overflow: hidden;
-		padding-block: 72px 32px;
+		padding-block: 64px var(--cl-s6);
 	}
 	.hero-grid {
 		display: grid;
@@ -554,7 +554,7 @@
 	.bars th {
 		text-align: left;
 		font: 600 14px/20px var(--cl-font);
-		padding: 0 0 6px;
+		padding: 0 0 var(--cl-s2);
 	}
 	.bars .note {
 		font-weight: 400;
@@ -595,8 +595,8 @@
 		max-width: 920px;
 		padding-left: var(--cl-s5);
 		border-left: 3px solid var(--cl-text);
-		font: 400 24px/36px var(--cl-font);
-		letter-spacing: -0.005em;
+		font: var(--w-lede);
+		color: var(--cl-text);
 		text-wrap: pretty;
 	}
 	.tests-intro {
@@ -633,13 +633,13 @@
 		display: grid;
 		grid-template-columns: 1fr 1fr;
 		gap: var(--cl-s2) var(--cl-s6);
-		padding-left: 20px;
+		padding-left: var(--cl-s5);
 		font: var(--cl-body);
 	}
 	.more {
 		display: inline-flex;
 		align-items: center;
-		gap: 6px;
+		gap: var(--cl-s2);
 		font: 600 14px/20px var(--cl-font);
 		justify-self: start;
 	}
@@ -662,7 +662,7 @@
 		color: var(--cl-text-muted);
 	}
 	.layer-q {
-		font: 600 15px/22px var(--cl-font);
+		font: 600 16px/24px var(--cl-font);
 	}
 	.rules {
 		list-style: none;
@@ -718,8 +718,8 @@
 	}
 	.on-media {
 		position: absolute;
-		left: 6px;
-		top: 6px;
+		left: var(--cl-s2);
+		top: var(--cl-s2);
 	}
 	.spec-bar {
 		min-width: 0;
@@ -728,7 +728,7 @@
 		gap: 8px;
 		width: 100%;
 		height: 40px;
-		padding: 0 10px;
+		padding: 0 var(--cl-s3);
 		border: 1px solid var(--cl-border);
 		border-radius: var(--cl-r-chip);
 		background: var(--cl-surface-raised);
@@ -751,8 +751,8 @@
 	.spec-notice {
 		display: flex;
 		align-items: center;
-		gap: 14px;
-		padding: 10px 14px;
+		gap: var(--cl-s4);
+		padding: var(--cl-s3) var(--cl-s4);
 		border-radius: var(--cl-r-card);
 		background: var(--cl-ink);
 		color: #f2f0eb;
@@ -770,7 +770,7 @@
 	}
 	.strictness-head {
 		display: grid;
-		gap: 2px;
+		gap: var(--cl-s1);
 	}
 	.levels {
 		table-layout: fixed;
@@ -792,8 +792,8 @@
 		padding-left: 12px;
 	}
 	.default-tag {
-		margin-left: 8px;
-		padding: 1px 6px;
+		margin-left: var(--cl-s2);
+		padding: 1px 7px;
 		border-radius: var(--cl-r-chip);
 		border: 1px solid var(--w-control-border);
 		font: 600 12px/16px var(--cl-font);
@@ -833,12 +833,12 @@
 	.fair-list p {
 		font: var(--cl-body);
 		color: var(--cl-text-muted);
-		margin-top: 2px;
+		margin-top: var(--cl-s1);
 	}
 	.why-specimen {
 		display: grid;
 		place-items: center;
-		padding: 56px var(--cl-s6);
+		padding: 48px var(--cl-s6);
 		border-radius: var(--cl-r-card);
 		border: 1px solid var(--cl-border);
 	}
@@ -853,7 +853,7 @@
 		font-weight: 700;
 	}
 	.why-pop ul {
-		padding-left: 18px;
+		padding-left: var(--cl-s4);
 		display: grid;
 		gap: 2px;
 	}
@@ -889,7 +889,7 @@
 	}
 	.ticks li {
 		display: flex;
-		gap: 10px;
+		gap: var(--cl-s2);
 	}
 	.ticks :global(svg) {
 		flex: none;
@@ -921,6 +921,7 @@
 	}
 	.open-stats dd {
 		font: var(--cl-display);
+		font-variant-numeric: tabular-nums;
 	}
 	.latest {
 		padding-block: var(--cl-s3) 0;
@@ -949,7 +950,7 @@
 	}
 	.latest-empty p {
 		background: var(--cl-surface);
-		padding: 6px 12px;
+		padding: var(--cl-s1) var(--cl-s3);
 		border-radius: var(--cl-r-chip);
 	}
 
@@ -984,7 +985,7 @@
 		grid-template-columns: minmax(0, 1fr) 360px;
 		align-items: center;
 		gap: var(--cl-s6);
-		padding: var(--cl-s6) 56px;
+		padding: var(--cl-s6) 48px;
 		border-radius: var(--cl-r-card);
 		border: 1px solid var(--cl-border);
 		background: var(--cl-surface);
@@ -1063,7 +1064,6 @@
 			height: 64px;
 		}
 		.definition {
-			font: 400 20px/30px var(--cl-font);
 			padding-left: var(--cl-s4);
 		}
 		.why-specimen {
@@ -1077,8 +1077,8 @@
 		}
 		.levels tr.default {
 			background: var(--cl-paper);
-			padding-inline: 10px;
-			margin-inline: -10px;
+			padding-inline: var(--cl-s3);
+			margin-inline: calc(-1 * var(--cl-s3));
 			border-radius: var(--cl-r-chip);
 		}
 		.verdicts th[scope='row'] {

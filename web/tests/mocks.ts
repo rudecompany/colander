@@ -66,6 +66,14 @@ export const SOURCES: Record<string, Source> = {
 		appeal_open: true,
 		evidence: { taggers: 17, tags: { slop: 8, ai_fine: 3, not_slop: 6 }, items_seen: 11, ai_item_share: 0.45, uploads_per_day: 0.6 }
 	}),
+	'yt:@everydaytrivia': source({
+		platform: 'yt',
+		id: '@everydaytrivia',
+		name: 'Everyday Trivia',
+		verdict: null,
+		imported: true,
+		attribution: 'AiSList (CC BY-NC 4.0), blocklist'
+	}),
 	'fb:104729388112': source({
 		platform: 'fb',
 		id: '104729388112',
@@ -90,7 +98,7 @@ export const LOG: LogEntry[] = [
 	entry({ at: '2026-10-03T08:42:00Z', platform: 'yt', source_id: 'UCq3x9Vb2m4LkT7pQe8sW1aZ', source_name: 'Ancient Facts Daily', from: 'likely_slop', to: 'slop', reason: 'Staff review confirmed mass-produced narration over stock and generated footage, about 14 uploads a day.', signals: ['mostly_ai', 'high_volume', 'staff_review'], actor: 'staff', actor_name: 'Sam' }),
 	entry({ at: '2026-10-02T21:10:00Z', platform: 'yt', source_id: '@numisnotes', source_name: 'Numis Notes', from: 'likely_slop', to: 'disputed', reason: 'The creator verified the channel and opened an appeal. Shown to everyone while staff review.', signals: ['open_appeal'], actor: 'appeal' }),
 	entry({ at: '2026-10-02T16:05:00Z', platform: 'tt', source_id: '@historybites247', source_name: 'History Bites 24/7', from: 'ai_made', to: 'likely_slop', reason: 'AI labels on most recent videos, one template across captions, and taggers found the videos hollow.', signals: ['platform_label', 'templated', 'rubric_hollow'], actor: 'community' }),
-	entry({ at: '2026-10-01T13:30:00Z', platform: 'fb', source_id: '104729388112', source_name: 'Coastal Science Club', from: 'disputed', to: 'clear', reason: 'Appeal upheld. Original footage and on-camera presenters, with AI used only for captions.', signals: ['not_slop_consensus'], actor: 'staff', actor_name: 'Ines' }),
+	entry({ at: '2026-10-01T13:30:00Z', platform: 'fb', source_id: '104729388112', source_name: 'Coastal Science Club', from: 'disputed', to: 'clear', reason: 'Appeal upheld. Original footage and on-camera presenters, with AI used only for captions.', signals: ['not_slop_consensus'], actor: 'appeal', actor_name: 'Ines' }),
 	entry({ at: '2026-09-30T10:00:00Z', platform: 'ig', source_id: 'studiolumen', source_name: 'Studio Lumen', from: null, to: 'ai_made', reason: 'The creator states the work is made with AI, and the platform labels it. No sign of mass production.', signals: ['creator_statement', 'platform_label'], actor: 'community' }),
 	entry({ at: '2026-09-29T18:22:00Z', platform: 'yt', source_id: 'UCq3x9Vb2m4LkT7pQe8sW1aZ', source_name: 'Ancient Facts Daily', target_type: 'item', target_id: 'kX3v9QwL2pA', from: null, to: 'slop', reason: 'Generated narration over generated images, with a link funnel in the description.', signals: ['platform_label', 'link_funnel'], actor: 'curator', actor_name: 'Priya' }),
 	entry({ at: '2026-09-28T09:14:00Z', platform: 'yt', source_id: 'UCq3x9Vb2m4LkT7pQe8sW1aZ', source_name: 'Ancient Facts Daily', from: 'ai_made', to: 'likely_slop', reason: '91% of recent items carry AI evidence, above the 80% bar, and community tags agree.', signals: ['mostly_ai', 'community_consensus'], actor: 'community' }),
@@ -235,3 +243,32 @@ export async function mockApi(page: Page, overrides: Record<string, Handler> = {
 }
 
 export { err };
+
+/** Every page, with the mocks it needs. Specs open History Bites 24/7 in the console after load. */
+export const PAGES: [string, Record<string, Handler>?][] = [
+	['/'],
+	['/definition'],
+	['/s/yt/UCq3x9Vb2m4LkT7pQe8sW1aZ'],
+	['/s/yt/@unknownchannel'],
+	['/appeal/tt/@historybites247'],
+	['/appeal/status/apl_4k9x2m?secret=s3cret', { 'GET /v1/appeals/*': { json: { appeal: APPEAL } } }],
+	['/log'],
+	['/plans'],
+	['/plans/welcome', { 'GET /v1/account': { json: { account: PLUS_ACCOUNT } } }],
+	['/support'],
+	['/support/thanks'],
+	['/supporters'],
+	['/transparency'],
+	['/account', { 'GET /v1/account': { json: { account: PLUS_ACCOUNT } } }],
+	[
+		'/console',
+		{
+			'GET /v1/account': { json: { account: STAFF } },
+			'GET /v1/review/queue': { json: { items: QUEUE, next_cursor: null } },
+			'GET /v1/review/sources/*': { json: reviewSource('tt:@historybites247') }
+		}
+	],
+	['/privacy'],
+	['/terms'],
+	['/missing-page']
+];

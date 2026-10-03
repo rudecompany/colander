@@ -8,7 +8,7 @@
 	import Input from '@colander/shared/components/ui/input/input.svelte';
 	import Textarea from '@colander/shared/components/ui/textarea/textarea.svelte';
 	import { api, ApiError, errorText } from '#lib/api.ts';
-	import { sourcePath } from '#lib/format.ts';
+	import { canAppeal, sourcePath } from '#lib/format.ts';
 	import Loading from '#lib/components/Loading.svelte';
 	import Notice from '#lib/components/Notice.svelte';
 	import VerdictOrNone from '#lib/components/VerdictOrNone.svelte';
@@ -37,7 +37,7 @@
 
 	const s = $derived(source.kind === 'ok' ? source.data.source : null);
 	const name = $derived(s?.name ?? id);
-	const canAppeal = $derived(!!s && !!s.verdict && s.verdict !== 'clear' && !s.appeal_open);
+	const appealable = $derived(canAppeal(s));
 
 	async function submit(event: SubmitEvent) {
 		event.preventDefault();
@@ -93,7 +93,7 @@
 		</Notice>
 	{/if}
 
-	{#if canAppeal && s?.verdict}
+	{#if appealable && s?.verdict}
 		<div class="layout">
 			<form class="card form" onsubmit={submit} novalidate>
 				<p class="current">Current verdict <VerdictOrNone verdict={s.verdict} /></p>
@@ -148,10 +148,6 @@
 	.head .t-display {
 		overflow-wrap: anywhere;
 	}
-	.t-lede {
-		font-size: 18px;
-		line-height: 28px;
-	}
 	.layout {
 		display: grid;
 		grid-template-columns: minmax(0, 1fr) 260px;
@@ -165,7 +161,7 @@
 	.current {
 		display: flex;
 		align-items: center;
-		gap: 10px;
+		gap: var(--cl-s2);
 		font: 600 14px/20px var(--cl-font);
 	}
 	.steps {

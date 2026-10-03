@@ -39,3 +39,12 @@ test('filters in the address are applied on load', async ({ page }) => {
 	await expect(page.getByLabel('Platform')).toHaveValue('fb');
 	await expect(page.locator('ol.entries > li')).toHaveCount(1);
 });
+
+test('appeal entries name the reviewer who decided them', async ({ page }) => {
+	await mockApi(page);
+	await page.goto('/log');
+	const entry = (name: string) => page.locator('ol.entries > li').filter({ has: page.getByRole('heading', { name }) });
+	// Verifying an appeal moves the source to Disputed on its own; a decided appeal names its reviewer.
+	await expect(entry('Numis Notes').locator('.actor')).toHaveText('Changed by a verified appeal');
+	await expect(entry('Coastal Science Club').locator('.actor')).toHaveText('Appeal decided by Ines');
+});

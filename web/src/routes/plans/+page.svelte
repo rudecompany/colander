@@ -314,7 +314,7 @@
 	.soon {
 		display: inline-block;
 		vertical-align: middle;
-		margin-left: 6px;
+		margin-left: var(--cl-s2);
 		padding: 1px 7px;
 		border-radius: var(--cl-r-chip);
 		border: 1px solid var(--w-control-border);
@@ -359,8 +359,8 @@
 		flex: none;
 		display: grid;
 		place-items: center;
-		width: 26px;
-		height: 26px;
+		width: 24px;
+		height: 24px;
 		border-radius: 50%;
 		border: 1.5px solid var(--cl-text);
 		font: 700 12px/1 var(--cl-font);

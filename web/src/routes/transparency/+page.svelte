@@ -32,7 +32,7 @@
 		['Advertising', 'Ads in the extension, on this site or in the lists', 'Never'],
 		['Affiliate links', 'Commission from links we show or rewrite', 'Never'],
 		['Selling or sharing data', 'Anything about the people who use Colander', 'Never'],
-		['Paid removal from a list', 'Creators, platforms or advertisers paying to leave a list', 'Never']
+		['Paying to leave a list', 'Creators, platforms or advertisers buying their way off a list', 'Never']
 	];
 
 	const rules = [
@@ -60,7 +60,7 @@
 		<div class="block-head">
 			<h2 class="t-title" id="live-title">The list right now</h2>
 			{#if stats?.list_updated_at}
-				<p class="t-body muted">List version {fmtNum(stats.list_sequence)}, published {fmtDateTime(stats.list_updated_at)}.</p>
+				<p class="t-body muted">List version <span class="cl-num">{fmtNum(stats.list_sequence)}</span>, published {fmtDateTime(stats.list_updated_at)}.</p>
 			{/if}
 		</div>
 
@@ -137,7 +137,7 @@
 		<section aria-labelledby="independence-title" class="block" id="independence">
 			<h2 class="t-title" id="independence-title">Independence rules</h2>
 			<ol class="rules">
-				{#each rules as r, i (r)}<li><span class="n" aria-hidden="true">{i + 1}</span><span>{r}</span></li>{/each}
+				{#each rules as r, i (r)}<li><span class="n cl-num" aria-hidden="true">{i + 1}</span><span>{r}</span></li>{/each}
 			</ol>
 			<p class="t-body muted">The scoring and review code never reads plan or payment state. It is an input nobody can buy.</p>
 		</section>
@@ -212,6 +212,7 @@
 	}
 	.tile dd {
 		font: var(--cl-display);
+		font-variant-numeric: tabular-nums;
 	}
 	.tile-note {
 		display: block;
@@ -230,13 +231,13 @@
 	.bars th {
 		width: 136px;
 		text-align: left;
-		padding: 6px 0;
+		padding: var(--cl-s2) 0;
 	}
 	.bars td {
 		display: flex;
 		align-items: center;
 		gap: var(--cl-s3);
-		padding: 6px 0;
+		padding: var(--cl-s2) 0;
 	}
 	.bars tr:hover .bar {
 		background: color-mix(in srgb, var(--cl-text) 80%, var(--cl-surface));
@@ -282,14 +283,14 @@
 		flex: none;
 		display: grid;
 		place-items: center;
-		width: 26px;
-		height: 26px;
+		width: 24px;
+		height: 24px;
 		border-radius: 50%;
 		border: 1.5px solid var(--cl-text);
 		font: 700 12px/1 var(--cl-font);
 	}
 	.plain-list {
-		padding-left: 20px;
+		padding-left: var(--cl-s5);
 		display: grid;
 		gap: var(--cl-s2);
 		font: var(--cl-body-lg);
@@ -304,7 +305,7 @@
 	}
 	.review-grid h3 {
 		font: 600 16px/24px var(--cl-font);
-		margin-bottom: 4px;
+		margin-bottom: var(--cl-s1);
 	}
 	.error-box {
 		display: grid;

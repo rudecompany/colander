@@ -26,7 +26,7 @@
 	import RefreshCw from '@lucide/svelte/icons/refresh-cw';
 	import { ColanderMark } from '@colander/shared';
 	import { api, ApiError, errorText } from '#lib/api.ts';
-	import { appealPath, fmtDate, fmtNum, fmtPct, platformSourceUrl, plural } from '#lib/format.ts';
+	import { appealPath, canAppeal, fmtDate, fmtNum, fmtPct, platformSourceUrl, plural } from '#lib/format.ts';
 	import { groupSignals } from '#lib/layers.ts';
 	import Loading from '#lib/components/Loading.svelte';
 	import Notice from '#lib/components/Notice.svelte';
@@ -58,6 +58,7 @@
 	const source = $derived(state.kind === 'ok' ? state.data.source : null);
 	const verdict = $derived(source?.verdict ?? null);
 	const name = $derived(source?.name ?? id);
+	const appealable = $derived(canAppeal(source));
 
 	const ACTION_WORD: Record<Action, string> = { hide: 'Hidden', collapse: 'Collapsed', label: 'Labeled', allow: 'Allowed' };
 	const ACTION_ICON = { hide: EyeOff, collapse: ChevronsDownUp, label: Tag, allow: Eye };
@@ -119,6 +120,9 @@
 					Nothing from it is hidden, collapsed or labeled by the shared list. Verdicts need AI evidence first, and two layers
 					of evidence must agree before anything is hidden.
 				</p>
+				{#if source?.imported}
+					<p class="t-body muted">Imported from {source.attribution ?? 'a seed list'}.</p>
+				{/if}
 				<p class="links">
 					<a href={platformSourceUrl(platform, id)} rel="noreferrer" class="icon-line">
 						View on {PLATFORM_NAME[platform]} <ExternalLink size={14} strokeWidth={1.75} aria-hidden="true" />
@@ -144,12 +148,14 @@
 				<h2 class="sr-only" id="status-title">Verdict</h2>
 				<p class="chip-line"><VerdictOrNone {verdict} size="lg" /><span class="plain muted">{VERDICT_PLAIN[verdict]}</span></p>
 				<p class="t-title">{SUMMARY[verdict]}</p>
-				{#if evidenceLine}<p class="t-body muted">{evidenceLine} Verdict since {source.updated_at ? fmtDate(source.updated_at) : 'an earlier list'}.</p>{/if}
+				{#if evidenceLine}<p class="t-body muted cl-num">{evidenceLine} Verdict since {source.updated_at ? fmtDate(source.updated_at) : 'an earlier list'}.</p>{/if}
 			</div>
 			<div class="banner-actions">
-				<a class="uin-btn uin-btn-primary btn-lg" href={appealPath(platform, id)}>
-					<Scale size={16} strokeWidth={1.75} aria-hidden="true" /> Appeal
-				</a>
+				{#if appealable}
+					<a class="uin-btn uin-btn-primary btn-lg" href={appealPath(platform, id)}>
+						<Scale size={16} strokeWidth={1.75} aria-hidden="true" /> Appeal
+					</a>
+				{/if}
 				<a class="icon-line ext" href={platformSourceUrl(platform, source.id)} rel="noreferrer">
 					View on {PLATFORM_NAME[platform]} <ExternalLink size={14} strokeWidth={1.75} aria-hidden="true" />
 				</a>
@@ -159,7 +165,10 @@
 		{#if source.appeal_open}
 			<div class="notice-wrap">
 				<Notice title="An appeal is open">
-					<p>While staff review it, this {noun} is shown to everyone as Disputed, and nothing from it is hidden.</p>
+					<p>
+						The {noun} is shown to everyone while staff review it, and nothing from it is hidden. If you started the appeal,
+						follow it from the link in your email. The outcome is published in the decision log.
+					</p>
 				</Notice>
 			</div>
 		{/if}
@@ -232,7 +241,7 @@
 								<li><span class="key key-fine" aria-hidden="true"></span>AI-made but fine <strong class="cl-num">{fmtNum(t.ai_fine)}</strong></li>
 								<li><span class="key key-not" aria-hidden="true"></span>Not slop <strong class="cl-num">{fmtNum(t.not_slop)}</strong></li>
 							</ul>
-							<p class="t-caption muted">From {plural(source.evidence.taggers, 'tagger')}, each weighted by their track record. Only each tagger's latest tag counts.</p>
+							<p class="t-caption muted cl-num">From {plural(source.evidence.taggers, 'tagger')}, each weighted by their track record. Only each tagger's latest tag counts.</p>
 						{:else}
 							<p class="t-body muted">No community tags yet.</p>
 						{/if}
@@ -246,8 +255,8 @@
 								<span class="meter-fill" style:width={fmtPct(share)}></span>
 								<span class="meter-bar"><span class="meter-bar-label">80%</span></span>
 							</div>
-							<p class="t-body">
-								<strong class="cl-num">{fmtPct(share)}</strong> of {plural(source.evidence.items_seen, 'recent item')} carry AI evidence.
+							<p class="t-body cl-num">
+								<strong>{fmtPct(share)}</strong> of {plural(source.evidence.items_seen, 'recent item')} carry AI evidence.
 								{share >= 0.8 ? 'That is above' : 'That is below'} the 80% bar for a source that is mostly AI.
 								{#if share < 0.8 && source.evidence.items_seen >= 5}A mixed source is never hidden as a whole.{/if}
 							</p>
@@ -279,23 +288,23 @@
 			</div>
 
 			<aside class="side">
-				<section class="card appeal-card" aria-labelledby="appeal-title">
-					<h2 class="t-title" id="appeal-title">Is this your {noun}? Appeal this verdict.</h2>
-					{#if source.appeal_open}
-						<p class="t-body muted">
-							An appeal is already open. If you started it, follow it from the link in your email. The outcome is published
-							in the decision log.
-						</p>
-					{:else}
+				{#if appealable}
+					<section class="card appeal-card" aria-labelledby="appeal-title">
+						<h2 class="t-title" id="appeal-title">Is this your {noun}? Appeal this verdict.</h2>
 						<p class="t-body muted">
 							Prove the {noun} is yours with a short code, and tell us why the verdict is wrong. Nothing from it is hidden
 							while staff review, and the outcome is published in the decision log.
 						</p>
-					{/if}
-					<a class="uin-btn uin-btn-outline uin-btn-md" href={appealPath(platform, id)}>
-						<Scale size={16} strokeWidth={1.75} aria-hidden="true" /> Start an appeal
-					</a>
-				</section>
+						<a class="uin-btn uin-btn-outline uin-btn-md" href={appealPath(platform, id)}>
+							<Scale size={16} strokeWidth={1.75} aria-hidden="true" /> Start an appeal
+						</a>
+					</section>
+				{:else if verdict === 'clear'}
+					<section class="card appeal-card" aria-labelledby="appeal-title">
+						<h2 class="t-title" id="appeal-title">Nothing to appeal</h2>
+						<p class="t-body muted">Appeals are for verdicts that hide, collapse or label a {noun}. Clear does none of those.</p>
+					</section>
+				{/if}
 
 				<section class="card" aria-labelledby="facts-title">
 					<h2 class="facts-title" id="facts-title">Record</h2>
@@ -308,12 +317,14 @@
 					</dl>
 				</section>
 
-				<section class="card-quiet" aria-labelledby="wrong-title">
-					<h2 class="facts-title" id="wrong-title">Not the creator?</h2>
-					<p class="t-body muted">
-						If you think this is wrong, tag an item Not slop in the extension. Enough counter-tags move a verdict to Disputed.
-					</p>
-				</section>
+				{#if verdict !== 'clear' && verdict !== 'disputed'}
+					<section class="card-quiet" aria-labelledby="wrong-title">
+						<h2 class="facts-title" id="wrong-title">Not the creator?</h2>
+						<p class="t-body muted">
+							If you think this is wrong, tag an item Not slop in the extension. Enough counter-tags move a verdict to Disputed.
+						</p>
+					</section>
+				{/if}
 			</aside>
 		</div>
 	{/if}
@@ -323,7 +334,7 @@
 	.head {
 		display: grid;
 		gap: var(--cl-s2);
-		padding: 56px 0 var(--cl-s5);
+		padding: 64px 0 var(--cl-s5);
 	}
 	.head .t-display {
 		overflow-wrap: anywhere;
@@ -441,8 +452,8 @@
 	}
 	.effects li {
 		display: grid;
-		gap: 4px;
-		padding: 12px 14px;
+		gap: var(--cl-s1);
+		padding: var(--cl-s3) var(--cl-s4);
 		font: var(--cl-body);
 	}
 	.effects li + li {
@@ -467,10 +478,10 @@
 	.evidence h3 {
 		font: 600 14px/20px var(--cl-font);
 		color: var(--cl-text-muted);
-		margin-bottom: 6px;
+		margin-bottom: var(--cl-s2);
 	}
 	.signal-group ul {
-		padding-left: 18px;
+		padding-left: var(--cl-s4);
 		font: var(--cl-body);
 		display: grid;
 		gap: 4px;
@@ -526,7 +537,7 @@
 		list-style: none;
 		display: flex;
 		flex-wrap: wrap;
-		gap: 4px 20px;
+		gap: var(--cl-s1) var(--cl-s5);
 		font: var(--cl-body);
 	}
 	.legend li {
@@ -545,7 +556,7 @@
 		border-radius: 3px;
 		background-image: radial-gradient(circle, var(--cl-border) 1.5px, transparent 1.9px);
 		background-size: 8px 14px;
-		margin-top: 22px;
+		margin-top: var(--cl-s5);
 	}
 	.meter-fill {
 		position: absolute;

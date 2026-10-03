@@ -156,7 +156,7 @@
 					<ol>
 						{#each INSTRUCTIONS[appeal.platform] as line (line)}<li>{line}</li>{/each}
 					</ol>
-					<p class="t-caption muted">The code proves you control the {noun}. You can remove it once the appeal is verified.</p>
+					<p class="t-caption muted">The code proves you control the {noun}. You can take it out once the appeal is verified.</p>
 				</div>
 				{#if appeal.status === 'awaiting_verification'}
 					<div class="verify">
@@ -278,7 +278,7 @@
 		gap: var(--cl-s3);
 	}
 	.code {
-		padding: 10px 16px;
+		padding: var(--cl-s2) var(--cl-s4);
 		border-radius: var(--cl-r-chip);
 		border: 1px dashed var(--w-control-border);
 		background: var(--cl-surface);
@@ -294,7 +294,7 @@
 		font: 600 16px/24px var(--cl-font);
 	}
 	.howto ol {
-		padding-left: 20px;
+		padding-left: var(--cl-s5);
 		display: grid;
 		gap: 4px;
 		font: var(--cl-body);

@@ -87,7 +87,7 @@
 		border-bottom: 1px solid var(--cl-border);
 	}
 	.name {
-		font: 600 18px/26px var(--cl-font);
+		font: var(--cl-title);
 		overflow-wrap: anywhere;
 	}
 	.since {

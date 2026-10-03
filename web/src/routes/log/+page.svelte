@@ -110,7 +110,7 @@
 				}}
 			/>
 		</div>
-		<p class="count t-body muted" aria-live="polite">
+		<p class="count t-body muted cl-num" aria-live="polite">
 			{#if status === 'ready' || status === 'more'}
 				Showing {plural(entries.length, 'entry', 'entries')}{cursor ? '' : ', the whole log for these filters'}.
 			{/if}
@@ -164,7 +164,7 @@
 	}
 	.count {
 		margin-left: auto;
-		padding-bottom: 10px;
+		padding-bottom: var(--cl-s3);
 	}
 	.entries {
 		list-style: none;
@@ -188,7 +188,7 @@
 	}
 	.empty-text {
 		background: var(--cl-paper);
-		padding: 8px 14px;
+		padding: var(--cl-s2) var(--cl-s4);
 		border-radius: var(--cl-r-chip);
 		font: var(--cl-body);
 		color: var(--cl-text-muted);

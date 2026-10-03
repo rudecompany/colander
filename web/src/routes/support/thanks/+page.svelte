@@ -42,7 +42,7 @@
 	.steps {
 		display: grid;
 		gap: var(--cl-s2);
-		padding-left: 20px;
+		padding-left: var(--cl-s5);
 		font: var(--cl-body);
 	}
 	.row {

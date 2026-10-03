@@ -1,5 +1,5 @@
 import { PLATFORMS, type Platform } from '@colander/shared';
-import type { LogEntry } from '@colander/shared/api';
+import type { LogEntry, Source } from '@colander/shared/api';
 
 const dateFmt = new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' });
 const shortFmt = new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' });
@@ -27,6 +27,10 @@ export const sourcePath = (platform: Platform, id: string) =>
 	`/s/${platform}/${encodeURIComponent(id).replace(/^%40/, '@')}`;
 export const appealPath = (platform: Platform, id: string) =>
 	`/appeal/${platform}/${encodeURIComponent(id).replace(/^%40/, '@')}`;
+
+/** A source can be appealed when it has a verdict other than Clear and no appeal is open yet. */
+export const canAppeal = (s: Pick<Source, 'verdict' | 'appeal_open'> | null): boolean =>
+	!!s?.verdict && s.verdict !== 'clear' && !s.appeal_open;
 
 /** The source's own page on its platform (canonical IDs per contracts section 2.2). */
 export function platformSourceUrl(platform: Platform, id: string): string {
@@ -58,13 +62,17 @@ export function platformItemUrl(platform: Platform, itemId: string, sourceId: st
 	}
 }
 
-/** "Decided by staff member Sam", "Decided by community scoring", "Changed by a verified appeal". */
-export function actorText(entry: Pick<LogEntry, 'actor' | 'actor_name'>): string {
+/**
+ * "Decided by staff member Sam", "Decided by community scoring", "Appeal decided by Sam".
+ * An appeal entry without a reviewer is the automatic change to Disputed when the appeal is verified.
+ */
+export function actorText(entry: Pick<LogEntry, 'actor' | 'actor_name' | 'to'>): string {
 	switch (entry.actor) {
 		case 'community':
 			return 'Decided by community scoring';
 		case 'appeal':
-			return 'Changed by a verified appeal';
+			if (entry.actor_name) return `Appeal decided by ${entry.actor_name}`;
+			return entry.to === 'disputed' ? 'Changed by a verified appeal' : 'Appeal decided by staff';
 		case 'curator':
 			return entry.actor_name ? `Decided by curator ${entry.actor_name}` : 'Decided by a curator';
 		case 'staff':

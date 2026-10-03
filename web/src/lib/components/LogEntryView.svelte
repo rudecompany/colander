@@ -70,7 +70,7 @@
 		display: flex;
 		flex-wrap: wrap;
 		align-items: baseline;
-		gap: 4px 10px;
+		gap: var(--cl-s1) var(--cl-s2);
 	}
 	.source a {
 		color: var(--cl-text);
@@ -94,7 +94,7 @@
 		list-style: none;
 		display: flex;
 		flex-wrap: wrap;
-		gap: 6px;
+		gap: var(--cl-s2);
 	}
 	.signals li {
 		padding: 2px 8px;
