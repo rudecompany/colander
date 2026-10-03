@@ -66,6 +66,14 @@ export const SOURCES: Record<string, Source> = {
 		appeal_open: true,
 		evidence: { taggers: 17, tags: { slop: 8, ai_fine: 3, not_slop: 6 }, items_seen: 11, ai_item_share: 0.45, uploads_per_day: 0.6 }
 	}),
+	'yt:@everydaytrivia': source({
+		platform: 'yt',
+		id: '@everydaytrivia',
+		name: 'Everyday Trivia',
+		verdict: null,
+		imported: true,
+		attribution: 'AiSList (CC BY-NC 4.0), blocklist'
+	}),
 	'fb:104729388112': source({
 		platform: 'fb',
 		id: '104729388112',

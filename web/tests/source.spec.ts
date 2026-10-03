@@ -53,6 +53,13 @@ test('source page for a source with no verdict', async ({ page }) => {
 	await expect(page.getByRole('link', { name: /View on TikTok/ })).toHaveAttribute('href', 'https://www.tiktok.com/@nobodyknows');
 });
 
+test('an imported source with no verdict still names its seed list', async ({ page }) => {
+	await mockApi(page);
+	await page.goto('/s/yt/@everydaytrivia');
+	await expect(page.getByText('Not rated', { exact: true })).toBeVisible();
+	await expect(page.getByText('Imported from AiSList (CC BY-NC 4.0), blocklist.')).toBeVisible();
+});
+
 test('an unknown platform is a 404', async ({ page }) => {
 	await mockApi(page);
 	await page.goto('/s/xx/whatever');

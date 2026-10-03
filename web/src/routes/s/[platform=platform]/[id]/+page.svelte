@@ -120,6 +120,9 @@
 					Nothing from it is hidden, collapsed or labeled by the shared list. Verdicts need AI evidence first, and two layers
 					of evidence must agree before anything is hidden.
 				</p>
+				{#if source?.imported}
+					<p class="t-body muted">Imported from {source.attribution ?? 'a seed list'}.</p>
+				{/if}
 				<p class="links">
 					<a href={platformSourceUrl(platform, id)} rel="noreferrer" class="icon-line">
 						View on {PLATFORM_NAME[platform]} <ExternalLink size={14} strokeWidth={1.75} aria-hidden="true" />
