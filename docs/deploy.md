@@ -62,7 +62,7 @@ Go to getcolander.com > Security > Settings, filter by Bot traffic, and turn Bot
 
 The watchdog cron mails alerts through the `ALERTS` binding, which only sends to one verified address.
 1. Go to Compute > Email Service > Email Routing > Destination addresses, add the address that should receive alerts, and open the verification link mailed to it.
-2. Make sure `destination_address` of the `ALERTS` binding in `api/wrangler.jsonc` is exactly that address, for both environments.
+2. Make sure `destination_address` of the `ALERTS` binding in `api/wrangler.jsonc` is exactly that address, for both environments, and set the `ALERT_ADDRESS` var next to it to the same address (a config test fails when they differ).
 
 ### 6. Zero Trust Access for staging
 
@@ -136,6 +136,10 @@ Create account API tokens under Manage account > Account API tokens, each with a
 | `colander-ci-production` | Account > Workers > Editor, scoped to the Worker `colander`; Account > Account Settings > Read | `CLOUDFLARE_API_TOKEN` in the GitHub `production` environment |
 | `colander-ci-staging` | Account > Workers > Editor, scoped to the Worker `colander-staging`; Account > Account Settings > Read | `CLOUDFLARE_API_TOKEN` in the GitHub `staging` environment |
 | `colander-analytics` | Zone > Analytics > Read, zone getcolander.com | Worker secret `CF_ANALYTICS_TOKEN` in both environments |
+
+The hourly analytics pull also needs the zone ID: copy it from the getcolander.com overview page into the `CF_ZONE_ID` var of both environments in `api/wrangler.jsonc`.
+It is not secret, and both environments use the same zone; each one counts only requests to its own host.
+Until the token and the zone ID are both set, the pull is skipped with a log line.
 
 Per-Worker Editor can deploy, list versions and roll back, but cannot create a Worker or change a Custom Domain, which is why step 9 runs by hand.
 If a later change to `api/wrangler.jsonc` adds or changes routes or Custom Domains, deploy that change once by hand the same way, or the CI deploy fails on authorization.

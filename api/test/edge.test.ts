@@ -61,7 +61,7 @@ describe('GET /v1/list/snapshot', () => {
 		expect((await res.arrayBuffer()).byteLength).toBe(0);
 	});
 
-	it('is a 503 that nothing caches before the first publication or without seq metadata', async () => {
+	it('is a 503 that nothing caches before the first publication, from R2 or the Store', async () => {
 		for (const seed of [null, {}]) {
 			if (seed) await env.LISTS.put('list/snapshot.bin', snapshotBytes, { customMetadata: seed });
 			const res = await get('/v1/list/snapshot');
@@ -71,6 +71,28 @@ describe('GET /v1/list/snapshot', () => {
 			expect(res.headers.get('Retry-After')).toBe('30');
 			expect(((await res.json()) as { error: { code: string } }).error.code).toBe('list_unavailable');
 		}
+	});
+
+	it('falls back to the Store when R2 has no valid snapshot', async () => {
+		const seq = now();
+		await runInDurableObject(primary(), async (store: Store) => {
+			store.db.run("INSERT INTO sources (id, platform, canonical_id, verdict, created_at) VALUES (1, 'yt', '@a', 'slop', 1)");
+			store.db.run("INSERT INTO source_aliases (platform, alias, source_id) VALUES ('yt', '@a', 1)");
+			store.db.run('INSERT INTO list_sequences (seq, created_at) VALUES (?, ?)', seq - 1, seq - 1);
+			await store.publisher.publish(seq * 1000);
+			await env.LISTS.delete('list/snapshot.bin');
+		});
+		const store = vi.spyOn(Store.prototype, 'fetch');
+		const res = await get('/v1/list/snapshot');
+		expect(res.status).toBe(200);
+		expect(store).toHaveBeenCalledOnce();
+		expect(res.headers.get('X-Colander-Sequence')).toBe(String(seq));
+		expect(res.headers.get('Cache-Control')).toBe(LIST_CLIENT);
+		expect(res.headers.get('Cloudflare-CDN-Cache-Control')).toBe(LIST_EDGE);
+		expect(res.headers.get('Access-Control-Allow-Origin')).toBe('*');
+		const list = await verifyList(new Uint8Array(await res.arrayBuffer()), await importKeys([files.devPublicKey]));
+		expect([list.kind, list.sequence, list.count]).toEqual(['snapshot', seq, 1]);
+		await runInDurableObject(primary(), (s: Store) => s.db.run('DELETE FROM list_entries; DELETE FROM list_sequences; DELETE FROM source_aliases; DELETE FROM sources'));
 	});
 });
 

@@ -26,6 +26,12 @@ describe.each([
 		expect(c.vars.COLANDER_DEV).toBe('');
 	});
 
+	it('mails watchdog alerts to the one address the ALERTS binding may send to', () => {
+		const alerts = c.send_email.find((b: { name: string }) => b.name === 'ALERTS') as { destination_address?: string } | undefined;
+		expect(alerts?.destination_address).toMatch(/@/);
+		expect(c.vars.ALERT_ADDRESS).toBe(alerts?.destination_address);
+	});
+
 	it('serves only through its custom domain, with the edge cache on', () => {
 		expect(c.workers_dev).toBe(false);
 		expect(c.preview_urls).toBe(false);

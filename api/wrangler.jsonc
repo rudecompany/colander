@@ -52,7 +52,11 @@
 	},
 	"vars": {
 		"PUBLIC_URL": "https://getcolander.com",
-		"COLANDER_DEV": ""
+		"COLANDER_DEV": "",
+		// The watchdog's recipient: exactly the ALERTS destination_address above.
+		"ALERT_ADDRESS": "ops-alerts@getcolander.com",
+		// The getcolander.com zone ID, for the hourly list request count. Empty skips that pull.
+		"CF_ZONE_ID": ""
 	},
 	"secrets": { "required": ["COLANDER_SIGNING_KEY", "IP_SALT", "OPS_TOKEN"] },
 	"env": {
@@ -74,7 +78,9 @@
 			"triggers": { "crons": ["*/5 * * * *", "7 * * * *"] },
 			"vars": {
 				"PUBLIC_URL": "https://staging.getcolander.com",
-				"COLANDER_DEV": ""
+				"COLANDER_DEV": "",
+				"ALERT_ADDRESS": "ops-alerts@getcolander.com",
+				"CF_ZONE_ID": ""
 			},
 			"secrets": { "required": ["COLANDER_SIGNING_KEY", "IP_SALT", "OPS_TOKEN"] }
 		}

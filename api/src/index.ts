@@ -1,9 +1,12 @@
 // The edge Worker on getcolander.com (hosting plan sections 2 and 4). Workers Static Assets serves
 // the website; this code runs only for /v1/*, /ops/*, /healthz and /__dev/*, and only on cache
 // misses. It answers preflights, checks `since`, rate-limits misses per salted IP hash, serves
-// snapshot misses from R2 and forwards the rest of /v1 to the Store.
+// snapshot misses from R2 (from the Store while R2 has none) and forwards the rest of /v1 to the
+// Store. The cron triggers run src/scheduled.ts.
 import { finish, IP_HASH_HEADER, isCorsPath, json, jsonError, notFound, preflight, ROUTE_HEADER, setCache, tooMany } from './http';
+import { scheduled } from './scheduled';
 import { SNAPSHOT_KEY } from './store/list';
+import { primary } from './store/store';
 
 // Only the handler and the Durable Object class are exported: named exports of the main module
 // are Worker entrypoints.
@@ -19,6 +22,7 @@ interface Handled {
 }
 
 export default {
+	scheduled,
 	async fetch(request, env): Promise<Response> {
 		const started = Date.now();
 		const url = new URL(request.url);
@@ -53,7 +57,11 @@ async function handle(request: Request, url: URL, env: Env): Promise<Handled> {
 	const read = method === 'GET' || method === 'HEAD';
 	if (path === '/healthz' && read) return { route: 'GET /healthz', res: await health(env) };
 	if (path === '/ops' || path.startsWith('/ops/')) return { route: `${method} /ops/*`, res: await ops(request, env) };
-	if (path === '/v1/list/snapshot' && read) return { route: 'GET /v1/list/snapshot', res: await snapshot(env) };
+	if (path === '/v1/list/snapshot' && read) {
+		const res = await snapshot(env);
+		// Before the first publication reaches R2, or if the object is lost, the Store serves its head.
+		if (res) return { route: 'GET /v1/list/snapshot', res };
+	}
 	if (path === '/v1/list/delta' && read) {
 		const bad = checkSince(url.search, Date.now());
 		if (bad) return { route: 'GET /v1/list/delta', res: bad };
@@ -80,25 +88,24 @@ function checkSince(search: string, nowMs: number): Response | null {
 	return jsonError(400, 'invalid_since', 'The since parameter must be a list sequence number.');
 }
 
-/** Snapshot misses come straight from R2, so installs keep syncing while the Store is down. */
-async function snapshot(env: Env): Promise<Response> {
+/**
+ * Snapshot misses come straight from R2, so installs keep syncing while the Store is down.
+ * Null when R2 has no valid snapshot.
+ */
+async function snapshot(env: Env): Promise<Response | null> {
 	const obj = await env.LISTS.get(SNAPSHOT_KEY);
 	const seq = obj?.customMetadata?.seq;
 	if (!obj || !seq || !/^\d{1,15}$/.test(seq)) {
 		if (obj) console.error(JSON.stringify({ message: 'snapshot object has no valid seq metadata' }));
-		return jsonError(503, 'list_unavailable', 'The list has not been published yet. Try again shortly.', { 'Retry-After': '30' });
+		return null;
 	}
 	const headers = setCache(new Headers({ 'Content-Type': 'application/octet-stream', 'X-Colander-Sequence': seq }), 'list');
 	return new Response(obj.body, { headers });
 }
 
-function store(env: Env) {
-	return env.STORE.getByName('primary', { locationHint: 'enam' });
-}
-
 async function health(env: Env): Promise<Response> {
 	try {
-		await store(env).health();
+		await primary(env).health();
 		return json(200, { ok: true });
 	} catch (err) {
 		console.error(JSON.stringify({ message: 'health check failed', error: String(err) }));
@@ -116,7 +123,7 @@ async function forward(request: Request, env: Env, ipHash: string): Promise<Hand
 	const idempotent = request.method === 'GET' || request.method === 'HEAD';
 	for (let attempt = 1; ; attempt++) {
 		try {
-			const res = await store(env).fetch(new Request(request, { headers }));
+			const res = await primary(env).fetch(new Request(request, { headers }));
 			return { route: res.headers.get(ROUTE_HEADER) ?? fallback, res };
 		} catch (err) {
 			// A deploy restarts the Store; an idempotent request retries once (hosting plan flow 14).
