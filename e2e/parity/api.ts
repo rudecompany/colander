@@ -56,10 +56,16 @@ async function send(side: Side, path: string, spec: Spec = {}): Promise<Reply> {
 	return { status: res.status, body, headers: res.headers };
 }
 
-/** Replaces what each side draws at random with placeholders, so the rest can be compared exactly. */
+/**
+ * Replaces what each side draws at random with placeholders, so the rest can be compared exactly.
+ * Object keys are sorted: Go writes the keys of its maps sorted, the Worker in contract order, and
+ * JSON gives key order no meaning.
+ */
 export function normalize(value: unknown, key = ''): unknown {
 	if (Array.isArray(value)) return value.map((v) => normalize(v));
-	if (value && typeof value === 'object') return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, normalize(v, k)]));
+	if (value && typeof value === 'object') {
+		return Object.fromEntries(Object.entries(value).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)).map(([k, v]) => [k, normalize(v, k)]));
+	}
 	// Sequence numbers differ by design, and Go counts list requests in process where the Worker reads edge analytics.
 	if (key === 'list_sequence' || key === 'active_installs') return '(differs by design)';
 	if (typeof value !== 'string') return value;
@@ -70,7 +76,7 @@ export function normalize(value: unknown, key = ''): unknown {
 		return { plan_token: { ...claims, sub: String(claims.sub).replace(/_[a-z2-9]{16}$/, '_(random)') } };
 	}
 	return value
-		.replace(/\b(acc|rpt|apl|trial)_[a-z2-9]{16}\b/g, '$1_(random)')
+		.replace(/(?<![a-z0-9])(acc|rpt|apl|trial)_[a-z2-9]{16}\b/g, '$1_(random)')
 		.replace(/\bcolander-(?!DEMO)[A-Z0-9]{8}\b/g, 'colander-(random)')
 		.replace(/([?&]secret=)[\w-]+/g, '$1(secret)');
 }
