@@ -270,7 +270,7 @@ func TestReportLifecycle(t *testing.T) {
 
 	staff := h.reviewer("rae@colander.test", "staff", "Rae")
 	decision := map[string]any{"verdict": "slop", "reason": "Staff review confirmed mass-produced narration.",
-		"signals": []string{"high_volume", "community_consensus"}, "slop_type": "filler", "tests": []string{"mass_produced", "low_effort"}}
+		"signals": []string{"high_volume", "community_consensus", "watermark"}, "slop_type": "filler", "tests": []string{"mass_produced", "low_effort"}}
 	expect(t, h.do("POST", "/v1/review/sources/yt/@ancientwondersdaily/decision", decision, "Cookie", staff, "X-Colander-CSRF", "1"), http.StatusOK)
 
 	w = h.do("GET", "/v1/reports", nil, installAuth(1)...)
@@ -329,7 +329,7 @@ func TestAppealFlow(t *testing.T) {
 	staff := h.reviewer("rae@colander.test", "staff", "Rae")
 	csrf := []string{"Cookie", staff, "X-Colander-CSRF", "1"}
 	expect(t, h.do("POST", "/v1/review/sources/yt/@oceanmysteries/decision",
-		map[string]any{"verdict": "slop", "reason": "Generated narration over stock clips.", "signals": []string{"templated"}}, csrf...), http.StatusOK)
+		map[string]any{"verdict": "slop", "reason": "Generated narration over stock clips.", "signals": []string{"templated", "watermark"}}, csrf...), http.StatusOK)
 	h.publish()
 	_, seq := h.srv.Publisher.Snapshot()
 
@@ -398,7 +398,8 @@ func TestDeltaStatuses(t *testing.T) {
 
 	staff := h.reviewer("rae@colander.test", "staff", "Rae")
 	expect(t, h.do("POST", "/v1/review/sources/tt/@petpalsai/decision",
-		map[string]any{"verdict": "slop", "reason": "Generated pet clips around the clock."}, "Cookie", staff, "X-Colander-CSRF", "1"), http.StatusOK)
+		map[string]any{"verdict": "slop", "reason": "Generated pet clips around the clock.", "signals": []string{"creator_statement"}},
+		"Cookie", staff, "X-Colander-CSRF", "1"), http.StatusOK)
 	h.publish()
 
 	w = h.do("GET", fmt.Sprintf("/v1/list/delta?since=%d", seq.Seq), nil)
@@ -497,12 +498,23 @@ func TestCuratorLimitsAndReviewerToken(t *testing.T) {
 	expect(t, h.do("GET", "/v1/review/queue", nil, "Authorization", "Bearer nope"), http.StatusUnauthorized)
 	expect(t, h.do("GET", "/v1/review/queue", nil, "Cookie", member), http.StatusForbidden)
 
-	decision := map[string]any{"verdict": "slop", "reason": "Generated gossip narration."}
+	decision := map[string]any{"verdict": "slop", "reason": "Generated gossip narration.", "signals": []string{"watermark"}}
 	w = h.do("POST", "/v1/review/sources/yt/@gossipnarrated/decision", decision, bearer...)
 	expect(t, w, http.StatusForbidden)
 	if errorCode(t, w) != "staff_required" {
 		t.Fatal("want staff_required for a large source")
 	}
+	// Slop needs AI evidence: without a provenance signal or met provenance layer it is refused.
+	for _, v := range []string{"slop", "likely_slop"} {
+		w = h.do("POST", "/v1/review/sources/yt/@smallslopfarm/decision", map[string]any{"verdict": v, "reason": "Looks generated."}, bearer...)
+		expect(t, w, http.StatusBadRequest)
+		if errorCode(t, w) != "ai_evidence_required" {
+			t.Fatalf("%s: want ai_evidence_required", v)
+		}
+	}
+	w = h.do("POST", "/v1/review/items/yt/abcdefghijk/decision", map[string]any{"verdict": "slop", "reason": "Looks generated.",
+		"source_id": "@smallslopfarm"}, bearer...)
+	expect(t, w, http.StatusBadRequest)
 	// Curators may decide sources that are not large, by bearer token without CSRF.
 	expect(t, h.do("POST", "/v1/review/sources/yt/@smallslopfarm/decision", decision, bearer...), http.StatusOK)
 	expect(t, h.do("POST", "/v1/review/sources/yt/@smallslopfarm/decision", map[string]any{"verdict": "slop", "reason": "x", "large": true},

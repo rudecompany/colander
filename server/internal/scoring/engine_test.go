@@ -3,6 +3,7 @@ package scoring
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -237,6 +238,32 @@ func TestMixedSourceItems(t *testing.T) {
 		if v, ok := listed[lf.Hash(fmt.Sprintf("yt:i:mixedItem%02d", i))]; !ok || v != lf.VerdictCode("ai_made") {
 			t.Errorf("item %d: listed %v as %d, want its own ai_made entry", i, ok, v)
 		}
+	}
+}
+
+// Slop and Likely slop decisions need AI evidence: the target's provenance layer, or a provenance signal.
+func TestDecisionNeedsAIEvidence(t *testing.T) {
+	f := newFixture(t)
+	f.tags(1, "@quiet", "slop", false)
+	ref := f.source("@quiet").Ref
+	for _, v := range []string{"slop", "likely_slop"} {
+		err := f.eng.Decide(f.ctx, DecisionInput{SourceRef: ref, Verdict: v, Reason: "Looks generated.", Actor: "staff"})
+		if !errors.Is(err, ErrAIEvidenceRequired) {
+			t.Fatalf("%s without AI evidence: %v", v, err)
+		}
+	}
+	if err := f.eng.Decide(f.ctx, DecisionInput{SourceRef: ref, Verdict: "slop", Reason: "The creator says so.", Actor: "staff",
+		Signals: lf.SigCreatorStatement}); err != nil {
+		t.Fatal(err)
+	}
+	// The recorded signal is not evidence for the next decision, which replaces it.
+	err := f.eng.Decide(f.ctx, DecisionInput{SourceRef: ref, Verdict: "likely_slop", Reason: "Softer.", Actor: "staff"})
+	if !errors.Is(err, ErrAIEvidenceRequired) {
+		t.Fatalf("decision leaning on the one it replaces: %v", err)
+	}
+	f.tagAs(installs(0, 2), "yt", "source", "@quiet", "", "ai_fine", true)
+	if err := f.eng.Decide(f.ctx, DecisionInput{SourceRef: ref, Verdict: "likely_slop", Reason: "Labelled.", Actor: "curator"}); err != nil {
+		t.Fatal(err)
 	}
 }
 
