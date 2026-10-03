@@ -1,4 +1,4 @@
-/* Empty — see ./empty.svelte. */
+/* Empty - see ./empty.svelte. */
 
 .uin-empty {
   display: flex;
@@ -15,10 +15,10 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 40px;
-  height: 40px;
-  margin-bottom: var(--uin-s-1);
-  color: var(--uin-fg-dim);
+  width: 64px;
+  height: 64px;
+  margin-bottom: var(--uin-s-2);
+  color: var(--cl-dot-strong);
 }
 
 .uin-empty-icon > :global(svg) {
@@ -28,19 +28,15 @@
 
 .uin-empty-title {
   margin: 0;
-  font-family: var(--uin-font-display);
-  font-size: 16px;
-  font-weight: 500;
-  letter-spacing: -0.005em;
-  color: var(--uin-fg);
+  font: var(--cl-body-strong);
+  color: var(--cl-text);
 }
 
 .uin-empty-desc {
   margin: 0;
   max-width: 36ch;
-  font-size: 12.5px;
-  line-height: 1.45;
-  color: var(--uin-fg-mute);
+  font: var(--cl-body);
+  color: var(--cl-text-muted);
 }
 
 .uin-empty-action {

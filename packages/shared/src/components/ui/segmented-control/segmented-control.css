@@ -1,55 +1,75 @@
-/* SegmentedControl — see ./segmented-control.svelte. */
+/* SegmentedControl, themed for Colander. See ./segmented-control.svelte. */
 
 .uin-seg {
-  display: inline-flex;
-  border: 1px solid var(--uin-line);
-  border-radius: var(--uin-r-sm);
-  background: var(--uin-mat-row);
-  overflow: hidden;
+  position: relative;
+  display: inline-grid;
+  grid-auto-columns: 1fr;
+  grid-auto-flow: column;
+  height: 32px;
+  padding: 3px;
+  border: 1px solid var(--cl-border);
+  border-radius: var(--cl-r-card);
+  background: var(--cl-surface-raised);
   -webkit-app-region: no-drag;
 }
+.uin-seg-lg {
+  height: 40px;
+}
+.uin-seg-xl {
+  height: 44px;
+}
+/* The selected fill: inset 3 px, radius 6, slides with transform. */
+.uin-seg-ind {
+  position: absolute;
+  top: 3px;
+  bottom: 3px;
+  left: 3px;
+  width: calc((100% - 6px) / var(--n));
+  border-radius: var(--cl-r-chip);
+  background: var(--cl-brand-tint);
+  transform: translateX(calc(var(--i) * 100%));
+  transition: transform var(--cl-fast) var(--cl-ease);
+}
 .uin-seg-btn {
+  position: relative;
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  justify-content: center;
+  gap: 6px;
+  min-width: 0;
+  height: 100%;
+  padding: 0 12px;
   border: 0;
+  border-radius: var(--cl-r-chip);
   background: transparent;
-  color: var(--uin-fg-mute);
-  font-family: var(--uin-font-ui);
-  font-weight: 500;
-  cursor: default;
-  transition:
-    background-color var(--uin-dur-1) var(--uin-ease-standard),
-    color var(--uin-dur-1) var(--uin-ease-standard);
+  color: var(--cl-text-muted);
+  font: 600 14px/20px var(--cl-font);
+  white-space: nowrap;
+  cursor: pointer;
+  transition: color var(--cl-fast) var(--cl-ease);
 }
-.uin-seg-sm .uin-seg-btn {
-  padding: 3px 8px;
-  font-size: 11px;
-}
-.uin-seg-md .uin-seg-btn {
-  padding: 4px 10px;
-  font-size: 11.5px;
-}
-.uin-seg-btn + .uin-seg-btn {
-  border-left: 1px solid var(--uin-line);
+.uin-seg-xl .uin-seg-btn {
+  padding: 0 16px;
 }
 .uin-seg-btn:hover:not(.uin-seg-btn-active):not(:disabled) {
-  background: var(--uin-mat-hover);
-  color: var(--uin-fg);
+  color: var(--cl-text);
 }
 .uin-seg-btn-active {
-  background: color-mix(in srgb, var(--uin-accent) 14%, transparent);
-  color: var(--uin-accent);
+  color: var(--cl-brand);
 }
 .uin-seg-btn:focus-visible {
   outline: none;
   box-shadow: var(--uin-focus-ring);
-  border-radius: var(--uin-r-sm);
 }
 .uin-seg-btn:disabled {
   opacity: 0.4;
+  cursor: default;
 }
 .uin-seg-icon {
   display: inline-flex;
   align-items: center;
+}
+.uin-seg-icon :where(svg) {
+  width: 16px;
+  height: 16px;
 }

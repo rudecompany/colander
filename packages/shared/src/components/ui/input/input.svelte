@@ -1,11 +1,11 @@
 <!--
-@component Input — base text input primitive.
+@component Input - base text input primitive.
 
 Other inputs (`SearchInput`, `NumberInput`, etc.) compose this one.
 - `bind:value` support
 - Optional `leading` / `trailing` snippets for inline adornments
 - Three shapes: `pill`, `rounded` (default), `square`
-- Two sizes: `sm` and `md`
+- Three sizes: `sm` 28, `md` 32 (extension), `lg` 40 (website)
 
 CSS lives in `./input.css`.
 -->
@@ -15,7 +15,7 @@ CSS lives in `./input.css`.
   import {cn} from '../../../utils/cn';
 
   type Shape = 'pill' | 'rounded' | 'square';
-  type Size = 'sm' | 'md';
+  type Size = 'sm' | 'md' | 'lg';
 
   type Props = Omit<HTMLInputAttributes, 'class' | 'value' | 'size'> & {
     value?: string;

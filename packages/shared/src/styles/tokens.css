@@ -1,5 +1,5 @@
 /*
- * @a3tai/mittsu — design tokens
+ * @a3tai/mittsu - design tokens
  *
  * Copy this file into your app once (the CLI's `init` command does it
  * for you) and import it from a top-level layout. Every component pulls
@@ -70,7 +70,7 @@
   --uin-focus-ring: 0 0 0 3px color-mix(in srgb, var(--uin-accent) 40%, transparent);
 }
 
-/* Dark mode — opt in by adding `data-theme="dark"` to <html> or a
+/* Dark mode - opt in by adding `data-theme="dark"` to <html> or a
    region wrapper, or remove this gate entirely if your app is
    dark-only. The system-preference fallback below picks it up
    automatically. */

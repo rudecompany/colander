@@ -1,5 +1,5 @@
 <!--
-@component Kbd — keyboard shortcut hint.
+@component Kbd - keyboard shortcut hint.
 
 A `<kbd>` element styled to look like a tactile key cap. Use to
 telegraph shortcuts inside menus, search bars (`⌘K`), tooltips, etc.

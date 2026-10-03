@@ -1,5 +1,5 @@
 <!--
-@component ProgressBar — determinate or indeterminate progress.
+@component ProgressBar - determinate or indeterminate progress.
 
 Determinate mode: pass `value` (0..max). The fill animates between values.
 Indeterminate mode: pass `indeterminate={true}`. A short bar slides

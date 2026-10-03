@@ -1,9 +1,12 @@
 <!--
-@component SegmentedControl — radio-group rendered as connected buttons.
+@component SegmentedControl - radio-group rendered as connected buttons.
 
-Two or more options sharing one rounded rectangle; the active one fills,
-the rest are quiet. Use for binary/ternary mode toggles (List/Cards,
-Day/Week/Month, Light/Dark/Auto).
+Two or more equal-width options on a raised track; a brand-tint fill
+slides under the selected one. Colander uses it for strictness, billing
+period, report type and platform tabs on small screens.
+
+Heights: `sm` and `md` 32 (extension), `lg` 40 (website pages),
+`xl` 44 (website hero).
 
 Pass `options` as `{value, label, icon?}[]`. Bind `value` to track
 selection. Manages `aria-checked` and `role="radiogroup"`/`role="radio"`,
@@ -48,7 +51,7 @@ CSS lives in `./segmented-control.css`.
     value: T;
     onChange?: (next: T) => void;
     ariaLabel?: string;
-    size?: 'sm' | 'md';
+    size?: 'sm' | 'md' | 'lg' | 'xl';
     class?: string;
   };
 
@@ -68,6 +71,7 @@ CSS lives in `./segmented-control.css`.
   }
 
   // The one tab stop: the checked option, or the first enabled one when none is checked.
+  const index = $derived(options.findIndex((o) => o.value === value));
   const stop = $derived(
     options.some((o) => o.value === value && !o.disabled) ? value : options.find((o) => !o.disabled)?.value,
   );
@@ -77,7 +81,9 @@ CSS lives in `./segmented-control.css`.
   class={cn('uin-seg', `uin-seg-${size}`, className)}
   role="radiogroup"
   aria-label={ariaLabel}
+  style="--n:{options.length};--i:{index}"
 >
+  {#if index >= 0}<span class="uin-seg-ind" aria-hidden="true"></span>{/if}
   {#each options as opt (opt.value)}
     <button
       type="button"

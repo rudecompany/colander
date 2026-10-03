@@ -1,5 +1,5 @@
 /**
- * cn — class-name merger.
+ * cn - class-name merger.
  *
  * Accepts strings, falsy values, and arrays/records of the same. Returns
  * a single space-joined string with falsies dropped. Mirrors clsx's API

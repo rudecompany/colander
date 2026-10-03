@@ -188,3 +188,21 @@ export function shortReason(signals: Signal[], max = 2): string {
 	}
 	return words.slice(0, max).join(', ');
 }
+
+/** The collapsed-bar reason, which never repeats the verdict word ("Likely slop · Mass-produced, AI-made"). */
+export function barReason(signals: Signal[], verdict: Verdict | null): string {
+	const word = verdict ? VERDICT_WORD[verdict] : '';
+	return shortReason(signals, 4)
+		.split(', ')
+		.filter((w) => w && w !== word)
+		.slice(0, 2)
+		.join(', ');
+}
+
+/** The treatment as a past-tense word: "Hidden", "Collapsed", "Labeled", "Shown". */
+export const ACTION_DONE_WORD: Record<Action, string> = {
+	hide: 'Hidden',
+	collapse: 'Collapsed',
+	label: 'Labeled',
+	allow: 'Shown'
+};

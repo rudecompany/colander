@@ -1,5 +1,5 @@
 <!--
-@component Table — data-driven HTML table.
+@component Table - data-driven HTML table.
 
 Pass `columns: {key, label, align?, width?, sortable?}[]` and
 `rows: Record<string, any>[]`. The component renders a styled `<table>`
@@ -10,7 +10,7 @@ client-side sorting when `sortable` is set on a column.
 sorting, listen to `onSortChange` and skip the `sort` binding.
 
 For richer cell content (chips, avatars, multi-line) reach for the
-DataTable component (Wave 5b — coming).
+DataTable component (Wave 5b - coming).
 
 CSS lives in `./table.css`.
 -->

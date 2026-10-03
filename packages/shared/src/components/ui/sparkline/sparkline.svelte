@@ -1,8 +1,8 @@
 <!--
-@component Sparkline — inline mini line chart.
+@component Sparkline - inline mini line chart.
 
 A tiny SVG line drawn from a `values` array. No axes, labels, or
-tooltips — when you need those, reach for the `Chart` component (or
+tooltips - when you need those, reach for the `Chart` component (or
 the dedicated `packages/charts`). Sparklines fit inline next to a
 metric label or inside a dense table cell.
 

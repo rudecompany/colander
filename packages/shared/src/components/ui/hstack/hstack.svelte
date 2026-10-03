@@ -1,11 +1,11 @@
 <!--
-@component HStack — horizontal flex row with token-driven gap.
+@component HStack - horizontal flex row with token-driven gap.
 
 Sibling of `Stack`, but `flex-direction: row`. Default `align="center"`
 because horizontal layouts almost always want vertical centering of
 their items; default `gap=2` matches Stack.
 
-`wrap` lets the row break onto multiple lines when items overflow —
+`wrap` lets the row break onto multiple lines when items overflow -
 useful for chip rows and tag clouds.
 
 For arbitrary direction + wrap reach for `Flex`.

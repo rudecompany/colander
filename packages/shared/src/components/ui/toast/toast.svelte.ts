@@ -1,8 +1,11 @@
 /**
- * Toast — imperative API + module-scope queue.
+ * Toast: imperative API and module-scope state, themed for Colander.
  *
  * Pair this file with `<Toaster />` from `./toaster.svelte`. Mount the
  * Toaster once near the app root, then call `toast(...)` from anywhere.
+ * One toast at a time: a new one replaces the old, as the spec says. It
+ * closes when its 4-dot countdown ends (4 s, paused on hover and focus).
+ * The variant is kept for older callers and changes nothing visible.
  *
  * Examples:
  *   toast({title: 'Saved'})
@@ -17,7 +20,7 @@ export type ToastOpts = {
   title: string;
   description?: string;
   variant?: ToastVariant;
-  /** Auto-dismiss after this many ms (default 4000). Pass Infinity to pin. */
+  /** Pass Infinity to pin; any other value keeps the 4 s countdown. */
   duration?: number;
   action?: {label: string; onClick: () => void};
 };
@@ -33,11 +36,7 @@ export const toasts = $state<ToastItem[]>([]);
 
 function push(opts: ToastOpts): string {
   const item: ToastItem = {id: uid(), createdAt: Date.now(), ...opts};
-  toasts.push(item);
-  if (opts.duration !== Infinity) {
-    const dur = opts.duration ?? 4000;
-    setTimeout(() => dismiss(item.id), dur);
-  }
+  toasts.splice(0, toasts.length, item);
   return item.id;
 }
 

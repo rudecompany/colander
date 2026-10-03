@@ -1,14 +1,14 @@
 <!--
-@component ToggleGroup — set of related Toggles bound to one value.
+@component ToggleGroup - set of related Toggles bound to one value.
 
-`type="single"` (default) acts as a radio group — one option active at
+`type="single"` (default) acts as a radio group - one option active at
 a time, selecting another swaps. `type="multiple"` acts as a checkbox
-set — selections accumulate into an array.
+set - selections accumulate into an array.
 
 Composes `Toggle` for each option, so visual style follows Toggle's
 variant / size.
 
-Bind via `bind:value` — string for single, string[] for multiple.
+Bind via `bind:value` - string for single, string[] for multiple.
 
 CSS lives in `./toggle-group.css`.
 -->

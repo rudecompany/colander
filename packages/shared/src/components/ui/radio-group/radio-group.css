@@ -1,4 +1,4 @@
-/* RadioGroup — see ./radio-group.svelte. */
+/* RadioGroup - see ./radio-group.svelte. */
 
 .uin-radio-group {
   display: flex;
@@ -16,8 +16,8 @@
   color: var(--uin-fg);
 }
 
-.uin-radio-group-md { font-size: 13px; }
-.uin-radio-group-sm { font-size: 12px; }
+.uin-radio-group-md { font: var(--cl-body); }
+.uin-radio-group-sm { font: var(--cl-caption); }
 
 .uin-radio-input {
   position: absolute;
@@ -32,9 +32,9 @@
   display: inline-block;
   width: 16px;
   height: 16px;
-  border: 1px solid var(--uin-line-strong);
+  border: 1px solid var(--cl-border-strong);
   border-radius: 50%;
-  background: var(--uin-mat-row);
+  background: var(--cl-surface);
   flex-shrink: 0;
   transition:
     background-color var(--uin-dur-1) var(--uin-ease-standard),
@@ -49,7 +49,7 @@
   margin: auto;
   width: 6px;
   height: 6px;
-  background: var(--uin-accent-fg);
+  background: var(--cl-brand-fg);
   border-radius: 50%;
   opacity: 0;
   transition: opacity var(--uin-dur-1) var(--uin-ease-standard);
@@ -57,8 +57,8 @@
 .uin-radio-group-sm .uin-radio-dot::after { width: 5px; height: 5px; }
 
 .uin-radio-input:checked ~ .uin-radio-dot {
-  background: var(--uin-accent);
-  border-color: var(--uin-accent);
+  background: var(--cl-brand-fill);
+  border-color: var(--cl-brand-fill);
 }
 .uin-radio-input:checked ~ .uin-radio-dot::after { opacity: 1; }
 
@@ -69,6 +69,6 @@
 
 .uin-radio-disabled {
   cursor: not-allowed;
-  opacity: 0.5;
+  opacity: 0.4;
 }
-.uin-radio-label { line-height: 1.2; }
+.uin-radio-label { line-height: inherit; }

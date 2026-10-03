@@ -1,4 +1,4 @@
-/* NativeSelect — see ./native-select.svelte. */
+/* NativeSelect, themed for Colander: 32 in the extension (md), 40 on the website (lg). */
 
 .uin-nselect {
   position: relative;
@@ -10,36 +10,34 @@
   -webkit-appearance: none;
   appearance: none;
   width: 100%;
-  background: var(--uin-mat-row);
-  border: 1px solid var(--uin-line);
-  border-radius: var(--uin-r-sm);
-  color: var(--uin-fg);
-  font-family: var(--uin-font-ui);
-  cursor: pointer;
+  border: 1px solid var(--cl-border-strong);
+  border-radius: var(--cl-r-chip);
+  background: var(--cl-surface);
+  color: var(--cl-text);
+  font: var(--cl-body);
   text-align: left;
-  transition:
-    border-color var(--uin-dur-1) var(--uin-ease-standard);
+  cursor: pointer;
+  transition: border-color var(--cl-fast) var(--cl-ease);
 }
-.uin-nselect-el:hover { border-color: var(--uin-line-strong); }
 .uin-nselect-el:focus-visible {
   outline: none;
-  border-color: var(--uin-accent);
   box-shadow: var(--uin-focus-ring);
 }
 
-.uin-nselect-md .uin-nselect-el { height: 30px; padding: 0 28px 0 var(--uin-s-3); font-size: 13px; }
-.uin-nselect-sm .uin-nselect-el { height: 24px; padding: 0 24px 0 10px; font-size: 12px; }
+.uin-nselect-sm .uin-nselect-el { height: 28px; padding: 0 28px 0 10px; font: var(--cl-caption); }
+.uin-nselect-md .uin-nselect-el { height: 32px; padding: 0 32px 0 12px; }
+.uin-nselect-lg .uin-nselect-el { height: 40px; padding: 0 36px 0 12px; font: var(--cl-body-lg); }
 
 .uin-nselect-chev {
   position: absolute;
-  right: 10px;
   top: 50%;
+  right: 10px;
+  color: var(--cl-text-muted);
   transform: translateY(-50%);
-  color: var(--uin-fg-mute);
   pointer-events: none;
 }
 
 .uin-nselect-disabled .uin-nselect-el {
-  opacity: 0.5;
-  cursor: not-allowed;
+  opacity: 0.4;
+  cursor: default;
 }

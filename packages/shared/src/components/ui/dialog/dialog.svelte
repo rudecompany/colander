@@ -1,9 +1,9 @@
 <!--
-@component Dialog — modal overlay built on bits-ui's Dialog primitive.
+@component Dialog - modal overlay built on bits-ui's Dialog primitive.
 
 A controlled modal: bind `open` and the consumer drives visibility.
-The headless behavior — focus trap, ESC handling, click-outside,
-portal mount, scroll lock — is delegated to `bits-ui`. Our chrome is
+The headless behavior - focus trap, ESC handling, click-outside,
+portal mount, scroll lock - is delegated to `bits-ui`. Our chrome is
 a centered card with a header (title + optional description), a body
 slot, an optional footer slot, and a small × close button.
 
@@ -16,6 +16,7 @@ Requires `bits-ui` to be installed in the consumer project:
 CSS lives in `./dialog.css`.
 -->
 <script lang="ts">
+  import X from '@lucide/svelte/icons/x';
   import type {Snippet} from 'svelte';
   import {Dialog as BD} from 'bits-ui';
   import {cn} from '../../../utils/cn';
@@ -65,10 +66,7 @@ CSS lives in `./dialog.css`.
         <footer class="uin-dialog-foot">{@render footer()}</footer>
       {/if}
       <BD.Close class="uin-dialog-close" aria-label={closeLabel}>
-        <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
-          <line x1="3.5" y1="3.5" x2="12.5" y2="12.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
-          <line x1="12.5" y1="3.5" x2="3.5" y2="12.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
-        </svg>
+        <X size={16} aria-hidden="true" />
       </BD.Close>
     </BD.Content>
   </BD.Portal>

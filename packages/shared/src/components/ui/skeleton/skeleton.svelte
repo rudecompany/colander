@@ -1,5 +1,5 @@
 <!--
-@component Skeleton — placeholder block for loading states.
+@component Skeleton - placeholder block for loading states.
 
 A muted, gently pulsing rectangle that holds layout space while real
 content streams in. Use one per discrete piece of pending content

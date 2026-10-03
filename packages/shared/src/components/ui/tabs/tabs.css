@@ -1,64 +1,80 @@
-/* Tabs — see ./tabs.svelte. */
+/* Tabs, themed for Colander. See ./tabs.svelte. */
 
 .uin-tabs {
   display: flex;
-  gap: 2px;
 }
 .uin-tabs-vertical {
   flex-direction: column;
+  gap: 2px;
 }
 .uin-tabs-horizontal {
   flex-direction: row;
-  flex-wrap: wrap;
+  gap: 4px;
+  overflow-x: auto;
+  scrollbar-width: none;
 }
 
 .uin-tab {
   -webkit-app-region: no-drag;
+  position: relative;
   display: inline-flex;
+  flex: none;
   align-items: center;
-  justify-content: space-between;
-  gap: var(--uin-s-2);
-  padding: 6px 12px;
-  border: 1px solid transparent;
+  gap: 6px;
+  height: 40px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: var(--cl-r-chip);
   background: transparent;
-  color: var(--uin-fg-mute);
-  border-radius: var(--uin-r-sm);
-  font-family: var(--uin-font-ui);
-  font-size: 12.5px;
-  font-weight: 500;
+  color: var(--cl-text-muted);
+  font: var(--cl-body-strong);
   text-align: left;
-  cursor: default;
+  white-space: nowrap;
+  cursor: pointer;
   transition:
-    background-color var(--uin-dur-1) var(--uin-ease-standard),
-    color var(--uin-dur-1) var(--uin-ease-standard),
-    border-color var(--uin-dur-1) var(--uin-ease-standard);
+    background-color var(--cl-fast) var(--cl-ease),
+    color var(--cl-fast) var(--cl-ease);
 }
 .uin-tab:hover:not(:disabled):not(.uin-tab-active) {
-  background: var(--uin-mat-hover);
-  color: var(--uin-fg);
-}
-.uin-tab-active {
-  background: var(--uin-mat-selected);
-  color: var(--uin-fg);
-  border-color: color-mix(in srgb, var(--uin-accent) 28%, transparent);
+  color: var(--cl-text);
 }
 .uin-tab:focus-visible {
   outline: none;
   box-shadow: var(--uin-focus-ring);
-  border-color: transparent;
 }
 .uin-tab:disabled {
-  opacity: 0.35;
+  opacity: 0.4;
+  cursor: default;
 }
+
+/* Horizontal: the selected tab gets a 2 px brand underline. */
+.uin-tabs-horizontal .uin-tab-active {
+  color: var(--cl-text);
+}
+.uin-tabs-horizontal .uin-tab-active::after {
+  content: '';
+  position: absolute;
+  right: 12px;
+  bottom: 0;
+  left: 12px;
+  height: 2px;
+  background: var(--cl-brand);
+}
+
+/* Vertical: nav items; the selected one on brand-tint in brand text. */
+.uin-tabs-vertical .uin-tab {
+  justify-content: flex-start;
+}
+.uin-tabs-vertical .uin-tab:hover:not(:disabled):not(.uin-tab-active) {
+  background: color-mix(in srgb, var(--cl-text) 6%, transparent);
+}
+.uin-tabs-vertical .uin-tab-active {
+  background: var(--cl-brand-tint);
+  color: var(--cl-brand);
+}
+
 .uin-tab-count {
-  font-size: 10.5px;
-  color: var(--uin-fg-dim);
+  font: var(--cl-figure);
+  letter-spacing: 0.02em;
   font-variant-numeric: tabular-nums;
-  padding: 1px 7px;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--uin-fg) 6%, transparent);
-}
-.uin-tab-active .uin-tab-count {
-  color: var(--uin-accent);
-  background: color-mix(in srgb, var(--uin-accent) 14%, transparent);
 }

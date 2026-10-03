@@ -1,5 +1,5 @@
 <!--
-@component Typography — preset typographic styles with optional element override.
+@component Typography - preset typographic styles with optional element override.
 
 A single component that renders one of nine typographic presets with
 the right token-driven styling for our voice:

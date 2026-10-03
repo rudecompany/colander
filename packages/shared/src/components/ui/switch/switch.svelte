@@ -1,9 +1,9 @@
 <!--
-@component Switch — sliding on/off control (the macOS-Settings shape).
+@component Switch - sliding on/off control (the macOS-Settings shape).
 
 Visually distinct from `Toggle`: instead of a button that fills, this
 is a track with a thumb that slides between off (left) and on (right).
-Used for *settings* — "Notifications", "Auto-update", "Public profile".
+Used for *settings* - "Notifications", "Auto-update", "Public profile".
 
 Bind to `checked`. `disabled` greys the whole control.
 

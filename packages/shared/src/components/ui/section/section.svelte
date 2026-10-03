@@ -1,5 +1,5 @@
 <!--
-@component Section — semantic `<section>` with optional title + subtitle.
+@component Section - semantic `<section>` with optional title + subtitle.
 
 The page-region wrapper. Use it to break long pages into discoverable
 chunks: the heading is rendered with the display font, the subtitle

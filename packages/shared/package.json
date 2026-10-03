@@ -8,22 +8,35 @@
     "./verdicts": "./src/verdicts.ts",
     "./glyphs": "./src/glyphs.ts",
     "./api": "./src/api.ts",
+    "./copy": "./src/copy.ts",
+    "./layers": "./src/layers.ts",
+    "./format": "./src/utils/format.ts",
+    "./inpage": "./src/inpage/index.ts",
+    "./inpage/*": "./src/inpage/*",
+    "./utils/*": "./src/utils/*",
     "./styles/*": "./src/styles/*",
     "./components/*": "./src/components/*"
   },
   "scripts": {
-    "check": "svelte-check --tsconfig ./tsconfig.json"
+    "check": "svelte-check --tsconfig ./tsconfig.json --fail-on-warnings",
+    "test": "vitest run",
+    "gen:tokens": "node scripts/gen-inpage-tokens.ts"
   },
   "peerDependencies": {
     "svelte": "^5.0.0"
   },
   "dependencies": {
     "@fontsource-variable/atkinson-hyperlegible-next": "^5.3.0",
-    "bits-ui": "^2.0.0"
+    "@lucide/svelte": "^1.51.0",
+    "bits-ui": "^2.0.0",
+    "lucide": "^1.51.0"
   },
   "devDependencies": {
+    "@types/node": "^24.19.1",
+    "linkedom": "^0.18.13",
     "svelte": "^5.57.1",
     "svelte-check": "^4.0.0",
-    "typescript": "^5.9.0"
+    "typescript": "^5.9.0",
+    "vitest": "^4"
   }
 }

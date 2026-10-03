@@ -1,26 +1,66 @@
 /*
- * Colander theme: the spec's color, type, spacing, shape and motion tokens (--cl-*),
+ * Colander theme: the only token file. Color, type, spacing, shape and motion tokens (--cl-*),
  * mapped onto Mittsu's --uin-* tokens so every Mittsu component wears the brand.
  * Import after tokens.css. Used by the popup, options, side panel, welcome page and website.
- * In-page elements on host sites do NOT use this file (they use the system font stack).
+ *
+ * In-page UI on host sites does not import this file. scripts/gen-inpage-tokens.ts copies the
+ * light :root block and the dark block below into src/inpage/tokens.generated.ts, and a test
+ * fails when the two drift. Edit tokens here only, then run `pnpm -C packages/shared gen:tokens`.
+ *
+ * A new color is added only with its computed contrast ratio recorded beside it.
+ * Ratios are WCAG 2.2 relative-luminance ratios against the named backgrounds.
  */
 @import '@fontsource-variable/atkinson-hyperlegible-next/wght.css';
+@import './parts.css';
 
 :root {
-	/* Surfaces and text (spec: Color tokens, light) */
-	--cl-surface: #ffffff;
-	--cl-surface-raised: #f3f0e9;
-	--cl-border: #d9d5cc;
-	--cl-text: #1a1c1f;
-	--cl-text-muted: #5a5f66;
-	--cl-brand: #1f4e8c;
-	--cl-brand-fg: #ffffff;
-	--cl-brand-tint: #e4eaf1;
+	/* Layer 0: the page. Paper is the base of every website and extension page. */
 	--cl-paper: #faf7f2;
+	/* The only alternating section tint. */
+	--cl-wash: #f2eee6;
+	/* Layer 1: cards, inputs, popovers. */
+	--cl-surface: #ffffff;
+	/* Segmented tracks, row hover, BrowserFrame chrome, Kbd. */
+	--cl-surface-raised: #f3f0e9;
+	/* Hairlines. */
+	--cl-border: #d9d5cc;
+	/* Outlines of controls and badges: 3.99 on paper, 3.68 on wash, 4.26 on surface. */
+	--cl-border-strong: #767b82;
+	/* Text: 17.1 on surface. */
+	--cl-text: #1a1c1f;
+	/* Secondary text: 6.02 on paper, 5.56 on wash, 6.43 on surface, 5.65 on raised, 5.31 on brand-tint. */
+	--cl-text-muted: #5a5f66;
+	/* Links, focus ring, selected text, quiet buttons: 7.78 on paper, 7.18 on wash, 6.86 on brand-tint. */
+	--cl-brand: #1f4e8c;
+	/* Primary button fill and switch on-track. White text on it: 8.31. */
+	--cl-brand-fill: #1f4e8c;
+	--cl-brand-fg: #ffffff;
+	/* Selected segment, nav item and strictness card. */
+	--cl-brand-tint: #e4eaf1;
+	/* Toolbar icon, favicon and store icon only. 3.59 on #FFFFFF, 3.23 on #F1F3F4 toolbars. */
+	--cl-mark: #4f88d8;
+	/* Ink chips on media, toasts, the swipe cover. */
 	--cl-ink: #1a1c1f;
+	/* Text and links on ink and on the band: 14.99, 7.40 and 8.36 on #1A1C1F. */
+	--cl-on-ink: #f2f0eb;
+	--cl-on-ink-muted: #a7abb1;
+	--cl-on-ink-brand: #8fb8f0;
+	/* Primary buttons on ink, such as Skip on the swipe cover: white on it 4.94. */
+	--cl-on-ink-fill: #3870c0;
+	/* The one ink band per page, and the Plus price card. */
+	--cl-band: #1a1c1f;
+	/* Cards inside the band: on-ink-muted 6.49 on it. */
+	--cl-band-card: #24272c;
+	--cl-band-line: #3a3e44;
+	/* Decorative dots. */
 	--cl-dot: #d9d5cc;
+	/* Data dots and bullets: 3.43 on paper, 3.17 on wash, 3.67 on surface. Never on brand-tint. */
+	--cl-dot-strong: #8a857b;
+	/* In-page only: hairline and pill fill on host pages, neutral over any host background. */
+	--cl-host-line: rgb(0 0 0 / 0.14);
+	--cl-host-fill: rgb(0 0 0 / 0.05);
 
-	/* Verdicts: color on light, tint behind it, color on dark and on media */
+	/* Verdicts, chips only: color on light, tint behind it, color on dark and on media. */
 	--cl-slop: #a8380f;
 	--cl-slop-tint: #fbe9e2;
 	--cl-slop-media: #ff8a5c;
@@ -37,112 +77,79 @@
 	--cl-clear-tint: #e3f4ea;
 	--cl-clear-media: #6fd6a3;
 
-	/* Type */
+	/* Type. Atkinson Hyperlegible Next only; host pages get the system stack. */
 	--cl-font: 'Atkinson Hyperlegible Next Variable', 'Atkinson Hyperlegible Next', ui-sans-serif, system-ui,
 		-apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
 	--cl-font-system: system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
 	--cl-chip: 600 12px/16px var(--cl-font);
 	--cl-caption: 400 12px/16px var(--cl-font);
 	--cl-body: 400 14px/20px var(--cl-font);
+	--cl-body-strong: 600 14px/20px var(--cl-font);
 	--cl-body-lg: 400 16px/24px var(--cl-font);
 	--cl-title: 600 20px/28px var(--cl-font);
 	--cl-display: 700 32px/40px var(--cl-font);
+	--cl-title-lg: 600 24px/32px var(--cl-font);
+	--cl-stat: 600 28px/32px var(--cl-font);
+	--cl-eyebrow: 600 12px/16px var(--cl-font);
+	--cl-figure: 600 12px/16px var(--cl-font);
+	/* Website roles; the responsive steps are below. */
+	--cl-display-xl: 600 64px/66px var(--cl-font);
+	--cl-display-lg: 600 44px/48px var(--cl-font);
+	--cl-lead: 400 20px/30px var(--cl-font);
+	--cl-stat-lg: 600 48px/52px var(--cl-font);
 
-	/* Spacing steps: 4, 8, 12, 16, 24, 32 */
+	/* Spacing steps for components: 4, 8, 12, 16, 24, 32. */
 	--cl-s1: 4px;
 	--cl-s2: 8px;
 	--cl-s3: 12px;
 	--cl-s4: 16px;
 	--cl-s5: 24px;
 	--cl-s6: 32px;
+	/* Page layout only: 48, 64, 96, 128. */
+	--cl-s7: 48px;
+	--cl-s8: 64px;
+	--cl-s9: 96px;
+	--cl-s10: 128px;
 
-	/* Shape */
+	/* Shape: 6 for chips, inputs and buttons; 10 for cards, popovers and frames; full for pills. */
 	--cl-r-chip: 6px;
 	--cl-r-card: 10px;
 	--cl-r-full: 999px;
+	/* The only shadow, for floating things: popovers, menus, tooltips, toasts, dialogs. */
 	--cl-shadow-pop: 0 8px 28px rgb(26 28 31 / 0.16), 0 1px 3px rgb(26 28 31 / 0.08);
 
-	/* Motion: 120 ms hover and press, 200 ms collapse and reveal, ease-out */
+	/* Motion: 120 ms hover and press, 200 ms collapse and reveal, ease-out. */
 	--cl-fast: 120ms;
 	--cl-slow: 200ms;
 	--cl-ease: cubic-bezier(0, 0, 0.2, 1);
 }
 
-/*
- * Mittsu mapping. tokens.css sets its dark colors with (0,2,0) selectors, so the mapping uses
- * :root:not([data-theme='light']) as well (same specificity, later in the cascade) and plain
- * :root for forced light. The --cl-* values it points to switch per mode on their own.
- */
-:root,
-:root:not([data-theme='light']) {
-	--uin-fg: var(--cl-text);
-	--uin-fg-mute: var(--cl-text-muted);
-	--uin-fg-dim: color-mix(in srgb, var(--cl-text-muted) 80%, var(--cl-surface));
-	--uin-fg-faint: color-mix(in srgb, var(--cl-text) 22%, transparent);
-	--uin-line: var(--cl-border);
-	/* Control outlines clear 3:1 against their surface (WCAG 1.4.11). */
-	--uin-line-strong: color-mix(in srgb, var(--cl-text-muted) 75%, var(--cl-surface));
-	--uin-bg-base: var(--cl-paper);
-	--uin-bg-panel: var(--cl-surface);
-	--uin-mat-window: var(--cl-surface);
-	--uin-mat-sidebar: var(--cl-surface-raised);
-	--uin-mat-panel: var(--cl-surface);
-	--uin-mat-row: var(--cl-surface);
-	--uin-mat-hover: color-mix(in srgb, var(--cl-text) 6%, transparent);
-	--uin-mat-selected: color-mix(in srgb, var(--cl-brand) 12%, transparent);
-	--uin-accent: var(--cl-brand);
-	--uin-accent-fg: var(--cl-brand-fg);
-	--uin-success: var(--cl-clear);
-	--uin-warn: var(--cl-likely);
-	--uin-danger: var(--cl-slop);
-	--uin-font-ui: var(--cl-font);
-	--uin-font-display: var(--cl-font);
-	--uin-r-sm: var(--cl-r-chip);
-	--uin-r-md: var(--cl-r-chip);
-	--uin-r-lg: var(--cl-r-card);
-	--uin-r-xl: var(--cl-r-card);
-	--uin-dur-1: var(--cl-fast);
-	--uin-dur-2: var(--cl-slow);
-	--uin-ease-standard: var(--cl-ease);
-	--uin-focus-ring: 0 0 0 2px var(--cl-surface), 0 0 0 4px var(--cl-brand);
-}
-
-:root[data-theme='dark'] {
-	--cl-surface: #15171a;
-	--cl-surface-raised: #1f2226;
-	--cl-border: #3a3e44;
-	--cl-text: #f2f0eb;
-	--cl-text-muted: #a7abb1;
-	--cl-brand: #8fb8f0;
-	--cl-brand-fg: #15171a;
-	--cl-brand-tint: #1f2a3a;
-	--cl-paper: #121417;
-	--cl-dot: #2c3035;
-	--cl-slop: #ff8a5c;
-	--cl-slop-tint: #3a2219;
-	--cl-likely: #ffc857;
-	--cl-likely-tint: #372c14;
-	--cl-ai: #c2cad6;
-	--cl-ai-tint: #2a2e34;
-	--cl-disputed: #c8a6ff;
-	--cl-disputed-tint: #2e2540;
-	--cl-clear: #6fd6a3;
-	--cl-clear-tint: #183026;
-	--cl-shadow-pop: 0 8px 28px rgb(0 0 0 / 0.5), 0 1px 3px rgb(0 0 0 / 0.4);
-}
-
 @media (prefers-color-scheme: dark) {
 	:root:not([data-theme='light']) {
+		/* Text-muted: 8.00 on paper, 7.55 on wash, 7.78 on surface, 6.92 on raised, 6.28 on brand-tint. */
+		--cl-paper: #121417;
+		--cl-wash: #181a1e;
 		--cl-surface: #15171a;
 		--cl-surface-raised: #1f2226;
 		--cl-border: #3a3e44;
+		/* 3.70 on paper, 3.50 on wash, 3.60 on surface. */
+		--cl-border-strong: #6b7078;
 		--cl-text: #f2f0eb;
 		--cl-text-muted: #a7abb1;
+		/* 9.03 on paper, 7.09 on brand-tint. */
 		--cl-brand: #8fb8f0;
-		--cl-brand-fg: #15171a;
+		/* White on it: 4.94, also on the band. */
+		--cl-brand-fill: #3870c0;
+		--cl-brand-fg: #ffffff;
 		--cl-brand-tint: #1f2a3a;
-		--cl-paper: #121417;
+		--cl-band: #1f2226;
+		/* On-ink 12.0, on-ink-muted 5.92, #8FB8F0 6.69 on it. */
+		--cl-band-card: #2a2e33;
 		--cl-dot: #2c3035;
+		/* 3.70 on paper, 3.50 on wash, 3.60 on surface. */
+		--cl-dot-strong: #6b7078;
+		--cl-host-line: rgb(255 255 255 / 0.18);
+		--cl-host-fill: rgb(255 255 255 / 0.1);
 		--cl-slop: #ff8a5c;
 		--cl-slop-tint: #3a2219;
 		--cl-likely: #ffc857;
@@ -157,33 +164,293 @@
 	}
 }
 
-/* Spec: popup controls and buttons are at least 32 px tall. */
-.uin-btn-md {
-	height: 32px;
-	font-size: 14px;
+/* Website type steps: 640 to 1023, then below 640. */
+@media (max-width: 1023px) {
+	:root {
+		--cl-display-xl: 600 52px/56px var(--cl-font);
+		--cl-display-lg: 600 36px/40px var(--cl-font);
+	}
 }
-.uin-btn-icon {
-	width: 32px;
-	height: 32px;
-}
-
-@media (prefers-reduced-motion: reduce) {
-	*,
-	*::before,
-	*::after {
-		transition-duration: 0ms !important;
-		animation-duration: 0ms !important;
-		scroll-behavior: auto !important;
+@media (max-width: 639px) {
+	:root {
+		--cl-display-xl: 600 40px/44px var(--cl-font);
+		--cl-display-lg: 600 30px/36px var(--cl-font);
+		--cl-lead: 400 18px/28px var(--cl-font);
+		--cl-stat-lg: 600 36px/40px var(--cl-font);
 	}
 }
 
+/*
+ * The band: everything inside renders as it does in dark mode, in both modes.
+ * Values repeat the dark block above; a test keeps them equal.
+ */
+.cl-band {
+	--cl-text: #f2f0eb;
+	--cl-text-muted: #a7abb1;
+	--cl-brand: #8fb8f0;
+	--cl-brand-fill: #3870c0;
+	--cl-brand-fg: #ffffff;
+	--cl-brand-tint: #1f2a3a;
+	--cl-border: var(--cl-band-line);
+	--cl-border-strong: #6b7078;
+	--cl-surface: var(--cl-band-card);
+	--cl-surface-raised: #1f2226;
+	--cl-dot: #2c3035;
+	--cl-dot-strong: #6b7078;
+	--cl-slop: #ff8a5c;
+	--cl-slop-tint: #3a2219;
+	--cl-likely: #ffc857;
+	--cl-likely-tint: #372c14;
+	--cl-ai: #c2cad6;
+	--cl-ai-tint: #2a2e34;
+	--cl-disputed: #c8a6ff;
+	--cl-disputed-tint: #2e2540;
+	--cl-clear: #6fd6a3;
+	--cl-clear-tint: #183026;
+	color-scheme: dark;
+	background: var(--cl-band);
+	color: var(--cl-text);
+}
+
+/*
+ * Mittsu mapping. tokens.css sets its dark colors with (0,2,0) selectors, so the mapping uses
+ * :root:not([data-theme='light']) as well (same specificity, later in the cascade). The band
+ * repeats the mapping so Mittsu components inside it resolve the band's values.
+ */
+:root,
+:root:not([data-theme='light']),
+.cl-band {
+	--uin-fg: var(--cl-text);
+	--uin-fg-mute: var(--cl-text-muted);
+	--uin-fg-dim: var(--cl-text-muted);
+	--uin-fg-faint: color-mix(in srgb, var(--cl-text) 22%, transparent);
+	--uin-line: var(--cl-border);
+	--uin-line-strong: var(--cl-border-strong);
+	--uin-bg-base: var(--cl-paper);
+	--uin-bg-panel: var(--cl-surface);
+	--uin-mat-window: var(--cl-surface);
+	--uin-mat-sidebar: var(--cl-surface-raised);
+	--uin-mat-panel: var(--cl-surface);
+	--uin-mat-row: var(--cl-surface);
+	--uin-mat-hover: color-mix(in srgb, var(--cl-text) 6%, transparent);
+	--uin-mat-selected: var(--cl-brand-tint);
+	--uin-accent: var(--cl-brand);
+	--uin-accent-fg: var(--cl-brand-fg);
+	--uin-success: var(--cl-text);
+	--uin-warn: var(--cl-text);
+	--uin-danger: var(--cl-text);
+	--uin-font-ui: var(--cl-font);
+	--uin-font-display: var(--cl-font);
+	--uin-font-mono: var(--cl-font);
+	--uin-r-sm: var(--cl-r-chip);
+	--uin-r-md: var(--cl-r-chip);
+	--uin-r-lg: var(--cl-r-card);
+	--uin-r-xl: var(--cl-r-card);
+	--uin-dur-1: var(--cl-fast);
+	--uin-dur-2: var(--cl-slow);
+	--uin-dur-3: var(--cl-slow);
+	--uin-ease-standard: var(--cl-ease);
+	--uin-ease-emphasized: var(--cl-ease);
+	/* The double ring: 2 px brand outside a 2 px gap in the surface color. */
+	--uin-focus-ring: 0 0 0 2px var(--cl-surface), 0 0 0 4px var(--cl-brand);
+}
+
+/* Page base. Extension pages and the website both sit on paper. */
+html {
+	color-scheme: light dark;
+	background: var(--cl-paper);
+	color: var(--cl-text);
+	font: var(--cl-body);
+	font-variant-numeric: tabular-nums;
+	-webkit-font-smoothing: antialiased;
+	-moz-osx-font-smoothing: grayscale;
+}
+
+/* Focus: 2 px brand with a 2 px offset everywhere. Mittsu controls draw the same ring as a shadow. */
+:focus-visible {
+	outline: 2px solid var(--cl-brand);
+	outline-offset: 2px;
+}
+
+/* Type roles. Tracking is never tighter than -0.02em. */
+.cl-display-xl {
+	font: var(--cl-display-xl);
+	letter-spacing: -0.02em;
+	text-wrap: balance;
+}
+.cl-display-lg {
+	font: var(--cl-display-lg);
+	letter-spacing: -0.02em;
+	text-wrap: balance;
+}
+.cl-display {
+	font: var(--cl-display);
+}
+.cl-title-lg {
+	font: var(--cl-title-lg);
+	letter-spacing: -0.01em;
+}
+.cl-title {
+	font: var(--cl-title);
+}
+.cl-lead {
+	font: var(--cl-lead);
+}
+.cl-body-lg {
+	font: var(--cl-body-lg);
+}
+.cl-body {
+	font: var(--cl-body);
+}
+.cl-caption {
+	font: var(--cl-caption);
+}
+.cl-stat-lg {
+	font: var(--cl-stat-lg);
+	font-variant-numeric: tabular-nums;
+}
+.cl-stat {
+	font: var(--cl-stat);
+	font-variant-numeric: tabular-nums;
+}
+.cl-figure {
+	font: var(--cl-figure);
+	letter-spacing: 0.02em;
+	font-variant-numeric: tabular-nums;
+}
+/* Eyebrow: a 3-dot mark (4 px dots, 4 px gap), then the label in sentence case. */
+.cl-eyebrow {
+	display: inline-flex;
+	align-items: center;
+	gap: 8px;
+	font: var(--cl-eyebrow);
+	letter-spacing: 0.02em;
+	color: var(--cl-text-muted);
+}
+.cl-eyebrow::before {
+	content: '';
+	flex: none;
+	width: 20px;
+	height: 4px;
+	background: radial-gradient(circle at 2px 2px, var(--cl-dot-strong) 2px, transparent 2.5px) 0 0 / 8px 4px repeat-x;
+}
+.cl-muted {
+	color: var(--cl-text-muted);
+}
+/* Two-tone headline: the continuation is muted at the same size and weight. */
+.cl-tone2 {
+	color: var(--cl-text-muted);
+}
+/* Measures. */
+.cl-measure {
+	max-width: 68ch;
+}
+.cl-measure-display {
+	max-width: 22ch;
+}
 /* Counts use tabular figures. */
 .cl-num {
 	font-variant-numeric: tabular-nums;
 }
+.cl-sr-only {
+	position: absolute;
+	width: 1px;
+	height: 1px;
+	margin: -1px;
+	overflow: hidden;
+	clip: rect(0 0 0 0);
+	white-space: nowrap;
+	border: 0;
+}
 
-/* The perforation-dot motif, for empty states, illustrations and loading. */
+/* Website container: 1200 content, 12 columns, 24 gutter. Side padding 32, 24, 16. */
+.cl-container {
+	width: 100%;
+	max-width: calc(1200px + 2 * 32px);
+	margin-inline: auto;
+	padding-inline: 32px;
+}
+.cl-grid {
+	display: grid;
+	grid-template-columns: repeat(12, minmax(0, 1fr));
+	column-gap: 24px;
+}
+/* Website section rhythm: 128, 96, 64. */
+.cl-section {
+	padding-block: var(--cl-s10);
+}
+.cl-wash {
+	background: var(--cl-wash);
+}
+.cl-paper {
+	background: var(--cl-paper);
+}
+@media (max-width: 1023px) {
+	.cl-container {
+		max-width: calc(1200px + 2 * 24px);
+		padding-inline: 24px;
+	}
+	.cl-section {
+		padding-block: var(--cl-s9);
+	}
+}
+@media (max-width: 639px) {
+	.cl-container {
+		padding-inline: 16px;
+	}
+	.cl-section {
+		padding-block: var(--cl-s8);
+	}
+}
+
+/* Texture, all CSS. DotField: 1.5 px dots at a 12 px pitch. */
 .cl-dots {
 	background-image: radial-gradient(var(--cl-dot) 1.5px, transparent 1.6px);
 	background-size: 12px 12px;
+}
+/* PerforationRow: 3 px dots at an 8 px pitch, 3 px tall, full width. */
+.cl-perf {
+	height: 3px;
+	background: radial-gradient(circle at 1.5px 1.5px, var(--cl-dot) 1.5px, transparent 1.6px) 0 0 / 8px 3px repeat-x;
+}
+.cl-perf-v {
+	width: 3px;
+	background: radial-gradient(circle at 1.5px 1.5px, var(--cl-dot) 1.5px, transparent 1.6px) 0 0 / 3px 8px repeat-y;
+}
+
+/* A clickable card's border strengthens on hover, with no lift. */
+.cl-hover-card {
+	transition: border-color var(--cl-fast) var(--cl-ease);
+}
+.cl-hover-card:hover {
+	border-color: var(--cl-border-strong);
+}
+
+/* The toast countdown is a stepped timer, not motion, so it keeps running. */
+@media (prefers-reduced-motion: reduce) {
+	*:not(.cl-count > i),
+	*::before,
+	*::after {
+		transition-duration: 0ms !important;
+		animation-duration: 0ms !important;
+		animation-iteration-count: 1 !important;
+		scroll-behavior: auto !important;
+	}
+}
+
+/* Forced colors: shapes keep their edges and glyphs use the text color. */
+@media (forced-colors: active) {
+	.cl-chip,
+	.cl-badge,
+	.uin-badge,
+	.uin-card,
+	.uin-seg-ind,
+	.cl-bar,
+	.cl-stub {
+		border: 1px solid CanvasText;
+	}
+	.cl-glyph,
+	.cl-mark {
+		color: CanvasText;
+	}
 }

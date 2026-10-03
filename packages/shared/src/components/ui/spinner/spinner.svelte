@@ -1,5 +1,5 @@
 <!--
-@component Spinner — small indeterminate progress indicator.
+@component Spinner - small indeterminate progress indicator.
 
 A single CSS-only ring that rotates. Sizes: `sm` (12px), `md` (16px),
 `lg` (24px). Uses `currentColor` for the ring base and `--uin-accent`

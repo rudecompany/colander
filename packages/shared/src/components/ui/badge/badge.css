@@ -1,48 +1,29 @@
-/* Badge — see ./badge.svelte. */
+/* Badge, themed for Colander: an outline pill in 600 12/16. See ./badge.svelte. */
 
 .uin-badge {
   display: inline-flex;
+  flex: none;
   align-items: center;
   gap: 4px;
-  border-radius: 999px;
-  font-family: var(--uin-font-ui);
-  font-weight: 500;
-  font-variant-numeric: tabular-nums;
-  line-height: 1;
-  border: 1px solid transparent;
-  white-space: nowrap;
-}
-.uin-badge-sm {
-  padding: 1px 7px;
-  font-size: 10.5px;
-}
-.uin-badge-md {
-  padding: 2px 9px;
-  font-size: 11.5px;
-}
-
-.uin-badge-neutral {
-  background: color-mix(in srgb, var(--uin-fg) 6%, transparent);
-  color: var(--uin-fg-dim);
-}
-.uin-badge-accent {
-  background: color-mix(in srgb, var(--uin-accent) 14%, transparent);
-  color: var(--uin-accent);
-}
-.uin-badge-success {
-  background: color-mix(in srgb, var(--uin-success) 18%, transparent);
-  color: color-mix(in srgb, var(--uin-success) 70%, var(--uin-fg));
-}
-.uin-badge-warn {
-  background: color-mix(in srgb, var(--uin-warn) 22%, transparent);
-  color: color-mix(in srgb, var(--uin-warn) 50%, var(--uin-fg));
-}
-.uin-badge-danger {
-  background: color-mix(in srgb, var(--uin-danger) 18%, transparent);
-  color: var(--uin-danger);
-}
-.uin-badge-outline {
+  height: 20px;
+  padding: 0 8px;
+  border: 1px solid var(--cl-border-strong);
+  border-radius: var(--cl-r-full);
   background: transparent;
-  border-color: var(--uin-line);
-  color: var(--uin-fg-mute);
+  color: var(--cl-text);
+  font: var(--cl-chip);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+.uin-badge-lg {
+  height: 24px;
+  padding: 0 10px;
+}
+.uin-badge :where(svg) {
+  width: 12px;
+  height: 12px;
+}
+.cl-band .uin-badge {
+  border-color: var(--cl-band-line);
 }

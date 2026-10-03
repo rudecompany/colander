@@ -1,5 +1,5 @@
 <!--
-@component Checkbox — boolean form control with optional label.
+@component Checkbox - boolean form control with optional label.
 
 Native `<input type="checkbox">` wrapped in a styled label. The native
 input is visually hidden but remains the source of truth for keyboard
