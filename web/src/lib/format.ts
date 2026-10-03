@@ -15,7 +15,9 @@ export const fmtDateTime = (iso: string) => `${shortFmt.format(new Date(iso))}, 
 export const fmtMonth = (iso: string) => monthFmt.format(new Date(iso));
 export const fmtNum = (n: number) => numFmt.format(n);
 export const fmtPct = (share: number) => `${Math.round(share * 100)}%`;
-export const fmtMoney = (cents: number) => `$${numFmt.format(cents / 100)}`;
+const centsFmt = new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+/** "$5", "$12.50", "$1,000" */
+export const fmtMoney = (cents: number) => `$${(cents % 100 === 0 ? numFmt : centsFmt).format(cents / 100)}`;
 export const plural = (n: number, one: string, many = one + 's') => `${fmtNum(n)} ${n === 1 ? one : many}`;
 
 export const isPlatform = (p: string): p is Platform => (PLATFORMS as string[]).includes(p);

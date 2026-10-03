@@ -31,7 +31,16 @@ const shots: Shot[] = [
 	},
 	{ name: 'log', path: '/log' },
 	{ name: 'plans', path: '/plans' },
+	{
+		name: 'plans-welcome',
+		path: '/plans/welcome',
+		setup: { 'GET /v1/account': { json: { account: PLUS_ACCOUNT } } },
+		after: async (page) => {
+			await page.getByRole('heading', { name: 'Connect this browser' }).waitFor();
+		}
+	},
 	{ name: 'support', path: '/support' },
+	{ name: 'support-thanks', path: '/support/thanks' },
 	{ name: 'supporters', path: '/supporters' },
 	{ name: 'transparency', path: '/transparency' },
 	{ name: 'account-signed-out', path: '/account' },

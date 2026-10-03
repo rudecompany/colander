@@ -2,6 +2,7 @@
 	import SegmentedControl from '@colander/shared/components/ui/segmented-control/segmented-control.svelte';
 	import Input from '@colander/shared/components/ui/input/input.svelte';
 	import Heart from '@lucide/svelte/icons/heart';
+	import { onMount } from 'svelte';
 	import { api, ApiError, errorText } from '#lib/api.ts';
 	import { fmtMoney } from '#lib/format.ts';
 	import Notice from '#lib/components/Notice.svelte';
@@ -15,6 +16,9 @@
 	let creditName = $state('');
 	let working = $state(false);
 	let problem = $state<{ title: string; body: string } | null>(null);
+	let cancelled = $state(false);
+
+	onMount(() => (cancelled = new URLSearchParams(location.search).has('cancelled')));
 
 	const cents = $derived(preset === 'other' ? Math.round(Number(other.replace(/[$,\s]/g, '')) * 100) : preset);
 	const valid = $derived(Number.isFinite(cents) && cents >= 100 && cents <= 100000);
@@ -94,7 +98,11 @@
 			<p class="field-hint" id="credit-hint">Leave it empty to give without credit. We never publish amounts.</p>
 		</div>
 
-		{#if problem}<Notice title={problem.title}><p>{problem.body}</p></Notice>{/if}
+		{#if problem}
+			<Notice title={problem.title}><p>{problem.body}</p></Notice>
+		{:else if cancelled}
+			<Notice title="Payment closed before it finished"><p>Nothing was charged. Thank you for thinking of us.</p></Notice>
+		{/if}
 
 		<button type="submit" class="uin-btn uin-btn-primary btn-lg submit" disabled={working}>
 			<Heart size={16} strokeWidth={1.75} aria-hidden="true" />
@@ -106,7 +114,7 @@
 						: 'Continue to payment'}
 			</span>
 		</button>
-		<p class="t-caption muted">Checkout runs on our payment provider's page, which handles your card details and tax.</p>
+		<p class="t-caption muted">Checkout runs on our payment provider's page, which handles your payment details. We never see them.</p>
 	</form>
 
 	<div class="about">
