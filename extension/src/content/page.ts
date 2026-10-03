@@ -56,6 +56,10 @@ export function start(): void {
 	let layer: Layer | null = null;
 	const ui = () => (layer ??= new Layer());
 
+	// Registered at document_start, before the page's own scripts, so Escape and the focus trap
+	// of an open popover or dialog are handled before any site shortcut sees the key.
+	addEventListener('keydown', (e) => layer?.onKey(e), true);
+
 	let ctx: MatchContext = buildCtx();
 	function buildCtx(): MatchContext {
 		return {

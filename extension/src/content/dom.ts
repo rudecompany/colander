@@ -74,13 +74,14 @@ export function makeHost(kind: string): { host: HTMLElement; root: ShadowRoot } 
 		sheet.replaceSync(SHEET);
 	}
 	root.adoptedStyleSheets = [sheet];
-	// Clicks inside our UI must never reach links or handlers of the card around it.
-	for (const type of ['click', 'mousedown', 'mouseup', 'pointerdown', 'pointerup', 'touchstart', 'keydown', 'keyup'] as const) {
+	// Clicks and keys inside our UI must never reach handlers of the card or page around it
+	// (keys typed in the report form would otherwise trigger site shortcuts).
+	for (const type of ['click', 'mousedown', 'mouseup', 'pointerdown', 'pointerup', 'touchstart', 'keydown', 'keypress', 'keyup'] as const) {
 		host.addEventListener(type, (e) => e.stopPropagation());
 	}
+	// A chip or Tag button can sit inside the card's own link; a click on it must not follow that link.
 	host.addEventListener('click', (e) => {
-		const a = (e.composedPath()[0] as Element | undefined)?.closest?.('a[href]');
-		if (!a || a.getAttribute('target') !== '_blank') e.preventDefault();
+		if (host.parentElement?.closest('a[href]')) e.preventDefault();
 	});
 	return { host, root };
 }

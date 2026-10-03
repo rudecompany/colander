@@ -13,6 +13,7 @@ export const EXT_ID = 'nninnogmbhfebflkcgghlmjmplmpodlc';
 export const API = 'http://localhost:8787';
 const REPO = resolve(ROOT, '..');
 const fixture = (name: string) => readFileSync(resolve(ROOT, 'tests/fixtures', name));
+export const fixtureHtml = (name: string) => fixture(`${name}.html`).toString('utf8');
 
 /** Signs payloads with the published development key, like the server does in dev. */
 export function devSign(context: string, payload: Buffer): Buffer {
@@ -108,7 +109,8 @@ export interface Ext {
 	send<T = unknown>(m: unknown): Promise<T>;
 	storage<T = unknown>(key: string): Promise<T>;
 	setup(o?: { platforms?: Platform[]; strictness?: string; settings?: Record<string, unknown> }): Promise<void>;
-	open(url: string): Promise<Page>;
+	open(url: string, o?: { dark?: boolean; html?: string }): Promise<Page>;
+	tabId(page: Page): Promise<number>;
 	pageState(page: Page): Promise<any>;
 }
 
@@ -141,12 +143,21 @@ export const test = base.extend<{ ext: Ext }>({
 				await ext.send({ type: 'sync-now' });
 				await expect.poll(() => ext.storage<{ sequence: number }>('listIndex').then((i) => i?.sequence)).toBe(42);
 			},
-			async open(url) {
+			async open(url, o = {}) {
 				const page = await ctx.newPage();
+				if (o.dark || o.html) {
+					await page.route(url, async (route) => {
+						const res = await route.fetch();
+						let body = o.html ?? (await res.text());
+						if (o.dark) body = body.replace('<html lang="en">', '<html lang="en" dark>');
+						await route.fulfill({ response: res, body });
+					});
+				}
 				await page.goto(url);
 				await page.waitForSelector('[data-colander-card]', { state: 'attached' });
 				return page;
 			},
+			tabId: (page) => ctl.evaluate(async (url) => (await chrome.tabs.query({ url }))[0]!.id!, page.url()),
 			pageState: (page) =>
 				ctl.evaluate(async (url) => {
 					const [tab] = await chrome.tabs.query({ url });

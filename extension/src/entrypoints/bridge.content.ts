@@ -15,12 +15,13 @@ export default defineContentScript({
 	main() {
 		let bridges: Bridge[] = [];
 
+		// When the data cannot be read, the attribute is left alone: the isolated script only
+		// trusts it while its item matches the card's own, so a stale value is ignored there.
 		const annotate = (card: Element, b: Bridge) => {
 			const r = readBridge(card, b);
-			const v = r ? JSON.stringify(r) : null;
-			if (card.getAttribute(BRIDGE_ATTR) === v) return;
-			if (v) card.setAttribute(BRIDGE_ATTR, v);
-			else card.removeAttribute(BRIDGE_ATTR);
+			if (!r) return;
+			const v = JSON.stringify(r);
+			if (card.getAttribute(BRIDGE_ATTR) !== v) card.setAttribute(BRIDGE_ATTR, v);
 		};
 
 		const scan = (root: ParentNode) => {

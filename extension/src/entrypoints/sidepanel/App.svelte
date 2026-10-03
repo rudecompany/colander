@@ -35,6 +35,7 @@ sent by the website's account page through externally_connectable, or pasted her
 	import X from '@lucide/svelte/icons/x';
 	import Scale from '@lucide/svelte/icons/scale';
 	import { SITE } from '../../lib/env';
+	import { idSegment } from '../../lib/ids';
 	import { K } from '../../lib/settings';
 	import { ReviewError, review } from '../../ui/review';
 	import { ago, fmtDate, stored } from '../../ui/store.svelte';
@@ -227,7 +228,7 @@ sent by the website's account page through externally_connectable, or pasted her
 						<div><dt>AI share</dt><dd class="cl-num">{s.evidence.ai_item_share == null ? 'n/a' : `${Math.round(s.evidence.ai_item_share * 100)}%`} of {s.evidence.items_seen}</dd></div>
 						<div><dt>Uploads a day</dt><dd class="cl-num">{s.evidence.uploads_per_day ?? 'n/a'}</dd></div>
 					</dl>
-					<p class="t-caption muted">Re-scored {s.rescore_at ? fmtDate(s.rescore_at) : 'when it changes'} · <a href="{SITE}/s/{s.platform}/{encodeURIComponent(s.id)}" target="_blank" rel="noopener">Public page</a></p>
+					<p class="t-caption muted">Re-scored {s.rescore_at ? fmtDate(s.rescore_at) : 'when it changes'} · <a href="{SITE}/s/{s.platform}/{idSegment(s.id)}" target="_blank" rel="noopener">Public page</a></p>
 				</div>
 
 				<div class="block">

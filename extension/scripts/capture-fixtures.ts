@@ -160,7 +160,7 @@ async function sanitize(page: Page, c: Capture) {
 					const thumbStyle = a.name === 'style' && a.value.includes('/vi/');
 					if (!keepAttr.test(a.name) && !thumbStyle) e.removeAttribute(a.name);
 					else if (a.name === 'class') {
-						const cls = a.value.split(/\s+/).filter((t) => t && t !== 'style-scope' && !/^(ytd|yt)-[a-z-]+$/.test(t) && !/^css-/.test(t));
+						const cls = a.value.split(/\s+/).filter((t) => t && t !== 'style-scope' && !/^(ytd|yt)-[a-z-]+$/.test(t) );
 						if (cls.length) e.setAttribute('class', cls.join(' '));
 						else e.removeAttribute('class');
 					} else if (a.name === 'href' && a.value.startsWith('https://www.youtube.com')) {

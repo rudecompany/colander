@@ -36,7 +36,8 @@ export default defineConfig({
 		'build:manifestGenerated': (wxt, manifest) => {
 			// Runtime-registered content scripts must not grant themselves site access: access is
 			// optional and asked for per platform.
-			if (wxt.config.mode !== 'e2e') delete manifest.host_permissions;
+			if (wxt.config.mode === 'e2e') manifest.host_permissions = ALL_ORIGINS;
+			else delete manifest.host_permissions;
 		}
 	}
 });

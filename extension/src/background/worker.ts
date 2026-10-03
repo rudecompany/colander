@@ -55,8 +55,18 @@ function upsert(list: MyListEntry[], key: string, name?: string): MyListEntry[] 
 
 // ---- Content scripts -------------------------------------------------------------------------
 
-/** Registers scripts only for platforms that are switched on and granted; removes the rest. */
-export async function reconcileScripts(): Promise<void> {
+/**
+ * Registers scripts only for platforms that are switched on and granted; removes the rest.
+ * Calls are serialized: two overlapping runs would both try to register the same IDs.
+ */
+let reconciling: Promise<void> = Promise.resolve();
+export function reconcileScripts(): Promise<void> {
+	const run = reconciling.then(reconcileOnce, reconcileOnce);
+	reconciling = run.catch(() => undefined);
+	return run;
+}
+
+async function reconcileOnce(): Promise<void> {
 	const s = await getSettings();
 	const registered = new Set((await chrome.scripting.getRegisteredContentScripts()).map((r) => r.id));
 	for (const p of PLATFORMS) {
@@ -66,7 +76,9 @@ export async function reconcileScripts(): Promise<void> {
 		if (want) {
 			const missing = ids.filter((id) => !registered.has(id));
 			if (!missing.length) continue;
-			await chrome.scripting.unregisterContentScripts({ ids: ids.filter((id) => registered.has(id)) }).catch(() => undefined);
+			// Careful: an empty `ids` list unregisters every script, not none.
+			const stale = ids.filter((id) => registered.has(id));
+			if (stale.length) await chrome.scripting.unregisterContentScripts({ ids: stale });
 			await chrome.scripting.registerContentScripts([
 				{
 					id: `cl-${p}`,

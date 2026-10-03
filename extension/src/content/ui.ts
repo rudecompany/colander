@@ -21,6 +21,7 @@ import {
 	type Verdict
 } from '@colander/shared/verdicts';
 import { SITE } from '../lib/env';
+import { idSegment } from '../lib/ids';
 import { dayToDate } from '../lib/list';
 import type { Decision } from '../lib/match';
 import { formatDate, glyph, h, icon, makeHost, reducedMotion, trapFocus } from './dom';
@@ -183,7 +184,6 @@ export class Layer {
 		this.root = root;
 		this.box = h('div', { class: 'layer' });
 		root.append(this.box);
-		document.addEventListener('keydown', (e) => this.onKey(e), true);
 		document.addEventListener('pointerdown', (e) => {
 			if (this.pop && !e.composedPath().some((n) => n === this.pop!.el || n === this.pop!.anchor)) this.closePop(false);
 		}, true);
@@ -199,7 +199,8 @@ export class Layer {
 		if (!this.host.isConnected) document.documentElement.append(this.host);
 	}
 
-	private onKey(e: KeyboardEvent) {
+	/** Called by the page controller's early key guard for every keydown. */
+	onKey(e: KeyboardEvent) {
 		if (this.dialog) {
 			if (e.key === 'Escape') {
 				e.stopPropagation();
@@ -368,10 +369,10 @@ export class Layer {
 				? h(
 						'div',
 						{ class: 'why-links' },
-						h('a', { href: `${SITE}/s/${v.platform}/${encodeURIComponent(sourceId)}`, target: '_blank', rel: 'noopener' }, 'Source page'),
+						h('a', { href: `${SITE}/s/${v.platform}/${idSegment(sourceId)}`, target: '_blank', rel: 'noopener' }, 'Source page'),
 						h(
 							'a',
-							{ href: `${SITE}/appeal/${v.platform}/${encodeURIComponent(sourceId)}`, target: '_blank', rel: 'noopener' },
+							{ href: `${SITE}/appeal/${v.platform}/${idSegment(sourceId)}`, target: '_blank', rel: 'noopener' },
 							`Is this your ${SOURCE_NOUN[v.platform]}? Appeal this verdict.`
 						)
 					)

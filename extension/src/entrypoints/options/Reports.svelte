@@ -6,6 +6,7 @@
 	import { PLATFORM_NAME } from '@colander/shared/verdicts';
 	import RefreshCw from '@lucide/svelte/icons/refresh-cw';
 	import { SITE } from '../../lib/env';
+	import { idSegment } from '../../lib/ids';
 	import { K } from '../../lib/settings';
 	import Card from '../../ui/Card.svelte';
 	import Section from '../../ui/Section.svelte';
@@ -41,7 +42,7 @@
 				{#each reports.value as r (r.id)}
 					<li>
 						<div class="who">
-							<a href="{SITE}/s/{r.platform}/{encodeURIComponent(r.source_id)}" target="_blank" rel="noopener">{r.source_name || r.source_id}</a>
+							<a href="{SITE}/s/{r.platform}/{idSegment(r.source_id)}" target="_blank" rel="noopener">{r.source_name || r.source_id}</a>
 							<span class="t-caption muted">{PLATFORM_NAME[r.platform]} · reported {fmtDate(r.created_at)}</span>
 						</div>
 						<div class="status">

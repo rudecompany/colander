@@ -175,3 +175,8 @@ export function itemFromUrl(platform: Platform, href: string | null | undefined)
 		}
 	}
 }
+
+/** A canonical ID as a URL path segment. Keeps "@" readable, as in /s/yt/@somechannel. */
+export function idSegment(id: string): string {
+	return encodeURIComponent(id).replace(/^%40/, '@');
+}
