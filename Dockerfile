@@ -1,3 +1,5 @@
+# check=skip=SecretsUsedInArgOrEnv
+# (COLANDER_SIGNING_KEY below is a file path inside the data volume, not a secret value.)
 # One image: the Go server plus the built website it serves.
 # docker build -t colander . && docker run -p 8787:8787 -v colander-data:/data colander
 # First run: docker run --rm -v colander-data:/data colander keygen
