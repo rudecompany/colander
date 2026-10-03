@@ -3,6 +3,7 @@ package api
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"database/sql"
 	"encoding/base64"
 	"encoding/json"
@@ -162,8 +163,14 @@ func (h *harness) reviewer(email, role, name string) string {
 	return h.signIn(email)
 }
 
+// uuid turns a readable test name into a stable client UUID.
+func uuid(name string) string {
+	h := fmt.Sprintf("%x", sha256.Sum256([]byte(name)))
+	return h[:8] + "-" + h[8:12] + "-" + h[12:16] + "-" + h[16:20] + "-" + h[20:32]
+}
+
 func tag(clientID, targetType, target, source, verdict string) map[string]any {
-	t := map[string]any{"client_id": clientID, "platform": "yt", "target_type": targetType, "target_id": target,
+	t := map[string]any{"client_id": uuid(clientID), "platform": "yt", "target_type": targetType, "target_id": target,
 		"verdict": verdict, "platform_label": true, "created_at": "2026-10-01T11:00:00Z", "ext_version": "1.0.0"}
 	if source != "" {
 		t["source_id"] = source
@@ -181,20 +188,43 @@ func TestTagValidation(t *testing.T) {
 	}
 	expect(t, h.do("POST", "/v1/tags", map[string]any{"tags": []any{tag("a", "source", "@x", "", "slop")}}), http.StatusUnauthorized)
 
+	notUUID := tag("x", "source", "@somechannel", "", "slop")
+	notUUID["client_id"] = "not-a-uuid"
+	typedNotSlop := tag("typed-not-slop", "source", "@somechannel", "", "not_slop")
+	typedNotSlop["slop_type"] = "filler"
+	testedAIFine := tag("tested-ai-fine", "item", "abcdefghijk", "@somechannel", "ai_fine")
+	testedAIFine["tests"] = []string{"hollow"}
+	emptyExtras := tag("empty-extras", "source", "@other", "", "not_slop")
+	emptyExtras["slop_type"], emptyExtras["tests"] = "", []string{}
 	w = h.do("POST", "/v1/tags", map[string]any{"tags": []any{
 		tag("ok-1", "item", "abcdefghijk", "@somechannel", "slop"),
-		tag("no-source", "item", "abcdefghijk", "", "slop"),
+		tag("no-source", "item", "bcdefghijkl", "", "slop"), // the card did not show the source
+		emptyExtras,
 		tag("bad-target", "source", "not a handle", "", "slop"),
 		tag("bad-verdict", "source", "@somechannel", "", "fake"),
+		notUUID,
+		typedNotSlop,
+		testedAIFine,
+		tag("source-with-source", "source", "@somechannel", "@somechannel", "slop"),
 	}}, installAuth(1)...)
 	expect(t, w, http.StatusOK)
 	got := decodeBody[struct {
 		Accepted []string    `json:"accepted"`
 		Rejected []rejection `json:"rejected"`
 	}](t, w)
-	want := []rejection{{"no-source", "missing_source"}, {"bad-target", "invalid_target"}, {"bad-verdict", "invalid_verdict"}}
-	if fmt.Sprint(got.Accepted) != "[ok-1]" || fmt.Sprint(got.Rejected) != fmt.Sprint(want) {
+	wantAccepted := []string{uuid("ok-1"), uuid("no-source"), uuid("empty-extras")}
+	want := []rejection{{uuid("bad-target"), "invalid_target"}, {uuid("bad-verdict"), "invalid_verdict"}, {"not-a-uuid", "invalid_field"},
+		{uuid("typed-not-slop"), "invalid_field"}, {uuid("tested-ai-fine"), "invalid_field"}, {uuid("source-with-source"), "invalid_field"}}
+	if fmt.Sprint(got.Accepted) != fmt.Sprint(wantAccepted) || fmt.Sprint(got.Rejected) != fmt.Sprint(want) {
 		t.Fatalf("accepted %v rejected %v", got.Accepted, got.Rejected)
+	}
+	// The item without a source is kept apart from every real source.
+	it, err := h.srv.Store.FindItem(h.ctx, "yt", "bcdefghijkl")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if src, _ := h.srv.Store.GetSource(h.ctx, it.SourceRef); src.CanonicalID != "" {
+		t.Fatalf("unattributed item filed under %q", src.CanonicalID)
 	}
 }
 

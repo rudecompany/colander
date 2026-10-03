@@ -246,6 +246,9 @@ func (e *Engine) evaluate(d *store.SourceData, reps map[string]store.Rep, now ti
 	weight := e.weights(reps, now)
 	src := d.Source
 	ev := &Evaluation{Data: d}
+	// The source with an empty ID holds items tagged without their source: each is scored on its
+	// own, and nothing rolls up to it or freezes it.
+	unattributed := src.CanonicalID == ""
 
 	// Tag sums are per target (9.2): the source's sums come from tags on the source itself, one per
 	// install even when it tagged two aliases. Item evidence reaches the source only through platform
@@ -276,7 +279,7 @@ func (e *Engine) evaluate(d *store.SourceData, reps map[string]store.Rep, now ti
 	}
 
 	frozen := src.FrozenUntil > now.Unix()
-	if !frozen && burst > e.Th.BurstTags {
+	if !frozen && !unattributed && burst > e.Th.BurstTags {
 		ev.Burst, frozen = true, true
 	}
 
@@ -310,6 +313,9 @@ func (e *Engine) evaluate(d *store.SourceData, reps map[string]store.Rep, now ti
 		ev.Items = append(ev.Items, ItemEvaluation{Item: it, Input: in, lapsing: isLapsing(it.State, now.Unix())})
 	}
 
+	if unattributed {
+		aiItems, seen, rollupLabels = 0, 0, nil
+	}
 	in := Input{
 		Decision:            toDecision(d.Decisions[0]),
 		AppealOpen:          d.AppealOpen,

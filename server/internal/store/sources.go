@@ -20,7 +20,9 @@ type State struct {
 	Mixed     bool // sources only: the source is mixed, so its items keep their own list entries
 }
 
-// Source is a channel, profile or page.
+// Source is a channel, profile or page. The source with an empty canonical ID on a platform holds
+// the items tagged where the card does not show their source; it is never rated and nothing rolls
+// up to it (contracts 6.2).
 type Source struct {
 	Ref              int64
 	Platform         string
@@ -169,11 +171,26 @@ func (s *Store) SourceRefs(ctx context.Context) ([]int64, error) {
 	return refs, rows.Err()
 }
 
-// ensureItem returns the item, creating it under sourceRef when unknown. An item keeps its first source.
+// ensureItem returns the item, creating it under sourceRef when unknown. An item keeps its first
+// source, except that an item first seen without one joins the first source a later tag names.
 func ensureItem(ctx context.Context, q querier, platform, itemID string, sourceRef, now int64) (int64, error) {
-	var ref int64
-	err := q.QueryRowContext(ctx, `SELECT id FROM items WHERE platform = ? AND item_id = ?`, platform, itemID).Scan(&ref)
+	var ref, cur int64
+	var unattributed bool
+	err := q.QueryRowContext(ctx, `SELECT i.id, i.source_id, s.canonical_id = '' FROM items i JOIN sources s ON s.id = i.source_id
+		WHERE i.platform = ? AND i.item_id = ?`, platform, itemID).Scan(&ref, &cur, &unattributed)
 	if err == nil {
+		if unattributed && cur != sourceRef {
+			for _, stmt := range []string{
+				`UPDATE items SET source_id = ? WHERE id = ?`,
+				`UPDATE tags SET source_id = ? WHERE item_id = ?`,
+				`UPDATE decisions SET source_id = ? WHERE item_id = ?`,
+				`UPDATE OR IGNORE escalations SET source_id = ? WHERE item_id = ?`,
+			} {
+				if _, err := q.ExecContext(ctx, stmt, sourceRef, ref); err != nil {
+					return 0, err
+				}
+			}
+		}
 		return ref, nil
 	}
 	if !errors.Is(err, sql.ErrNoRows) {
@@ -301,8 +318,8 @@ func (s *Store) MarkYouTubeChecked(ctx context.Context, ref, now int64) error {
 
 // YouTubeStale lists YouTube sources not checked since before, oldest first.
 func (s *Store) YouTubeStale(ctx context.Context, before int64, limit int) ([]Source, error) {
-	rows, err := s.DB.QueryContext(ctx, `SELECT id FROM sources WHERE platform = 'yt' AND ifnull(youtube_checked_at, 0) < ?
-		ORDER BY ifnull(youtube_checked_at, 0), id LIMIT ?`, before, limit)
+	rows, err := s.DB.QueryContext(ctx, `SELECT id FROM sources WHERE platform = 'yt' AND canonical_id != ''
+		AND ifnull(youtube_checked_at, 0) < ? ORDER BY ifnull(youtube_checked_at, 0), id LIMIT ?`, before, limit)
 	if err != nil {
 		return nil, err
 	}

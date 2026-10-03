@@ -31,7 +31,10 @@ func installHash(w http.ResponseWriter, r *http.Request) (string, bool) {
 	return h, true
 }
 
-var clientIDPattern = regexp.MustCompile(`^[A-Za-z0-9-]{1,64}$`)
+var (
+	clientIDPattern = regexp.MustCompile(`^[A-Za-z0-9-]{1,64}$`)
+	uuidPattern     = regexp.MustCompile(`^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$`)
+)
 
 type tagJSON struct {
 	ClientID      string   `json:"client_id"`
@@ -53,11 +56,12 @@ type rejection struct {
 }
 
 // validateTag returns the stored form of a tag, or a machine-readable rejection code.
+// invalid_field marks a field the contract forbids in that place (6.2).
 func validateTag(t tagJSON, now time.Time) (store.TagInput, string) {
 	in := store.TagInput{ClientID: t.ClientID, Platform: t.Platform, TargetType: t.TargetType, Verdict: t.Verdict,
 		PlatformLabel: t.PlatformLabel, ExtVersion: t.ExtVersion, CreatedAt: now.Unix()}
-	if !clientIDPattern.MatchString(t.ClientID) {
-		return in, "invalid_client_id"
+	if !uuidPattern.MatchString(t.ClientID) {
+		return in, "invalid_field"
 	}
 	if !validPlatform(t.Platform) {
 		return in, "invalid_platform"
@@ -68,16 +72,19 @@ func validateTag(t tagJSON, now time.Time) (store.TagInput, string) {
 		if in.TargetID, ok = CanonicalSource(t.Platform, t.TargetID); !ok {
 			return in, "invalid_target"
 		}
+		if t.SourceID != "" {
+			return in, "invalid_field"
+		}
 		in.SourceID = in.TargetID
 	case "item":
 		if in.TargetID, ok = CanonicalItem(t.Platform, t.TargetID); !ok {
 			return in, "invalid_target"
 		}
-		if t.SourceID == "" {
-			return in, "missing_source"
-		}
-		if in.SourceID, ok = CanonicalSource(t.Platform, t.SourceID); !ok {
-			return in, "invalid_source"
+		// Without a source (the card did not show it) the item is scored on its own and rolls up nowhere.
+		if t.SourceID != "" {
+			if in.SourceID, ok = CanonicalSource(t.Platform, t.SourceID); !ok {
+				return in, "invalid_source"
+			}
 		}
 	default:
 		return in, "invalid_target"
@@ -97,6 +104,9 @@ func validateTag(t tagJSON, now time.Time) (store.TagInput, string) {
 		in.Tests = tests
 	case "ai_fine", "not_slop":
 		// Type and tests only mean something on a slop tag.
+		if (t.SlopType != nil && *t.SlopType != "") || len(t.Tests) > 0 {
+			return in, "invalid_field"
+		}
 	default:
 		return in, "invalid_verdict"
 	}

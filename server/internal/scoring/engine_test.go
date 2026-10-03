@@ -241,6 +241,41 @@ func TestMixedSourceItems(t *testing.T) {
 	}
 }
 
+// Items tagged where the card does not show their source are scored on their own: nothing rolls up
+// to the placeholder that holds them, and an item joins its source once a tag names it.
+func TestItemsWithoutSource(t *testing.T) {
+	f := newFixture(t)
+	for i := range 5 {
+		f.tagAs(installs(0, 3), "ig", "item", fmt.Sprintf("Cexplore%d", i), "", "ai_fine", true)
+	}
+	f.clock = f.clock.Add(40 * 24 * time.Hour)
+	f.pass()
+	holder := f.sourceOn("ig", "")
+	if holder.State.Verdict != "" || holder.State.Computed != "" {
+		t.Fatalf("placeholder source = %+v, want never rated", holder.State)
+	}
+	it, err := f.st.FindItem(f.ctx, "ig", "Cexplore0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if it.State.Verdict != "ai_made" {
+		t.Fatalf("unattributed item = %+v, want its own ai_made", it.State)
+	}
+
+	f.tagAs(installs(10, 1), "ig", "item", "Cexplore0", "dreamy.pics", "slop", false)
+	it, _ = f.st.FindItem(f.ctx, "ig", "Cexplore0")
+	if src := f.sourceOn("ig", "dreamy.pics"); it.SourceRef != src.Ref {
+		t.Fatalf("item stayed under source %d, want %d", it.SourceRef, src.Ref)
+	}
+	d, err := f.st.LoadSourceData(f.ctx, it.SourceRef, f.clock.Unix())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(d.Votes) != 4 {
+		t.Fatalf("%d tags moved with the item, want 4", len(d.Votes))
+	}
+}
+
 // Slop and Likely slop decisions need AI evidence: the target's provenance layer, or a provenance signal.
 func TestDecisionNeedsAIEvidence(t *testing.T) {
 	f := newFixture(t)
