@@ -75,7 +75,8 @@ export type ToWorker =
 	| { type: 'hello' }
 	| { type: 'counts'; platform: Platform; counts: PageCounts }
 	| { type: 'activity'; entries: ActivityEntry[] }
-	| { type: 'tag'; tag: TagRequest }
+	/** `hold`: queue it, but wait for a replacement (an open tag menu) before sending. */
+	| { type: 'tag'; tag: TagRequest; hold?: boolean }
 	| { type: 'report'; report: ReportRequest }
 	| { type: 'allow'; key: string; name?: string }
 	| { type: 'block'; key: string; name?: string }

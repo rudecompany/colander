@@ -156,6 +156,8 @@ export interface TagMenuHandlers {
 	tag(verdict: TagVerdict): Promise<Action | 'none'>;
 	/** Refines the Slop tag with an optional type and tests. */
 	detail(type: SlopType | null, tests: Test[]): void;
+	/** The menu closed, by Done, Close, Escape, a click outside or navigation. */
+	close(): void;
 	reportHelp: string;
 	noun: string;
 }
@@ -304,7 +306,7 @@ export class Layer {
 			option('ai_fine', 'AI-made but fine', 'Made with AI, and worth seeing'),
 			option('not_slop', 'Not slop', 'Made by people, or AI only helped')
 		);
-		this.openPop(anchor, pop);
+		this.openPop(anchor, pop, x.close);
 	}
 
 	private slopDetail(pop: HTMLElement, body: HTMLElement, action: Action | 'none', x: TagMenuHandlers) {

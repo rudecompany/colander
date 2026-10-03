@@ -21,10 +21,13 @@ export function backoff(attempts: number, random = Math.random): number {
 	return Math.round(ms * (1 + 0.2 * random()));
 }
 
-/** Adds a tag, dropping any queued tag for the same target that has not been sent yet. */
-export function enqueue(queue: Queued[], tag: Tag, target: string, now: number): { add: Queued; remove: string[] } {
+/**
+ * Adds a tag due at `at`, dropping any queued tag for the same target that has not been sent
+ * yet. A later `at` holds a tag that is likely to be replaced soon (an open tag menu).
+ */
+export function enqueue(queue: Queued[], tag: Tag, target: string, at: number): { add: Queued; remove: string[] } {
 	return {
-		add: { client_id: tag.client_id, target, tag, attempts: 0, nextAt: now },
+		add: { client_id: tag.client_id, target, tag, attempts: 0, nextAt: at },
 		remove: queue.filter((q) => q.target === target).map((q) => q.client_id)
 	};
 }

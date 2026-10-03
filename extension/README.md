@@ -104,8 +104,10 @@ Disputed is always labeled with its mark, and Clear is always allowed.
 | Collapse | The card keeps only a 40 px bar: glyph, verdict, one reason, Show and Why. Enter shows it. | The video is covered and paused until Show or Skip. |
 | Hide | The card leaves the layout, so the grid closes up, and the page count goes up. | The video is skipped when it becomes active, with "Skipped 1 slop video. Undo" for 4 seconds, announced politely, never stacked. |
 
-Every card with a source gets a 28 px Tag button: shown on hover or keyboard focus in grids and lists, always in swipe feeds.
+Every card with an item or a source gets a 28 px Tag button: shown on hover or keyboard focus in grids and lists, always in swipe feeds.
+Where a card shows no source (the Instagram Explore grid), the item tag goes out without `source_id` (contract 6.2).
 Tag, then Slop, applies the tag at once (two clicks, P0-5); type and tests are optional after that.
+One menu sends one tag: Slop is queued at once but held while the menu is open, type and tests change it on the device, and the final state replaces the queued tag when the menu closes (a held tag goes out after 5 minutes at the latest).
 Why lists every signal that fired on one wrapping line, then the list and its date, and links to the public source page and, for list verdicts only, the appeal page (a platform label or your own tag has nothing to appeal).
 
 ## Storage layout

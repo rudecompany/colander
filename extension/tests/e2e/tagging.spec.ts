@@ -5,6 +5,18 @@ import { expect, test } from './harness';
 const SEARCH = 'https://www.youtube.com/results?search_query=history';
 const ALLOWED = ['client_id', 'platform', 'target_type', 'target_id', 'source_id', 'verdict', 'slop_type', 'tests', 'platform_label', 'created_at', 'ext_version'];
 
+const queued = (ctl: Page) =>
+	ctl.evaluate(
+		() =>
+			new Promise<{ attempts: number; nextAt: number; tag: Record<string, unknown> }[]>((resolve) => {
+				const req = indexedDB.open('colander');
+				req.onsuccess = () => {
+					const all = req.result.transaction('tags').objectStore('tags').getAll();
+					all.onsuccess = () => resolve(all.result);
+				};
+			})
+	);
+
 async function openTag(page: Page, card: number) {
 	const c = page.locator('ytd-search ytd-video-renderer').nth(card);
 	await c.hover();
@@ -22,26 +34,36 @@ test('tag Slop in two clicks: applies at once and sends only the allowed fields'
 	await expect(card).toHaveAttribute('data-colander', 'hide');
 	await expect(menu).toContainText('Tagged. Hidden for you now, and counted toward the shared list.');
 
+	// The tag is queued at once, and held while the menu is open.
+	await expect.poll(async () => (await queued(ext.ctl)).length).toBe(1);
+
+	// Optional detail changes the queued tag on the device; nothing is sent per choice.
+	await menu.getByRole('button', { name: 'Filler' }).click();
+	await menu.getByRole('button', { name: 'Deceptive' }).click();
+	await menu.getByLabel(/Low effort/).check();
+	await menu.getByLabel(/Hollow/).check();
+	await menu.getByLabel(/Hollow/).uncheck();
+	expect(ext.api.posted('/v1/tags')).toHaveLength(0);
+	await menu.getByRole('button', { name: 'Done' }).click();
+	await expect(menu).toHaveCount(0);
+
+	// One POST for the session, with only the final state and only the allowed fields.
 	await expect.poll(() => ext.api.posted('/v1/tags').length).toBe(1);
+	await expect.poll(async () => (await queued(ext.ctl)).length).toBe(0);
 	const [sent] = ext.api.posted('/v1/tags');
 	expect(sent!.auth).toMatch(/^Install [A-Za-z0-9_-]{22}$/);
-	const tag = (sent!.body as { tags: Record<string, unknown>[] }).tags[0]!;
+	const tags = (sent!.body as { tags: Record<string, unknown>[] }).tags;
+	expect(tags).toHaveLength(1);
+	const tag = tags[0]!;
 	expect(Object.keys(tag).every((k) => ALLOWED.includes(k))).toBe(true);
 	// The channel ID is preferred over the handle: it never changes.
-	expect(tag).toMatchObject({ platform: 'yt', target_type: 'item', source_id: 'UC9MAhZQQd9egwWCxrwSIsJQ', verdict: 'slop', platform_label: false, ext_version: '1.0.0' });
+	expect(tag).toMatchObject({ platform: 'yt', target_type: 'item', source_id: 'UC9MAhZQQd9egwWCxrwSIsJQ', verdict: 'slop', slop_type: 'deceptive', tests: ['low_effort'], platform_label: false, ext_version: '1.0.0' });
 	expect(tag.target_id).toMatch(/^[\w-]{11}$/);
 	expect(tag.client_id).toMatch(/^[0-9a-f-]{36}$/);
 	expect(tag.created_at).toMatch(/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$/);
 	expect(JSON.stringify(sent)).not.toMatch(/youtube\.com|results|search_query|history documentary/);
-
-	// Optional detail replaces the tag with a type and tests.
-	await menu.getByRole('button', { name: 'Filler' }).click();
-	await menu.getByLabel(/Low effort/).check();
-	await expect.poll(() => ext.api.posted('/v1/tags').length).toBe(3);
-	const last = (ext.api.posted('/v1/tags').at(-1)!.body as { tags: Record<string, unknown>[] }).tags[0]!;
-	expect(last).toMatchObject({ verdict: 'slop', slop_type: 'filler', tests: ['low_effort'], target_id: tag.target_id });
-	await menu.getByRole('button', { name: 'Done' }).click();
-	await expect(menu).toHaveCount(0);
+	await page.waitForTimeout(300);
+	expect(ext.api.posted('/v1/tags')).toHaveLength(1);
 });
 
 test('Not slop and AI-made but fine confirm with a notice', async ({ ext }) => {
@@ -62,21 +84,11 @@ test('tags queue while offline and are sent when the connection returns', async 
 	const page = await ext.open(SEARCH);
 	const card = await openTag(page, 5);
 	await page.locator('colander-ui[data-kind="layer"] .pop').getByRole('button', { name: /^Slop/ }).click();
-	// The tag applies on the device at once.
+	// The tag applies on the device at once, and is sent when the menu closes.
 	await expect(card).toHaveAttribute('data-colander', 'hide');
-	const queued = () =>
-		ext.ctl.evaluate(
-			() =>
-				new Promise<{ attempts: number; nextAt: number }[]>((resolve) => {
-					const req = indexedDB.open('colander');
-					req.onsuccess = () => {
-						const all = req.result.transaction('tags').objectStore('tags').getAll();
-						all.onsuccess = () => resolve(all.result);
-					};
-				})
-		);
-	await expect.poll(async () => (await queued())[0]?.attempts).toBe(1);
-	const [q] = await queued();
+	await page.keyboard.press('Escape');
+	await expect.poll(async () => (await queued(ext.ctl))[0]?.attempts).toBe(1);
+	const [q] = await queued(ext.ctl);
 	expect(q!.nextAt).toBeGreaterThan(Date.now() + 25_000);
 	const alarm = await ext.ctl.evaluate(() => chrome.alarms.get('tags'));
 	expect(alarm?.scheduledTime).toBeGreaterThan(Date.now());
@@ -98,7 +110,7 @@ test('tags queue while offline and are sent when the connection returns', async 
 			})
 	);
 	await ext.send({ type: 'sync-now' });
-	await expect.poll(async () => (await queued()).length).toBe(0);
+	await expect.poll(async () => (await queued(ext.ctl)).length).toBe(0);
 	expect(ext.api.sent.filter((s) => s.path === '/v1/tags' && s.method === 'POST').length).toBeGreaterThanOrEqual(2);
 });
 

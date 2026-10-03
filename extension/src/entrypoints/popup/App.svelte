@@ -116,15 +116,16 @@ Show, Always allow and Not slop beside each (P0-12), Report this source, and the
 		else if (what === 'allow') {
 			const key = a.sourceId ? targetKey(a.platform, 'source', a.sourceId) : a.itemId ? targetKey(a.platform, 'item', a.itemId) : null;
 			if (key) await send({ type: 'allow', key, name: a.sourceName || undefined });
-		} else if (a.sourceId) {
-			const source = a.reason === 'source_list' || !a.itemId;
+		} else if (a.sourceId || a.itemId) {
+			// A source verdict is countered at the source; an item without a known source as an item alone.
+			const source = !!a.sourceId && (a.reason === 'source_list' || !a.itemId);
 			await send({
 				type: 'tag',
 				tag: {
 					platform: a.platform,
 					targetType: source ? 'source' : 'item',
-					targetId: source ? a.sourceId : a.itemId!,
-					sourceId: source ? undefined : a.sourceId,
+					targetId: source ? a.sourceId! : a.itemId!,
+					sourceId: source ? undefined : (a.sourceId ?? undefined),
 					verdict: 'not_slop',
 					platformLabel: a.signals.includes('platform_label'),
 					name: a.sourceName || a.title || undefined
@@ -243,7 +244,7 @@ Show, Always allow and Not slop beside each (P0-12), Report this source, and the
 								<Button variant="ghost" onclick={() => act(a, 'show')}>Show</Button>
 							{/if}
 							<Button variant="ghost" onclick={() => act(a, 'allow')}>Always allow</Button>
-							{#if a.verdict && a.sourceId}
+							{#if a.verdict && (a.sourceId || a.itemId)}
 								<Button variant="ghost" onclick={() => act(a, 'not_slop')}>Not slop</Button>
 							{/if}
 						</div>

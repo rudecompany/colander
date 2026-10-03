@@ -134,7 +134,10 @@ export async function syncAll(): Promise<void> {
 
 // ---- Tags --------------------------------------------------------------------------------------
 
-export async function addTag(req: TagRequest): Promise<void> {
+/** How long a tag from an open tag menu waits for its final state before it is sent anyway. */
+const HOLD_MS = 5 * 60_000;
+
+export async function addTag(req: TagRequest, hold = false): Promise<void> {
 	const key = targetKey(req.platform, req.targetType, req.targetId);
 	const own = (await chrome.storage.local.get(K.ownTags))[K.ownTags] as Record<string, OwnTag> | undefined;
 	await chrome.storage.local.set({ [K.ownTags]: { ...own, [key]: { verdict: req.verdict, at: Date.now() } } });
@@ -154,9 +157,10 @@ export async function addTag(req: TagRequest): Promise<void> {
 		if (req.tests?.length) tag.tests = req.tests;
 	}
 	const queue = await db.all<Queued>('tags');
-	const { add, remove } = enqueue(queue, tag, key, Date.now());
+	const { add, remove } = enqueue(queue, tag, key, Date.now() + (hold ? HOLD_MS : 0));
 	for (const id of remove) await db.del('tags', id);
 	await db.put('tags', add);
+	// A held tag is not due yet: this sends any other due tags and sets the alarm for it.
 	await flushTags();
 }
 
@@ -529,7 +533,7 @@ async function handle(m: ToWorker, sender: chrome.runtime.MessageSender): Promis
 			await logActivity(m.entries);
 			return { ok: true };
 		case 'tag':
-			await addTag(m.tag);
+			await addTag(m.tag, m.hold);
 			return { ok: true };
 		case 'report':
 			return submitReport(m.report);
