@@ -71,7 +71,7 @@ Then it compares:
   The Worker floors sequences to unix seconds where Go counted from 1, so the numbers differ by design; `list_sequences`, `list_changes` and `list_requests` (Go counts list requests in process, the Worker reads edge analytics) are not compared row by row.
 - The list endpoints' edge cases: 204 at the head, 410 after it and for a sequence past the 30-day window, 400 for a malformed `since`.
 
-A run takes about three minutes.
+A run takes about a minute.
 It needs Go, Node 24 and `web/build` (built when missing), and it refuses to start while `api/.dev.vars` exists, because that file would override the harness's secrets.
 `e2e/.run/parity/report.json` lists every difference, next to `go.log` and `worker.log`; the exit code is 1 when anything differs.
 The API step needs the route ports in `api/`: without them it stops with a message saying so.
