@@ -2,3 +2,4 @@ packages:
   - packages/*
   - extension
   - web
+  - e2e
