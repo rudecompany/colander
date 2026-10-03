@@ -8,6 +8,7 @@ import { SigningKey } from '@colander/shared/signing';
 import { jsonError, notFound, ROUTE_HEADER, setCache } from '../http';
 import { Jobs, prune, STATUS, type DumpStatus, type PassStatus, type PublishStatus } from '../jobs';
 import { Publisher, r2Sequence } from '../list/publisher';
+import { Engine } from '../scoring/engine';
 import { Db } from './db';
 import { latestSequence, setListRequests, SNAPSHOT_KEY, type Sequence } from './list';
 import { migrate } from './migrations';
@@ -50,6 +51,7 @@ export class Store extends DurableObject<Env> {
 	readonly db: Db;
 	readonly jobs: Jobs;
 	readonly publisher: Publisher;
+	readonly engine: Engine;
 	/** The clock in unix milliseconds. Tests replace it. */
 	now = (): number => Date.now();
 	private key?: Promise<SigningKey>;
@@ -62,6 +64,11 @@ export class Store extends DurableObject<Env> {
 		this.publisher = new Publisher(this.db, env.LISTS, this.signingKey);
 		this.jobs.definePublish((now) => this.publisher.publish(now));
 		this.jobs.define('prune', (_, now) => prune(this.db, now), (now) => now);
+		// Scoring (Go's Engine.Run): the full pass every 5 minutes in chunks, and the debounced rescore
+		// of the sources the routes hand to jobs.touch() after reports and appeal changes.
+		this.engine = new Engine(this.db, this.jobs, () => this.now());
+		this.jobs.definePass(this.engine);
+		this.jobs.define('rescore', (ref) => (this.engine.rescore(Number(ref)), null));
 		// Runs before any request or RPC is delivered. A failure resets the object, so no request
 		// ever sees a half-migrated schema.
 		void ctx.blockConcurrencyWhile(async () => {

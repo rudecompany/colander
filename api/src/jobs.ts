@@ -8,6 +8,7 @@
 // A kind runs only once its handler is defined: schedule() ignores kinds without one, and the
 // alarm drops rows of unknown kinds (a rollback), so nothing fires without code to run it.
 import { pruneLimits } from './limits';
+import { Default } from './scoring/rules';
 import type { Db } from './store/db';
 import { RETENTION_SECONDS } from './store/list';
 import { sourceRefsAfter } from './store/sources';
@@ -18,12 +19,12 @@ export type Handler = (arg: string, now: number) => Promise<number | null> | num
 const MINUTE = 60_000;
 const HOUR = 60 * MINUTE;
 
-/** The full scoring pass runs every 5 minutes (contracts 9.5)... */
-export const PASS_INTERVAL = 5 * MINUTE;
+/** The full scoring pass runs every 5 minutes (contracts 9.5; the value lives in the scoring Thresholds)... */
+export const PASS_INTERVAL = Default.passInterval;
 /** ...in chunks of this many sources per alarm turn, so requests interleave. */
 export const PASS_CHUNK = 1_000;
-/** Touched sources are rescored this long after the first touch (contracts 9.5). */
-export const DEBOUNCE = 5_000;
+/** Touched sources are rescored this long after the first touch (contracts 9.5; from the scoring Thresholds). */
+export const DEBOUNCE = Default.debounce;
 /** At most one publication per 10 seconds (contract 3.2). */
 export const PUBLISH_FLOOR = 10_000;
 export const PRUNE_INTERVAL = HOUR;
@@ -78,7 +79,7 @@ interface PassProgress {
 
 /** What the full scoring pass needs from the scoring engine (Go's Engine.FullPass, split up). */
 export interface PassScorer {
-	/** The start of a pass: expire appeals, refresh YouTube data (network, outside any transaction), load reputation. */
+	/** The start of a pass: expire appeals and load reputation (the YouTube port adds its refresh here, outside any transaction). */
 	startPass(now: number): Promise<void>;
 	/** Scores one source and its items; returns how many targets' stored state changed (Go's scoreSource). */
 	scoreSource(ref: number, now: number): number;

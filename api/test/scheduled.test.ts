@@ -57,6 +57,7 @@ describe('watchdog', () => {
 		await cron(WATCHDOG, { ALERTS: mail.binding });
 		await inStore(async (store, state) => {
 			expect(store.db.all('SELECT name, due_at FROM jobs ORDER BY name')).toEqual([
+				{ name: 'pass', due_at: T },
 				{ name: 'prune', due_at: T },
 				{ name: 'publish', due_at: T }
 			]);
@@ -71,9 +72,9 @@ describe('watchdog', () => {
 		await env.LISTS.put(SNAPSHOT_KEY, new Uint8Array([1]), { customMetadata: { seq: String(S - 50), created: String(S - 50) } });
 		await inStore((store) => store.db.run('INSERT INTO list_sequences (seq, created_at) VALUES (?, ?)', S - 50, S - 50));
 		const status = await inStore((store) => store.watchdog());
-		expect(status).toMatchObject({ now: T, jobs: ['prune', 'publish'], alarmLost: false, head: { seq: S - 50, createdAt: S - 50 }, r2: { seq: S - 50, created: S - 50 }, alerted: [], since: T });
+		expect(status).toMatchObject({ now: T, jobs: ['pass', 'prune', 'publish', 'rescore'], alarmLost: false, head: { seq: S - 50, createdAt: S - 50 }, r2: { seq: S - 50, created: S - 50 }, alerted: [], since: T });
 		// R2 holds the head, so no publication was asked for.
-		expect(await inStore((store) => store.db.all('SELECT name FROM jobs'))).toEqual([{ name: 'prune' }]);
+		expect(await inStore((store) => store.db.all('SELECT name FROM jobs ORDER BY name'))).toEqual([{ name: 'pass' }, { name: 'prune' }]);
 	});
 
 	it('mails an alert once while it lasts, and again when it comes back', async () => {

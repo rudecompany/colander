@@ -196,12 +196,12 @@ describe('jobs', () => {
 		await at(T, async (store, state) => {
 			store.jobs.schedule('dump', T);
 			expect(jobRows(store)).toEqual([]);
-			store.db.run("INSERT INTO jobs (name, due_at) VALUES ('dump', ?), ('rescore:5', ?)", T, T);
+			store.db.run("INSERT INTO jobs (name, due_at) VALUES ('dump', ?), ('later:5', ?)", T, T);
 			await state.storage.setAlarm(T);
 		});
 		await alarm(T);
 		expect(await at(T, jobRows)).toEqual([]);
-		expect(warnings.mock.calls.map((c) => JSON.parse(String(c[0])).job).sort()).toEqual(['dump', 'rescore']);
+		expect(warnings.mock.calls.map((c) => JSON.parse(String(c[0])).job).sort()).toEqual(['dump', 'later']);
 	});
 
 	it('arm the alarm before answering a request that scheduled a job', async () => {
@@ -227,7 +227,7 @@ describe('prune', () => {
 			db.run("INSERT INTO list_changes (seq, hash, entry) VALUES (1, x'0102030405060708', x'01020304050607080100000000000000')");
 			allow(db, T - 3_600_000, 'full', 1, 'donate');
 			allow(db, T - 60_000, 'partial', 1, 'donate');
-			store.jobs.ensure(T);
+			store.jobs.schedule('prune', T);
 			await store.jobs.arm();
 		});
 		await alarm(T);

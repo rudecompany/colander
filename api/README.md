@@ -47,9 +47,19 @@ The Go server keeps serving everything else (and `make e2e`) until the port is c
   Status for the watchdog and the pass cursor live in the Store's synchronous KV (`STATUS`).
   - `publish`: requested with `requestPublish(now)`, at most once per 10 seconds; the Store schedules it at start when it has jobs, which is the R2 reconciliation on start.
   - `prune`: hourly, expired magic links and sessions, list sequences past 30 days except the head (their changes cascade), and refilled rate limit buckets.
-  - `pass`: `definePass(scorer)` runs the full pass every 5 minutes in chunks of 1,000 sources per alarm turn, with the cursor in storage so requests interleave and a restart resumes; it records rows read per pass and requests a publication.
-  - `rescore`: `touch(refs, now)` schedules `rescore:<ref>` 5 seconds after the first touch.
+  - `pass`: `definePass(engine)` runs the full pass every 5 minutes in chunks of 1,000 sources per alarm turn, with the cursor in storage so requests interleave and a restart resumes; it records rows read per pass and requests a publication.
+  - `rescore`: `touch(refs, now)` schedules `rescore:<ref>` 5 seconds after the first touch, and the job runs `engine.rescore(ref)`.
+  - The pass interval and the debounce come from the scoring `Thresholds`.
   - `dump`: `defineDump(dump)` runs it at 03:17, 09:17, 15:17 and 21:17 UTC and records how long it blocked.
+- `src/scoring/` ports `server/internal/scoring` file for file, with Go's names in camelCase:
+  - `rules.ts`: every number of contracts section 9 in one `Thresholds` class (durations in milliseconds; `Default` holds the contract's values), the four layers and the verdict rules in order, and Go's signal and test masks as `Sig`, `TestBit`, `ProvenanceSignals` and `BehaviorSignals`, derived from the wire tables in `packages/shared`.
+  - `reason.ts`: the plain-language decision log reasons and escalation summaries, word for word.
+  - `engine.ts`: `Engine` with an injected clock (the Store's `now`).
+    It implements `PassScorer` for the `pass` job (`startPass` expires appeals and loads reputation once per pass, kept across chunks and reloaded after a restart; `scoreSource` scores one source), `fullPass(now)` is Go's `FullPass` in one call for seeding and imports, `rescore(ref, cause?)` is the inline rescore the `rescore` job and the actions run, and `explain(ref)` with `evidence(ev)` serves the public and review pages.
+    Each source is scored in one transaction: burst freeze, state updates with their log entries, item entries, report closing and escalations commit together.
+  - `actions.ts`: `decide`, `verifyAppeal` and `resolveAppeal`, each one transaction with its inline rescore; the rescore asks for a publication when it changed something.
+    `decide` throws `StaffRequiredError` for the curator limits of contract 6.7 (Go checked them in its review route; the route answers `403 staff_required` with the error's message) and `AIEvidenceRequiredError` for Slop or Likely slop without AI evidence (`400 ai_evidence_required`), and then writes nothing.
+  - The routes call `jobs.touch(refs, now)` after reports, report dismissals and appeal changes, as Go called `Engine.Touch`; tags wait for the next pass.
 - `src/limits.ts` ports the token buckets of `respond.go` onto the `limits` table: `allow(db, now, key, n, ...limiters)` returns 0 or the milliseconds to wait.
   Call it inside the `tx` of the write it guards, so a failed write gives the tokens back.
 - `src/scheduled.ts`, the cron handler:
@@ -87,19 +97,16 @@ Never put a production key in `.dev.vars`; production secrets are set with `wran
 ## Tests
 
 - `test/*.test.ts` run inside workerd with `@cloudflare/vitest-plugin`: the schema against the Go migrations, migration restarts, `tx` rollback, the router, CORS, `since`, the miss limiter, `/ops/*`, `/__dev/*`, header hygiene, logging, and cache headers on snapshot 200 and delta 200, 204 and 410.
-  - `data.test.ts` covers the store ports (Go's `store_test.go` and the behavior of each file), `limits.test.ts` the token buckets, `publisher.test.ts` publication, R2 reconciliation and sequence monotonicity across a simulated restore, `jobs.test.ts` the alarm through `runDurableObjectAlarm`, and `scheduled.test.ts` the watchdog, its alerts and the analytics pull.
+  - `data.test.ts` covers the store ports (Go's `store_test.go` and the behavior of each file), `limits.test.ts` the token buckets, `publisher.test.ts` publication, R2 reconciliation and sequence monotonicity across a simulated restore, `jobs.test.ts` the alarm through `runDurableObjectAlarm`, `rules.test.ts` and `engine.test.ts` the scoring engine (Go's `rules_test.go` and `engine_test.go`, the curator limits, the debounced rescore and a reviewer decision between two chunks of a pass), and `scheduled.test.ts` the watchdog, its alerts and the analytics pull.
 - `../packages/shared/test/*.test.ts` run inside workerd too, so the list encoder, signing and canonical IDs are proven in the runtime that serves them, not only in Node.
 - `test/harness/*.test.ts` run in Node: `site.test.ts` drives the whole Worker with its static assets through `createTestHarness` from Wrangler, and `config.test.ts` guards `wrangler.jsonc` for both environments.
 - A developer's `.dev.vars` never changes test results: the tests pass their own secrets.
 
 ## What the port must add
 
-- The scoring engine (`src/scoring/*.ts`), wired into the Store constructor:
-  - `this.jobs.definePass(engine)`, where the engine implements `PassScorer`: `startPass(now)` (expire appeals, YouTube enrichment outside any transaction, reputation) and `scoreSource(ref, now)`.
-  - `this.jobs.define('rescore', (ref, now) => ...)` for the debounced rescore, and `jobs.touch(refs, now)` after tags, reports and reviews; inline rescores call `jobs.requestPublish(now)` when they change something, as Go's `Engine.Rescore` did.
-  - Until then the Store defines neither kind, so no pass or rescore is scheduled.
 - `backup.ts`, registered with `this.jobs.defineDump(dump)`; the watchdog alerts on dump age and duration once it exists.
 - Every other route of contract section 6, with the cache policies of hosting plan section 2 added to `src/http.ts`: adapter config (edge `max-age=300, stale-if-error=86400`) and `public, max-age=60` for `/v1/sources/*`, `/v1/log`, `/v1/stats` and `/v1/supporters`.
   Routes that write take their quota with `allow()` in the same `tx`.
 - `/__dev/seed` for the e2e suite, and the ops commands behind the existing `/ops/*` guard.
+- YouTube enrichment at the start of each pass, in `Engine.startPass` before the reputation load and outside any transaction, as Go's `FullPass` did.
 - Mail (Email Sending with the Resend fallback), Stripe billing, YouTube, backups and restore drills, and the parity harness against the Go server.
