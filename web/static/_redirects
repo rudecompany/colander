@@ -1,0 +1,4 @@
+# Workers Static Assets: source and appeal pages are rendered in the browser from the SPA shell.
+# The target is /200, not /200.html, which html_handling would answer with a 307.
+/s/* /200 200
+/appeal/* /200 200
