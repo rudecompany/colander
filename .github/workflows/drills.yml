@@ -1,0 +1,79 @@
+# Restore drills (hosting plan section 3). Production data never leaves Cloudflare: the weekly
+# drill loads the newest dump into a scratch Store inside the Worker and checks it there.
+name: Drills
+
+on:
+  schedule:
+    - cron: '23 5 * * 1' # weekly, Monday: production dump drill
+    - cron: '47 5 1 * *' # monthly, 1st: staging point-in-time restore drill
+  workflow_dispatch:
+    inputs:
+      drill:
+        description: Which drill to run now
+        type: choice
+        options: [dump, pitr]
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  dump:
+    name: dump-drill
+    if: github.event.schedule == '23 5 * * 1' || inputs.drill == 'dump'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment:
+      name: production
+      deployment: false
+    concurrency:
+      group: ops-production
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v7
+      # The Worker loads the newest dump into the scratch object "drill", runs quick_check and
+      # foreign_key_check, compares per-table counts with "primary", requires the dump to be under
+      # 7 hours old, deletes the scratch data, and answers 2xx with "ok": true only if all passed.
+      - name: Production dump drill
+        env:
+          OPS_TOKEN: ${{ secrets.OPS_TOKEN }}
+        run: |
+          result=$(curl -sS --fail-with-body --max-time 300 -X POST https://getcolander.com/ops/drill \
+            -H "Authorization: Bearer $OPS_TOKEN" -H 'Content-Type: application/json' -d '{}')
+          echo "$result" | jq .
+          jq -e '.ok == true' <<<"$result" >/dev/null
+      - if: failure()
+        uses: ./.github/actions/report-failure
+        with:
+          title: Production dump drill failing
+
+  pitr:
+    name: pitr-drill
+    if: github.event.schedule == '47 5 1 * *' || inputs.drill == 'pitr'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment:
+      name: staging
+      deployment: false
+    concurrency:
+      group: staging-drill
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          package-manager-cache: false
+      - name: Staging point-in-time restore drill
+        run: node scripts/pitr-drill.ts
+        env:
+          COLANDER_BASE_URL: https://staging.getcolander.com
+          COLANDER_PUBLIC_KEYS: ${{ vars.STAGING_PUBLIC_KEYS }}
+          OPS_TOKEN: ${{ secrets.OPS_TOKEN }}
+          COLANDER_REVIEWER_TOKEN: ${{ secrets.STAGING_REVIEWER_TOKEN }}
+          CF_ACCESS_CLIENT_ID: ${{ secrets.CF_ACCESS_CLIENT_ID }}
+          CF_ACCESS_CLIENT_SECRET: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}
+      - if: failure()
+        uses: ./.github/actions/report-failure
+        with:
+          title: Staging restore drill failing
