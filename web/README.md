@@ -84,6 +84,7 @@ A shared fixture fails any test that logs a page error or a CSP violation.
 | `support.spec.ts` | Donation body and redirect, custom amounts and limits, `503 billing_unavailable`, closed payment |
 | `console.spec.ts` | Keyboard queue, evidence, decision body and CSRF header, curator limits and `403 staff_required` |
 | `a11y.spec.ts` | axe WCAG 2.2 A and AA rules on every page, light and dark |
+| `brand.spec.ts` | The vocabulary table's "Not" words and exclamation marks never appear on any page |
 
 The committed screenshots in `screenshots/` are reduced to 256 colors to keep the repository small.
 `pnpm -C web screenshots` writes full-color ones.

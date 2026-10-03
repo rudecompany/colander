@@ -243,3 +243,32 @@ export async function mockApi(page: Page, overrides: Record<string, Handler> = {
 }
 
 export { err };
+
+/** Every page, with the mocks it needs. Specs open History Bites 24/7 in the console after load. */
+export const PAGES: [string, Record<string, Handler>?][] = [
+	['/'],
+	['/definition'],
+	['/s/yt/UCq3x9Vb2m4LkT7pQe8sW1aZ'],
+	['/s/yt/@unknownchannel'],
+	['/appeal/tt/@historybites247'],
+	['/appeal/status/apl_4k9x2m?secret=s3cret', { 'GET /v1/appeals/*': { json: { appeal: APPEAL } } }],
+	['/log'],
+	['/plans'],
+	['/plans/welcome', { 'GET /v1/account': { json: { account: PLUS_ACCOUNT } } }],
+	['/support'],
+	['/support/thanks'],
+	['/supporters'],
+	['/transparency'],
+	['/account', { 'GET /v1/account': { json: { account: PLUS_ACCOUNT } } }],
+	[
+		'/console',
+		{
+			'GET /v1/account': { json: { account: STAFF } },
+			'GET /v1/review/queue': { json: { items: QUEUE, next_cursor: null } },
+			'GET /v1/review/sources/*': { json: reviewSource('tt:@historybites247') }
+		}
+	],
+	['/privacy'],
+	['/terms'],
+	['/missing-page']
+];

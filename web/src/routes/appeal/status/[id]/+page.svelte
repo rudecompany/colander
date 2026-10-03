@@ -156,7 +156,7 @@
 					<ol>
 						{#each INSTRUCTIONS[appeal.platform] as line (line)}<li>{line}</li>{/each}
 					</ol>
-					<p class="t-caption muted">The code proves you control the {noun}. You can remove it once the appeal is verified.</p>
+					<p class="t-caption muted">The code proves you control the {noun}. You can take it out once the appeal is verified.</p>
 				</div>
 				{#if appeal.status === 'awaiting_verification'}
 					<div class="verify">

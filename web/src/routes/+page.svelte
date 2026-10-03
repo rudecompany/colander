@@ -256,7 +256,7 @@
 					</div>
 				</div>
 				<h3 class="icon-line t-title"><Tag size={16} strokeWidth={1.75} aria-hidden="true" /> Label</h3>
-				<p class="t-body muted">A small chip on the thumbnail, or beside the creator name in a swipe feed. Nothing is removed.</p>
+				<p class="t-body muted">A small chip on the thumbnail, or beside the creator name in a swipe feed. Nothing is hidden.</p>
 			</article>
 			<article class="card treatment">
 				<div class="specimen">
@@ -278,7 +278,7 @@
 					</div>
 				</div>
 				<h3 class="icon-line t-title"><EyeOff size={16} strokeWidth={1.75} aria-hidden="true" /> Hide</h3>
-				<p class="t-body muted">The card is removed and the grid closes up. The toolbar count goes up, and the popup lists it with Show beside it.</p>
+				<p class="t-body muted">The card is hidden and the grid closes up. The toolbar count goes up, and the popup lists it with Show beside it.</p>
 			</article>
 		</div>
 

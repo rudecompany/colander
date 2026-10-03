@@ -49,7 +49,7 @@
 
 <svelte:head>
 	<title>Support our work · Colander</title>
-	<meta name="description" content="Donate once or monthly to keep Colander's free list reviewed and fair." />
+	<meta name="description" content="Support our work, once or monthly, and keep Colander's free list reviewed and fair." />
 </svelte:head>
 
 <PageHead

@@ -32,7 +32,7 @@
 		['Advertising', 'Ads in the extension, on this site or in the lists', 'Never'],
 		['Affiliate links', 'Commission from links we show or rewrite', 'Never'],
 		['Selling or sharing data', 'Anything about the people who use Colander', 'Never'],
-		['Paid removal from a list', 'Creators, platforms or advertisers paying to leave a list', 'Never']
+		['Paying to leave a list', 'Creators, platforms or advertisers buying their way off a list', 'Never']
 	];
 
 	const rules = [
