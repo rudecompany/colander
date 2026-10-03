@@ -476,6 +476,11 @@ func (e *Engine) scoreSource(ctx context.Context, ref int64, reps map[string]sto
 	if openReports >= e.Th.ReportEscalation {
 		want["reports"] = fmt.Sprintf("%d or more open reports", e.Th.ReportEscalation)
 	}
-	err = e.Store.SyncEscalations(ctx, ref, 0, []string{"capped", "lapsed", "reports"}, want, now.Unix())
+	// An appeal whose code staff must check by hand is kept, not expired: the creator did their part.
+	// Once it has waited as long as an unverified appeal may, it is escalated so it cannot sit forever.
+	if d.PendingManualSince > 0 && now.Unix()-d.PendingManualSince >= int64(e.Th.AppealExpiry.Seconds()) {
+		want["appeal"] = fmt.Sprintf("Appeal filed more than %d days ago still waits for staff to check its code", int(e.Th.AppealExpiry.Hours()/24))
+	}
+	err = e.Store.SyncEscalations(ctx, ref, 0, []string{"capped", "lapsed", "reports", "appeal"}, want, now.Unix())
 	return changed, err
 }

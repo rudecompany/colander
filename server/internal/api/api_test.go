@@ -608,6 +608,39 @@ func TestReportFollowsCommunityVerdict(t *testing.T) {
 	}
 }
 
+// An appeal staff must check by hand stays in the queue and, once it has waited 14 days, is also
+// escalated at the top priority.
+func TestPendingManualAppealInQueue(t *testing.T) {
+	h := newHarness(t)
+	staff := h.reviewer("rae@colander.test", "staff", "Rae")
+	csrf := []string{"Cookie", staff, "X-Colander-CSRF", "1"}
+	expect(t, h.do("POST", "/v1/review/sources/yt/@farm/decision", map[string]any{"verdict": "ai_made", "reason": "Labelled AI.",
+		"signals": []string{"platform_label"}}, csrf...), http.StatusOK)
+	w := h.do("POST", "/v1/appeals", map[string]string{"platform": "yt", "source_id": "@farm", "email": "a@example.test", "statement": "Mine."})
+	appeal := decodeBody[struct {
+		Appeal appealJSON
+		Secret string
+	}](t, w)
+	expect(t, h.do("POST", "/v1/appeals/"+appeal.Appeal.ID+"/verify", map[string]string{"secret": appeal.Secret}), http.StatusOK)
+	h.clock = h.clock.Add(15 * 24 * time.Hour)
+	if _, err := h.srv.Engine.FullPass(h.ctx); err != nil {
+		t.Fatal(err)
+	}
+	w = h.do("GET", "/v1/review/queue", nil, csrf...)
+	expect(t, w, http.StatusOK)
+	items := decodeBody[struct{ Items []queueJSON }](t, w).Items
+	var kinds []string
+	for _, q := range items {
+		if q.Priority != 1 {
+			t.Errorf("%s %q has priority %d, want 1", q.Kind, q.Summary, q.Priority)
+		}
+		kinds = append(kinds, q.Kind)
+	}
+	if fmt.Sprint(kinds) != "[appeal escalation]" || !strings.Contains(items[1].Summary, "waits for staff to check its code") {
+		t.Fatalf("queue = %+v", items)
+	}
+}
+
 func TestCORS(t *testing.T) {
 	h := newHarness(t)
 	w := h.do("OPTIONS", "/v1/tags", nil, "Origin", "chrome-extension://abc", "Access-Control-Request-Method", "POST")

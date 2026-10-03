@@ -46,6 +46,8 @@ type SourceData struct {
 	Decisions   map[int64]*Decision // the active decision per item ref, 0 for the source
 	AppealOpen  bool                // a verified appeal is under review
 	OpenReports int
+	// PendingManualSince is when the oldest appeal waiting for staff to check its code was filed, 0 when none.
+	PendingManualSince int64
 }
 
 // LoadSourceData loads a source with its items, tags, active decisions, appeal and report state.
@@ -85,7 +87,9 @@ func (s *Store) LoadSourceData(ctx context.Context, ref, now int64) (*SourceData
 	}
 	err = s.DB.QueryRowContext(ctx, `SELECT
 		(SELECT count(*) FROM appeals WHERE source_id = ? AND status = 'under_review'),
-		(SELECT count(*) FROM reports WHERE source_id = ? AND status = 'open')`, ref, ref).Scan(&d.AppealOpen, &d.OpenReports)
+		(SELECT count(*) FROM reports WHERE source_id = ? AND status = 'open'),
+		(SELECT ifnull(min(created_at), 0) FROM appeals WHERE source_id = ? AND status = 'pending_manual')`,
+		ref, ref, ref).Scan(&d.AppealOpen, &d.OpenReports, &d.PendingManualSince)
 	return d, err
 }
 
@@ -363,7 +367,7 @@ type Escalation struct {
 	ID        int64
 	SourceRef int64
 	ItemRef   int64
-	Kind      string // capped | lapsed | reports | burst
+	Kind      string // capped | lapsed | reports | burst | appeal
 	Summary   string
 	CreatedAt int64
 }

@@ -150,6 +150,9 @@ func (s *Server) reviewQueue(w http.ResponseWriter, r *http.Request) {
 		}
 		for _, e := range escalations {
 			q := queueJSON{ID: "q_esc_" + strconv.FormatInt(e.ID, 10), Kind: "escalation", Priority: 2, Summary: e.Summary, created: e.CreatedAt}
+			if e.Kind == "appeal" {
+				q.Priority = 1 // an appeal staff have left waiting
+			}
 			if err := add(e.SourceRef, q); err != nil {
 				s.internalError(w, r, err)
 				return

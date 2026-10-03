@@ -355,6 +355,38 @@ func TestReportsFollowCommunityVerdict(t *testing.T) {
 	}
 }
 
+// An appeal waiting for staff to check its code by hand is kept, and escalated once it has waited
+// as long as an unverified appeal may.
+func TestPendingManualAppealEscalates(t *testing.T) {
+	f := newFixture(t)
+	f.tags(8, "@farm", "slop", true)
+	f.highVolume("@farm")
+	f.clock = f.clock.Add(40 * 24 * time.Hour)
+	f.pass()
+	ref := f.source("@farm").Ref
+	a, err := f.st.CreateAppeal(f.ctx, store.Appeal{Platform: "yt", SourceRef: ref, Email: "x@example.test", Statement: "Not slop.",
+		Code: "colander-TEST0003", SecretHash: "h", CreatedAt: f.clock.Unix()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := f.st.TransitionAppeal(f.ctx, a.ID, []string{store.AppealAwaiting}, store.AppealPendingManual, store.AppealChange{}); err != nil {
+		t.Fatal(err)
+	}
+	f.clock = f.clock.Add(13 * 24 * time.Hour)
+	f.pass()
+	if _, ok := f.escalationsOf(ref)["appeal"]; ok {
+		t.Fatal("escalated before the appeal waited 14 days")
+	}
+	f.clock = f.clock.Add(2 * 24 * time.Hour)
+	f.pass()
+	if a, _ = f.st.GetAppeal(f.ctx, a.ID); a.Status != store.AppealPendingManual {
+		t.Fatalf("appeal status %s, want it kept pending_manual", a.Status)
+	}
+	if _, ok := f.escalationsOf(ref)["appeal"]; !ok {
+		t.Fatal("no escalation for an appeal waiting 15 days")
+	}
+}
+
 // A staff Slop decision lapses after 90 days; scored again as Slop, the source holds at Likely
 // slop with an escalation until staff look again.
 func TestExpiryLapse(t *testing.T) {
