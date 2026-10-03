@@ -151,8 +151,6 @@ func (p *Publisher) Delta(ctx context.Context, since int64) ([]byte, int, error)
 		return nil, http.StatusNoContent, nil
 	case since > seq.Seq || since <= 0:
 		return nil, http.StatusGone, nil
-	case cached != nil:
-		return cached, http.StatusOK, nil
 	}
 	created, err := p.Store.SequenceCreated(ctx, since)
 	if errors.Is(err, store.ErrNotFound) || (err == nil && created < p.Now().Add(-p.Retention).Unix()) {
@@ -160,6 +158,9 @@ func (p *Publisher) Delta(ctx context.Context, since int64) ([]byte, int, error)
 	}
 	if err != nil {
 		return nil, 0, err
+	}
+	if cached != nil {
+		return cached, http.StatusOK, nil
 	}
 	raw, err := p.Store.ChangesSince(ctx, since, seq.Seq)
 	if err != nil {

@@ -119,7 +119,7 @@ func (s *Server) Handler() http.Handler {
 	route("POST /v1/review/appeals/{id}/resolve", s.reviewResolveAppeal)
 
 	route("/v1/", func(w http.ResponseWriter, r *http.Request) {
-		writeError(w, http.StatusNotFound, "not_found", "There is no API route here.")
+		writeError(w, http.StatusNotFound, "not_found", "There is no API route for this method and path.")
 	})
 	route("/", s.site)
 
