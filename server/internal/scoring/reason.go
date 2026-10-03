@@ -2,22 +2,22 @@ package scoring
 
 import "strings"
 
-// Plain-language signal phrases, matching SIGNAL_TEXT in packages/shared/src/verdicts.ts.
+// Plain-language signal clauses, worded after SIGNAL_TEXT in packages/shared/src/verdicts.ts.
 var signalPhrase = [16]string{
 	"the platform labels it AI-generated",
 	"Content Credentials say it was made with AI",
 	"the creator says it is AI-made",
 	"a generator watermark is visible",
-	"posts at a volume no person could sustain",
+	"it posts at a volume no person could sustain",
 	"most recent items are AI-made",
-	"one template across titles and thumbnails",
-	"many near-duplicate items",
-	"routes viewers off the platform",
+	"it uses one template across titles and thumbnails",
+	"it has many near-duplicate items",
+	"it routes viewers off the platform",
 	"other pages share the same captions",
 	"taggers found little human effort",
 	"taggers found it hollow",
-	"tagged as slop by the community",
-	"confirmed by staff review",
+	"it is tagged as slop by the community",
+	"staff review confirmed it",
 	"an appeal is open",
 	"the community says it is not slop",
 }
@@ -39,8 +39,11 @@ func sentence(parts []string) string {
 		return ""
 	}
 	s := parts[0]
-	if len(parts) > 1 {
-		s = strings.Join(parts[:len(parts)-1], ", ") + " and " + parts[len(parts)-1]
+	switch {
+	case len(parts) == 2:
+		s = parts[0] + " and " + parts[1]
+	case len(parts) > 2:
+		s = strings.Join(parts[:len(parts)-1], ", ") + ", and " + parts[len(parts)-1]
 	}
 	return strings.ToUpper(s[:1]) + s[1:] + "."
 }

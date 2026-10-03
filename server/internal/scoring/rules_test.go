@@ -152,6 +152,18 @@ func TestRules(t *testing.T) {
 			verdict: "slop", rule: 6, signals: lf.SigMostlyAI,
 		},
 		{
+			name: "an item scoring weaker than its source is covered by the source",
+			in: Input{Item: true, Votes: votes(2, "slop", 1, lowHollow), LabelInstalls: 2, SourceVerdict: "slop",
+				SourceBehavior: Layer{Met: true, Signals: lf.SigMostlyAI}},
+			verdict: "", rule: 7,
+		},
+		{
+			name: "an item scoring stronger than its source keeps its own verdict",
+			in: Input{Item: true, Votes: votes(2, "slop", 1, lowHollow), LabelInstalls: 2, SourceVerdict: "ai_made",
+				SourceBehavior: Layer{}},
+			verdict: "likely_slop", rule: 7,
+		},
+		{
 			name:    "large and imported caps never apply to items",
 			in:      Input{Item: true, Votes: slop5, LabelInstalls: 2, Large: true, Imported: "blocklist", SourceBehavior: Layer{Met: true}},
 			verdict: "slop", rule: 6,

@@ -249,12 +249,10 @@ func (e *Engine) evaluate(d *store.SourceData, reps map[string]store.Rep, now ti
 	src := d.Source
 	ev := &Evaluation{Data: d, itemVotes: map[int64]int{}}
 
-	// One vote per install for the source: its tag on the source, else its latest item tag.
-	type pick struct {
-		v      store.Vote
-		source bool
-	}
-	perInstall := map[string]pick{}
+	// Tag sums are per target (9.2): the source's sums come from tags on the source itself, one per
+	// install even when it tagged two aliases. Item evidence reaches the source only through platform
+	// labels and the 80% rule (9.3).
+	perInstall := map[string]store.Vote{}
 	labelInstalls := map[string]bool{}
 	byItem := map[int64][]store.Vote{}
 	burst := 0
@@ -264,11 +262,8 @@ func (e *Engine) evaluate(d *store.SourceData, reps map[string]store.Rep, now ti
 		}
 		if v.ItemRef != 0 {
 			byItem[v.ItemRef] = append(byItem[v.ItemRef], v)
-		}
-		cur, ok := perInstall[v.Install]
-		isSource := v.ItemRef == 0
-		if !ok || (isSource && !cur.source) || (isSource == cur.source && v.CreatedAt > cur.v.CreatedAt) {
-			perInstall[v.Install] = pick{v, isSource}
+		} else if cur, ok := perInstall[v.Install]; !ok || v.CreatedAt > cur.CreatedAt {
+			perInstall[v.Install] = v
 		}
 		if v.Verdict == "slop" && now.Unix()-v.ReceivedAt < int64(e.Th.BurstWindow.Seconds()) &&
 			now.Unix()-v.InstallCreatedAt < int64(e.Th.BurstInstallAge.Seconds()) {
@@ -325,13 +320,14 @@ func (e *Engine) evaluate(d *store.SourceData, reps map[string]store.Rep, now ti
 	}
 	ev.lapsing = isLapsing(src.State, now.Unix())
 	in.LapseHold = src.State.LapseHold || ev.lapsing
-	for _, p := range perInstall {
-		in.Votes = append(in.Votes, toVote(p.v))
+	for _, v := range perInstall {
+		in.Votes = append(in.Votes, toVote(v))
 	}
 	ev.Input, ev.Result = in, e.Th.Score(in)
 
 	for i := range ev.Items {
 		ev.Items[i].Input.SourceBehavior = ev.Result.Behavior
+		ev.Items[i].Input.SourceVerdict = ev.Result.Verdict
 		ev.Items[i].Result = e.Th.Score(ev.Items[i].Input)
 	}
 	return ev

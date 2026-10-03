@@ -126,8 +126,9 @@ type Input struct {
 	ItemsSeen     int     // items with evidence either way
 	AIItems       int     // of those, items with AI evidence
 
-	// Items only: the behavior layer of the item's source.
+	// Items only: the behavior layer and verdict of the item's source.
 	SourceBehavior Layer
+	SourceVerdict  string
 
 	// LapseHold keeps a lapsed Slop verdict at Likely slop until a reviewer looks again.
 	LapseHold bool
@@ -280,6 +281,9 @@ func slopType(votes []Vote) string {
 	return best
 }
 
+// severity orders the evidence-based verdicts.
+var severity = map[string]int{"ai_made": 1, "likely_slop": 2, "slop": 3}
+
 // Score applies the layers and the verdict rules of 9.4, first match wins.
 func (th Thresholds) Score(in Input) Result {
 	s := SumVotes(in.Votes)
@@ -357,6 +361,13 @@ func (th Thresholds) Score(in Input) Result {
 				r.Tests = tests
 			}
 		}
+	}
+
+	// An item has its own verdict only when it says more than its source's. An item of a Slop
+	// source that scores Likely slop alone, or an item under a source shown as Disputed for an
+	// appeal, is covered by the source. Reviewer decisions on items always stand.
+	if in.Item && r.Rule != 2 && (r.Verdict == in.SourceVerdict || (r.Rule >= 6 && severity[r.Verdict] <= severity[in.SourceVerdict])) {
+		r.Verdict, r.Signals, r.SlopType, r.Tests = "", 0, "", 0
 	}
 	return r
 }
