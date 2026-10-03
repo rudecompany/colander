@@ -1,0 +1,661 @@
+/*
+ * Website layer on top of the shared Colander theme (tokens.css + colander.css).
+ * Paper background, one ink, brand blue for actions only, verdict colors on chips only.
+ */
+
+:root {
+	/* A hero size that sits above Display (32/40) on the same 8 px rhythm. */
+	--w-hero: 700 56px/64px var(--cl-font);
+	--w-lede: 400 20px/30px var(--cl-font);
+	--w-max: 1120px;
+	--w-prose: 680px;
+	--w-gutter: 24px;
+	--w-section: 96px;
+	/* Control outlines must clear 3:1 against their surface (WCAG 1.4.11). */
+	--w-control-border: color-mix(in srgb, var(--cl-text-muted) 75%, var(--cl-surface));
+	--w-dot-strong: color-mix(in srgb, var(--cl-text-muted) 45%, var(--cl-paper));
+	--w-ink-soft: color-mix(in srgb, var(--cl-text) 8%, transparent);
+	--uin-line-strong: var(--w-control-border);
+	scroll-padding-top: 24px;
+	-webkit-text-size-adjust: 100%;
+	text-size-adjust: 100%;
+}
+
+@media (max-width: 720px) {
+	:root {
+		--w-hero: 700 40px/48px var(--cl-font);
+		--w-lede: 400 18px/28px var(--cl-font);
+		--w-gutter: 16px;
+		--w-section: 64px;
+	}
+}
+
+/*
+ * tokens.css redefines the Mittsu colors for dark mode with a more specific selector than the
+ * Colander mapping in colander.css, so dark mode fell back to macOS blue. Re-apply the mapping
+ * at the same specificity; the --cl-* values it points to are already the dark ones.
+ */
+:root[data-theme='dark'] {
+	--uin-fg: var(--cl-text);
+	--uin-fg-mute: var(--cl-text-muted);
+	--uin-fg-dim: color-mix(in srgb, var(--cl-text-muted) 80%, var(--cl-surface));
+	--uin-fg-faint: color-mix(in srgb, var(--cl-text) 22%, transparent);
+	--uin-line: var(--cl-border);
+	--uin-line-strong: var(--w-control-border);
+	--uin-bg-base: var(--cl-paper);
+	--uin-bg-panel: var(--cl-surface);
+	--uin-mat-window: var(--cl-surface);
+	--uin-mat-sidebar: var(--cl-surface-raised);
+	--uin-mat-panel: var(--cl-surface);
+	--uin-mat-row: var(--cl-surface);
+	--uin-mat-hover: color-mix(in srgb, var(--cl-text) 6%, transparent);
+	--uin-mat-selected: color-mix(in srgb, var(--cl-brand) 12%, transparent);
+	--uin-accent: var(--cl-brand);
+	--uin-success: var(--cl-clear);
+	--uin-warn: var(--cl-likely);
+	--uin-danger: var(--cl-slop);
+}
+@media (prefers-color-scheme: dark) {
+	:root:not([data-theme='light']) {
+		--uin-fg: var(--cl-text);
+		--uin-fg-mute: var(--cl-text-muted);
+		--uin-fg-dim: color-mix(in srgb, var(--cl-text-muted) 80%, var(--cl-surface));
+		--uin-fg-faint: color-mix(in srgb, var(--cl-text) 22%, transparent);
+		--uin-line: var(--cl-border);
+		--uin-line-strong: var(--w-control-border);
+		--uin-bg-base: var(--cl-paper);
+		--uin-bg-panel: var(--cl-surface);
+		--uin-mat-window: var(--cl-surface);
+		--uin-mat-sidebar: var(--cl-surface-raised);
+		--uin-mat-panel: var(--cl-surface);
+		--uin-mat-row: var(--cl-surface);
+		--uin-mat-hover: color-mix(in srgb, var(--cl-text) 6%, transparent);
+		--uin-mat-selected: color-mix(in srgb, var(--cl-brand) 12%, transparent);
+		--uin-accent: var(--cl-brand);
+		--uin-success: var(--cl-clear);
+		--uin-warn: var(--cl-likely);
+		--uin-danger: var(--cl-slop);
+	}
+}
+
+*,
+*::before,
+*::after {
+	box-sizing: border-box;
+}
+
+html {
+	background: var(--cl-paper);
+	color: var(--cl-text);
+	font: var(--cl-body-lg);
+	font-synthesis: none;
+	text-rendering: optimizeLegibility;
+	-webkit-font-smoothing: antialiased;
+}
+
+body {
+	margin: 0;
+	min-height: 100vh;
+	background: var(--cl-paper);
+	display: flex;
+	flex-direction: column;
+}
+
+h1,
+h2,
+h3,
+h4,
+p,
+ul,
+ol,
+dl,
+dd,
+figure,
+blockquote {
+	margin: 0;
+}
+
+ul,
+ol {
+	padding: 0;
+}
+
+img,
+svg {
+	display: block;
+	max-width: 100%;
+}
+
+button,
+input,
+select,
+textarea {
+	font: inherit;
+	color: inherit;
+}
+
+a {
+	color: var(--cl-brand);
+	text-decoration-line: underline;
+	text-decoration-thickness: 1px;
+	text-underline-offset: 3px;
+	text-decoration-color: color-mix(in srgb, var(--cl-brand) 45%, transparent);
+	transition: text-decoration-color var(--cl-fast) var(--cl-ease);
+}
+a:hover {
+	text-decoration-color: currentColor;
+}
+
+:focus-visible {
+	outline: 2px solid var(--cl-brand);
+	outline-offset: 2px;
+	border-radius: 2px;
+}
+
+::selection {
+	background: color-mix(in srgb, var(--cl-brand) 22%, transparent);
+}
+
+/* ---------- Layout ---------- */
+
+.wrap {
+	width: 100%;
+	max-width: calc(var(--w-max) + 2 * var(--w-gutter));
+	margin-inline: auto;
+	padding-inline: var(--w-gutter);
+}
+.wrap-narrow {
+	max-width: calc(760px + 2 * var(--w-gutter));
+}
+/* The review console uses the full width of a desktop screen. */
+.wrap-wide {
+	max-width: calc(1440px + 2 * var(--w-gutter));
+}
+.section {
+	padding-block: var(--w-section);
+}
+.section + .section {
+	padding-top: 0;
+}
+.section:last-child {
+	padding-bottom: 0;
+}
+.stack > * + * {
+	margin-top: var(--cl-s4);
+}
+.prose {
+	max-width: var(--w-prose);
+}
+.prose > * + * {
+	margin-top: var(--cl-s4);
+}
+.prose h2 {
+	font: var(--cl-title);
+	margin-top: var(--cl-s6);
+}
+.prose h3 {
+	font: 600 16px/24px var(--cl-font);
+	margin-top: var(--cl-s5);
+}
+.prose ul,
+.prose ol {
+	padding-left: 20px;
+}
+.prose li + li {
+	margin-top: var(--cl-s2);
+}
+.prose li::marker {
+	color: var(--cl-text-muted);
+}
+
+/* ---------- Type ---------- */
+
+.t-hero {
+	font: var(--w-hero);
+	letter-spacing: -0.022em;
+	text-wrap: balance;
+}
+.t-display {
+	font: var(--cl-display);
+	letter-spacing: -0.012em;
+	text-wrap: balance;
+}
+.t-title {
+	font: var(--cl-title);
+	text-wrap: balance;
+}
+.t-lede {
+	font: var(--w-lede);
+	color: var(--cl-text-muted);
+	text-wrap: pretty;
+}
+.t-body-lg {
+	font: var(--cl-body-lg);
+}
+.t-body {
+	font: var(--cl-body);
+}
+.t-caption {
+	font: var(--cl-caption);
+}
+.t-strong {
+	font-weight: 600;
+}
+.muted {
+	color: var(--cl-text-muted);
+}
+.mono {
+	font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+	font-size: 0.92em;
+	overflow-wrap: anywhere;
+}
+
+/* A short line of perforations before a section label. Sentence case, never shouted. */
+.eyebrow {
+	display: inline-flex;
+	align-items: center;
+	gap: var(--cl-s2);
+	font: 600 14px/20px var(--cl-font);
+	color: var(--cl-text-muted);
+}
+.eyebrow::before {
+	content: '';
+	width: 22px;
+	height: 6px;
+	background-image: radial-gradient(circle, var(--cl-text-muted) 2px, transparent 2.4px);
+	background-size: 8px 6px;
+	background-position: left center;
+	flex: none;
+	opacity: 0.7;
+}
+
+.section-head {
+	display: grid;
+	gap: var(--cl-s3);
+	max-width: 760px;
+	margin-bottom: var(--cl-s6);
+}
+.section-head .t-lede {
+	font: var(--cl-body-lg);
+	font-size: 18px;
+	line-height: 28px;
+}
+
+/* A perforated rule: the dot motif as a divider. */
+.dot-rule {
+	height: 6px;
+	border: 0;
+	margin: 0;
+	background-image: radial-gradient(circle, var(--w-dot-strong) 1.5px, transparent 1.9px);
+	background-size: 12px 6px;
+	background-position: left center;
+	opacity: 0.8;
+}
+
+/* ---------- Surfaces ---------- */
+
+.card {
+	background: var(--cl-surface);
+	border: 1px solid var(--cl-border);
+	border-radius: var(--cl-r-card);
+	padding: var(--cl-s5);
+}
+.card-raised {
+	background: var(--cl-surface-raised);
+	border: 1px solid var(--cl-border);
+	border-radius: var(--cl-r-card);
+	padding: var(--cl-s5);
+}
+.card-quiet {
+	border: 1px solid var(--cl-border);
+	border-radius: var(--cl-r-card);
+	padding: var(--cl-s5);
+}
+.pop {
+	background: var(--cl-surface);
+	border: 1px solid var(--cl-border);
+	border-radius: var(--cl-r-card);
+	box-shadow: var(--cl-shadow-pop);
+}
+
+/* ---------- Controls (Mittsu, sized for the web) ---------- */
+
+.uin-btn {
+	cursor: pointer;
+	font-weight: 600;
+	text-decoration: none;
+	white-space: nowrap;
+}
+a.uin-btn {
+	color: inherit;
+}
+a.uin-btn-primary {
+	color: var(--uin-accent-fg);
+}
+.uin-btn-md {
+	height: 36px;
+	padding: 0 14px;
+	font-size: 14px;
+}
+.uin-btn-sm {
+	height: 28px;
+	padding: 0 10px;
+	font-size: 13px;
+}
+.btn-lg.uin-btn {
+	height: 44px;
+	padding: 0 20px;
+	font-size: 16px;
+	gap: 10px;
+}
+.uin-btn-primary {
+	box-shadow: none;
+}
+.uin-btn-primary:hover:not(:disabled) {
+	filter: none;
+	background: color-mix(in srgb, var(--cl-brand) 88%, var(--cl-text));
+}
+.uin-btn-outline {
+	background: var(--cl-surface);
+	border-color: var(--w-control-border);
+}
+.uin-btn-ghost {
+	color: var(--cl-text);
+}
+.uin-btn[aria-disabled='true'],
+.uin-btn:disabled {
+	opacity: 0.5;
+	pointer-events: none;
+}
+
+.uin-input-el,
+.uin-textarea,
+.uin-nselect-el {
+	background: var(--cl-surface);
+	border-color: var(--w-control-border);
+	font-size: 15px;
+}
+.uin-input-md .uin-input-el,
+.uin-nselect-md .uin-nselect-el {
+	height: 40px;
+	font-size: 15px;
+}
+.uin-nselect-sm .uin-nselect-el {
+	height: 32px;
+	font-size: 14px;
+}
+.uin-textarea {
+	line-height: 24px;
+	padding: 8px 12px;
+}
+.uin-input-el:focus,
+.uin-textarea:focus {
+	border-color: var(--cl-brand);
+	background: var(--cl-surface);
+}
+.uin-input-el[aria-invalid='true'],
+.uin-textarea[aria-invalid='true'] {
+	border-color: var(--cl-slop);
+}
+
+.uin-checkbox {
+	position: relative;
+	font: var(--cl-body);
+	align-items: flex-start;
+	gap: 10px;
+}
+.uin-checkbox-md {
+	font-size: 14px;
+}
+.uin-checkbox-label {
+	line-height: 20px;
+}
+.uin-checkbox-box {
+	border-color: var(--w-control-border);
+	background: var(--cl-surface);
+	margin-top: 2px;
+}
+
+.uin-seg {
+	background: var(--cl-surface);
+	border-color: var(--w-control-border);
+	border-radius: var(--cl-r-chip);
+	padding: 2px;
+	gap: 2px;
+}
+.uin-seg-btn {
+	cursor: pointer;
+	border-radius: 4px;
+	font-weight: 600;
+}
+.uin-seg-btn + .uin-seg-btn {
+	border-left: 0;
+}
+.uin-seg-md .uin-seg-btn {
+	min-height: 32px;
+	padding: 4px 14px;
+	font-size: 14px;
+}
+.uin-seg-sm .uin-seg-btn {
+	min-height: 28px;
+	padding: 2px 10px;
+	font-size: 13px;
+}
+.uin-seg-btn-active {
+	background: var(--cl-brand);
+	color: var(--cl-brand-fg);
+}
+.uin-seg-btn:hover:not(.uin-seg-btn-active):not(:disabled) {
+	color: var(--cl-text);
+}
+
+.field {
+	display: grid;
+	gap: 6px;
+}
+.field-label {
+	font: 600 14px/20px var(--cl-font);
+}
+.field-hint {
+	font: var(--cl-caption);
+	color: var(--cl-text-muted);
+}
+.field-error {
+	font: var(--cl-body);
+	color: var(--cl-slop);
+}
+
+/* ---------- Small pieces ---------- */
+
+.chip-none {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	padding: 1px 7px;
+	border-radius: var(--cl-r-chip);
+	border: 1px dashed var(--w-control-border);
+	color: var(--cl-text-muted);
+	font: var(--cl-chip);
+	white-space: nowrap;
+}
+
+.tag {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	padding: 2px 8px;
+	border-radius: var(--cl-r-chip);
+	background: var(--w-ink-soft);
+	font: var(--cl-chip);
+	white-space: nowrap;
+}
+
+.icon-line {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+}
+
+.link-quiet {
+	color: inherit;
+	text-decoration-color: color-mix(in srgb, currentColor 35%, transparent);
+}
+
+.sr-only {
+	position: absolute;
+	width: 1px;
+	height: 1px;
+	padding: 0;
+	margin: -1px;
+	overflow: hidden;
+	clip: rect(0, 0, 0, 0);
+	white-space: nowrap;
+	border: 0;
+}
+
+.skip-link {
+	position: absolute;
+	left: 16px;
+	top: -100px;
+	z-index: 100;
+	background: var(--cl-brand);
+	color: var(--cl-brand-fg);
+	padding: 8px 14px;
+	border-radius: var(--cl-r-chip);
+	font: 600 14px/20px var(--cl-font);
+	text-decoration: none;
+}
+.skip-link:focus {
+	top: 12px;
+}
+
+.kv {
+	display: grid;
+	grid-template-columns: minmax(120px, max-content) 1fr;
+	gap: var(--cl-s2) var(--cl-s5);
+	font: var(--cl-body);
+}
+.kv dt {
+	color: var(--cl-text-muted);
+}
+
+table.plain {
+	width: 100%;
+	border-collapse: collapse;
+	font: var(--cl-body);
+}
+table.plain th,
+table.plain td {
+	text-align: left;
+	vertical-align: top;
+	padding: 12px 16px 12px 0;
+	border-bottom: 1px solid var(--cl-border);
+}
+table.plain th {
+	font-weight: 600;
+	color: var(--cl-text-muted);
+}
+table.plain thead th {
+	font: 600 12px/16px var(--cl-font);
+	color: var(--cl-text-muted);
+	border-bottom-color: var(--w-control-border);
+}
+table.plain tr:last-child td,
+table.plain tr:last-child th {
+	border-bottom: 0;
+}
+.table-scroll {
+	overflow-x: auto;
+}
+
+/* Long-form policy pages */
+.doc {
+	max-width: 760px;
+	padding-top: var(--cl-s6);
+}
+.doc section + section {
+	margin-top: var(--cl-s6);
+}
+.doc section > * + * {
+	margin-top: var(--cl-s4);
+}
+.doc h2 {
+	margin-top: 0;
+}
+
+/* Mittsu pieces that need the web type ramp: nothing below 12 px. */
+.uin-kbd {
+	height: 20px;
+	padding: 0 6px;
+	font-size: 12px;
+	border-color: var(--w-control-border);
+	color: var(--cl-text);
+}
+.uin-dialog-overlay {
+	background: color-mix(in srgb, var(--cl-ink) 40%, transparent);
+	-webkit-backdrop-filter: none;
+	backdrop-filter: none;
+}
+.uin-dialog {
+	background: var(--cl-surface);
+	border-color: var(--cl-border);
+	box-shadow: var(--cl-shadow-pop);
+	-webkit-backdrop-filter: none;
+	backdrop-filter: none;
+}
+.uin-dialog-title {
+	font: var(--cl-title);
+}
+.uin-dialog-desc {
+	font: var(--cl-body);
+}
+.uin-dialog-body {
+	font: var(--cl-body);
+}
+.uin-dialog-close {
+	width: 32px;
+	height: 32px;
+}
+
+/* Tables that become stacked rows on a phone. Cells carry data-label for their column. */
+@media (max-width: 560px) {
+	table.stack-sm,
+	table.stack-sm tbody,
+	table.stack-sm tr,
+	table.stack-sm th,
+	table.stack-sm td {
+		display: block;
+		width: auto !important;
+	}
+	table.stack-sm {
+		min-width: 0 !important;
+	}
+	table.stack-sm thead {
+		position: absolute;
+		width: 1px;
+		height: 1px;
+		overflow: hidden;
+		clip: rect(0, 0, 0, 0);
+	}
+	table.stack-sm tr {
+		padding: 12px 0;
+		border-bottom: 1px solid var(--cl-border);
+	}
+	table.stack-sm tr:last-child {
+		border-bottom: 0;
+	}
+	table.stack-sm th,
+	table.stack-sm td {
+		padding: 2px 0 !important;
+		border: 0 !important;
+		white-space: normal !important;
+	}
+	table.stack-sm th[scope='row'] {
+		margin-bottom: 4px;
+	}
+	table.stack-sm td[data-label]::before {
+		content: attr(data-label) ': ';
+		font-weight: 600;
+		color: var(--cl-text-muted);
+	}
+}
