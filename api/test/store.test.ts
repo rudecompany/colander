@@ -65,6 +65,22 @@ describe('tx', () => {
 		});
 	});
 
+	it('nests as a savepoint: a caught inner throw undoes only the inner work', async () => {
+		await runInDurableObject(env.STORE.getByName('tx-nested'), (store: Store) => {
+			const insert = (id: string) => store.db.run('INSERT INTO accounts (id, email, created_at) VALUES (?, ?, 1)', id, `${id}@example.com`);
+			store.db.tx(() => {
+				insert('outer');
+				expect(() =>
+					store.db.tx(() => {
+						insert('inner');
+						throw new Error('inner abort');
+					})
+				).toThrow('inner abort');
+			});
+			expect(store.db.all('SELECT id FROM accounts')).toEqual([{ id: 'outer' }]);
+		});
+	});
+
 	it('returns rows written and typed rows', async () => {
 		await runInDurableObject(env.STORE.getByName('db'), (store: Store) => {
 			expect(store.db.run("INSERT INTO list_requests (hour, count) VALUES (1, 2), (2, 3)")).toBe(2);

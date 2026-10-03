@@ -25,6 +25,8 @@ export class Db {
 	/**
 	 * Runs fn in one SQLite transaction and commits when it returns; a throw rolls everything back.
 	 * fn must be synchronous: keep network calls outside, as the Go store did with s.Tx.
+	 * A nested tx is a savepoint: an inner throw that the outer fn catches undoes only the inner work.
+	 * SQL BEGIN and SAVEPOINT statements are refused by the runtime; use this instead.
 	 */
 	tx<T>(fn: () => T): T {
 		return this.storage.transactionSync(fn);

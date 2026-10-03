@@ -15,11 +15,19 @@ const deltaBytes = b64decode(files.delta);
 const ORIGIN = 'https://getcolander.com';
 const now = () => Math.floor(Date.now() / 1000);
 
-const get = (path: string, init?: RequestInit) => exports.default.fetch(new Request(ORIGIN + path, init));
+// Each request comes from its own address unless a test sets one, so only the limiter test
+// ever meets the miss limiter.
+let client = 0;
+function withClient(init?: RequestInit): RequestInit {
+	const headers = new Headers(init?.headers);
+	if (!headers.has('CF-Connecting-IP')) headers.set('CF-Connecting-IP', `198.18.${(++client >> 8) & 255}.${client & 255}`);
+	return { ...init, headers };
+}
+const get = (path: string, init?: RequestInit) => exports.default.fetch(new Request(ORIGIN + path, withClient(init)));
 /** Calls the handler directly, for an env that differs from the configured one. */
 const IncomingRequest = Request<unknown, IncomingRequestCfProperties>;
 const getWith = (overrides: Partial<Env>, path: string, init?: RequestInit<IncomingRequestCfProperties>) =>
-	worker.fetch(new IncomingRequest(ORIGIN + path, init), { ...env, ...overrides });
+	worker.fetch(new IncomingRequest(ORIGIN + path, withClient(init) as RequestInit<IncomingRequestCfProperties>), { ...env, ...overrides });
 const primary = () => env.STORE.getByName('primary');
 
 const LIST_CLIENT = 'public, max-age=60';
