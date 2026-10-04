@@ -13,18 +13,24 @@ or an open popover; narrower, it hides, and `below` can show the same popup, wit
 under the frame (the page wraps it and decides when it shows). With
 a fixed `height`, the page fades out over its last 48 px.
 
+Show in the popup puts the item back in its own slot, labeled, takes it off the badge and the
+popup's counts, and says "Shown again." in a notice inside the frame, with Undo.
+
 Keyboard: Why moves focus into the popover, Tab stays inside it, and Escape or any of its actions
-closes it and returns focus to Why (or to the card when Why went away).
+closes it and returns focus to Why (or to the card when Why went away). The popover open on load
+is only a picture until the visitor opens one: Tab moves on past it, and Escape still closes it.
 
 `mini`: the rows of one strictness card at one level, static (inert), with a count line beside
 it from demoCounts().
 -->
 <script lang="ts">
-	import { untrack, type Snippet } from 'svelte';
+	import { tick, untrack, type Snippet } from 'svelte';
+	import Undo2 from '@lucide/svelte/icons/undo-2';
 	import BrowserFrame from './BrowserFrame.svelte';
 	import InPage from './InPage.svelte';
 	import PopupView, { type PopupActions, type PopupState } from './PopupView.svelte';
-	import { DEMO_FEED, DEMO_MINI_ITEMS, DEMO_OPEN_ITEM, DEMO_POPUP, ITEM_NOUN, PLATFORM_DOMAIN } from '../../copy';
+	import Toast from './Toast.svelte';
+	import { DEMO_FEED, DEMO_MINI_ITEMS, DEMO_OPEN_ITEM, DEMO_POPUP, INPAGE_COPY, ITEM_NOUN, PLATFORM_DOMAIN } from '../../copy';
 	import { DEMO_CSS, DEMO_ORDER, PLATFORM_LAYOUT, demoAction, demoCounts, demoFeed, demoHiddenCount, type DemoLayout } from '../../inpage/demo';
 	import type { InpageContext, Theme } from '../../inpage/host';
 	import type { DateInput } from '../../utils/format';
@@ -72,7 +78,12 @@ it from demoCounts().
 	const mode = $derived<DemoLayout>(variant === 'mini' ? 'mini' : (layout ?? PLATFORM_LAYOUT[platform]));
 	const pick = $derived(ids ?? (variant === 'mini' ? DEMO_MINI_ITEMS : (DEMO_ORDER[mode] ?? DEMO_FEED.map((i) => i.id))));
 	const items = $derived(pick.map((id) => DEMO_FEED.find((i) => i.id === id)!));
-	const badge = $derived(demoHiddenCount(level, paused, items));
+	// The badge counts what is hidden now: Show and Always allow take an item off it.
+	const badge = $derived(demoHiddenCount(level, paused, items, [...revealed, ...allowed]));
+	/** The item the "Shown again." notice is about, until it times out, closes or is undone. */
+	let shownAgain = $state<number | null>(null);
+	/** The visitor opened a popover: from then on it keeps focus inside, as the extension's does. */
+	let trap = $state(false);
 
 	// One-shot effects of the visitor's last change, read by the next build and then cleared:
 	// what fades in, which popover opens with motion, and where focus goes. Never set on load.
@@ -90,6 +101,7 @@ it from demoCounts().
 			}
 			if (next.open !== was.open && next.open != null) {
 				pending.opened = next.open;
+				trap = true;
 				// Why on a hidden item (from a popup row) shows it first, so its evidence has a card to open on.
 				const it = items.find((i) => i.id === next.open);
 				if (it && demoAction(it, next.level, next.paused) === 'hide' && !revealed.includes(it.id)) {
@@ -102,7 +114,7 @@ it from demoCounts().
 
 	const back = (id: number) => [`why-${id}`, `card-${id}`];
 	const handlers = {
-		show: (id: number) => ((pending.changed = [id]), (revealed = [...revealed, id]), (open = null)),
+		show: (id: number) => ((pending.changed = [id]), (revealed = [...revealed, id]), (open = null), (shownAgain = id)),
 		why: (id: number) => {
 			if (open === id) {
 				pending.focus = back(id);
@@ -125,7 +137,7 @@ it from demoCounts().
 	function build(ctx: InpageContext) {
 		const el = demoFeed(
 			ctx,
-			{ layout: mode, level, paused, platform, items, revealed, allowed, open, listDate, changed: pending.changed, opened: pending.opened, focus: pending.focus },
+			{ layout: mode, level, paused, platform, items, revealed, allowed, open, listDate, changed: pending.changed, opened: pending.opened, focus: pending.focus, trap },
 			feedHandlers
 		);
 		pending.changed = [];
@@ -158,6 +170,23 @@ it from demoCounts().
 		why: (r) => (open = Number(r.id))
 	};
 
+	// Undo hides the item again, and hands focus to its Show in the popup.
+	async function undoShow() {
+		const id = shownAgain;
+		shownAgain = null;
+		if (id == null) return;
+		revealed = revealed.filter((r) => r !== id);
+		await tick();
+		const row = [...(root?.querySelectorAll<HTMLElement>('[data-row]') ?? [])].find((el) => el.dataset.row === String(id));
+		row?.querySelector<HTMLElement>('.row-show, .row-btn')?.focus();
+	}
+	// A new level or a pause starts over: the notice belongs to the Show that made it.
+	$effect.pre(() => {
+		void level;
+		void paused;
+		untrack(() => (shownAgain = null));
+	});
+
 	let root = $state<HTMLElement>();
 	$effect(() => {
 		if (variant !== 'full' || !root) return;
@@ -188,11 +217,24 @@ it from demoCounts().
 {#snippet docked()}<PopupView state={popupState} actions={popupActions} />{/snippet}
 
 {#if variant === 'mini'}
-	<div class="mini" inert role="img" aria-label="{STRICTNESS_WORD[level]}: {demoCounts(level, items)}">{@render feed()}</div>
+	<!-- The picture's summary is announced; the rows inside are inert, so they take no focus. -->
+	<div class="mini" role="img" aria-label="{STRICTNESS_WORD[level]}: {demoCounts(level, items)}"><div inert>{@render feed()}</div></div>
 {:else}
 	<div class="full" bind:this={root}>
 		<BrowserFrame count={badge} {paused} {height} docked={popup ? docked : undefined}>
-			<div class="host" class:beside={popup}>{@render feed()}</div>
+			<div class="host" class:beside={popup}>
+				{@render feed()}
+				{#if shownAgain != null}
+					<div class="notice">
+						<Toast
+							text={INPAGE_COPY.shownAgain}
+							actions={[{ label: INPAGE_COPY.undo, icon: Undo2, onClick: undoShow }]}
+							onClose={() => (shownAgain = null)}
+							onTimeout={() => (shownAgain = null)}
+						/>
+					</div>
+				{/if}
+			</div>
 		</BrowserFrame>
 		{#if below}{@render below(docked)}{/if}
 	</div>
@@ -205,6 +247,23 @@ it from demoCounts().
 	.host,
 	.host :global(colander-ui) {
 		height: 100%;
+	}
+	.host {
+		position: relative;
+	}
+	/* The notice sits bottom center over the feed, clear of the docked popup, as it does on a host page. */
+	.notice {
+		position: absolute;
+		right: var(--demo-end, 16px);
+		bottom: 24px;
+		left: var(--demo-start, 16px);
+		z-index: 4;
+		display: flex;
+		justify-content: center;
+		pointer-events: none;
+	}
+	.notice :global(.cl-toast) {
+		pointer-events: auto;
 	}
 	/* The host page runs under the docked popup; its feed keeps to the left 780 px, and a popover at
 	   the grid's right edge may reach 56 px into the gap before the popup, clear of the next card's

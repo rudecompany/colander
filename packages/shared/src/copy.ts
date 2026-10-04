@@ -4,11 +4,10 @@
 import type { LayerKey } from './layers';
 import type { Platform, Signal, TagVerdict, Verdict } from './verdicts';
 
-/** The spec's two-sentence definition. */
-export const DEFINITION =
-	'For this product, AI slop is AI-generated content that is mass-produced with little human effort to capture attention or money, and that gives the viewer little in return. AI use alone never makes something slop.';
-
-/** The definition for first-run and marketing pages, said as what Colander does. The spec wording stays in the docs. */
+/**
+ * The one public definition, said as what Colander does: the website, the welcome page and the
+ * store copy all show this wording. The spec's own sentence stays in docs/product-requirements.md.
+ */
 export const DEFINITION_PUBLIC =
 	'Colander treats AI-generated content as slop when it is mass-produced with little human effort to capture attention or money, and gives you little in return. AI use alone never makes something slop.';
 
@@ -105,6 +104,17 @@ export const PLAN_COPY = {
 		cta: 'Support our work'
 	},
 	trust: 'Blocking never moves behind Plus. Cancel any time. Paying never changes a verdict.'
+} as const;
+
+/** The spec's card-fee table on /plans: what a fixed fee per charge takes from each Plus price. */
+export const PLAN_FEES = {
+	title: 'Where your $3 goes',
+	lead: 'Card payments carry a fixed fee per charge, so a fifth of a $3 monthly charge can go to fees. Checkout runs through a merchant of record, which handles sales tax and VAT in every country.',
+	columns: ['Charge', 'Card processor, about 2.9% + $0.30', 'Merchant of record, about 5% + $0.50'],
+	rows: [
+		['$3 monthly', '$0.39, or 13%', '$0.65, or 22%'],
+		['$30 yearly', '$1.17, or 3.9%', '$2.00, or 6.7%']
+	]
 } as const;
 
 /* Platforms */
@@ -235,6 +245,15 @@ export interface DemoItem {
 	age: string;
 	/** Evidence rows when the item's card is opened. */
 	evidence?: { layer: LayerKey; text: string; agreed: boolean }[];
+	/** Another framing of the scene's picture, for a second video from the same channel. */
+	crop?: ThumbCrop;
+}
+
+/** Zoom into a scene's picture: `zoom` 1 is the whole image, `x` and `y` (0 to 1) pick the focus. */
+export interface ThumbCrop {
+	zoom: number;
+	x: number;
+	y: number;
 }
 
 export const DEMO_FEED: DemoItem[] = [
@@ -294,7 +313,16 @@ export const DEMO_FEED: DemoItem[] = [
 		scene: 'coins',
 		age: '5 days ago'
 	},
-	{ id: 9, title: 'Descaling a kettle with one lemon', handle: '@kitchen.fixes', verdict: null, signals: [], scene: 'kettle', age: '1 month ago' }
+	{ id: 9, title: 'Descaling a kettle with one lemon', handle: '@kitchen.fixes', verdict: null, signals: [], scene: 'kettle', age: '1 month ago' },
+	// More clear videos from the same channels, framed from their pictures, so a hidden item never
+	// leaves a short last row in view: the grid stays full at every level and after any Show.
+	{ id: 10, title: 'Setting up a small home workshop', handle: '@workbench.notes', verdict: null, signals: [], scene: 'gears', crop: { zoom: 1.9, x: 0.05, y: 0.1 }, age: '3 weeks ago' },
+	{ id: 11, title: 'Lining a proofing basket with linen', handle: '@breadwork', verdict: null, signals: [], scene: 'bread', crop: { zoom: 1.9, x: 0.9, y: 0.1 }, age: '5 days ago' },
+	{ id: 12, title: 'Reading the wind on an open field', handle: '@kiteday', verdict: null, signals: [], scene: 'kite', crop: { zoom: 1.8, x: 0, y: 1 }, age: '2 weeks ago' },
+	{ id: 13, title: 'Three ways to clean with a lemon', handle: '@kitchen.fixes', verdict: null, signals: [], scene: 'kettle', crop: { zoom: 1.9, x: 1, y: 0.75 }, age: '6 days ago' },
+	{ id: 14, title: 'Lapping the jaws of an old vise', handle: '@workbench.notes', verdict: null, signals: [], scene: 'gears', crop: { zoom: 1.8, x: 0.45, y: 0.35 }, age: '2 months ago' },
+	{ id: 15, title: 'Scoring patterns for a country loaf', handle: '@breadwork', verdict: null, signals: [], scene: 'bread', crop: { zoom: 1.8, x: 0.4, y: 0.6 }, age: '1 week ago' },
+	{ id: 16, title: 'Tying bows for a kite tail', handle: '@kiteday', verdict: null, signals: [], scene: 'kite', crop: { zoom: 2.2, x: 0.6, y: 0.85 }, age: '3 days ago' }
 ];
 
 /** The item whose evidence card is open when the demo first renders: labeled, so it is on the page at Standard. */

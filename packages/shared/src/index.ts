@@ -27,6 +27,7 @@ export { default as PerforationRow } from './components/colander/PerforationRow.
 export { default as PermissionsTable } from './components/colander/PermissionsTable.svelte';
 export { default as PlatformTag } from './components/colander/PlatformTag.svelte';
 export { default as PlusTag } from './components/colander/PlusTag.svelte';
+export { default as PopupRows } from './components/colander/PopupRows.svelte';
 export { default as PopupView, type PopupActions, type PopupRow, type PopupState } from './components/colander/PopupView.svelte';
 export { default as PriceCard } from './components/colander/PriceCard.svelte';
 export { default as PrivacyFacts } from './components/colander/PrivacyFacts.svelte';
@@ -34,6 +35,7 @@ export { default as SettingRow } from './components/colander/SettingRow.svelte';
 export { default as StatCell } from './components/colander/StatCell.svelte';
 export { default as StrictnessControl } from './components/colander/StrictnessControl.svelte';
 export { default as StrictnessTable } from './components/colander/StrictnessTable.svelte';
+export { default as TagTally } from './components/colander/TagTally.svelte';
 export { default as Thumb } from './components/colander/Thumb.svelte';
 export { default as Toast } from './components/colander/Toast.svelte';
 export { default as VerdictChip } from './components/colander/VerdictChip.svelte';

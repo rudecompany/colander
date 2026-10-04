@@ -197,9 +197,11 @@ No dependency: the popup and the website hero load it on every open.
 	.cl-menu-item:focus {
 		outline: none;
 	}
+	/* Inside the menu's 4 px padding the ring is drawn inset, so it never covers the next item. */
 	.cl-menu-item:focus-visible {
 		outline: 2px solid var(--cl-brand);
 		outline-offset: -2px;
+		box-shadow: none;
 	}
 	.cl-menu-item[aria-disabled='true'] {
 		opacity: 0.4;

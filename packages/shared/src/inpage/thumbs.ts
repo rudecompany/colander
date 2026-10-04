@@ -3,7 +3,7 @@
 // for no lettering, faces, people or brands (src/assets/demo, 512x288 WebP, about 100 KB for all
 // eight). Slop is one template image repeated with only a large numeral changing, drawn in code:
 // mass production, shown honestly. The background tone shows while an image loads.
-import type { ThumbScene } from '../copy';
+import type { ThumbCrop, ThumbScene } from '../copy';
 import { THUMB_IMAGES } from './thumb-images';
 
 /** Tone 1 to 4 from the thumbnail palette, or `d` for the detail color. */
@@ -43,6 +43,15 @@ export const THUMB_SCENES: Record<ThumbScene, { bg: Tone; image: string; numeral
 	coins: { bg: 4, image: THUMB_IMAGES.coins },
 	kettle: { bg: 2, image: THUMB_IMAGES.kettle }
 };
+
+/** The picture's box in the 160 by 90 viewBox: the whole image, or a crop zoomed on its focus. */
+export function thumbImageBox(crop?: ThumbCrop): { x: number; y: number; width: number; height: number } {
+	if (!crop) return { x: 0, y: 0, width: 160, height: 90 };
+	const width = 160 * crop.zoom;
+	const height = 90 * crop.zoom;
+	const r = (n: number) => Math.round(n * 10) / 10;
+	return { x: r(-(width - 160) * crop.x), y: r(-(height - 90) * crop.y), width: r(width), height: r(height) };
+}
 
 /** The text of a numeral line for a part number. */
 export const numeralText = (line: NumeralLine, part: number) => line.text.replace('{n}', String(part));

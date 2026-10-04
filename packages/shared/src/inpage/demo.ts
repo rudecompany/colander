@@ -5,13 +5,13 @@
 // Phones get a plain list. Hidden items are simply not drawn, so the page closes up around them,
 // as it does under the extension.
 import { Heart, MessageCircle, Send, Share2, ThumbsUp } from 'lucide';
-import { DEMO_FEED, ITEM_NOUN, type DemoItem, type ThumbScene } from '../copy';
+import { DEMO_FEED, ITEM_NOUN, type DemoItem, type ThumbCrop, type ThumbScene } from '../copy';
 import { ACTION_TABLE, PLATFORM_NAME, type Action, type Platform, type Strictness } from '../verdicts';
 import { hyper, icon, trapFocus } from './dom';
 import { evidence } from './evidence';
 import type { InpageContext } from './host';
-import { THUMB_CSS, THUMB_SCENES, numeralText, toneVar } from './thumbs';
-import { chip, evidencePopover, type ItemView } from './ui';
+import { THUMB_CSS, THUMB_SCENES, numeralText, thumbImageBox, toneVar } from './thumbs';
+import { chip, evidencePopover, tagPill, type ItemView } from './ui';
 
 /** grid: YouTube Home. swipe: one TikTok For You video. square: Instagram feed. post: Facebook feed. */
 export type DemoLayout = 'grid' | 'list' | 'swipe' | 'square' | 'post' | 'mini';
@@ -19,14 +19,17 @@ export type DemoLayout = 'grid' | 'list' | 'swipe' | 'square' | 'post' | 'mini';
 export const PLATFORM_LAYOUT: Record<Platform, Exclude<DemoLayout, 'mini'>> = { yt: 'grid', tt: 'swipe', ig: 'square', fb: 'post' };
 
 /**
- * Item order per layout, when the caller does not pick items. The grid keeps the open AI-made
- * item at the end of row 2 at Label and at Standard, and the items Standard hides in row 3, so at
- * Standard the grid is two full rows and the popover hangs over the card's own title into the free
- * space below them, covering no other card. The swipe feed and the feeds of tall posts start with the Likely slop item, so
- * Label shows it first and Standard closes up to the AI-made item and its popover.
+ * Item order per layout, when the caller does not pick items. Row 1 of the grid holds the Disputed
+ * item and, at its end, the AI-made one with its popover open on load, at Label and at Standard, so
+ * the chips and the popover are in the first view; at the row's end the popover reaches into the
+ * gap before the docked popup and covers no other card's title. Hidden items sit between the
+ * others, so Show puts each back in its own slot. Seven more clear videos keep at least 4 full rows at every level, so the frame's
+ * fixed height always ends inside a full row, under its fade, and never on a short last row. The
+ * swipe feed and the feeds of tall posts start with the Likely slop item, so Label shows it first
+ * and Standard closes up to the AI-made item and its popover.
  */
 export const DEMO_ORDER: Partial<Record<DemoLayout, number[]>> = {
-	grid: [1, 5, 7, 8, 9, 3, 2, 6, 4],
+	grid: [1, 8, 3, 2, 6, 5, 7, 4, 9, 10, 11, 12, 13, 14, 15, 16],
 	swipe: [6, 2, 4, 3, 1, 5, 7, 8, 9],
 	square: [6, 3, 1, 5, 2, 7, 4, 8, 9],
 	post: [6, 3, 1, 5, 2, 7, 4, 8, 9]
@@ -51,6 +54,8 @@ export interface DemoState {
 	changed?: number[];
 	/** The item whose popover the visitor just opened: it fades in, once. Never on load. */
 	opened?: number | null;
+	/** The visitor opened the popover, so Tab stays inside it. One open on load never traps focus. */
+	trap?: boolean;
 	/** data-k keys to move focus to after this build, the first that exists wins. */
 	focus?: string[];
 }
@@ -68,10 +73,11 @@ export function demoAction(item: DemoItem, level: Strictness, paused = false): A
 
 /**
  * Hidden items at a level: the toolbar badge and the popup's "Hidden on this page", as the
- * extension counts them. Label 0, Standard 3, No AI 4.
+ * extension counts them. Label 0, Standard 3, No AI 4. Items shown again with Show, or allowed,
+ * are no longer hidden.
  */
-export function demoHiddenCount(level: Strictness, paused = false, items = DEMO_FEED): number {
-	return items.filter((i) => demoAction(i, level, paused) === 'hide').length;
+export function demoHiddenCount(level: Strictness, paused = false, items = DEMO_FEED, shown: number[] = []): number {
+	return items.filter((i) => demoAction(i, level, paused) === 'hide' && !shown.includes(i.id)).length;
 }
 
 /** "2 hidden, 1 labeled", the count line under a strictness card. */
@@ -81,7 +87,7 @@ export function demoCounts(level: Strictness, items = DEMO_FEED): string {
 }
 
 /** The thumbnail picture, in the given document. */
-export function thumbSvg(doc: Document, scene: ThumbScene, part?: number): SVGElement {
+export function thumbSvg(doc: Document, scene: ThumbScene, part?: number, crop?: ThumbCrop): SVGElement {
 	const NS = 'http://www.w3.org/2000/svg';
 	const el = (tag: string, attrs: Record<string, string | number>) => {
 		const n = doc.createElementNS(NS, tag);
@@ -91,7 +97,7 @@ export function thumbSvg(doc: Document, scene: ThumbScene, part?: number): SVGEl
 	const s = THUMB_SCENES[scene];
 	const svg = el('svg', { viewBox: '0 0 160 90', class: 'cl-thumb', 'aria-hidden': 'true', focusable: 'false', preserveAspectRatio: 'xMidYMid slice' });
 	svg.append(el('rect', { width: 160, height: 90, style: `fill:${toneVar(s.bg)}` }));
-	svg.append(el('image', { href: s.image, width: 160, height: 90, preserveAspectRatio: 'xMidYMid slice' }));
+	svg.append(el('image', { href: s.image, ...thumbImageBox(crop), preserveAspectRatio: 'xMidYMid slice' }));
 	if (part != null) {
 		for (const line of s.numeral ?? []) {
 			const t = el('text', {
@@ -161,14 +167,21 @@ export function demoFeed(ctx: InpageContext, s: DemoState, x: DemoHandlers): HTM
 			pop = evidencePopover(ctx, ev, { allow: () => x.allow(item.id), notSlop: () => x.notSlop(item.id) }, { flat: inline, key: item.id, id: popId });
 			if (s.opened === item.id) once(pop, 'pop-in');
 			const popEl = pop;
-			popEl.addEventListener('keydown', (e) => trapFocus(popEl.getRootNode() as ShadowRoot, popEl, e));
+			if (s.trap) popEl.addEventListener('keydown', (e) => trapFocus(popEl.getRootNode() as ShadowRoot, popEl, e));
 		}
-		const art = () => thumbSvg(ctx.doc, item.scene, item.part);
+		const art = () => thumbSvg(ctx.doc, item.scene, item.part, item.crop);
 		const meta = (text: string) => h('p', { class: 'meta' }, text);
 		let card: HTMLElement;
 
 		if (swipe) {
-			const caption = h('div', { class: 'cap' }, h('p', { class: 'creator' }, h('b', {}, item.handle), label), h('p', { class: 'title' }, item.title));
+			// Swipe feeds always show the Tag button beside the chip, as the extension does. A picture
+			// of it here: tagging belongs to the real feed, so it takes no clicks or focus.
+			const tag = !s.paused ? tagPill(ctx, noun, () => {}) : null;
+			if (tag) {
+				tag.classList.add('ink');
+				tag.setAttribute('inert', '');
+			}
+			const caption = h('div', { class: 'cap' }, h('p', { class: 'creator' }, h('b', {}, item.handle), label, tag), h('p', { class: 'title' }, item.title));
 			card = h('article', { class: 'card reel' }, h('div', { class: 'video' }, art(), caption, pop), rail(ctx));
 		} else if (s.layout === 'square') {
 			card = h(
@@ -308,5 +321,6 @@ export const DEMO_CSS =
 .feed-mini .text{display:grid;gap:4px;justify-items:start}
 .feed-mini .thumb{border-radius:6px}
 .feed-mini .title{margin:0;-webkit-line-clamp:1}
+@media (max-width:639px){.feed-mini .card{grid-template-columns:48px minmax(0,1fr)}.feed-mini .text{display:flex;align-items:center;gap:8px}.feed-mini .title{display:block;flex:1 1 0;min-width:0;text-overflow:ellipsis;white-space:nowrap}}
 .enter{animation:cl-in var(--cl-slow) var(--cl-ease)}
 .pop-in{animation:cl-pop var(--cl-fast) var(--cl-ease)}`;

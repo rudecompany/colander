@@ -20,13 +20,17 @@ describe('in-page builders in Node', () => {
 
 	it('leave hidden items out of the demo feed, with no placeholder, and skip them in swipe feeds', () => {
 		const handlers = { why: noop, allow: noop, notSlop: noop };
-		const ids = (layout: 'grid' | 'swipe', level: 'label' | 'standard' | 'no_ai', revealed: number[] = []) =>
-			[...demoFeed(ctx, { layout, level, revealed }, handlers).children].map((c) => Number(c.getAttribute('data-k')!.slice(5)));
-		expect(ids('grid', 'label')).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9]);
-		expect(ids('grid', 'standard')).toEqual([1, 3, 5, 7, 8, 9]);
-		expect(ids('grid', 'no_ai')).toEqual([1, 5, 7, 8, 9]);
-		// Show brings a hidden item back, labeled.
-		expect(ids('grid', 'standard', [6])).toEqual([1, 3, 5, 6, 7, 8, 9]);
+		const grid = DEMO_ORDER.grid!.map((id) => DEMO_FEED.find((i) => i.id === id)!);
+		const ids = (level: 'label' | 'standard' | 'no_ai', revealed: number[] = []) =>
+			[...demoFeed(ctx, { layout: 'grid', level, revealed, items: grid }, handlers).children].map((c) => Number(c.getAttribute('data-k')!.slice(5)));
+		const rest = [10, 11, 12, 13, 14, 15, 16];
+		expect(ids('label')).toEqual([1, 8, 3, 2, 6, 5, 7, 4, 9, ...rest]);
+		expect(ids('standard')).toEqual([1, 8, 3, 5, 7, 9, ...rest]);
+		expect(ids('no_ai')).toEqual([1, 8, 5, 7, 9, ...rest]);
+		// Every level keeps at least 4 full rows of 3, so the hero's frame never ends on a short row.
+		for (const level of ['label', 'standard', 'no_ai'] as const) expect(ids(level).length).toBeGreaterThanOrEqual(12);
+		// Show brings a hidden item back, labeled, in its own slot.
+		expect(ids('standard', [6])).toEqual([1, 8, 3, 6, 5, 7, 9, ...rest]);
 		const swipe = (level: 'label' | 'standard' | 'no_ai') =>
 			demoFeed(ctx, { layout: 'swipe', level, items: DEMO_ORDER.swipe!.map((id) => DEMO_FEED.find((i) => i.id === id)!) }, handlers).querySelector('.card')!.getAttribute('data-k');
 		expect([swipe('label'), swipe('standard'), swipe('no_ai')]).toEqual(['card-6', 'card-3', 'card-1']);
@@ -62,10 +66,9 @@ describe('in-page builders in Node', () => {
 		expect(pop.classList.contains('pop-in')).toBe(false);
 		expect(pop.textContent).toContain('Why this is labeled');
 		expect(pop.querySelector('[data-k="pop-allow-3"]')).not.toBeNull();
-		expect([...pop.querySelectorAll('.cl-link')].map((a) => [a.textContent, a.hasAttribute('href')])).toEqual([
-			['Source page', false],
-			['Is this your channel? Appeal this verdict.', false]
-		]);
+		// The demo's invented sources have no pages: their links are plain words, nothing to click.
+		expect(pop.querySelectorAll('a, .cl-link')).toHaveLength(0);
+		expect([...pop.querySelectorAll('.cl-link-inert')].map((a) => a.textContent)).toEqual(['Source page', 'Is this your channel? Appeal this verdict.']);
 		expect(feed.getAttribute('data-focus')).toBe('pop-allow-3');
 		const opened = demoFeed(ctx, { layout: 'grid', level: 'standard', items: [item], open: 3, opened: 3 }, handlers);
 		expect(opened.querySelector('#cl-pop-3')!.classList.contains('pop-in')).toBe(true);

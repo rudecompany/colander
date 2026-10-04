@@ -142,11 +142,13 @@
 		--cl-brand-fill: #3870c0;
 		--cl-brand-fg: #ffffff;
 		--cl-brand-tint: #1f2a3a;
-		/* Lifted off paper (1.23) and wash (1.16) so the page's one contrast moment reads in dark too.
-		   On-ink 13.16, on-ink-muted 6.49, #8FB8F0 7.34, dot-strong 3.01 on it. */
-		--cl-band: #24272c;
-		/* On-ink 11.32, on-ink-muted 5.59, #8FB8F0 6.31 on it. */
-		--cl-band-card: #2e3238;
+		/* Lifted well off paper (1.52) and wash (1.43), so the band and the Plus card stand out in dark
+		   as they do in light. On-ink 10.67, on-ink-muted 5.27, #8FB8F0 5.95, white on brand-fill 4.94. */
+		--cl-band: #32363c;
+		/* Set into the band, a step darker: on-ink 12.34, on-ink-muted 6.09, #8FB8F0 6.88 on it. */
+		--cl-band-card: #282c31;
+		/* Hairlines inside the band: 1.47 on it. */
+		--cl-band-line: #4a4f57;
 		--cl-dot: #2c3035;
 		/* 3.70 on paper, 3.50 on wash, 3.60 on surface. */
 		--cl-dot-strong: #6b7078;
@@ -273,10 +275,12 @@ html {
 	-moz-osx-font-smoothing: grayscale;
 }
 
-/* Focus: 2 px brand with a 2 px offset everywhere. Mittsu controls draw the same ring as a shadow. */
+/* Focus: one ring on every element and surface, the double ring: 2 px brand outside a 2 px gap in
+   the surface color. The transparent outline is what forced-colors mode draws. */
 :focus-visible {
-	outline: 2px solid var(--cl-brand);
+	outline: 2px solid transparent;
 	outline-offset: 2px;
+	box-shadow: var(--uin-focus-ring);
 }
 
 /* Type roles. Tracking is never tighter than -0.02em. */

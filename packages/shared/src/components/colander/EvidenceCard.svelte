@@ -89,9 +89,14 @@ Show, Always allow and Not slop appear when their handlers are given.
 	{/if}
 	{#if ev.sourceUrl || ev.appealUrl}
 		<p class="cl-ev-links">
-			<!-- Inert links (the demo's invented sources) keep their look, not their target. -->
-			{#if ev.sourceUrl}<a class="cl-link" href={ev.inertLinks ? undefined : ev.sourceUrl}>{s.sourcePage}<ArrowRight size={16} aria-hidden="true" /></a>{/if}
-			{#if ev.appealUrl}<a class="cl-link" href={ev.inertLinks ? undefined : ev.appealUrl}>{ev.appealText}</a>{/if}
+			<!-- The demo's invented sources have no pages: there the links are plain words. -->
+			{#if ev.inertLinks}
+				{#if ev.sourceUrl}<span class="cl-link-inert">{s.sourcePage}</span>{/if}
+				{#if ev.appealUrl}<span class="cl-link-inert">{ev.appealText}</span>{/if}
+			{:else}
+				{#if ev.sourceUrl}<a class="cl-link" href={ev.sourceUrl}>{s.sourcePage}<ArrowRight size={16} aria-hidden="true" /></a>{/if}
+				{#if ev.appealUrl}<a class="cl-link" href={ev.appealUrl}>{ev.appealText}</a>{/if}
+			{/if}
 		</p>
 	{/if}
 </svelte:element>

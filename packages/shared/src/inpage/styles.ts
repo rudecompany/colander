@@ -28,6 +28,8 @@ button.cl-chip { cursor: pointer; }
 
 .pill { display: inline-flex; align-items: center; gap: 4px; height: 28px; padding: 0 10px 0 8px; border: 0; border-radius: var(--cl-r-full); background: var(--cl-host-fill); color: var(--cl-text); font: var(--cl-chip); white-space: nowrap; transition: box-shadow var(--cl-fast) var(--cl-ease); }
 .pill:hover, .pill[aria-expanded='true'] { box-shadow: inset 0 0 0 1px var(--cl-host-line); }
+.pill.ink { background: var(--cl-ink); color: var(--cl-on-ink); }
+.pill.ink:hover, .pill.ink[aria-expanded='true'] { box-shadow: inset 0 0 0 1px var(--cl-on-ink-muted); }
 
 .layer { position: fixed; inset: 0; pointer-events: none; }
 .layer > * { pointer-events: auto; }

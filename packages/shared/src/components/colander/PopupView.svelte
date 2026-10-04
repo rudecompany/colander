@@ -9,10 +9,12 @@ strictness card 80, stats card 104, On this page card (a 36 header and up to 3 r
 Flat: the website adds the shadow where it docks the popup. Only "Show all" caps the height at
 600 (the extension's window); otherwise the popup grows with its content, so a narrow website
 column never clips it. Hidden items leave the page without a trace, so this list is where each one
-stays reachable: Show, and the menu's Always allow, Not slop and Why. A row title is always one
-line, clipped by its own box: a long one ends in an ellipsis, and a numbered one keeps its number
-("Ancient Rome facts… Part 46"), so the parts of a series stay apart. The chip and the actions keep
-their size and alignment.
+stays reachable: Show, and the menu's Always allow, Not slop and Why (PopupRows, which the website
+also draws in its pictures of the popup). A hidden item always has Show.
+
+The counts follow what is hidden now: an item shown again with Show leaves "Hidden on this page",
+the tally and the summary, as it leaves the toolbar badge. After Show, Always allow or Not slop,
+focus goes back to the same row, or to the list's heading when the row left the list.
 -->
 <script lang="ts" module>
 	import type { Action, Strictness, Verdict } from '../../verdicts';
@@ -72,24 +74,19 @@ their size and alignment.
 <script lang="ts">
 	import '../ui/badge/badge.css';
 	import '../ui/button/button.css';
-	import ArrowRight from '@lucide/svelte/icons/arrow-right';
-	import Check from '@lucide/svelte/icons/check';
 	import ChevronDown from '@lucide/svelte/icons/chevron-down';
-	import Eye from '@lucide/svelte/icons/eye';
 	import Heart from '@lucide/svelte/icons/heart';
-	import Info from '@lucide/svelte/icons/info';
 	import RefreshCw from '@lucide/svelte/icons/refresh-cw';
 	import ScrollText from '@lucide/svelte/icons/scroll-text';
 	import Settings from '@lucide/svelte/icons/settings';
-	import Tag from '@lucide/svelte/icons/tag';
 	import X from '@lucide/svelte/icons/x';
 	import Button from '../ui/button/button.svelte';
 	import ColanderMark from './ColanderMark.svelte';
 	import LiveBadge from './LiveBadge.svelte';
 	import Menu, { type MenuItem } from './Menu.svelte';
+	import PopupRows from './PopupRows.svelte';
 	import StatCell from './StatCell.svelte';
 	import StrictnessControl from './StrictnessControl.svelte';
-	import VerdictChip from './VerdictChip.svelte';
 	import VerdictTally from './VerdictTally.svelte';
 	import { SUPPORTED_SITES, WEEKLY_HIDDEN } from '../../copy';
 	import { fmtNum } from '../../utils/format';
@@ -105,11 +102,13 @@ their size and alignment.
 	let all = $state(false);
 	// Hidden items first: they leave no trace on the page, so this list is where they are reached.
 	const rows = $derived([...(s.rows ?? [])].sort((x, y) => Number(isHidden(y)) - Number(isHidden(x))));
-	const onPage = $derived(s.onPage ?? rows.filter((r) => r.action === 'hide').length);
+	/** What the item gets now: shown again with Show, a hidden item is labeled on the page. */
+	const now = (r: PopupRow): Action => (r.action === 'hide' && r.shown ? 'label' : r.action);
+	const onPage = $derived(s.onPage ?? rows.filter(isHidden).length);
 	// The tally breaks down "Hidden on this page" by verdict, so it fits one line.
 	const tally = $derived.by(() => {
 		const t: Partial<Record<Verdict, number>> = {};
-		for (const r of rows) if (r.verdict && r.action === 'hide') t[r.verdict] = (t[r.verdict] ?? 0) + 1;
+		for (const r of rows) if (r.verdict && isHidden(r)) t[r.verdict] = (t[r.verdict] ?? 0) + 1;
 		return t;
 	});
 	const summary = $derived.by(() => {
@@ -118,7 +117,7 @@ their size and alignment.
 		const verbs = [['hide', 'hid'], ['label', 'labeled']] as const;
 		for (const [action, verb] of verbs) {
 			const by = new Map<Verdict, number>();
-			for (const r of rows) if (r.action === action && r.verdict) by.set(r.verdict, (by.get(r.verdict) ?? 0) + 1);
+			for (const r of rows) if (now(r) === action && r.verdict) by.set(r.verdict, (by.get(r.verdict) ?? 0) + 1);
 			for (const [v, n] of by) parts.push(`${verb} ${n} ${VERDICT_WORD[v]}${action === 'hide' ? ` ${n === 1 ? noun : `${noun}s`}` : ''}`);
 		}
 		if (!parts.length) return 'Nothing hidden on this page.';
@@ -130,26 +129,6 @@ their size and alignment.
 	const where = $derived(s.pausedScope === 'tab' ? 'tab' : 'site');
 	// While paused the level still saves, but nothing on the page follows it until Resume.
 	const note = $derived(paused ? 'This level applies again when you resume.' : s.strictnessNote);
-
-	/** A numbered title keeps its last words (up to 9 characters) when cut: "Ancient Rome facts… Part 46". */
-	function ends(t: string): [string, string] {
-		if (!/\d$/.test(t)) return [t, ''];
-		let cut = -1;
-		for (let i = t.lastIndexOf(' '); i > 0 && t.length - i <= 9; i = t.lastIndexOf(' ', i - 1)) cut = i;
-		return cut < 0 ? [t, ''] : [t.slice(0, cut), t.slice(cut)];
-	}
-	const hidden = isHidden;
-
-	// The same icon for an action everywhere: the Why popover, the row menu and in-page.
-	function rowItems(r: PopupRow): MenuItem[] {
-		return [
-			...(hidden(r) && a.show ? [{ label: 'Show', icon: Eye, onSelect: () => a.show!(r) }] : []),
-			...(a.allow ? [{ label: 'Always allow this source', icon: Check, onSelect: () => a.allow!(r) }] : []),
-			...(r.verdict && a.notSlop ? [{ label: 'Not slop', icon: Tag, onSelect: () => a.notSlop!(r) }] : []),
-			...(a.why ? [{ label: 'Why', icon: Info, onSelect: () => a.why!(r) }] : []),
-			...(a.sourcePage ? [{ label: 'Source page', icon: ArrowRight, onSelect: () => a.sourcePage!(r) }] : [])
-		];
-	}
 
 	// Pause and Resume replace each other, so focus moves to the new control instead of the page.
 	let root = $state<HTMLElement>();
@@ -166,6 +145,23 @@ their size and alignment.
 		if (!btn || (active && active !== root.ownerDocument.body && !root.contains(active))) return;
 		refocus = false;
 		btn.focus();
+	});
+
+	// Show, Always allow and Not slop change the list under the focused control. Once it re-renders,
+	// focus goes back to the same row, or to the list's heading when the row has left the list.
+	let refocusRow: PopupRow['id'] | null = null;
+	const acting = (fn?: (r: PopupRow) => void) => fn && ((r: PopupRow) => ((refocusRow = r.id), fn(r)));
+	const rowActions = $derived<PopupActions>({ ...a, show: acting(a.show), allow: acting(a.allow), notSlop: acting(a.notSlop) });
+	$effect(() => {
+		void visible;
+		if (refocusRow == null || !root) return;
+		const id = String(refocusRow);
+		refocusRow = null;
+		const doc = root.ownerDocument;
+		const active = doc.activeElement;
+		if (active && active !== doc.body && active.isConnected) return;
+		const row = [...root.querySelectorAll<HTMLElement>('[data-row]')].find((el) => el.dataset.row === id);
+		(row?.querySelector<HTMLElement>('.row-btn') ?? root.querySelector<HTMLElement>('.page-head h2'))?.focus();
 	});
 </script>
 
@@ -223,7 +219,7 @@ their size and alignment.
 		{#if s.status !== 'unsupported'}
 			<section class="card page" aria-labelledby="{uid}-page">
 				<div class="page-head">
-					<h2 id="{uid}-page">On this page</h2>
+					<h2 id="{uid}-page" tabindex="-1">On this page</h2>
 					{#if rows.length > 3}
 						<Button variant="quiet" onclick={() => (all = !all)}>{all ? 'Show fewer' : `Show all ${rows.length}`}</Button>
 					{/if}
@@ -233,26 +229,7 @@ their size and alignment.
 				{:else if !rows.length}
 					<p class="empty"><span class="three" aria-hidden="true"><i></i><i></i><i></i></span>{paused ? `Colander is paused on this ${where}, so nothing is hidden.` : 'Nothing hidden on this page.'}</p>
 				{:else}
-					<ul class="rows">
-						{#each visible as r (r.id)}
-							{@const [head, tail] = ends(r.title)}
-							<li class="row">
-								<Menu items={rowItems(r)} label={r.title} align="start">
-									{#snippet trigger(props)}
-										<button {...props} type="button" class="row-btn">
-											{#if r.verdict}<VerdictChip verdict={r.verdict} size="sm" />{:else}<span class="uin-badge uin-badge-md">Your rule</span>{/if}
-											<span class="title" title={r.title}><span class="t-start">{head}</span>{#if tail}<span class="t-end">{tail}</span>{/if}</span>
-											<!-- The row opens a menu: say so, so it never reads as a static line. -->
-											<ChevronDown size={16} aria-hidden="true" class="more" />
-										</button>
-									{/snippet}
-								</Menu>
-								{#if hidden(r) && a.show}
-									<Button variant="quiet" onclick={() => a.show!(r)}><Eye size={16} aria-hidden="true" />Show</Button>
-								{/if}
-							</li>
-						{/each}
-					</ul>
+					<PopupRows rows={visible} actions={rowActions} />
 				{/if}
 			</section>
 		{/if}
@@ -445,77 +422,15 @@ their size and alignment.
 	h2 {
 		font: var(--cl-body-strong);
 	}
-	/* Every row shares one trailing column: Show where the item is hidden, empty space elsewhere, so
-	   the menu chevrons line up down the list. */
-	.rows {
-		display: grid;
-		grid-template-columns: minmax(0, 1fr) auto;
-		column-gap: 4px;
-		margin: 0;
-		padding: 0;
-		list-style: none;
-	}
 	/* The scrolled list fades at its bottom edge, so a cut row reads as more to scroll. */
-	.all .rows {
+	.all .page :global(.rows) {
 		overflow-y: auto;
 		padding-bottom: 16px;
 		mask-image: linear-gradient(to bottom, black calc(100% - 16px), transparent);
 	}
-	.row {
-		display: grid;
-		grid-column: 1 / -1;
-		grid-template-columns: subgrid;
-		align-items: center;
-		height: 44px;
-	}
-	.row-btn {
-		display: flex;
-		grid-column: 1;
-		align-items: center;
-		gap: 8px;
-		min-width: 0;
-		height: 40px;
-		padding: 0 8px;
-		border: 0;
-		border-radius: var(--cl-r-chip);
-		background: transparent;
-		color: var(--cl-text);
-		font: var(--cl-body);
-		text-align: left;
-		cursor: pointer;
-	}
-	.row-btn:hover {
-		background: color-mix(in srgb, var(--cl-text) 6%, transparent);
-	}
-	/* The chip, the chevron and Show keep their size; only the title gives way, on one line. */
-	.row-btn > :global(*),
-	.row > :global(.uin-btn) {
-		flex: none;
-	}
-	.row-btn :global(.more) {
-		color: var(--cl-text-muted);
-	}
-	/* One line whatever happens: the title clips itself, and only its start gives way. */
-	.row-btn > .title {
-		display: flex;
-		flex: 1 1 0;
-		align-items: baseline;
-		min-width: 0;
-		height: 20px;
-		overflow: hidden;
-		line-height: 20px;
-		white-space: nowrap;
-	}
-	.t-start {
-		flex: 0 1 auto;
-		min-width: 0;
-		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: nowrap;
-	}
-	.t-end {
-		flex: none;
-		white-space: pre;
+	h2:focus {
+		outline: none;
+		box-shadow: none;
 	}
 	.empty {
 		display: flex;

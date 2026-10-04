@@ -139,12 +139,13 @@ export function evidencePopover(
 		x.allow && button(ctx, { label: s.alwaysAllow, icon: Check, sm: true, onClick: x.allow, attrs: attrs('allow') }),
 		x.notSlop && button(ctx, { label: s.notSlop, icon: Tag, sm: true, onClick: x.notSlop, attrs: attrs('notslop') })
 	].filter(Boolean) as HTMLElement[];
-	// Inert links (the website's demo, whose invented sources have no pages) keep their look, not their target.
-	const link = (href: string) => (ev.inertLinks ? { class: 'cl-link' } : { class: 'cl-link', href, target: '_blank', rel: 'noopener' });
-	const links: Child[] = [
-		ev.sourceUrl && h('a', link(ev.sourceUrl), s.sourcePage, icon(ctx.doc, ArrowRight)),
-		ev.appealUrl && h('a', link(ev.appealUrl), ev.appealText)
-	];
+	// The website's demo has invented sources with no pages: there the links are plain words, so
+	// nothing looks clickable that is not.
+	const link = (href: string, text: string, arrow = false): Child =>
+		ev.inertLinks
+			? h('span', { class: 'cl-link-inert' }, text)
+			: h('a', { class: 'cl-link', href, target: '_blank', rel: 'noopener' }, text, arrow && icon(ctx.doc, ArrowRight));
+	const links: Child[] = [ev.sourceUrl && link(ev.sourceUrl, s.sourcePage, true), ev.appealUrl && link(ev.appealUrl, ev.appealText ?? '')];
 	return h(
 		'div',
 		{ class: `cl-pop${opts.flat ? ' cl-flat' : ''}`, role: 'dialog', 'aria-labelledby': titleId, id: opts.id, 'data-k': k('pop', opts.key) },

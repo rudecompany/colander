@@ -4,10 +4,13 @@ Plus is the band card with an outline Recommended badge, the 14-day badge and a 
 `billing` shows /plans' billed line for a yearly or monthly choice; without it Plus reads
 "$30 a year" and "or $3 a month". `size="site"` is the website (stat-lg, 40 buttons, padding
 24); `app` is options (stat 28/32, 32 buttons, padding 16). No strikethrough, no percent-off.
+`action` replaces the CTA button, such as the website's install button that becomes "Send to my
+computer" on phones.
 -->
 <script lang="ts">
 	import '../ui/badge/badge.css';
 	import '../ui/button/button.css';
+	import type { Snippet } from 'svelte';
 	import Check from '@lucide/svelte/icons/check';
 	import Button from '../ui/button/button.svelte';
 	import { PLAN_COPY } from '../../copy';
@@ -19,6 +22,7 @@ Plus is the band card with an outline Recommended badge, the 14-day badge and a 
 		recommended = true,
 		cta,
 		cta2,
+		action,
 		headingLevel = 3
 	}: {
 		plan: 'free' | 'plus';
@@ -29,6 +33,8 @@ Plus is the band card with an outline Recommended badge, the 14-day badge and a 
 		cta?: { label?: string; href?: string; onclick?: () => void };
 		/** A secondary action under the primary, such as /plans' direct purchase. */
 		cta2?: { label: string; href?: string; onclick?: () => void; loading?: boolean };
+		/** Replaces the CTA button. */
+		action?: Snippet;
 		headingLevel?: 2 | 3 | 4;
 	} = $props();
 
@@ -51,7 +57,9 @@ Plus is the band card with an outline Recommended badge, the 14-day badge and a 
 	<ul>
 		{#each features as f (f)}<li><Check size={16} aria-hidden="true" /><span>{f}</span></li>{/each}
 	</ul>
-	{#if cta}
+	{#if action}
+		<div class="cta">{@render action()}</div>
+	{:else if cta}
 		<div class="cta">
 			<Button
 				variant={plan === 'plus' ? 'primary' : 'secondary'}

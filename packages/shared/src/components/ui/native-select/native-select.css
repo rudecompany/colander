@@ -20,7 +20,7 @@
   transition: border-color var(--cl-fast) var(--cl-ease);
 }
 .uin-nselect-el:focus-visible {
-  outline: none;
+  outline: 2px solid transparent;
   box-shadow: var(--uin-focus-ring);
 }
 

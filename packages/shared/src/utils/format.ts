@@ -10,6 +10,7 @@ const utc = { timeZone: 'UTC' } as const;
 const longFmt = new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'long', year: 'numeric', ...utc });
 const shortFmt = new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', year: 'numeric', ...utc });
 const dayFmt = new Intl.DateTimeFormat('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric', ...utc });
+const dayMonthFmt = new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', ...utc });
 const timeFmt = new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false, ...utc });
 const monthFmt = new Intl.DateTimeFormat('en-GB', { month: 'long', year: 'numeric', ...utc });
 const monthShortFmt = new Intl.DateTimeFormat('en-GB', { month: 'short', year: 'numeric', ...utc });
@@ -28,6 +29,8 @@ export const fmtShortDate = (t: DateInput) => sep(shortFmt.format(d(t)));
 export const fmtDay = (t: DateInput) => sep(dayFmt.format(d(t)).replace(',', ''));
 /** "14:02 UTC" */
 export const fmtTime = (t: DateInput) => `${timeFmt.format(d(t))} UTC`;
+/** "4 Oct, 03:52 UTC", for a row with no day header above it. */
+export const fmtDayTime = (t: DateInput) => `${sep(dayMonthFmt.format(d(t)))}, ${fmtTime(t)}`;
 /** "2 Oct 2026, 14:02 UTC" */
 export const fmtDateTime = (t: DateInput) => `${fmtShortDate(t)}, ${fmtTime(t)}`;
 /** "October 2026" */

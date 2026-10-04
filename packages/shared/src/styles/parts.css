@@ -91,6 +91,7 @@
 	--cl-surface: var(--cl-ink);
 	--cl-border: var(--cl-band-line);
 	--cl-border-strong: var(--cl-on-ink-muted);
+	--uin-focus-ring: 0 0 0 2px var(--cl-ink), 0 0 0 4px var(--cl-on-ink-brand);
 	background: var(--cl-ink);
 	color: var(--cl-on-ink);
 }
@@ -173,6 +174,11 @@
 .cl-link:hover {
 	text-decoration: underline;
 	text-underline-offset: 2px;
+}
+/* Where a link has no page to go to (the website's demo), its words stay, plain and muted. */
+.cl-link-inert {
+	color: var(--cl-text-muted);
+	font: var(--cl-caption);
 }
 
 /* Floating surface: popovers, menus, sheets. The one shadow. */

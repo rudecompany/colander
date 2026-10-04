@@ -107,11 +107,15 @@ page's top right, 8 px below the toolbar icon (the popup).
 		min-height: 0;
 		overflow: hidden;
 	}
+	/* A hairline as well as the shadow, as Chrome draws its own popups: in dark the shadow alone does
+	   not read on a near-black page. */
 	.docked {
 		position: absolute;
 		top: 8px;
 		right: 12px;
 		z-index: 3;
+		overflow: hidden;
+		border: 1px solid var(--cl-border);
 		border-radius: var(--cl-r-card);
 		box-shadow: var(--cl-shadow-pop);
 	}
