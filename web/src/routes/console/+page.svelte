@@ -338,12 +338,18 @@
 		gap: 8px;
 		min-width: 0;
 	}
+	/* A busy row (kind, report count, Large source, date) wraps whole words instead of breaking "4 reports". */
+	.q-top {
+		flex-wrap: wrap;
+		row-gap: 4px;
+	}
 	.q-kind {
 		font: var(--cl-chip);
 	}
 	.q-meta {
 		color: var(--cl-text-muted);
 		font: var(--cl-caption);
+		white-space: nowrap;
 	}
 	.q-age {
 		margin-left: auto;
