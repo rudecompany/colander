@@ -119,6 +119,9 @@ pnpm -C web build    # the release workflow later rebuilds it with the store ite
 pnpm -C api exec wrangler deploy
 ```
 
+These first builds warn that `COLANDER_BUILD_API` is not set: there is no production Worker yet to read live numbers from, so the pages fill them in once the browser fetches them.
+The release workflow builds every later production website with `COLANDER_BUILD_API=https://getcolander.com`, so its pages prerender with the live numbers and latest decisions.
+
 Then check both with the smoke test (step 16 explains the reviewer token for the mutating run):
 
 ```sh
@@ -178,7 +181,8 @@ The API cannot create items, so the first package goes up by hand.
    ```
 
 3. In the Developer Dashboard select Add new item and upload `extension/dist/colanderextension-1.0.0-chrome.zip`.
-4. Fill in the Store listing with a descriptive title such as "Colander - Hide AI Slop", and the Privacy tab.
+4. The listing title comes from the manifest name, "Colander: drain the slop from your feed", so the dashboard does not ask for one.
+   Fill in the Store listing's description and the store art from `extension/store/`, and the Privacy tab.
 5. Copy the item ID (it is the extension ID) and the publisher ID from Account > Publisher settings.
    They become the variables `CWS_ITEM_ID` (repository) and `CWS_PUBLISHER_ID` (environment `chrome-web-store`).
 6. Submit this first version from the dashboard with "publish after review" turned off, so it waits until production is live.

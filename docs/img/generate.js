@@ -1,7 +1,7 @@
 // Generates the five diagrams from the product requirements doc as standalone SVG files.
-// Usage: node gen.js <output directory>
-const fs = require('fs');
-const path = require('path');
+// Usage: node docs/img/generate.js docs/img
+import fs from 'node:fs';
+import path from 'node:path';
 
 const out = process.argv[2];
 fs.mkdirSync(out, { recursive: true });
@@ -72,7 +72,7 @@ function iconSheet() {
 }
 
 function verdictFlow() {
-  const label0 = 'An item is hidden only after three checks pass in order';
+  const label0 = 'Nothing is hidden until the first two checks pass, and Slop needs all three';
   const lx = 24, lw = 340, ox = 452, ow = 284, bh = 56, r1 = 60, r2 = 156, r3 = 252, r4 = 348, mid = 194;
   const box = (x, y, w, main) =>
     `<rect x="${x}" y="${y}" width="${w}" height="${bh}" rx="8" fill="${main ? C.accentFill : C.bg}" stroke="${main ? C.accent : C.edge}" stroke-width="${main ? 2 : 1.25}"/>`;

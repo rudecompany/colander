@@ -62,6 +62,8 @@ jobs:
         env:
           # The development build of the extension (stable ID) is the one testers point at staging.
           PUBLIC_EXTENSION_ID: nninnogmbhfebflkcgghlmjmplmpodlc
+          # No COLANDER_BUILD_API: staging sits behind Cloudflare Access, so the build could not read its
+          # numbers. Staging pages fill them in once the browser fetches them.
       - name: Deploy
         uses: cloudflare/wrangler-action@v4
         with:

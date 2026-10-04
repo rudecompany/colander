@@ -105,7 +105,7 @@ Detector models are therefore optional, run on the device, and can only add weig
 | Layer | Question | Signals | Method it borrows |
 | --- | --- | --- | --- |
 | 1. Provenance | Is it AI-generated? | AI labels the platform shows on the page. [C2PA Content Credentials](https://opensource.contentauthenticity.org/docs/c2pa-js/packages/c2pa-web/) that mark the source type as AI-generated. The creator's own statement in a bio, description or hashtag. A visible generator watermark. | Platform disclosure rules, the C2PA standard |
-| 2. Source behavior | Is it mass-produced? | Uploads per day. Share of recent items with AI evidence. Near-identical titles, thumbnails and captions. Hashtag stuffing. Clusters of sources posting the same material. Link funnels in descriptions and comments. | [Kagi SlopStop](https://help.kagi.com/kagi/features/slopstop.html), DiResta's actor-behavior-content lens, YouTube's inauthentic content policy |
+| 2. Source behavior | Is it mass-produced? | Uploads per day, only once YouTube approves derived metrics (contracts 9.7); until then reviewers record posting patterns. Share of recent items with AI evidence. Near-identical titles, thumbnails and captions. Hashtag stuffing. Clusters of sources posting the same material. Link funnels in descriptions and comments. | [Kagi SlopStop](https://help.kagi.com/kagi/features/slopstop.html), DiResta's actor-behavior-content lens, YouTube's inauthentic content policy |
 | 3. Content rubric | Is it low effort and hollow? | Answers taggers give to a short rubric: useful, accurate, original. Plus text checks for filler, repetition and leftover chatbot boilerplate. | Shaib et al., [NewsGuard's four criteria](https://www.newsguardtech.com/special-reports/ai-tracking-center/), Kapwing's coding rule |
 | 4. Community consensus | Do people who usually disagree both call it slop? | Tags and counter-tags weighted by tagger reputation. Agreement across tagger groups. Creator appeals. | [Community Notes bridging](https://arxiv.org/pdf/2512.19947), [SponsorBlock](https://web.sponsor.ajay.app/about) voting, Kagi's review and re-review |
 
@@ -128,7 +128,7 @@ Detector models are therefore optional, run on the device, and can only add weig
 | Disputed | Tags and counter-tags split, or an appeal is open | Show, with a disputed mark |
 | Clear | "Not slop" consensus or a successful appeal | Allow |
 
-![Verdict flow: three checks, four outcomes, two overrides](img/verdict-flow.svg)
+![Verdict flow: nothing is hidden until the first two checks pass, and Slop needs all three, with two overrides](img/verdict-flow.svg)
 
 The actions shown are those of the Standard level.
 Label labels everything that carries AI evidence, and No AI also hides AI-made items.
@@ -138,7 +138,7 @@ Label labels everything that carries AI evidence, and No AI also hides AI-made i
 1. AI evidence is a gate. Without it, nothing can be rated slop, however low its quality.
 2. Two layers must agree before anything is hidden by default.
 3. Mixed sources are never hidden as a whole. Their AI items get item-level labels, following Kagi's rule.
-4. Sources with large audiences need staff review before a list-wide Slop verdict.
+4. Sources with large audiences need staff review before a list-wide Slop verdict. A source whose audience size is not known waits for a reviewer the same way.
 5. Every hidden item states which signals fired, and one click reveals it.
 6. Source verdicts expire and are re-scored every 90 days. An appeal triggers re-review at once.
 
@@ -443,7 +443,7 @@ Lists reach the device on the left and tags leave it on the right. The services 
 | Slop dataset | Kagi SlopStop | Not yet published | Kagi has said it will share its database. Ask about terms. |
 | News site ratings | NewsGuard | Commercial license | Not usable without a contract. Its public criteria can inform the rubric. |
 | Filter-list syntax | uBlock Origin | GPL-3.0 | Its code cannot be bundled into a non-GPL product. Write a small parser for the hostname subset. |
-| YouTube metadata | YouTube Data API | Google's API terms and developer policies, with daily quota | Use for public channel and upload metadata. Review storage and display rules with counsel. |
+| YouTube metadata | YouTube Data API | Google's API terms and developer policies, with daily quota | Links a channel ID and its handle only. Subscriber counts and uploads per day feed nothing until YouTube approves derived metrics (contracts 9.7). Review storage and display rules with counsel. |
 | TikTok and Meta metadata | None suitable | Research APIs are limited to approved researchers | No server-side scraping. Use on-page signals and user reports. |
 | Optional on-device model | ONNX Runtime Web, Transformers.js | MIT, Apache-2.0 | Each model has its own license. Many detectors are non-commercial, so check every model card. |
 | Payments | Stripe, [ExtensionPay](https://extensionbooster.net/blog/how-to-monetize-browser-extension-payment-integration-guide/) (as compared in this guide), or a merchant of record such as Paddle or Lemon Squeezy | Commercial terms | Chrome Web Store payments were retired in 2021. A merchant of record handles sales tax and VAT. |
