@@ -27,7 +27,9 @@ test('landing explains the product and the hero demo follows the strictness tabl
 	const docked = frame.locator('.docked');
 	const onPage = docked.locator('.cell').filter({ hasText: 'Hidden on this page' }).locator('.value');
 	await expect(onPage).toHaveText('3');
-	await docked.getByRole('button', { name: 'Show all 5' }).click();
+	// The list holds the 2 labeled items too, so Show all carries no number that could disagree with the 3.
+	await expect(docked.getByRole('button', { name: /^Show all/ })).toHaveText('Show all');
+	await docked.getByRole('button', { name: 'Show all' }).click();
 	await docked.getByRole('listitem').filter({ hasText: 'Part 46' }).getByRole('button', { name: 'Show' }).click();
 	// The notice counts down 4 s; hovering holds it, as it does for a visitor reading it.
 	const notice = frame.getByRole('status').filter({ hasText: 'Shown again.' });

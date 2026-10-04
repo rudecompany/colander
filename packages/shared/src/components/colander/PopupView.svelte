@@ -221,7 +221,8 @@ focus goes back to the same row, or to the list's heading when the row left the 
 				<div class="page-head">
 					<h2 id="{uid}-page" tabindex="-1">On this page</h2>
 					{#if rows.length > 3}
-						<Button variant="quiet" onclick={() => (all = !all)}>{all ? 'Show fewer' : `Show all ${rows.length}`}</Button>
+						<!-- No number: the list holds labeled items too, so a count here would disagree with "Hidden on this page". -->
+						<Button variant="quiet" onclick={() => (all = !all)}>{all ? 'Show fewer' : 'Show all'}</Button>
 					{/if}
 				</div>
 				{#if s.status === 'loading'}
