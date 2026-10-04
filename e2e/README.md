@@ -18,7 +18,7 @@ A run takes about two minutes, most of it building.
 
 Global setup (`tests/global-setup.ts`) does the following, every run.
 
-1. Finds a free port from 8791 up (`COLANDER_E2E_PORT` picks the first one to try), with the inspector on the port 100 above, so it never meets a dev server on 8787.
+1. Finds a free port from 8791 up (`COLANDER_E2E_PORT` picks the first one to try), with the inspector on the port 100 above (or `COLANDER_E2E_INSPECTOR_PORT`), so it never meets a dev server on 8787.
 2. Builds the website with `PUBLIC_EXTENSION_ID` set to the dev extension ID and copies it into `e2e/.run/site`, so a web test run that rebuilds `web/build` cannot change it underneath; `wrangler dev` serves that copy with `--assets`.
 3. Builds the extension in e2e mode into `e2e/.run/extension` (`COLANDER_EXT_OUT_DIR`), with `WXT_COLANDER_API` and `WXT_COLANDER_SITE` pointing at that port, so it never overwrites the extension package's own e2e build, which points at a mocked API.
 4. Starts `wrangler dev --test-scheduled` with local state in `e2e/.run/state`, `COLANDER_DEV=1` and the development key from `e2e/.run/dev.vars` (`--env-file`, so a developer's `api/.dev.vars` never applies), and without any Stripe, YouTube or Resend keys.

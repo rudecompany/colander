@@ -24,9 +24,12 @@ export default async function globalSetup() {
 		return;
 	}
 	// 8787 is the dev default; stay clear of a dev server someone has running. The inspector takes
-	// the port 100 above.
+	// the port 100 above, or COLANDER_E2E_INSPECTOR_PORT.
 	let port = Number(process.env.COLANDER_E2E_PORT) || 8791;
-	while (!(await free(port)) || !(await free(port + 100))) port++;
+	const fixedInspector = Number(process.env.COLANDER_E2E_INSPECTOR_PORT) || 0;
+	if (fixedInspector && !(await free(fixedInspector))) throw new Error(`COLANDER_E2E_INSPECTOR_PORT ${fixedInspector} is taken`);
+	const inspector = (p: number) => fixedInspector || p + 100;
+	while (!(await free(port)) || !(await free(inspector(port)))) port++;
 	const origin = `http://127.0.0.1:${port}`;
 
 	rmSync(RUN, { recursive: true, force: true });
@@ -61,7 +64,7 @@ export default async function globalSetup() {
 			'dev',
 			'--ip=127.0.0.1',
 			`--port=${port}`,
-			`--inspector-port=${port + 100}`,
+			`--inspector-port=${inspector(port)}`,
 			`--persist-to=${resolve(RUN, 'state')}`,
 			`--env-file=${envFile}`,
 			`--assets=${site}`,
