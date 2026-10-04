@@ -399,7 +399,7 @@
 	}
 	@media (max-width: 1199px) {
 		.console {
-			grid-template-columns: 320px minmax(0, 1fr);
+			grid-template-columns: 360px minmax(0, 1fr);
 		}
 		.span {
 			grid-column: 2;

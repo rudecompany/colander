@@ -137,3 +137,16 @@ test('members are told the console is for curators and staff', async ({ page }) 
 	await page.goto('/console');
 	await expect(page.getByRole('heading', { name: 'For curators and staff' })).toBeVisible();
 });
+
+// Between the tablet and wide layouts the queue keeps room for all 4 kind tabs, counts included.
+for (const width of [800, 1024, 1199]) {
+	test(`the queue tabs fit their column at ${width} px`, async ({ page }) => {
+		await page.setViewportSize({ width, height: 900 });
+		await mockApi(page, review(STAFF));
+		await page.goto('/console');
+		const tabs = page.getByRole('tablist', { name: 'Queue kind' });
+		await expect(tabs.getByRole('tab', { name: /Escalated/ })).toBeVisible();
+		const { scroll, client } = await tabs.evaluate((el) => ({ scroll: el.scrollWidth, client: el.clientWidth }));
+		expect(scroll).toBeLessThanOrEqual(client);
+	});
+}
