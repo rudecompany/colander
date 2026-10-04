@@ -79,7 +79,7 @@ test('a source page never names a data source, even when an older server still s
 	await expect(page.locator('main')).not.toContainText(/AiSList|seed list|imported/i);
 });
 
-test('audience size says when it is not known, and no upload figures appear', async ({ page }) => {
+test('audience size says when it is not known or what staff recorded, and no upload figures appear', async ({ page }) => {
 	await mockApi(page);
 	await page.goto('/s/tt/@historybites247');
 	const numbers = page.getByRole('region', { name: 'The numbers behind it' });
@@ -90,6 +90,12 @@ test('audience size says when it is not known, and no upload figures appear', as
 	await mockApi(page, { 'GET /v1/sources/*': () => ({ json: { source: { ...SOURCES['tt:@historybites247'], large: true }, history: [] } }) });
 	await page.reload();
 	await expect(numbers).toContainText('Large. A Slop verdict on it needs staff review.');
+
+	// Staff recorded it as not large: the size is known, so the page says so.
+	await mockApi(page, { 'GET /v1/sources/*': () => ({ json: { source: { ...SOURCES['tt:@historybites247'], audience_known: true }, history: [] } }) });
+	await page.reload();
+	await expect(numbers).toContainText('Not large, as recorded by staff.');
+	await expect(numbers).not.toContainText('Not known');
 });
 
 test('an unknown platform is a 404', async ({ page }) => {

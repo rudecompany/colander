@@ -104,19 +104,19 @@ A shared fixture fails any test that logs a page error or a CSP violation.
 
 | Spec | Covers |
 | --- | --- |
-| `landing.spec.ts` | Hero, the demo following the strictness table and Pause, hidden items leaving no trace while the badge counts them and the docked popup lists them with Show, a recreated feed per platform tab with TikTok skipping hidden videos, the open popover drawn in its final state on load, Show putting an item back in its slot, off every count, with a "Shown again." notice and Undo, popup rows, strictness cards, step rules, tile pictures and decision rows fitting at every width in both themes, the comparison and its linked sources on /definition, keyboard focus through Why and Pause with no trap around the popover open on load, the phone popup's control staying put, the thumbnail disclosure, the length budget, the phone hero, the menu sheet, the live log preview |
-| `definition.spec.ts` | The strictness table fits the reading measure and stacks by level on phones |
+| `landing.spec.ts` | Hero, the demo following the strictness table and Pause, hidden items leaving no trace while the badge counts them and the docked popup lists them with Show, a recreated feed per platform tab with TikTok skipping hidden videos, the open popover drawn in its final state on load, Show putting an item back in its slot, off every count, with a "Shown again." notice and Undo, popup rows, strictness cards, step rules, tile pictures and decision rows fitting at every width in both themes, the comparison table and its checked date, naming no competitor and linking no source, keyboard focus through Why and Pause with no trap around the popover open on load, the phone popup's control staying put, the thumbnail disclosure, the length budget, the phone hero with one feed and no platform tabs, the menu sheet, the live log preview and no "no entries" before the log is read, one overlay at a time in the demo, and the demo popup's Options, Decision log and Support links |
+| `definition.spec.ts` | The strictness table fits the reading measure and stacks by level on phones, and the figures are numbered in reading order |
 | `budget.spec.ts` | The performance budget above |
-| `source.spec.ts` | Source pages for all five verdicts, Not rated, unknown platforms, no support links |
+| `source.spec.ts` | Source pages for all five verdicts, Not rated, unknown platforms, no support links, audience size not known, large or recorded by staff as not large, and no upload figures |
 | `appeal.spec.ts` | Start an appeal, copy the code, Verify, every status, missing secret |
-| `log.spec.ts` | Platform and verdict filters, address sync, load more with the cursor |
+| `log.spec.ts` | Platform and verdict filters, address sync, load more with the cursor, reviewers named on appeal entries, item-level changes naming their item in the row |
 | `account.spec.ts` | Email sign-in and callback, safe `next`, connect this browser, one-click cancel at period end, then end now and refund, `409 not_refundable` |
-| `plans.spec.ts` | Yearly preselected, `503 billing_unavailable`, sign-in before checkout, redirect, closed checkout, `409 already_subscribed`, the welcome page |
+| `plans.spec.ts` | Yearly preselected, `503 billing_unavailable`, sign-in before checkout with the Free and Plus cards keeping one height, redirect, closed checkout, `409 already_subscribed`, the welcome page and its full-width sign-in button |
 | `support.spec.ts` | Donation body and redirect, custom amounts and limits, `503 billing_unavailable`, closed payment |
 | `console.spec.ts` | Keyboard queue, evidence, decision body and CSRF header, curator limits (large sources, appeals in review) and `403 staff_required`, AI evidence before Slop and `400 ai_evidence_required` |
 | `a11y.spec.ts` | axe WCAG 2.2 A and AA rules on every page, light and dark |
 | `brand.spec.ts` | The vocabulary table's "Not" words and exclamation marks never appear, nothing is below 12 px (figure labels as rendered too), controls are at least 32 px, nothing spills out of a card |
-| `reflow.spec.ts` | No page scrolls sideways or spills out of a card at 390 and 320 px, and figure labels stay at 12 px and up |
+| `reflow.spec.ts` | No page scrolls sideways or spills out of a card at 390 and 320 px, the stat cells on the landing page and /transparency keep their labels inside at 1024 and 1100 px, and figure labels stay at 12 px and up |
 
 The committed screenshots in `screenshots/` are 1440 and 390 px wide, light and dark, reduced to 256 colors to keep the repository small.
 `pnpm -C web screenshots` writes full-color ones.
@@ -129,7 +129,8 @@ The committed screenshots in `screenshots/` are 1440 and 390 px wide, light and 
 - `src/hooks.server.ts` registers a linkedom document so the shared in-page builders prerender as Declarative Shadow DOM (`src/lib/server/inpage.ts`), and preloads the latin Atkinson font file.
 - `src/lib/live.svelte.ts` holds the live numbers: the build values from `COLANDER_BUILD_API`, refreshed once per page load.
   A failed refresh keeps the build values.
-- `src/lib/content.ts` holds website-only copy: the Kapwing figures, the comparison and its sources, and the questions.
+  The latest decisions stay unknown until the build or a refresh has read them, so no page says the log is empty before it knows.
+- `src/lib/content.ts` holds website-only copy: the Kapwing figures, the comparison and its checked date, and the questions.
 - `src/lib/components/` holds the site chrome (header with the phone menu sheet, footer with the install call to action), the landing section head, the four figures, the arrow link, the appeal frame, the sign-in card and the console's evidence view and decision form.
 - `src/lib/api.ts` is the fetch wrapper.
   Every non-GET request sends `X-Colander-CSRF: 1`.

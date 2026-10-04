@@ -82,7 +82,10 @@ test('on a phone the hero sends the link to a computer and shows the popup under
 	await mockApi(page);
 	await page.goto('/');
 	await expect(page.getByRole('button', { name: 'Send to my computer' }).first()).toBeVisible();
+	// One feed on phones, so no platform tabs that would change nothing there.
+	await expect(page.getByRole('tablist', { name: 'Platform' })).toBeHidden();
 	const feed = page.locator('.frame-phone');
+	await expect(feed.getByText('Active on youtube.com')).toBeVisible();
 	await expect(feed.getByText('The popup in your toolbar')).toBeVisible();
 	await expect(feed.getByRole('dialog', { name: 'Why this is labeled' })).toBeVisible();
 	// The popup under the phone feed lists that feed: its one hidden item, with Show, which brings it back.
@@ -192,6 +195,46 @@ test('pausing from the popup with the keyboard moves focus to Resume, and back',
 	await expect(frame.getByRole('button', { name: 'Resume' })).toBeFocused();
 	await page.keyboard.press('Enter');
 	await expect(frame.getByRole('button', { name: 'Pause' })).toBeFocused();
+});
+
+test('one overlay at a time: a menu in the demo closes the open evidence popover', async ({ page }) => {
+	await page.setViewportSize({ width: 1440, height: 900 });
+	await mockApi(page);
+	await page.goto('/');
+	const frame = page.locator('.frame-desk');
+	const why = frame.getByRole('dialog', { name: 'Why this is labeled' });
+	await expect(why).toBeVisible();
+	await frame.getByRole('button', { name: 'Pause' }).click();
+	await expect(page.getByRole('menu')).toBeVisible();
+	await expect(why).toHaveCount(0);
+});
+
+test("the demo popup's Options, Decision log and Support links lead to this site's pages", async ({ page }) => {
+	await page.setViewportSize({ width: 1440, height: 900 });
+	await mockApi(page);
+	for (const [name, path] of [
+		['Options', '/definition#strictness'],
+		['Decision log', '/log'],
+		['Support our work', '/support']
+	]) {
+		await page.goto('/');
+		await page.locator('.frame-desk .docked').getByRole('button', { name }).click();
+		await expect(page).toHaveURL(path);
+	}
+});
+
+test('latest decisions never say the log is empty before it is read', async ({ page }) => {
+	await page.setViewportSize({ width: 1440, height: 900 });
+	const band = page.locator('.band-right');
+	// The log could not be read: no claim either way, and the link to the log stays.
+	await mockApi(page, { 'GET /v1/log': { status: 503, json: { error: { code: 'unavailable', message: 'Try again.' } } } });
+	await page.goto('/');
+	await expect(band.getByRole('link', { name: 'Open the decision log' })).toBeVisible();
+	await expect(band.getByText('The decision log has no entries yet.')).toHaveCount(0);
+	// An empty log, once read, says so.
+	await mockApi(page, { 'GET /v1/log': { json: { entries: [], next_cursor: null } } });
+	await page.reload();
+	await expect(band.getByText('The decision log has no entries yet.')).toBeVisible();
 });
 
 test('each platform tab recreates its own feed', async ({ page }) => {

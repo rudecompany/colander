@@ -70,6 +70,8 @@ export interface Source {
 	slop_type: SlopType | null;
 	tests: Test[];
 	large: boolean;
+	/** Staff recorded the audience size (or, with YouTube derived use only, YouTube reported it). */
+	audience_known: boolean;
 	imported: boolean;
 	/** Always null: public responses never name a data source. Kept for wire compatibility. */
 	attribution: string | null;

@@ -167,7 +167,11 @@ it from demoCounts().
 		show: (r) => handlers.show(Number(r.id)),
 		allow: (r) => handlers.allow(Number(r.id)),
 		notSlop: (r) => handlers.notSlop(Number(r.id)),
-		why: (r) => (open = Number(r.id))
+		why: (r) => (open = Number(r.id)),
+		// The popup's links lead where the extension's do, on this site.
+		options: () => location.assign(`${site}/definition#strictness`),
+		support: () => location.assign(`${site}/support`),
+		log: () => location.assign(`${site}/log`)
 	};
 
 	// Undo hides the item again, and hands focus to its Show in the popup.
@@ -193,7 +197,9 @@ it from demoCounts().
 		const el = root;
 		const win = el.ownerDocument.defaultView!;
 		const down = (e: PointerEvent) => {
-			if (e.composedPath().some((n) => n instanceof Element && (n.classList.contains('cl-pop') || n.hasAttribute('aria-haspopup')))) return;
+			// Inside the open popover, or on its own Why, which toggles it. Any other control, a menu
+			// button included, closes it first, so two overlays never show at once.
+			if (e.composedPath().some((n) => n instanceof Element && (n.classList.contains('cl-pop') || n.getAttribute('data-k') === `why-${open}`))) return;
 			open = null;
 		};
 		const key = (e: KeyboardEvent) => {

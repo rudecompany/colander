@@ -17,6 +17,7 @@ const source = (s: Partial<Source> & Pick<Source, 'platform' | 'id' | 'name' | '
 	slop_type: null,
 	tests: [],
 	large: false,
+	audience_known: false,
 	imported: false,
 	attribution: null,
 	appeal_open: false,
@@ -36,6 +37,8 @@ export const SOURCES: Record<string, Source> = {
 		signals: ['platform_label', 'high_volume', 'mostly_ai', 'templated', 'rubric_low_effort', 'rubric_hollow', 'community_consensus', 'staff_review'],
 		slop_type: 'filler',
 		tests: ['low_effort', 'mass_produced', 'hollow'],
+		// Staff decided it, and recorded its audience size on the way.
+		audience_known: true,
 		evidence: { taggers: 41, tags: { slop: 35, ai_fine: 4, not_slop: 2 }, items_seen: 23, ai_item_share: 0.91, uploads_per_day: null }
 	}),
 	'tt:@historybites247': source({
@@ -114,7 +117,7 @@ export const STATS: Stats = {
 	decisions_7d: 1284,
 	appeals: { open: 23, median_days: 4.5 },
 	active_installs: 18240,
-	list_sequence: 40211,
+	list_sequence: 1791070723,
 	list_updated_at: '2026-10-03T08:42:10Z'
 };
 

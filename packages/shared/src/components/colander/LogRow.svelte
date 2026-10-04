@@ -1,6 +1,7 @@
 <!--
 @component LogRow: one decision log entry in a row at least 56 px tall: the time in figure type,
-the platform, the source, the verdict change, the reason in up to 2 lines and who decided. Every
+the platform, the source (and the item, for an item-level change), the verdict change, the reason
+in up to 2 lines and who decided. Every
 column but the source and the reason has a fixed track, so the platform tags, arrows and chips of
 a list line up whatever the names; the source track never drops below 152 px (128 beside a date)
 and the reason below 176, so names read whole.
@@ -41,11 +42,15 @@ the source name is then plain text, since a summary holds no links.
 			<time class="cl-figure when" datetime={entry.at}>{when}</time>
 			<span class="plat"><PlatformTag platform={entry.platform} /></span>
 		</span>
-		{#if link}
-			<a class="src" href={site + sourcePath(entry.platform, entry.source_id)}>{name}</a>
-		{:else}
-			<span class="src">{name}</span>
-		{/if}
+		<!-- An item-level change names its item, so it never reads like the source's own row. -->
+		<span class="who">
+			{#if link}
+				<a class="src" href={site + sourcePath(entry.platform, entry.source_id)}>{name}</a>
+			{:else}
+				<span class="src">{name}</span>
+			{/if}
+			{#if entry.target_type === 'item'}<span class="item">Item <span class="cl-figure">{entry.target_id}</span></span>{/if}
+		</span>
 		<span class="change"><VerdictTransition from={entry.from} to={entry.to} /></span>
 		<span class="why">
 			<span class="reason" class:full>{entry.reason}</span>
@@ -120,12 +125,23 @@ the source name is then plain text, since a summary holds no links.
 		color: var(--cl-text-muted);
 		white-space: nowrap;
 	}
-	.src {
+	.who {
+		display: grid;
+		min-width: 0;
+	}
+	.src,
+	.item {
 		overflow: hidden;
-		color: var(--cl-text);
-		font: var(--cl-body-strong);
 		text-overflow: ellipsis;
 		white-space: nowrap;
+	}
+	.src {
+		color: var(--cl-text);
+		font: var(--cl-body-strong);
+	}
+	.item {
+		color: var(--cl-text-muted);
+		font: var(--cl-caption);
 	}
 	a.src {
 		text-decoration: none;
@@ -188,7 +204,7 @@ the source name is then plain text, since a summary holds no links.
 		.plat {
 			grid-area: plat;
 		}
-		.src {
+		.who {
 			grid-area: src;
 		}
 		.change {
@@ -219,7 +235,7 @@ the source name is then plain text, since a summary holds no links.
 			align-items: center;
 			gap: 12px;
 		}
-		.src {
+		.who {
 			grid-area: src;
 		}
 		.change {

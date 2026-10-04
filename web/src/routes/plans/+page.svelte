@@ -251,19 +251,23 @@
 	.saves .off {
 		visibility: hidden;
 	}
-	/* Two 6-column cards, so every block on the page shares the container's right edge. */
+	/* Two 6-column cards, so every block on the page shares the container's right edge. The two
+	   cards share the first row and match heights; what follows the Plus card (sign-in, notices) takes
+	   rows of its own under it, so it never stretches the Free card. */
 	.prices {
 		display: grid;
 		grid-template-columns: repeat(2, minmax(0, 1fr));
-		gap: 24px;
+		gap: 16px 24px;
 		align-items: start;
 	}
-	.prices > :global(.price) {
-		height: 100%;
-	}
 	.plus-col {
-		display: grid;
-		gap: 16px;
+		display: contents;
+	}
+	.plus-col > :global(*) {
+		grid-column: 2;
+	}
+	.prices :global(.price) {
+		height: 100%;
 	}
 	.signin {
 		display: grid;
@@ -371,6 +375,10 @@
 	@media (max-width: 767px) {
 		.prices {
 			grid-template-columns: minmax(0, 1fr);
+			row-gap: 24px;
+		}
+		.plus-col > :global(*) {
+			grid-column: 1;
 		}
 	}
 	@media (max-width: 639px) {

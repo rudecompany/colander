@@ -20,15 +20,16 @@ export const test = base.extend<{ pageErrors: string[] }>({
 export { expect };
 
 /**
- * Layout spills: anything sticking out of the card it sits in, and any horizontal page scroll.
- * Content inside a clipping or scrolling box (a wide table) and floating layers are not counted.
+ * Layout spills: anything sticking out of the card it sits in (a source page's record and a stat
+ * cell count as cards), and any horizontal page scroll. Content inside a clipping or scrolling box
+ * (a wide table) and floating layers are not counted.
  */
 export function layoutSpills(page: Page): Promise<string[]> {
 	return page.evaluate(() => {
 		const out: string[] = [];
 		const root = document.documentElement;
 		if (root.scrollWidth > root.clientWidth + 0.5) out.push(`page scrolls sideways by ${root.scrollWidth - root.clientWidth}px`);
-		for (const card of document.querySelectorAll('.card, .uin-card, .price')) {
+		for (const card of document.querySelectorAll('.card, .uin-card, .price, .facts, .cells > .cell')) {
 			const c = card.getBoundingClientRect();
 			for (const el of card.querySelectorAll('*')) {
 				const r = el.getBoundingClientRect();

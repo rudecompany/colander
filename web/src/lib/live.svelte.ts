@@ -5,9 +5,10 @@ import { api } from './api';
 
 const built = __BUILD_LIVE__;
 
-export const live = $state<{ stats: Stats | null; log: LogEntry[]; asOf: string | null; now: string | null; failed: boolean }>({
+export const live = $state<{ stats: Stats | null; log: LogEntry[] | null; asOf: string | null; now: string | null; failed: boolean }>({
 	stats: built?.stats ?? null,
-	log: built?.log ?? [],
+	/** Null until the build or a refresh has read the log, so a page never says it is empty before it knows. */
+	log: built?.log ?? null,
 	asOf: built?.asOf ?? null,
 	// "3 min ago" is measured from the build time until the page mounts, so the prerendered text and
 	// the first client render agree.

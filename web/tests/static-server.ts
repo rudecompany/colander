@@ -35,7 +35,9 @@ createServer((req, res) => {
 	}
 	const base = join(root, pathname);
 	const spa = /^\/(s\/(yt|tt|ig|fb)|appeal\/(yt|tt|ig|fb|status))\/[^/]+$/.test(pathname);
-	const page = file(base) ?? file(base + '.html') ?? file(join(base, 'index.html')) ?? (spa ? join(root, '200.html') : null);
+	// The shells are not pages of their own: /200 and /404 are not found, as on the Worker.
+	const shell = pathname === '/200' || pathname === '/404';
+	const page = shell ? null : (file(base) ?? file(base + '.html') ?? file(join(base, 'index.html')) ?? (spa ? join(root, '200.html') : null));
 	const found = page ?? file(join(root, '404.html')) ?? join(root, '200.html');
 	res.writeHead(page ? 200 : 404, { 'Content-Type': types[extname(found)] ?? 'application/octet-stream' });
 	createReadStream(found).pipe(res);

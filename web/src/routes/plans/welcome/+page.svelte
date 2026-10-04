@@ -66,7 +66,7 @@
 		title="Sign in to finish"
 		lede="Your payment went through. Sign in with the email you used at checkout to connect Plus to this browser."
 	>
-		<EmailSignIn next="/plans/welcome" />
+		<EmailSignIn next="/plans/welcome" block />
 	</AuthCard>
 {:else}
 <div class="cl-container page-top">

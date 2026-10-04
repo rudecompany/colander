@@ -194,7 +194,6 @@
 							<LogRow entry={e}>
 								<div class="more">
 									<p class="reason">{e.reason}</p>
-									{#if e.target_type === 'item'}<p class="cl-caption cl-muted">Item <span class="cl-figure">{e.target_id}</span></p>{/if}
 									<EvidenceCard evidence={why(e)} variant="inline" headingLevel={3} />
 								</div>
 							</LogRow>

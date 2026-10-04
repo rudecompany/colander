@@ -53,7 +53,7 @@ export const fmtPct = (share: number) => `${Math.round(share * 100)}%`;
 export const fmtMoney = (cents: number) => `$${(cents % 100 === 0 ? numFmt : centsFmt).format(cents / 100)}`;
 /** "1 source", "2,400 sources" */
 export const plural = (n: number, one: string, many = one + 's') => `${fmtNum(n)} ${n === 1 ? one : many}`;
-/** "v.412", the list version as people see it. */
+/** "v.1791151393", the list version as people see it: the Worker publishes unix-second sequences. */
 export const fmtListVersion = (sequence: number) => `v.${sequence}`;
 
 /** Keeps both ends of a long raw ID: "UCx7Kq…9fQ2w". */

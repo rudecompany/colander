@@ -165,7 +165,7 @@ Field errors are the circle-alert icon and the message in the text color, never 
 | PrivacyFacts, PermissionsTable | What leaves the device, what never does, and why each permission is asked |
 | LogRow | One decision log entry, 56 tall, optionally expanding |
 | Lifecycle | Steps on perforation nodes: filled done, ring current, hollow later |
-| LiveBadge | "Core list v.412, updated 3 min ago" |
+| LiveBadge | "Core list v.1791151393, updated 3 min ago", wrapping after the comma where it is narrow |
 | Menu | A trigger and a short list of actions on bits-ui's dropdown menu |
 | Toast | The ink toast with its 4-dot countdown |
 | CopyButton | Copies a value and says "Copied" |

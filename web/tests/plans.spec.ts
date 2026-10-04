@@ -28,6 +28,9 @@ test('signed out, Get Plus asks for a sign-in that returns to checkout', async (
 	for (const width of [1280, 1920]) {
 		await page.setViewportSize({ width, height: 900 });
 		expect(await layoutSpills(page), `layout spills at ${width}px`).toEqual([]);
+		// The sign-in card takes a row of its own under Plus: the Free card keeps the Plus card's height.
+		const [free, plus] = await page.locator('.prices article.price').evaluateAll((els) => els.map((e) => e.getBoundingClientRect().height));
+		expect(free, `Free card height at ${width}px`).toBe(plus);
 	}
 	await page.getByRole('button', { name: 'Email me a link' }).click();
 	await expect(page.getByText('Check your inbox')).toBeVisible();
@@ -106,5 +109,9 @@ test('the welcome page asks a signed-out buyer to sign in', async ({ page }) => 
 	await mockApi(page);
 	await page.goto('/plans/welcome');
 	await expect(page.getByText('Sign in to finish')).toBeVisible();
-	await expect(page.getByRole('button', { name: 'Email me a sign-in link' })).toBeVisible();
+	// Full width in its card, as on /account and /console.
+	const button = page.getByRole('button', { name: 'Email me a sign-in link' });
+	await expect(button).toBeVisible();
+	const width = await page.locator('form.signin').evaluate((f) => f.getBoundingClientRect().width);
+	expect((await button.boundingBox())!.width).toBe(width);
 });

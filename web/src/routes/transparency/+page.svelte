@@ -1,7 +1,6 @@
 <script lang="ts">
 	import { LiveBadge, PageHeader, PLAN_COPY, StatCell, VerdictTally, VERDICTS, fmtListVersion, fmtNum, fmtShortDate, fmtTime } from '@colander/shared';
 	import Ban from '@lucide/svelte/icons/ban';
-	import CircleDashed from '@lucide/svelte/icons/circle-dashed';
 	import CircleDot from '@lucide/svelte/icons/circle-dot';
 	import Search from '@lucide/svelte/icons/search';
 	import { live } from '#lib/live.svelte.ts';
@@ -15,13 +14,12 @@
 	const perDot = $derived(stats ? Math.max(1, Math.ceil(Math.max(...VERDICTS.map((v) => stats.sources[v])) / 50)) : 1);
 
 	const STATUS = {
-		Planned: CircleDashed,
 		Open: CircleDot,
 		Sought: Search,
 		Never: Ban
 	} as const;
 	const funding: [string, string, keyof typeof STATUS][] = [
-		['Plus subscriptions', `${PLAN_COPY.plus.short}, from version 1.0`, 'Planned'],
+		['Plus subscriptions', PLAN_COPY.plus.short, 'Open'],
 		['Gifts', 'Once or monthly, any amount, with optional credit', 'Open'],
 		['Grants', 'From foundations that fund work on the information ecosystem', 'Sought'],
 		['Advertising', 'Ads in the extension, on this site or in the lists', 'Never'],

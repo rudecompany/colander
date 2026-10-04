@@ -9,16 +9,15 @@ get Fig. 4 redrawn on 300 units, as 440 units would set its labels below 12 px t
 <script lang="ts">
 	import { LAYER_WORD } from '@colander/shared';
 
-	/** `version` is the live list version for Fig. 4, such as "v.412". */
-	let { n, version = null }: { n: 1 | 2 | 3 | 4; version?: string | null } = $props();
+	let { n }: { n: 1 | 2 | 3 | 4 } = $props();
 
 	const uid = $props.id();
-	const LABEL = $derived({
-		1: 'Items with AI evidence pass through the rim into a bowl where the three tests apply. Items without AI evidence rest on the rim and are never slop.',
-		2: 'Four rings for the four evidence layers, in a cluster. Two of them overlap at the center, and only that overlap, where two layers agree, can be hidden.',
+	const LABEL = {
+		1: 'Four rings for the four evidence layers, in a cluster. Two of them overlap at the center, and only that overlap, where two layers agree, can be hidden.',
+		2: 'Items with AI evidence pass through the rim into a bowl where the three tests apply. Items without AI evidence rest on the rim and are never slop.',
 		3: 'A stack of tags stops at a dashed line. Past it, Slop also needs AI evidence and a mass-produced source.',
-		4: `The signed list travels to your device, which matches your feed against it there. Core list${version ? ` ${version}` : ''}.`
-	});
+		4: 'The signed list travels to your device, which matches your feed against it there.'
+	};
 	const sparkle = (x: number, y: number) => `M${x} ${y - 5}L${x + 1.4} ${y - 1.4}L${x + 5} ${y}L${x + 1.4} ${y + 1.4}L${x} ${y + 5}L${x - 1.4} ${y + 1.4}L${x - 5} ${y}L${x - 1.4} ${y - 1.4}Z`;
 	const tag = (x: number, y: number) => `M${x} ${y}h44l14 14l-14 14h-44z`;
 </script>
@@ -34,24 +33,6 @@ get Fig. 4 redrawn on 300 units, as 440 units would set its labels below 12 px t
 	aria-label={LABEL[n]}
 >
 	{#if n === 1}
-		<!-- Plain dots resting on the rim. -->
-		<g class="node-o">
-			<circle cx="62" cy="81" r="7" /><circle cx="84" cy="81" r="7" /><circle cx="276" cy="81" r="7" /><circle cx="298" cy="81" r="7" />
-		</g>
-		<text x="24" y="38" class="lbl">No AI evidence,</text>
-		<text x="24" y="56" class="lbl">never slop</text>
-		<path class="line" d="M70 62V72" />
-		<!-- The rim, open at two gaps, and the bowl below it. -->
-		<path class="main" d="M24 90H160M178 90H196M214 90H336" />
-		<path class="line" d="M64 90Q76 176 187 176Q298 176 310 90" />
-		<!-- Items with AI evidence: a dot and a small sparkle, falling through the gaps. -->
-		<g class="node">
-			<circle cx="169" cy="26" r="6" /><circle cx="205" cy="44" r="6" /><circle cx="169" cy="122" r="6" /><circle cx="205" cy="136" r="6" />
-		</g>
-		<path class="spark" d="{sparkle(180, 18)} {sparkle(216, 36)} {sparkle(180, 114)} {sparkle(216, 128)}" />
-		<path class="line dash" d="M169 36V108M205 54V122" />
-		<text x="187" y="164" class="lbl" text-anchor="middle">Three tests</text>
-	{:else if n === 2}
 		<!-- A 2 by 2 cluster: the agreeing pair overlaps at the center, and every label sits outside
 		     its ring, on the cluster's outer side. -->
 		<defs>
@@ -71,6 +52,24 @@ get Fig. 4 redrawn on 300 units, as 440 units would set its labels below 12 px t
 		{#each LAYER_WORD.rubric.split(' ') as word, i (i)}<text x="236" y={120 + i * 17} class="lbl">{word}</text>{/each}
 		<path class="main" d="M180 156V168" />
 		<text x="180" y="188" class="lbl strong" text-anchor="middle">Two agree: can be hidden</text>
+	{:else if n === 2}
+		<!-- Plain dots resting on the rim. -->
+		<g class="node-o">
+			<circle cx="62" cy="81" r="7" /><circle cx="84" cy="81" r="7" /><circle cx="276" cy="81" r="7" /><circle cx="298" cy="81" r="7" />
+		</g>
+		<text x="24" y="38" class="lbl">No AI evidence,</text>
+		<text x="24" y="56" class="lbl">never slop</text>
+		<path class="line" d="M70 62V72" />
+		<!-- The rim, open at two gaps, and the bowl below it. -->
+		<path class="main" d="M24 90H160M178 90H196M214 90H336" />
+		<path class="line" d="M64 90Q76 176 187 176Q298 176 310 90" />
+		<!-- Items with AI evidence: a dot and a small sparkle, falling through the gaps. -->
+		<g class="node">
+			<circle cx="169" cy="26" r="6" /><circle cx="205" cy="44" r="6" /><circle cx="169" cy="122" r="6" /><circle cx="205" cy="136" r="6" />
+		</g>
+		<path class="spark" d="{sparkle(180, 18)} {sparkle(216, 36)} {sparkle(180, 114)} {sparkle(216, 128)}" />
+		<path class="line dash" d="M169 36V108M205 54V122" />
+		<text x="187" y="164" class="lbl" text-anchor="middle">Three tests</text>
 	{:else if n === 3}
 		<!-- A stack of tags that stops at the line. -->
 		<g class="line">
@@ -89,9 +88,9 @@ get Fig. 4 redrawn on 300 units, as 440 units would set its labels below 12 px t
 		<text x="280" y="26" class="lbl" text-anchor="middle">AI evidence</text>
 		<text x="264" y="186" class="lbl" text-anchor="middle">Mass-produced source</text>
 	{:else}
-		<!-- The signed list card, its name and version on one line. -->
+		<!-- The signed list card and its name. -->
 		<rect x="4" y="48" width="160" height="112" rx="10" class="line" />
-		<text x="18" y="74" class="lbl strong fit">Core list{#if version}{' '}<tspan class="ver">{version}</tspan>{/if}</text>
+		<text x="18" y="74" class="lbl strong">Core list</text>
 		<path class="line" d="M18 98H146M18 114H124M18 130H136M18 146H112" />
 		<path class="main" d="M170 104H196" /><path class="line" d="M190 98L196 104L190 110" />
 		<!-- The device. -->
@@ -115,7 +114,6 @@ get Fig. 4 redrawn on 300 units, as 440 units would set its labels below 12 px t
 	<svg class="fig narrow" viewBox="0 0 300 160" width="300" height="160" role="img" aria-label={LABEL[4]}>
 		<rect x="4" y="32" width="92" height="88" rx="10" class="line" />
 		<text x="14" y="54" class="lbl strong">Core list</text>
-		{#if version}<text x="14" y="72" class="lbl">{version}</text>{/if}
 		<path class="line" d="M14 90H84M14 104H72" />
 		<path class="main" d="M102 76H120" /><path class="line" d="M115 71L120 76L115 81" />
 		<rect x="126" y="40" width="48" height="72" rx="10" class="line" />
@@ -188,12 +186,5 @@ get Fig. 4 redrawn on 300 units, as 440 units would set its labels below 12 px t
 	}
 	.strong {
 		fill: currentColor;
-	}
-	/* "Core list v.412" on one line in its card: 14 units, still 12 px at the band's narrowest. */
-	.fit {
-		font-size: 14px;
-	}
-	.ver {
-		fill: var(--cl-text-muted);
 	}
 </style>

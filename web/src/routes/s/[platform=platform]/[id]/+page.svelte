@@ -244,6 +244,8 @@
 							<h3>Audience size</h3>
 							{#if source.large}
 								<p class="small"><strong>Large.</strong> A Slop verdict on it needs staff review.</p>
+							{:else if source.audience_known}
+								<p class="small"><strong>Not large,</strong> as recorded by staff.</p>
 							{:else}
 								<p class="cl-muted small">Not known. A large {noun} needs staff review before a Slop verdict.</p>
 							{/if}
@@ -421,6 +423,8 @@
 	}
 	.facts {
 		display: grid;
+		/* No fact, the live list pill included, can widen the card. */
+		grid-template-columns: minmax(0, 1fr);
 		gap: 16px;
 		padding: 24px;
 		border: 1px solid var(--cl-border);

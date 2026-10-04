@@ -1,8 +1,8 @@
 <!--
 @component StatCell: a label, a number, a foot line, and a sentence in place of the number when
 there is nothing to count ("None this week"). `lg` is the website's 48/52 (36/40 on phones);
-`md` the extension's 28/32. The number reserves `reserve` characters of width so a refresh never
-shifts the layout, and fades in over 120 ms when it changes. Live numbers are not aria-live.
+`md` the extension's 28/32. The number reserves `reserve` characters of width, never more than
+its cell, so a refresh never shifts the layout, and fades in over 120 ms when it changes. Live numbers are not aria-live.
 -->
 <script lang="ts">
 	import { untrack } from 'svelte';
@@ -43,7 +43,7 @@ shifts the layout, and fades in over 120 ms when it changes. Live numbers are no
 		{#if empty}
 			<span class="zero" class:fade>{zero}</span>
 		{:else}
-			<span class="value" class:fade style:min-width={reserve ? `${reserve}ch` : undefined}>{text}</span>
+			<span class="value" class:fade style:min-width={reserve ? `min(${reserve}ch, 100%)` : undefined}>{text}</span>
 		{/if}
 	{/key}
 	{#if foot}<span class="foot">{foot}</span>{/if}

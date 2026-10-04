@@ -50,3 +50,14 @@ test('appeal entries name the reviewer who decided them', async ({ page }) => {
 	await expect(entry('Numis Notes').locator('.actor')).toHaveText('Changed by a verified appeal');
 	await expect(entry('Coastal Science Club').locator('.actor')).toHaveText('Appeal decided by Ines');
 });
+
+test('an item-level change names its item in the row, so it never reads like the source row', async ({ page }) => {
+	await mockApi(page);
+	await page.goto('/log');
+	const rows = page.locator('ol.entries > li').filter({ hasText: 'Ancient Facts Daily' });
+	const item = rows.filter({ hasText: 'Generated narration over generated images' });
+	// In the row itself, before it is opened, and only on the item's row.
+	await expect(item.locator('summary .item')).toHaveText('Item kX3v9QwL2pA');
+	await expect(rows.locator('summary .item')).toHaveCount(1);
+	await expect(item.getByText('kX3v9QwL2pA')).toHaveCount(1);
+});

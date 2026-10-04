@@ -3,6 +3,19 @@
 import { test, expect, layoutSpills, smallSvgText } from './fixtures.ts';
 import { PAGES, mockApi } from './mocks.ts';
 
+// Five stat cells to a row are narrowest just above the tablet breakpoint: labels stay in their cell.
+for (const width of [1024, 1100]) {
+	for (const path of ['/', '/transparency']) {
+		test(`${path} keeps its stat cells whole at ${width} px`, async ({ page }) => {
+			await page.setViewportSize({ width, height: 900 });
+			await mockApi(page);
+			await page.goto(path);
+			await page.waitForLoadState('networkidle');
+			expect(await layoutSpills(page), 'layout spills').toEqual([]);
+		});
+	}
+}
+
 for (const width of [390, 320]) {
 	for (const [path, mocks] of PAGES) {
 		test(`${path} reflows at ${width} px`, async ({ page }) => {

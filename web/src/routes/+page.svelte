@@ -45,7 +45,6 @@
 	import { demoAction, demoCounts } from '@colander/shared/inpage';
 	import { evidence } from '@colander/shared/inpage/evidence.ts';
 	import type { LogEntry } from '@colander/shared/api';
-	import NativeSelect from '@colander/shared/components/ui/native-select/native-select.svelte';
 	import Tabs from '@colander/shared/components/ui/tabs/tabs.svelte';
 	import Check from '@lucide/svelte/icons/check';
 	import ChevronDown from '@lucide/svelte/icons/chevron-down';
@@ -67,7 +66,8 @@
 
 	/* Hero demo: one state drives the frame, the phone feed and the popup each of them carries. The
 	   phone feed has a fixed height, like the desktop frame, so the popup's control under it stays
-	   put when a level hides items, and enough clear videos to fill it at every level. */
+	   put when a level hides items, and enough clear videos to fill it at every level. Phones show
+	   this one list and no platform tabs, which would change nothing on the page there. */
 	const PHONE = [6, 3, 1, 5, 7, 9, 10, 11];
 	// At Standard the page ends where the third card starts, so the fade covers a thumbnail, not words.
 	const PHONE_HEIGHT = 541;
@@ -166,10 +166,6 @@
 				bind:value={platform}
 			/>
 		</div>
-		<div class="tabs-select field">
-			<label class="field-label" for="hero-platform">Platform</label>
-			<NativeSelect id="hero-platform" size="lg" options={PLATFORMS.map((p) => ({ value: p, label: PLATFORM_NAME[p] }))} bind:value={platform} />
-		</div>
 
 		<!-- Each frame shows its own popup under it when the popup does not dock, so the popup always
 		     lists the feed above it. -->
@@ -187,7 +183,7 @@
 		<div class="frame-phone" class:reserved={!phoneFeed}>
 			{#if phoneFeed}
 				<FeedDemo
-					bind:platform
+					platform="yt"
 					bind:level
 					bind:paused
 					layout="list"
@@ -428,8 +424,8 @@
 		<div class="band-grid">
 			<div class="band-left">
 				<figure class="fig4">
-					<Figure n={4} version={stats ? fmtListVersion(stats.list_sequence) : null} />
-					<figcaption class="fig-cap"><span class="cl-figure muted">Fig. 4</span> The signed list, your device, your feed.</figcaption>
+					<Figure n={4} />
+					<figcaption class="fig-cap">The signed list, your device, your feed.</figcaption>
 				</figure>
 				<div class="list-card">
 					<p class="list-title">Core list{#if stats}{' '}{fmtListVersion(stats.list_sequence)}{/if}</p>
@@ -441,7 +437,8 @@
 			<div class="band-right">
 				<h3 class="cl-title">Latest decisions</h3>
 				<div class="rows">
-					{#each live.log as e (e.id)}<LogRow entry={e} time="stamp" />{:else}<p class="muted none">The decision log has no entries yet.</p>{/each}
+					<!-- Nothing until the log is read: "no entries" only after the log said so. -->
+					{#if live.log}{#each live.log as e (e.id)}<LogRow entry={e} time="stamp" />{:else}<p class="muted none">The decision log has no entries yet.</p>{/each}{/if}
 				</div>
 				<p><ArrowLink href="/log">Open the decision log</ArrowLink></p>
 			</div>
@@ -644,9 +641,6 @@
 		justify-content: center;
 		margin-bottom: 8px;
 	}
-	.tabs-select {
-		display: none;
-	}
 	.frame-desk,
 	.frame-phone {
 		width: 100%;
@@ -735,7 +729,7 @@
 			justify-items: stretch;
 		}
 		.tabs {
-			justify-content: flex-start;
+			display: none;
 		}
 		.frame-desk {
 			display: none;
@@ -745,15 +739,6 @@
 		}
 		.caption {
 			text-align: left;
-		}
-	}
-	@media (max-width: 379px) {
-		.tabs {
-			display: none;
-		}
-		.tabs-select {
-			display: grid;
-			margin-bottom: 12px;
 		}
 	}
 

@@ -167,8 +167,8 @@
 				independent layers agree.
 			</p>
 			<figure class="fig centered">
-				<Figure n={2} />
-				<figcaption><span class="cl-figure muted">Fig. 2</span> Two layers must agree.</figcaption>
+				<Figure n={1} />
+				<figcaption><span class="cl-figure muted">Fig. 1</span> Two layers must agree.</figcaption>
 			</figure>
 			<ol class="layers">
 				{#each LAYER_KEYS as k, i (k)}
@@ -209,8 +209,8 @@
 			<h2>Safeguards against wrong calls</h2>
 			<div class="fig-pair">
 				<figure class="fig">
-					<Figure n={1} />
-					<figcaption><span class="cl-figure muted">Fig. 1</span> AI evidence is a gate.</figcaption>
+					<Figure n={2} />
+					<figcaption><span class="cl-figure muted">Fig. 2</span> AI evidence is a gate.</figcaption>
 				</figure>
 				<figure class="fig">
 					<Figure n={3} />
