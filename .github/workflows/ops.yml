@@ -19,7 +19,7 @@ on:
         description: 'Arguments as a JSON object, for example {"email": "sam@example.com", "role": "curator"}'
         default: '{}'
       file:
-        description: Optional repository path whose text becomes the "file" argument (sign-config, import-seed)
+        description: Optional repository path whose text becomes the "file" argument (sign-config only)
         default: ''
       confirm:
         description: 'Destructive commands only: pitr-restore needs args.at typed again, restore-dump args.key, purge-cache the word purge-cache'

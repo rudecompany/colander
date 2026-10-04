@@ -89,12 +89,14 @@ Every P0 requirement for version 1.0 is built and tested: blocking from lists on
 The 1.1 items (articles and search results, the Family plan, Content Credentials, Firefox and Edge) are not built.
 
 Fairness rules are enforced in code and tested: tags alone never make anything Slop, a reviewer needs AI evidence to rate Slop or Likely slop, mixed sources are judged item by item, appeals unhide a source while staff review it, and curators cannot decide large or appealed sources.
-Because TikTok, Instagram and Facebook give no audience figures, a Slop verdict there always waits for staff review, so plan review capacity accordingly.
+Audience size is unknown unless staff set it: TikTok, Instagram and Facebook give no audience figures, and YouTube's figures do not feed scoring until YouTube approves derived metrics.
+So a Slop verdict on any platform waits for staff review until then; plan review capacity accordingly.
 
 Some things need people or accounts rather than code.
 
 - Instagram and Facebook selectors are tested on hand-built fixtures only; run `pnpm -C extension test:live` with signed-in storage states before those platforms ship.
-- AiSList is licensed CC BY-NC 4.0, not MIT as the spec assumed, so its data is not bundled; the `import-seed` ops command imports a list file only with an explicit license acknowledgement.
+- Outside seed lists are review leads only and never decide a verdict.
+  The `import-seed` ops command reads a list object from the private bucket and accepts only CC0-1.0, CC-BY-4.0, MIT or a written grant; it refuses non-commercial, no-derivatives, share-alike, GPL and unlicensed lists.
 - Stripe Managed Payments needs Stripe's eligibility approval and its terms accepted in the dashboard.
 - The extension asks for the `scripting` permission in addition to the spec's minimal list, because per-platform site access needs runtime content script registration; the spec's permission list should add it.
 - The open questions in the spec still stand: legal review of labels and platform terms, the calibration set behind the thresholds, the code and data licenses, and trademark clearance for the name.
