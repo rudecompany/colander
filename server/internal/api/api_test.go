@@ -755,8 +755,20 @@ func TestSite(t *testing.T) {
 	if w := h.do("GET", "/about", nil); w.Body.String() != "<!doctype html>about" {
 		t.Fatalf("/about = %d %q", w.Code, w.Body.String())
 	}
-	if w := h.do("GET", "/sources/yt/@x", nil); w.Code != 200 || w.Body.String() != "<!doctype html>app" {
-		t.Fatalf("SPA fallback = %d %q", w.Code, w.Body.String())
+	for _, p := range []string{"/s/yt/@x", "/appeal/tt/@y", "/appeal/status/apl_1"} {
+		if w := h.do("GET", p, nil); w.Code != 200 || w.Body.String() != "<!doctype html>app" {
+			t.Fatalf("SPA fallback for %s = %d %q", p, w.Code, w.Body.String())
+		}
+	}
+	// Anything else is a real 404, not a soft one: with the shell, then with the site's 404 page.
+	if w := h.do("GET", "/no-such-page", nil); w.Code != 404 || w.Body.String() != "<!doctype html>app" {
+		t.Fatalf("unknown page without 404.html = %d %q", w.Code, w.Body.String())
+	}
+	os.WriteFile(filepath.Join(dir, "404.html"), []byte("<!doctype html>missing"), 0o644)
+	for _, p := range []string{"/no-such-page", "/s/xx/@x", "/s/yt", "/appeal/yt/@x/extra"} {
+		if w := h.do("GET", p, nil); w.Code != 404 || w.Body.String() != "<!doctype html>missing" {
+			t.Fatalf("%s = %d %q", p, w.Code, w.Body.String())
+		}
 	}
 	if w := h.do("GET", "/_app/immutable/start.js", nil); !strings.Contains(w.Header().Get("Cache-Control"), "immutable") {
 		t.Fatalf("immutable cache = %q", w.Header().Get("Cache-Control"))
