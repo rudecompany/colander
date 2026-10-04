@@ -279,7 +279,7 @@
 	align-items: center;
 	gap: 0 4px;
 	width: max-content;
-	max-width: min(420px, calc(100vw - 32px));
+	max-width: min(448px, calc(100vw - 32px));
 	min-height: 44px;
 	padding: 3px 3px 3px 15px;
 	border: 1px solid var(--cl-band-line);

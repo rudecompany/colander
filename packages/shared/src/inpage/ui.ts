@@ -16,6 +16,7 @@ import {
 	TEST_WORD,
 	VERDICT_PLAIN,
 	VERDICT_WORD,
+	type Action,
 	type SlopType,
 	type TagVerdict,
 	type Test,
@@ -368,8 +369,8 @@ export function toast(ctx: InpageContext, t: ToastInput): HTMLElement {
 }
 
 export interface TagHandlers {
-	/** Applies the tag at once. */
-	tag(verdict: TagVerdict): Promise<unknown> | void;
+	/** Applies the tag at once, and answers what it did to the card, for the confirmation. */
+	tag(verdict: TagVerdict): Promise<Action | 'none'> | Action | 'none';
 	undo(): void;
 	/** Refines a Slop tag with an optional type and tests. */
 	detail(type: SlopType | null, tests: Test[]): void;
@@ -504,9 +505,9 @@ export class Layer {
 		const s = this.ctx.strings;
 		const menu = tagMenu(this.ctx, noun, async (t) => {
 			this.closePop(true);
-			await x.tag(t);
+			const action = await x.tag(t);
 			this.notice({
-				text: s.tagged[t],
+				text: s.tagged(t, action),
 				actions: [
 					{ label: s.undo, icon: Undo2, onClick: () => (x.undo(), this.dismissNotice()) },
 					...(t === 'slop' ? [{ label: s.addDetail, onClick: () => this.detail(x) }] : [])

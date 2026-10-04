@@ -106,7 +106,7 @@ test('a tag in two clicks hides the card at once and reaches the server with con
 	await layer.getByRole('menuitem', { name: /^Slop/ }).click();
 	await expect(target).toHaveAttribute('data-colander', 'hide');
 	// One tag per menu: it is held while its toast can still undo or refine it, and sent when the toast ends.
-	await expect(layer.locator('.cl-toast')).toContainText('Tagged and hidden.');
+	await expect(layer.locator('.cl-toast')).toContainText('Tagged. Hidden for you.');
 	await layer.locator('.cl-toast').getByRole('button', { name: 'Close' }).click();
 
 	await expect.poll(() => ext.seen.filter((s) => s.method === 'POST' && s.url === `${ORIGIN}/v1/tags`).length).toBe(1);

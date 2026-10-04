@@ -127,7 +127,7 @@ class PageLayer extends Layer {
 		const video = [...card.querySelectorAll('video')].find((v) => v.getBoundingClientRect().width > 0);
 		const r = (video ?? card).getBoundingClientRect();
 		if (!r.width) return;
-		toast.style.maxWidth = `${Math.min(420, r.width - 24)}px`;
+		toast.style.maxWidth = `${Math.min(448, r.width - 24)}px`;
 		at.style.left = `${Math.round(r.left + r.width / 2)}px`;
 		at.style.bottom = 'auto';
 		at.style.top = `${Math.round(Math.min(Math.max(r.top, 0), innerHeight - toast.offsetHeight - 32) + 16)}px`;
@@ -498,7 +498,7 @@ export function start(): void {
 	);
 	const watched = new WeakSet<Element>();
 
-	let skipRun = { n: 0, at: 0 };
+	let skipRun: { n: number; at: number; kind?: 'slop' | 'ai_made' } = { n: 0, at: 0 };
 	/** Swipe cards skipped once already: skips past them again say nothing, also after the page's URL moved on. */
 	const noticed = new WeakSet<Element>();
 	let lastSkipped: { card: Element; st: CardState } | null = null;
@@ -540,7 +540,9 @@ export function start(): void {
 		noticed.add(card);
 		if (!settings.skipNotice || !first) return;
 		const now = Date.now();
-		skipRun = now - skipRun.at < 4000 ? { n: skipRun.n + 1, at: now } : { n: 1, at: now };
+		const v = st.decision.verdict;
+		const kind = v === 'ai_made' ? 'ai_made' : v ? 'slop' : undefined;
+		skipRun = now - skipRun.at < 4000 ? { n: skipRun.n + 1, at: now, kind: skipRun.kind === kind ? kind : undefined } : { n: 1, at: now, kind };
 		lastSkipped = { card, st };
 		const n = skipRun.n;
 		const word = noun(st.surface);
@@ -557,7 +559,7 @@ export function start(): void {
 		// to, clear of the platform's channel row and title at the bottom.
 		l.noticeOver(
 			{
-				text: st.decision.verdict ? copy.skipped(n, word) : `Skipped ${n} ${n === 1 ? word : `${word}s`}.`,
+				text: copy.skipped(n, word, skipRun.kind),
 				verdict: st.decision.verdict ?? undefined,
 				actions: [
 					{ label: copy.undo, icon: Undo2, onClick: () => (l.dismissNotice(), back()) },
@@ -805,7 +807,7 @@ export function start(): void {
 		if (!base) return;
 		const t = startTag({ ...base, verdict });
 		const l = ui();
-		l.notice({ text: copy.tagged[verdict], actions: [{ label: copy.undo, icon: Undo2, onClick: () => (l.dismissNotice(), undoTag(t)) }] });
+		l.notice({ text: copy.tagged(verdict, effective(st)), actions: [{ label: copy.undo, icon: Undo2, onClick: () => (l.dismissNotice(), undoTag(t)) }] });
 	}
 
 	function tagMenu(anchor: HTMLElement, st: CardState) {
@@ -817,6 +819,7 @@ export function start(): void {
 		l.tagMenu(anchor, noun(st.surface), {
 			tag: (verdict) => {
 				session = startTag({ ...base, verdict });
+				return effective(st);
 			},
 			undo: () => session && undoTag(session),
 			detail: (slopType: SlopType | null, tests: Test[]) => {

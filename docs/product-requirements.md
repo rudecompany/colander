@@ -669,7 +669,7 @@ Icon rules: every icon sits beside a word, except the chip glyph and the toolbar
 | Where | Copy |
 | --- | --- |
 | Skip notice | Skipped 1 slop video. Undo |
-| Tag confirmation | Tagged. Hidden for you now, and counted toward the shared list. |
+| Tag confirmation | Tagged. Hidden for you. (At Label: Tagged. Labeled for you.) |
 | Why popover title | Why this is hidden |
 | Empty popup | Nothing hidden on this page. |
 | Appeal link | Is this your channel? Appeal this verdict. |

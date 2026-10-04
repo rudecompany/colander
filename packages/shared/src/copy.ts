@@ -2,7 +2,7 @@
 // inline duplicate. Verdict, strictness, tag and signal words live in verdicts.ts.
 // Rules: sentence case, no exclamation marks, digits for numbers, verdict words never describe people.
 import type { LayerKey } from './layers';
-import type { Platform, Signal, TagVerdict, Verdict } from './verdicts';
+import type { Action, Platform, Signal, TagVerdict, Verdict } from './verdicts';
 
 /**
  * The one public definition, said as what Colander does: the website, the welcome page and the
@@ -205,12 +205,23 @@ export const INPAGE_COPY = {
 	tagTitle: (noun: string) => `Tag this ${noun}`,
 	/** Under the tag choices, so it is said before the choice: the toasts stay one line. */
 	tagCounts: 'Your tag counts toward the shared list.',
-	tagged: {
-		slop: 'Tagged and hidden.',
-		ai_fine: 'Tagged as AI-made but fine.',
-		not_slop: 'Tagged as not slop.'
-	} satisfies Record<TagVerdict, string>,
-	skipped: (n: number, noun: string) => `Skipped ${n} slop ${n === 1 ? noun : `${noun}s`}.`,
+	/**
+	 * The tag confirmation, one line. A Slop tag says what it did to the card, which depends on the
+	 * strictness level and Always allow: hidden at Standard, labeled at Label, still shown when allowed.
+	 */
+	tagged: (t: TagVerdict, action: Action | 'none'): string =>
+		t === 'ai_fine'
+			? 'Tagged as AI-made but fine.'
+			: t === 'not_slop'
+				? 'Tagged as not slop.'
+				: action === 'hide'
+					? 'Tagged. Hidden for you.'
+					: action === 'label'
+						? 'Tagged. Labeled for you.'
+						: 'Tagged. Shown for you.',
+	/** AI-made items skip only at No AI and are never called slop; a mixed run names neither. */
+	skipped: (n: number, noun: string, kind?: 'slop' | 'ai_made') =>
+		`Skipped ${n} ${kind === 'ai_made' ? 'AI-made ' : kind === 'slop' ? 'slop ' : ''}${n === 1 ? noun : `${noun}s`}.`,
 	chipName: (word: string, hidden: boolean) => `${word}, why this is ${hidden ? 'hidden' : 'labeled'}`,
 	report: {
 		title: (handle: string) => `Report ${handle}`,

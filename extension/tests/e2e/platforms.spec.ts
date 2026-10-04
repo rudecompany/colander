@@ -53,6 +53,15 @@ test('Facebook Reels: a hidden reel is skipped, and with the notice on it says s
 	await expect(page.locator('colander-ui[data-kind="layer"] .cl-toast')).toContainText('Skipped 1 slop reel.');
 });
 
+test('Facebook Reels at No AI: a skipped AI-made reel is called AI-made, never slop', async ({ ext }) => {
+	await ext.setup({ platforms: ['fb'], strictness: 'no_ai', settings: { skipNotice: true } });
+	const page = await ext.open('https://www.facebook.com/reel/987654321098765');
+	const skipped = page.locator('[data-colander="skip"]');
+	await expect(skipped).toHaveCount(1);
+	await skipped.evaluate((e) => e.scrollIntoView({ block: 'start' }));
+	await expect(page.locator('colander-ui[data-kind="layer"] .cl-toast')).toContainText('Skipped 1 AI-made reel.');
+});
+
 test('TikTok search: the platform label and a listed creator', async ({ ext }) => {
 	await ext.setup({ platforms: ['tt'] });
 	ext.api.delta = true;

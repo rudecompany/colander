@@ -38,7 +38,7 @@ test('tag Slop in two clicks: applies at once and sends only the allowed fields'
 	await menu.getByRole('menuitem', { name: /^Slop/ }).click();
 	await expect(card).toHaveAttribute('data-colander', 'hide');
 	const toast = layer(page).locator('.cl-toast');
-	await expect(toast.locator('.cl-toast-t')).toHaveText('Tagged and hidden.');
+	await expect(toast.locator('.cl-toast-t')).toHaveText('Tagged. Hidden for you.');
 	// One 44 px row: the message, Undo, Add detail, the countdown and Close.
 	expect((await toast.boundingBox())!.height).toBeLessThanOrEqual(44);
 
@@ -88,6 +88,16 @@ test('Undo takes a tag back before it is sent', async ({ ext }) => {
 	expect(await ext.storage<Record<string, unknown>>('ownTags')).toEqual({});
 	await page.waitForTimeout(500);
 	expect(ext.api.posted('/v1/tags')).toHaveLength(0);
+});
+
+test('at Label a Slop tag labels the card, and the confirmation says so', async ({ ext }) => {
+	await ext.setup({ strictness: 'label' });
+	const page = await ext.open(SEARCH);
+	const card = await openTag(page, 3);
+	await layer(page).getByRole('menuitem', { name: /^Slop/ }).click();
+	await expect(card.locator('colander-ui[data-kind="chip"]')).toContainText('Slop');
+	await expect(card).toBeVisible();
+	await expect(layer(page).locator('.cl-toast .cl-toast-t')).toHaveText('Tagged. Labeled for you.');
 });
 
 test('Not slop and AI-made but fine confirm with a notice', async ({ ext }) => {
@@ -172,7 +182,7 @@ test('keyboard only: the tag menu', async ({ ext }) => {
 	await page.keyboard.press('Enter');
 	await expect(cards.nth(3)).toHaveAttribute('data-colander', 'hide');
 	const toast = layer(page).locator('.cl-toast');
-	await expect(toast).toContainText('Tagged and hidden.');
+	await expect(toast).toContainText('Tagged. Hidden for you.');
 	await expect(toast.getByRole('button', { name: 'Undo' })).toBeFocused();
 	await page.waitForTimeout(4500);
 	await expect(toast).toBeVisible();
