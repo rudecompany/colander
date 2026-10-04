@@ -82,7 +82,7 @@
 				<span class="vr"><span class="vr-label">Scoring says</span><VerdictChip verdict={queueItem.computed_verdict} /></span>
 			{/if}
 			{#if s.large}<span class="uin-badge uin-badge-md"><Lock size={12} aria-hidden="true" /> Large audience</span>{/if}
-			{#if s.imported}<span class="uin-badge uin-badge-md">Imported, not reviewed</span>{/if}
+			{#if s.imported}<span class="uin-badge uin-badge-md">Seed list lead</span>{/if}
 			{#if s.appeal_open}<span class="uin-badge uin-badge-md">Appeal open</span>{/if}
 		</div>
 		<p class="links">

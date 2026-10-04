@@ -330,11 +330,11 @@ Uses a reviewer token sent by the website's account page through externally_conn
 					<p class="id"><span class="cl-figure" title={s.id}>{middleTruncate(s.id, 24)}</span><CopyButton text={s.id} /></p>
 					<p class="flags">
 						{#if s.large}<Badge>Large source</Badge>{/if}
-						{#if s.imported}<Badge>Imported, not reviewed</Badge>{/if}
+						{#if s.imported}<Badge>Seed list lead</Badge>{/if}
 						{#if s.appeal_open}<Badge>Appeal open</Badge>{/if}
 						{#if open.computed_verdict && open.computed_verdict !== s.verdict}<span class="caption">Scoring says {VERDICT_WORD[open.computed_verdict]}</span>{/if}
 					</p>
-					{#if s.attribution}<p class="caption">Imported from {s.attribution}</p>{/if}
+					{#if s.attribution}<p class="caption">Listed on {s.attribution}: a review lead, not evidence.</p>{/if}
 					<p class="caption">{RESCORE_LINE(s.rescore_at ? fmtShortDate(s.rescore_at) : null)}</p>
 					<a class="cl-link" href="{SITE}{sourcePath(s.platform, s.id)}" target="_blank" rel="noopener">Public page<ArrowRight size={16} aria-hidden="true" /></a>
 				</section>
