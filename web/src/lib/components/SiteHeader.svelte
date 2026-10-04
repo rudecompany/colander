@@ -176,8 +176,11 @@ Escape closes it and focus returns to Menu.
 		font: var(--cl-body-strong);
 		cursor: pointer;
 	}
+	/* The 44 px target reaches 12 px into the gutter, so the button draws no box there: it stays
+	   on the grid next to the wordmark, and the word underlines on hover. */
 	.menu-btn:hover {
-		background: color-mix(in srgb, var(--cl-text) 6%, transparent);
+		text-decoration: underline;
+		text-underline-offset: 3px;
 	}
 
 	.sheet {
@@ -255,6 +258,14 @@ Escape closes it and focus returns to Menu.
 	@media (min-width: 1024px) {
 		.sheet[open] {
 			display: none;
+		}
+	}
+	/* Forced colors drop backgrounds, so the current page's underline uses Highlight. */
+	@media (forced-colors: active) {
+		.main a[aria-current='page']::after,
+		.account[aria-current='page']::after {
+			background: Highlight;
+			forced-color-adjust: none;
 		}
 	}
 </style>

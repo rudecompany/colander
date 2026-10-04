@@ -365,6 +365,14 @@ table.plain tr:last-child > * {
 	max-width: 32ch;
 }
 
+/* Phones: a full-width button is a 44 px target, as the hero's. */
+@media (max-width: 639px) {
+	.uin-btn-block.uin-btn-xl {
+		height: 44px;
+		padding-inline: 20px;
+	}
+}
+
 /* Checkbox rows on the website: the whole 32 px row is the hit target. Stack them with no gap. */
 .uin-checkbox {
 	position: relative;
@@ -386,13 +394,6 @@ table.plain tr:last-child > * {
 	}
 	.kv dd {
 		overflow-wrap: anywhere;
-	}
-}
-
-/* Decision log rows: on the narrowest phones the verdict change gets its own line. */
-@media (max-width: 400px) {
-	.log .row .change {
-		grid-column: 1 / -1;
 	}
 }
 

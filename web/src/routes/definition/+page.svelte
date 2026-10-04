@@ -23,7 +23,7 @@
 	import EyeOff from '@lucide/svelte/icons/eye-off';
 	import Tag from '@lucide/svelte/icons/tag';
 	import Figure from '#lib/components/Figure.svelte';
-	import { COMPARISON, COMPARISON_CHECKED } from '#lib/content.ts';
+	import { COMPARISON, COMPARISON_CHECKED, COMPARISON_SCOPE } from '#lib/content.ts';
 
 	const toc = [
 		['definition', 'The definition'],
@@ -324,9 +324,8 @@
 		<section id="comparison" class="prose">
 			<h2>Comparison sources</h2>
 			<p>
-				The comparison on the home page describes what is common among the most-installed AI content blockers, without naming them.
-				These are the listings each row was checked against on {fmtDate(COMPARISON_CHECKED)}. They are checked again for every
-				release.
+				The comparison on the home page describes what is common among {COMPARISON_SCOPE}, without naming them. These are the
+				listings each row was checked against on {fmtDate(COMPARISON_CHECKED)}. They are checked again for every release.
 			</p>
 			<dl class="sources-list">
 				{#each COMPARISON as row (row.check)}

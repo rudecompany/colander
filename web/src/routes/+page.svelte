@@ -4,9 +4,11 @@
 	import {
 		ACTION_DONE_WORD,
 		ACTION_TABLE,
+		ColanderMark,
 		DEFINITION,
 		DEMO_FEED,
 		DEMO_POPUP,
+		DEMO_THUMBS_NOTE,
 		DotField,
 		DotMeter,
 		DotUnitChart,
@@ -14,7 +16,6 @@
 		FeedDemo,
 		ITEM_NOUN,
 		LogRow,
-		PermissionsTable,
 		PLATFORMS,
 		PLATFORM_DOMAIN,
 		PLATFORM_NAME,
@@ -56,8 +57,7 @@
 	import EyeOff from '@lucide/svelte/icons/eye-off';
 	import InfinityIcon from '@lucide/svelte/icons/infinity';
 	import ArrowRight from '@lucide/svelte/icons/arrow-right';
-	import Info from '@lucide/svelte/icons/info';
-	import Lock from '@lucide/svelte/icons/lock';
+import Lock from '@lucide/svelte/icons/lock';
 	import Scale from '@lucide/svelte/icons/scale';
 	import Tag from '@lucide/svelte/icons/tag';
 	import Undo2 from '@lucide/svelte/icons/undo-2';
@@ -65,10 +65,11 @@
 	import Figure from '#lib/components/Figure.svelte';
 	import SectionHead from '#lib/components/SectionHead.svelte';
 	import SendToComputer from '#lib/components/SendToComputer.svelte';
-	import { COMPARISON, COMPARISON_CHECKED, FAQ, KAPWING } from '#lib/content.ts';
+	import { COMPARISON, COMPARISON_CHECKED, COMPARISON_SCOPE, FAQ, KAPWING, KAPWING_URL } from '#lib/content.ts';
 	import { live } from '#lib/live.svelte.ts';
 
 	/* Hero demo: one state drives the frame, the docked popup, the phone feed and the phone popup. */
+	const PHONE = [3, 6, 1];
 	let platform = $state<Platform>('yt');
 	let level = $state<Strictness>('standard');
 	let paused = $state(false);
@@ -86,9 +87,10 @@
 		strictness: level,
 		hiddenToday: DEMO_POPUP.hiddenToday,
 		noun: ITEM_NOUN[platform],
+		// The phone popup counts the phone feed's items, so it agrees with that frame's badge.
 		rows: paused
 			? []
-			: DEMO_FEED.filter((i) => i.verdict && demoAction(i, level) !== 'allow').map((i) => ({
+			: DEMO_FEED.filter((i) => PHONE.includes(i.id) && i.verdict && demoAction(i, level) !== 'allow').map((i) => ({
 					id: i.id,
 					verdict: i.verdict,
 					title: i.title,
@@ -106,7 +108,9 @@
 
 	/* Bento. */
 	const item6 = DEMO_FEED.find((i) => i.id === 6)!;
-	const bentoEvidence = $derived(evidence({ verdict: 'likely_slop', hidden: true, rows: item6.evidence, listDate }));
+	const bentoEvidence = $derived(
+		evidence({ verdict: 'likely_slop', hidden: true, rows: item6.evidence, listDate, platform: 'yt', sourceId: item6.handle, appealable: true, inertLinks: true })
+	);
 	const bentoLog: LogEntry = {
 		id: 'demo',
 		at: '2026-10-02T14:02:00Z',
@@ -123,6 +127,17 @@
 		actor_name: null
 	};
 	const noop = () => {};
+
+	// On phones the six steps scroll sideways; only then is the list a keyboard stop.
+	let bento = $state<HTMLElement>();
+	let bentoScrolls = $state(false);
+	$effect(() => {
+		const el = bento;
+		if (!el) return;
+		const ro = new ResizeObserver(() => (bentoScrolls = el.scrollWidth > el.clientWidth + 1));
+		ro.observe(el);
+		return () => ro.disconnect();
+	});
 
 	// The phone feed is built in the browser, so the prerendered hero ships one feed (the 40 KB
 	// budget); its space is reserved until then. Without JavaScript, phones get the desktop feed.
@@ -143,7 +158,7 @@
 	<div class="cl-container hero-copy">
 		<a class="pill" href="/log">
 			{#if stats && stats.decisions_7d > 0}
-				<span>{fmtNum(stats.decisions_7d)} verdict {stats.decisions_7d === 1 ? 'change' : 'changes'} published this week</span>
+				<span class="pill-t">{fmtNum(stats.decisions_7d)} verdict {stats.decisions_7d === 1 ? 'change' : 'changes'} published this week</span>
 			{:else}
 				Read the public decision log
 			{/if}
@@ -184,18 +199,18 @@
 		</div>
 
 		<div class="frame-desk">
-			<FeedDemo bind:platform bind:level bind:paused height={680} list={listInfo} {listDate} />
+			<FeedDemo bind:platform bind:level bind:paused height={696} list={listInfo} {listDate} />
 		</div>
 		<div class="frame-phone" class:reserved={!phoneFeed}>
 			{#if phoneFeed}
-				<FeedDemo bind:platform bind:level bind:paused bind:open={openPhone} layout="list" items={[3, 6, 1]} popup={false} {listDate} />
+				<FeedDemo bind:platform bind:level bind:paused bind:open={openPhone} layout="list" items={PHONE} popup={false} {listDate} />
 			{/if}
 		</div>
 		<noscript><style>.frame-desk{display:block!important}.frame-phone{display:none!important}</style></noscript>
 
 		<div class="control">
 			<span class="control-label" aria-hidden="true">Strictness</span>
-			<StrictnessControl bind:value={level} size="xl" label="Strictness" />
+			<StrictnessControl bind:value={level} size="xl" label="Strictness" hint={false} />
 		</div>
 		<div class="popup-phone">
 			<p class="cl-eyebrow">The popup in your toolbar</p>
@@ -212,8 +227,8 @@
 			</div>
 		</div>
 		<p class="cl-figure caption">
-			Recreated feed. The chips, bars, popover and popup are the components the extension ships. Change the strictness, or pause
-			Colander in the popup to see the feed without it.
+			Recreated feed, drawn with the components the extension ships. Pause Colander in the popup to see it without them.
+			{DEMO_THUMBS_NOTE}
 		</p>
 	</div>
 </section>
@@ -244,28 +259,36 @@
 			</div>
 		</div>
 		<p class="strip-link"><ArrowLink href="/transparency">Read the transparency report</ArrowLink></p>
-		<ul class="platforms" aria-label="Platforms">
-			{#each PLATFORMS as p (p)}
-				<li>
-					<span class="p-name">{PLATFORM_NAME[p]}</span>
-					<span class="p-surf">{PLATFORM_SURFACES[p]}</span>
-					<span class="uin-badge uin-badge-lg">Free</span>
-				</li>
-			{/each}
-		</ul>
+		<div class="plats">
+			<p class="free"><InfinityIcon size={16} aria-hidden="true" />Free on all 4 platforms, on every surface below.</p>
+			<ul class="platforms" aria-label="Platforms">
+				{#each PLATFORMS as p (p)}
+					<li>
+						<span class="p-name">{PLATFORM_NAME[p]}</span>
+						<span class="p-surf">{PLATFORM_SURFACES[p]}</span>
+					</li>
+				{/each}
+			</ul>
+		</div>
 	</div>
 </section>
 
 <!-- 3. Why it exists -->
 <section class="cl-section" aria-labelledby="why-title">
-	<div class="cl-container">
-		<SectionHead
-			id="why-title"
-			eyebrow="Why it exists"
-			title="Feeds are filling with slop,"
-			title2="and no platform has an off switch."
-			lead="Kapwing counted what new accounts were shown first."
-		/>
+	<div class="cl-container why">
+		<div class="why-head">
+			<SectionHead
+				id="why-title"
+				eyebrow="Why it exists"
+				title="Feeds are filling with slop,"
+				title2="and no platform has an off switch."
+				lead="Kapwing counted what new accounts were shown first."
+			/>
+			<p class="source">
+				Source: <a href={KAPWING_URL} rel="noreferrer">Kapwing, The TikTok AI Slop Report</a>, data from May 2026. Kapwing classified videos
+				by hand and counted only obvious cases, so treat these figures as indicative.
+			</p>
+		</div>
 		<div class="charts">
 			{#each KAPWING as k, i (k.number)}
 				<figure class="chart" class:first={i === 0}>
@@ -278,18 +301,16 @@
 				</figure>
 			{/each}
 		</div>
-		<p class="source">
-			Source: <a href="https://www.kapwing.com/resources/the-tiktok-ai-slop-report/" rel="noreferrer">Kapwing, The TikTok AI Slop Report</a>, data from May
-			2026. Kapwing classified videos by hand and counted only obvious cases, so treat these figures as indicative.
-		</p>
 	</div>
 </section>
 
 <!-- 4. What counts as slop -->
 <section class="cl-section cl-wash" aria-labelledby="def-title">
 	<div class="cl-container">
-		<SectionHead id="def-title" eyebrow="What counts as slop" title="Slop is a production pattern," title2="not a tool." />
-		<p class="cl-title-lg statement">{DEFINITION}</p>
+		<div class="slop-top">
+			<SectionHead id="def-title" eyebrow="What counts as slop" title="Slop is a production pattern," title2="not a tool." />
+			<p class="cl-title-lg statement">{DEFINITION}</p>
+		</div>
 		<ul class="specimens" aria-label="The five verdicts">
 			{#each VERDICTS as v (v)}
 				{@const a = ACTION_TABLE.standard[v]}
@@ -307,36 +328,8 @@
 				</li>
 			{/each}
 		</ul>
-		<div class="decides">
-			<h3 class="cl-title-lg">How Colander decides</h3>
-			<div class="figs">
-				<figure>
-					<Figure n={1} />
-					<figcaption>
-						<span class="cl-figure muted">Fig. 1</span>
-						<span class="fig-title">AI evidence is a gate</span>
-						<span class="fig-copy">Without AI evidence, nothing can be rated slop, however low its quality.</span>
-					</figcaption>
-				</figure>
-				<figure>
-					<Figure n={2} />
-					<figcaption>
-						<span class="cl-figure muted">Fig. 2</span>
-						<span class="fig-title">Two layers must agree</span>
-						<span class="fig-copy">Nothing is hidden by default until two of the four evidence layers agree.</span>
-					</figcaption>
-				</figure>
-				<figure>
-					<Figure n={3} />
-					<figcaption>
-						<span class="cl-figure muted">Fig. 3</span>
-						<span class="fig-title">Tags alone never make anything Slop</span>
-						<span class="fig-copy">Slop needs AI evidence, a mass-produced source, and consensus or staff review.</span>
-					</figcaption>
-				</figure>
-			</div>
-			<p><ArrowLink href="/definition">Read how Colander decides</ArrowLink></p>
-		</div>
+		<!-- The three tests, layers and safeguards, drawn as figures, live on /definition. -->
+		<p class="decides"><ArrowLink href="/definition">Read how Colander decides</ArrowLink></p>
 	</div>
 </section>
 
@@ -354,7 +347,10 @@
 				</li>
 			{/each}
 		</ul>
-		<p class="after"><ArrowLink href="/definition#strictness">See the full table</ArrowLink></p>
+		<div class="after">
+			<ArrowLink href="/definition#strictness">See the full table</ArrowLink>
+			<p class="cl-caption muted thumbs-note">Recreated rows from the demo feed. {DEMO_THUMBS_NOTE}</p>
+		</div>
 	</div>
 </section>
 
@@ -362,7 +358,8 @@
 <section class="cl-section cl-wash" aria-labelledby="fair-title">
 	<div class="cl-container">
 		<SectionHead id="fair-title" eyebrow="Fair by design" title="Nothing disappears silently." title2="Every action is explained and reversible." />
-		<ol class="bento">
+		<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+		<ol class="bento" bind:this={bento} tabindex={bentoScrolls ? 0 : undefined} aria-label={bentoScrolls ? 'Six steps, scroll sideways for more' : undefined}>
 			<li class="tile">
 				<span class="cl-figure step">01</span>
 				<div class="vis" inert role="img" aria-label="A thumbnail with the ink chip AI-made in its corner.">
@@ -383,27 +380,19 @@
 			</li>
 			<li class="tile">
 				<span class="cl-figure step">03</span>
-				<div class="vis" inert role="img" aria-label="The Why popover: two evidence layers agreed, and the list it came from.">
+				<div class="vis vis-top" inert role="img" aria-label="The Why popover: two evidence layers agreed, the list it came from, Show, Always allow and Not slop, and links to the source page and its appeal.">
 					<DotField class="vis-dots" />
-					<div class="vis-in pop-demo"><EvidenceCard evidence={bentoEvidence} headingLevel={4} /></div>
+					<div class="vis-in pop-demo"><EvidenceCard evidence={bentoEvidence} headingLevel={4} show={noop} allow={noop} notSlop={noop} /></div>
 				</div>
 				<h3>Every hide says why</h3>
 				<p>The signals that agreed, the list and the date.</p>
 			</li>
 			<li class="tile">
 				<span class="cl-figure step">04</span>
-				<div class="vis" inert role="img" aria-label="A notice that says Skipped 1 slop video, with Undo and Why.">
+				<div class="vis" inert role="img" aria-label="A notice that says Skipped 1 slop video, with Undo.">
 					<DotField class="vis-dots" />
 					<div class="vis-in toast-demo">
-						<Toast
-							text="Skipped 1 slop video."
-							verdict="slop"
-							paused
-							actions={[
-								{ label: 'Undo', icon: Undo2, onClick: noop },
-								{ label: 'Why', icon: Info, onClick: noop }
-							]}
-						/>
+						<Toast text="Skipped 1 slop video." verdict="slop" paused actions={[{ label: 'Undo', icon: Undo2, onClick: noop }]} />
 					</div>
 				</div>
 				<h3>One click to undo</h3>
@@ -432,6 +421,7 @@
 				<p>The outcome and the reason go in the decision log.</p>
 			</li>
 		</ol>
+		<p class="cl-caption muted bento-note">Tiles 01 and 02 show the demo feed. {DEMO_THUMBS_NOTE}</p>
 	</div>
 </section>
 
@@ -443,7 +433,7 @@
 		<div class="band-grid">
 			<div class="band-left">
 				<figure class="fig4">
-					<Figure n={4} list={stats ? `Core list ${fmtListVersion(stats.list_sequence)}` : 'Core list'} />
+					<Figure n={4} version={stats ? fmtListVersion(stats.list_sequence) : null} />
 					<figcaption class="cl-figure muted">Fig. 4</figcaption>
 				</figure>
 				<div class="list-card">
@@ -468,17 +458,23 @@
 <!-- 8. Privacy -->
 <section class="cl-section" aria-labelledby="privacy-title">
 	<div class="cl-container">
-		<SectionHead
-			id="privacy-title"
-			eyebrow="Private by design"
-			title="Matching happens on your device."
-			title2="Colander never asks a server about the page you are viewing."
-		/>
 		<div class="privacy">
-			<PrivacyFacts />
-			<PermissionsTable />
+			<SectionHead
+				id="privacy-title"
+				eyebrow="Private by design"
+				title="Matching happens on your device."
+				title2="Your browsing stays there."
+				lead="Colander never asks a server about the page you are viewing."
+			/>
+			<div class="privacy-facts">
+				<PrivacyFacts compact />
+				<p class="foot-line">
+					This site sets no cookies, so there is no banner.
+					<ArrowLink href="/privacy#permissions">Every permission, and why Colander asks</ArrowLink>
+					<ArrowLink href="/privacy">Read the privacy policy</ArrowLink>
+				</p>
+			</div>
 		</div>
-		<p class="foot-line">This site sets no cookies, so there is no banner. <ArrowLink href="/privacy">Read the privacy policy</ArrowLink></p>
 	</div>
 </section>
 
@@ -490,7 +486,11 @@
 			<table>
 				<caption class="sr-only">Colander compared with what is common in AI blockers</caption>
 				<thead>
-					<tr><th scope="col">What to check</th><th scope="col">Common in AI blockers</th><th scope="col">Colander</th></tr>
+					<tr>
+						<th scope="col">What to check</th>
+						<th scope="col">Common in AI blockers</th>
+						<th scope="col" class="us"><span class="us-head"><ColanderMark size={16} />Colander</span></th>
+					</tr>
 				</thead>
 				<tbody>
 					{#each COMPARISON as row (row.check)}
@@ -504,7 +504,7 @@
 			</table>
 		</div>
 		<p class="compare-cap">
-			Based on the most-installed AI content blockers in the Chrome Web Store, checked {fmtShortDate(COMPARISON_CHECKED)}.
+			Based on {COMPARISON_SCOPE}, checked {fmtShortDate(COMPARISON_CHECKED)}.
 			<ArrowLink href="/definition#comparison" size="sm">Sources</ArrowLink>
 		</p>
 	</div>
@@ -513,29 +513,38 @@
 <!-- 10. Plans -->
 <section class="cl-section" aria-labelledby="plans-title">
 	<div class="cl-container">
-		<SectionHead id="plans-title" eyebrow="Plans" title="Blocking is free for good." title2="Plus adds control, never influence." />
-		<div class="prices">
-			<PriceCard plan="free" cta={{ href: PUBLIC_STORE_URL }} />
-			<PriceCard plan="plus" cta={{ href: '/plans#trial' }} />
+		<div class="plans">
+			<div class="plans-head">
+				<SectionHead id="plans-title" eyebrow="Plans" title="Blocking is free for good." title2="Plus adds control, never influence." />
+				<div class="plan-foot">
+					<p class="trust">{PLAN_COPY.trust}</p>
+					<ArrowLink href="/plans">Compare plans</ArrowLink>
+					<ArrowLink href="/support">Support our work</ArrowLink>
+				</div>
+			</div>
+			<div class="prices">
+				<PriceCard plan="free" cta={{ href: PUBLIC_STORE_URL }} />
+				<PriceCard plan="plus" cta={{ href: '/plans#trial' }} />
+			</div>
 		</div>
-		<p class="trust">{PLAN_COPY.trust}</p>
-		<p class="plan-links">
-			<ArrowLink href="/plans">Compare plans</ArrowLink>
-			<ArrowLink href="/support">Support our work</ArrowLink>
-		</p>
 	</div>
 </section>
 
 <!-- 11. FAQ -->
 <section class="cl-section faq-section" aria-labelledby="faq-title">
-	<div class="cl-container">
+	<div class="cl-container faq-wrap">
+		<h2 class="cl-display-lg faq-title" id="faq-title">Questions</h2>
+		<!-- Two columns on desktop, each its own stack, so opening one question never reflows the other. -->
 		<div class="faq">
-			<h2 class="cl-display-lg" id="faq-title">Questions</h2>
-			{#each FAQ as f (f.q)}
-				<details>
-					<summary>{f.q}<ChevronDown size={16} aria-hidden="true" /></summary>
-					<p>{f.a}</p>
-				</details>
+			{#each [FAQ.slice(0, Math.ceil(FAQ.length / 2)), FAQ.slice(Math.ceil(FAQ.length / 2))] as col, i (i)}
+				<div class="faq-col">
+					{#each col as f (f.q)}
+						<details>
+							<summary>{f.q}<ChevronDown size={16} aria-hidden="true" /></summary>
+							<p>{f.a}</p>
+						</details>
+					{/each}
+				</div>
 			{/each}
 		</div>
 	</div>
@@ -549,7 +558,7 @@
 	/* 1. Hero */
 	.hero {
 		padding-top: 72px;
-		padding-bottom: var(--cl-s9);
+		padding-bottom: var(--cl-s8);
 	}
 	.hero-copy {
 		display: flex;
@@ -557,12 +566,14 @@
 		align-items: center;
 		text-align: center;
 	}
+	/* 32 tall on one line; on the narrowest phones it grows to two lines rather than spill. */
 	.pill {
 		display: inline-flex;
 		align-items: center;
 		gap: 8px;
-		height: 32px;
-		padding: 0 14px;
+		min-height: 32px;
+		padding: 5px 14px;
+		line-height: 20px;
 		border: 1px solid var(--cl-border-strong);
 		border-radius: var(--cl-r-full);
 		background: var(--cl-surface);
@@ -570,16 +581,22 @@
 		font: var(--cl-body-strong);
 		text-decoration: none;
 	}
+	.pill-t {
+		text-wrap: balance;
+	}
+	.pill :global(svg) {
+		flex: none;
+	}
 	.pill:hover {
 		background: color-mix(in srgb, var(--cl-text) 6%, var(--cl-surface));
 	}
 	h1 {
 		max-width: 800px;
-		margin-top: 24px;
+		margin-top: 20px;
 	}
 	.lead {
 		max-width: 640px;
-		margin-top: 20px;
+		margin-top: 16px;
 		color: var(--cl-text-muted);
 	}
 	.ctas {
@@ -588,13 +605,13 @@
 		align-items: center;
 		justify-content: center;
 		gap: 16px 24px;
-		margin-top: 32px;
+		margin-top: 28px;
 	}
 	.phone {
 		display: none;
 	}
 	.version {
-		margin-top: 16px;
+		margin-top: 12px;
 		color: var(--cl-text-muted);
 	}
 	.proof {
@@ -602,7 +619,7 @@
 		flex-wrap: wrap;
 		justify-content: center;
 		gap: 8px 24px;
-		margin-top: 16px;
+		margin-top: 12px;
 		list-style: none;
 		color: var(--cl-text-muted);
 		font: var(--cl-body);
@@ -620,7 +637,7 @@
 		display: grid;
 		grid-template-columns: minmax(0, 1fr);
 		justify-items: center;
-		margin-top: 40px;
+		margin-top: 32px;
 	}
 	.tabs {
 		display: flex;
@@ -646,7 +663,7 @@
 		align-items: flex-start;
 		justify-content: center;
 		gap: 16px;
-		margin-top: 24px;
+		margin-top: 20px;
 	}
 	.control-label {
 		color: var(--cl-text-muted);
@@ -655,7 +672,7 @@
 	}
 	.caption {
 		max-width: 720px;
-		margin-top: 16px;
+		margin-top: 12px;
 		color: var(--cl-text-muted);
 		text-align: center;
 	}
@@ -671,7 +688,9 @@
 		border-radius: var(--cl-r-card);
 		box-shadow: var(--cl-shadow-pop);
 	}
-	@media (max-width: 899px) {
+	/* The docked popup shows while the frame is at least 900 wide (a 948 window); below that the
+	   page shows the popup under the frame, and its control drives the feed. */
+	@media (max-width: 947px) {
 		.control {
 			display: none;
 		}
@@ -760,12 +779,25 @@
 	.strip-link {
 		padding-bottom: 24px;
 	}
+	.plats {
+		display: grid;
+		gap: 16px;
+		padding-block: 24px;
+		border-top: 1px solid var(--cl-border);
+	}
+	.free {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		font: var(--cl-body-strong);
+	}
+	.free :global(svg) {
+		flex: none;
+	}
 	.platforms {
 		display: grid;
 		grid-template-columns: repeat(4, minmax(0, 1fr));
 		gap: 24px;
-		padding-block: 24px;
-		border-top: 1px solid var(--cl-border);
 		list-style: none;
 	}
 	.platforms li {
@@ -779,7 +811,6 @@
 		font-weight: 600;
 	}
 	.p-surf {
-		margin-bottom: 4px;
 		color: var(--cl-text-muted);
 		font: var(--cl-body);
 	}
@@ -813,20 +844,24 @@
 		.cell:nth-child(odd):not(:first-child) {
 			padding-left: 12px;
 		}
-		.platforms {
-			grid-template-columns: 1fr;
-			gap: 0;
-			padding-block: 0;
-		}
-		.platforms li {
+		.plats {
 			padding-block: 16px;
 		}
-		.platforms li + li {
-			border-top: 1px solid var(--cl-border);
+		.platforms {
+			gap: 16px 12px;
 		}
 	}
 
-	/* 3. Why it exists */
+	/* 3. Why it exists: the head and its source beside the three charts on desktop. */
+	.why {
+		display: grid;
+		grid-template-columns: 4fr 8fr;
+		gap: 48px;
+		align-items: start;
+	}
+	.why-head :global(.head) {
+		margin-bottom: 0;
+	}
 	.charts {
 		display: grid;
 		grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -849,10 +884,18 @@
 		font: var(--cl-body);
 	}
 	.source {
-		max-width: 880px;
-		margin-top: 48px;
+		margin-top: 24px;
 		color: var(--cl-text-muted);
 		font: var(--cl-body);
+	}
+	@media (max-width: 1023px) {
+		.why {
+			grid-template-columns: minmax(0, 1fr);
+			gap: 32px;
+		}
+		.why-head :global(.head) {
+			margin-bottom: 0;
+		}
 	}
 	@media (max-width: 639px) {
 		.charts {
@@ -860,7 +903,7 @@
 			gap: 32px;
 		}
 		.chart.first .chart-art :global(svg) {
-			width: 100%;
+			width: min(100%, 300px);
 		}
 		.chart:not(.first) .chart-art {
 			display: none;
@@ -872,10 +915,29 @@
 	}
 
 	/* 4. What counts as slop */
+	.slop-top {
+		display: grid;
+		grid-template-columns: 5fr 7fr;
+		gap: 24px;
+		align-items: start;
+		margin-bottom: 48px;
+	}
+	.slop-top :global(.head) {
+		margin-bottom: 0;
+	}
 	.statement {
-		max-width: 880px;
-		margin-bottom: 64px;
+		padding-top: 28px;
 		text-wrap: pretty;
+	}
+	@media (max-width: 1023px) {
+		.slop-top {
+			grid-template-columns: minmax(0, 1fr);
+			gap: 24px;
+			margin-bottom: 40px;
+		}
+		.statement {
+			padding-top: 0;
+		}
 	}
 	.specimens {
 		display: grid;
@@ -891,8 +953,12 @@
 		text-align: center;
 	}
 	.specimen :global(.disc) {
-		width: 120px;
-		height: 120px;
+		width: 104px;
+		height: 104px;
+	}
+	.specimen :global(.disc .dots) {
+		background-image: radial-gradient(var(--cl-dot-strong) 1px, transparent 1.2px);
+		background-size: 10px 10px;
 	}
 	.glyph {
 		display: grid;
@@ -919,42 +985,14 @@
 		font: var(--cl-caption);
 	}
 	.decides {
-		margin-top: 64px;
-		padding-top: 48px;
-		border-top: 1px solid var(--cl-border);
-	}
-	.figs {
-		display: grid;
-		grid-template-columns: repeat(3, minmax(0, 1fr));
-		gap: 24px;
-		margin-block: 32px;
-	}
-	.figs figure {
-		display: grid;
-		align-content: start;
-		gap: 16px;
-	}
-	.figs figcaption {
-		display: grid;
-		gap: 4px;
-	}
-	.fig-title {
-		font: var(--cl-title);
-	}
-	.fig-copy {
-		color: var(--cl-text-muted);
-		font: var(--cl-body);
+		margin-top: 32px;
 	}
 	@media (max-width: 1023px) {
 		.specimens {
 			grid-template-columns: repeat(3, minmax(0, 1fr));
 			row-gap: 40px;
 		}
-		.figs {
-			grid-template-columns: 1fr;
-			max-width: 480px;
-		}
-	}
+}
 	@media (max-width: 639px) {
 		.specimens {
 			grid-template-columns: 1fr;
@@ -991,7 +1029,7 @@
 		display: grid;
 		grid-template-rows: auto auto 1fr auto;
 		gap: 12px;
-		padding: 24px;
+		padding: 20px;
 		border: 1px solid var(--cl-border);
 		border-radius: var(--cl-r-card);
 		background: var(--cl-surface);
@@ -1012,6 +1050,11 @@
 		font: var(--cl-body);
 	}
 	.after {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		justify-content: space-between;
+		gap: 8px 24px;
 		margin-top: 32px;
 	}
 	@media (max-width: 1023px) {
@@ -1027,6 +1070,15 @@
 		.level-hint {
 			min-height: 0;
 		}
+		/* Phones: each level is a compact row, its name, what it does and its counts. */
+		.level {
+			gap: 4px;
+			padding: 16px;
+		}
+		.level :global(.mini),
+		.thumbs-note {
+			display: none;
+		}
 	}
 
 	/* 6. Fair by design */
@@ -1039,10 +1091,9 @@
 	.tile {
 		position: relative;
 		display: grid;
-		grid-template-rows: auto 200px auto 1fr;
+		grid-template-rows: auto 152px auto 1fr;
 		align-content: start;
-		gap: 16px;
-		min-height: 360px;
+		gap: 12px;
 		padding: 24px;
 		border: 1px solid var(--cl-border);
 		border-radius: var(--cl-r-card);
@@ -1068,19 +1119,28 @@
 		left: -1px;
 		width: 16px;
 	}
+	/* Each picture spans the tile's full width, so the notice in 04 stays on one line and the bar in
+	   02 keeps "Hidden for you", as they do on a host page. */
 	.vis {
 		position: relative;
 		display: grid;
 		grid-template-columns: minmax(0, 1fr);
 		place-items: center;
+		margin-inline: -24px;
 		overflow: hidden;
-		border-radius: var(--cl-r-chip);
 		container-type: inline-size;
 	}
 	.vis :global(.vis-dots) {
 		position: absolute;
 		inset: 0;
 	}
+	/* Tile 03 shows the whole popover from its top and crops it with a fade, rather than trimming it. */
+	.vis-top {
+		place-items: start center;
+		padding-top: 16px;
+		mask-image: linear-gradient(to bottom, black calc(100% - 40px), transparent);
+	}
+
 	.vis-in {
 		position: relative;
 	}
@@ -1108,6 +1168,9 @@
 	}
 	.toast-demo {
 		width: calc(100% - 16px);
+	}
+	.bento-note {
+		margin-top: 16px;
 	}
 	/* Only tile 03's popover floats; the notice sits flat in its picture. */
 	.toast-demo :global(.cl-toast) {
@@ -1173,27 +1236,57 @@
 			background: radial-gradient(circle at 1.5px 1.5px, var(--cl-dot-strong) 1.5px, transparent 1.6px) 0 0 / 3px 8px repeat-y;
 		}
 	}
+	/* Phones: the six steps are one row that scrolls sideways and snaps to each tile, the next one
+	   peeking in, with the perforated connector between their numbers. */
 	@media (max-width: 639px) {
+		.bento {
+			grid-template-columns: none;
+			grid-auto-columns: 86%;
+			grid-auto-flow: column;
+			gap: 12px;
+			max-width: none;
+			margin-inline: -16px;
+			padding: 0 16px 4px;
+			overflow-x: auto;
+			overscroll-behavior-x: contain;
+			scroll-snap-type: x mandatory;
+			scroll-padding-inline: 16px;
+			scrollbar-width: none;
+		}
 		.tile {
-			grid-template-rows: auto 180px auto 1fr;
-			min-height: 0;
+			grid-template-rows: auto 152px auto 1fr;
+			gap: 8px;
 			padding: 16px;
+			scroll-snap-align: start;
+		}
+		.vis {
+			margin-inline: -16px;
 		}
 		.tile:not(:last-child)::after {
-			left: 23px;
+			top: 24px;
+			right: -13px;
+			bottom: auto;
+			left: auto;
+			width: 12px;
+			height: 3px;
+			background: radial-gradient(circle at 1.5px 1.5px, var(--cl-dot-strong) 1.5px, transparent 1.6px) 0 0 / 8px 3px repeat-x;
 		}
 	}
 
 	/* 7. Open by default */
+	/* In dark the band is a lifted tone, and hairlines mark its edges beside the perforations. */
+	.band {
+		border-block: 1px solid var(--cl-band-line);
+	}
 	.band-edge {
 		--cl-dot: var(--cl-dot-strong);
 	}
 	.band-in {
-		padding-block: var(--cl-s10);
+		padding-block: 80px;
 	}
 	.band-grid {
 		display: grid;
-		grid-template-columns: 5fr 7fr;
+		grid-template-columns: 4fr 8fr;
 		gap: 48px;
 	}
 	.band-left {
@@ -1235,7 +1328,7 @@
 	}
 	@media (max-width: 1023px) {
 		.band-in {
-			padding-block: var(--cl-s9);
+			padding-block: var(--cl-s8);
 		}
 		.band-grid {
 			grid-template-columns: 1fr;
@@ -1243,19 +1336,34 @@
 	}
 	@media (max-width: 639px) {
 		.band-in {
-			padding-block: var(--cl-s8);
+			padding-block: var(--cl-s7);
 		}
 		.rows :global(.log:nth-child(n + 4)) {
 			display: none;
 		}
+		.list-card .list-line {
+			display: none;
+		}
 	}
 
-	/* 8. Privacy */
+	/* 8. Privacy: the head beside the facts on desktop. */
 	.privacy {
 		display: grid;
-		grid-template-columns: repeat(2, minmax(0, 1fr));
+		grid-template-columns: 5fr 7fr;
 		gap: 24px;
 		align-items: start;
+	}
+	.privacy-facts {
+		padding-top: 28px;
+	}
+	@media (max-width: 1023px) {
+		.privacy {
+			grid-template-columns: minmax(0, 1fr);
+			gap: 0;
+		}
+		.privacy-facts {
+			padding-top: 0;
+		}
 	}
 	.foot-line {
 		display: flex;
@@ -1266,15 +1374,11 @@
 		color: var(--cl-text-muted);
 		font: var(--cl-body);
 	}
-	@media (max-width: 1023px) {
-		.privacy {
-			grid-template-columns: 1fr;
-		}
-	}
 
 	/* 9. Comparison */
 	.compare {
-		padding: 4px 24px;
+		overflow: hidden;
+		padding-left: 24px;
 		border: 1px solid var(--cl-border);
 		border-radius: var(--cl-r-card);
 		background: var(--cl-surface);
@@ -1286,7 +1390,7 @@
 	}
 	.compare th,
 	.compare td {
-		padding: 16px 16px 16px 0;
+		padding: 10px 16px 10px 0;
 		text-align: left;
 		vertical-align: top;
 	}
@@ -1304,7 +1408,15 @@
 	.compare td {
 		color: var(--cl-text-muted);
 	}
-	.compare td.us {
+	.compare .us {
+		padding-inline: 16px 24px;
+		background: var(--cl-wash);
+		color: var(--cl-text);
+	}
+	.us-head {
+		display: inline-flex;
+		align-items: center;
+		gap: 6px;
 		color: var(--cl-text);
 	}
 	.k {
@@ -1325,6 +1437,11 @@
 	@media (max-width: 639px) {
 		.compare {
 			padding: 0 16px;
+		}
+		.compare .us {
+			margin-top: 4px;
+			padding: 4px 8px;
+			border-radius: var(--cl-r-chip);
 		}
 		.compare thead {
 			position: absolute;
@@ -1358,30 +1475,55 @@
 		}
 	}
 
-	/* 10. Plans */
-	.prices {
+	/* 10. Plans: the head, the trust line and the links beside the two cards on desktop. */
+	.plans {
 		display: grid;
-		grid-template-columns: repeat(2, minmax(0, 480px));
-		justify-content: center;
-		gap: 24px;
+		grid-template-columns: 4fr 8fr;
+		gap: 48px;
+		align-items: start;
 	}
-	.trust {
-		max-width: 640px;
-		margin: 32px auto 0;
-		color: var(--cl-text-muted);
-		font: var(--cl-body);
-		text-align: center;
-	}
-	.plan-links {
-		display: flex;
-		flex-wrap: wrap;
-		justify-content: center;
-		gap: 12px 32px;
-		margin-top: 16px;
+	.plans-head :global(.head) {
+		margin-bottom: 0;
 	}
 	@media (max-width: 1023px) {
+		.plans {
+			grid-template-columns: minmax(0, 1fr);
+			gap: 0;
+		}
+		.plans-head {
+			display: contents;
+		}
+		.plans-head :global(.head) {
+			margin-bottom: var(--cl-s6);
+		}
+		.plan-foot {
+			order: 3;
+		}
+	}
+	.prices {
+		display: grid;
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+		gap: 24px;
+	}
+	.plan-foot {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 12px 32px;
+		margin-top: 24px;
+	}
+	@media (max-width: 639px) {
+		.plans-head :global(.head) {
+			margin-bottom: var(--cl-s5);
+		}
+	}
+	.trust {
+		color: var(--cl-text-muted);
+		font: var(--cl-body);
+	}
+	@media (max-width: 767px) {
 		.prices {
-			grid-template-columns: minmax(0, 480px);
+			grid-template-columns: minmax(0, 1fr);
 		}
 	}
 
@@ -1389,19 +1531,38 @@
 	.faq-section {
 		padding-top: 0;
 	}
-	.faq {
-		max-width: 720px;
-		margin-inline: auto;
+	/* The heading beside the questions on desktop. */
+	.faq-wrap {
+		display: grid;
+		grid-template-columns: 4fr 8fr;
+		gap: 48px;
+		align-items: start;
 	}
-	.faq h2 {
-		margin-bottom: 32px;
-		text-align: center;
+	@media (max-width: 1023px) {
+		.faq-wrap {
+			grid-template-columns: minmax(0, 1fr);
+			gap: 24px;
+		}
+	}
+	.faq {
+		display: grid;
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+		gap: 0 24px;
+		align-items: start;
 	}
 	details {
 		border-top: 1px solid var(--cl-border);
 	}
 	details:last-child {
 		border-bottom: 1px solid var(--cl-border);
+	}
+	@media (max-width: 1023px) {
+		.faq {
+			grid-template-columns: minmax(0, 1fr);
+		}
+		.faq-col + .faq-col details:first-child {
+			border-top: 0;
+		}
 	}
 	summary {
 		display: flex;

@@ -42,30 +42,60 @@ async function live(): Promise<{ stats: unknown; log: unknown[]; asOf: string } 
 	}
 }
 
-export default defineConfig(async () => ({
-	plugins: [
-		sveltekit({
-			adapter: adapter({ pages: 'build', assets: 'build', fallback: '200.html' }),
-			csp: {
-				mode: 'hash',
-				directives: {
-					'default-src': ['self'],
-					'script-src': ['self'],
-					// Svelte writes style attributes; scripts stay hash-locked.
-					'style-src': ['self', 'unsafe-inline'],
-					'img-src': ['self', 'data:'],
-					'font-src': ['self'],
-					'connect-src': ['self'],
-					'form-action': ['self'],
-					'base-uri': ['self'],
-					'object-src': ['none']
+export default defineConfig(async () => {
+	const numbers = await live();
+	let warned = false;
+	return {
+		plugins: [
+			// Says so loudly when a build carries no live numbers.
+			{
+				name: 'colander-live-numbers',
+				apply: 'build',
+				buildStart() {
+					if (numbers || warned) return;
+					warned = true;
+					this.warn(
+						'COLANDER_BUILD_API is not set: pages prerender without live numbers, so the landing pill, the live strip and /transparency start empty until the browser fetches them. Set it for a production build.'
+					);
+				}
+			},
+			sveltekit({
+				adapter: adapter({ pages: 'build', assets: 'build', fallback: '200.html' }),
+				csp: {
+					mode: 'hash',
+					directives: {
+						'default-src': ['self'],
+						'script-src': ['self'],
+						// Svelte writes style attributes; scripts stay hash-locked.
+						'style-src': ['self', 'unsafe-inline'],
+						'img-src': ['self', 'data:'],
+						'font-src': ['self'],
+						'connect-src': ['self'],
+						'form-action': ['self'],
+						'base-uri': ['self'],
+						'object-src': ['none']
+					}
+				}
+			})
+		],
+		define: {
+			__RELEASE__: JSON.stringify(release()),
+			__BUILD_LIVE__: JSON.stringify(numbers)
+		},
+		build: {
+			// The demo thumbnails are files, never inlined into the JavaScript: / allows exactly these 8 images.
+			assetsInlineLimit: (file: string) => (file.endsWith('.webp') ? false : undefined),
+			// The shared package is side-effect free, so each page loads only the components it uses.
+			// Modules that 2 or more pages share travel together in one chunk, so / stays well under
+			// 40 requests instead of one request per small component and icon.
+			rolldownOptions: {
+				output: {
+					codeSplitting: {
+						groups: [{ name: 'common', test: /[\\/](packages[\\/]shared[\\/]src|@lucide[\\/]svelte|web[\\/]src[\\/]lib)[\\/]/, minShareCount: 2 }]
+					}
 				}
 			}
-		})
-	],
-	define: {
-		__RELEASE__: JSON.stringify(release()),
-		__BUILD_LIVE__: JSON.stringify(await live())
-	},
-	server: { proxy: { '/v1': API } }
-}));
+		},
+		server: { proxy: { '/v1': API } }
+	};
+});

@@ -20,6 +20,8 @@
 	let step = $state<'idle' | 'signin' | 'continue' | 'working'>('idle');
 	let checkoutError = $state<{ title: string; body: string } | null>(null);
 	let cancelled = $state(false);
+	/** Back from sign-in or a closed checkout: checkout is the one action, not the trial. */
+	let resumed = $state(false);
 
 	const price = $derived<Price>(interval === 'year' ? 'plus_yearly' : 'plus_monthly');
 	const hasPlus = $derived(!!session.account?.plan && session.account.plan.status !== 'canceled');
@@ -33,7 +35,10 @@
 		cancelled = q.has('cancelled');
 		if (wanted === 'plus_monthly') interval = 'month';
 		const account = await loadAccount();
-		if (account && (wanted === 'plus_yearly' || wanted === 'plus_monthly')) step = 'continue';
+		if (account && (wanted === 'plus_yearly' || wanted === 'plus_monthly')) {
+			step = 'continue';
+			resumed = true;
+		}
 	});
 
 	async function getPlus() {
@@ -115,13 +120,21 @@
 				{ value: 'month', label: 'Monthly' }
 			]}
 		/>
-		<p class="saves"><span>{PLAN_COPY.plus.saves}</span><span></span></p>
+		<!-- The plain fact sits under the Yearly segment, and only while Yearly is chosen. -->
+		<p class="saves" aria-hidden={interval !== 'year'}><span class:off={interval !== 'year'}>{PLAN_COPY.plus.saves}</span><span></span></p>
 	</div>
 
 	<div class="prices">
 		<PriceCard plan="free" headingLevel={2} cta={{ href: PUBLIC_STORE_URL }} />
 		<div class="plus-col">
-			<PriceCard plan="plus" billing={interval} headingLevel={2} cta={hasPlus || step === 'signin' ? undefined : { label: ctaLabel, onclick: getPlus }} />
+			<!-- One CTA everywhere, "Start 14 days free"; buying outright is the secondary action under it. -->
+			<PriceCard
+				plan="plus"
+				billing={interval}
+				headingLevel={2}
+				cta={hasPlus || step === 'signin' ? undefined : resumed ? { label: ctaLabel, onclick: getPlus } : { href: '#trial' }}
+				cta2={hasPlus || step === 'signin' || resumed ? undefined : { label: ctaLabel, onclick: getPlus }}
+			/>
 			{#if hasPlus}
 				<Notice title="You have Plus."><p><a href="/account">Manage it on your account page</a>.</p></Notice>
 			{:else if step === 'signin'}
@@ -174,9 +187,9 @@
 						<tr>
 							<th scope="row">{name}</th>
 							{#each [free, plus] as yes, i (i)}
-								<td>
+								<td data-label={i === 0 ? 'Free' : 'Plus'}>
 									<span class="cell" class:no={!yes}>
-										{#if yes}<Check size={16} aria-hidden="true" />Included{:else}<Minus size={16} aria-hidden="true" />Not included{/if}
+										{#if yes}<Check size={16} aria-hidden="true" /><span class="word">Included</span>{:else}<Minus size={16} aria-hidden="true" /><span class="word">Not included</span>{/if}
 									</span>
 								</td>
 							{/each}
@@ -239,9 +252,13 @@
 		font: var(--cl-caption);
 		text-align: center;
 	}
+	.saves .off {
+		visibility: hidden;
+	}
+	/* Two 6-column cards, so every block on the page shares the container's right edge. */
 	.prices {
 		display: grid;
-		grid-template-columns: repeat(2, minmax(0, 480px));
+		grid-template-columns: repeat(2, minmax(0, 1fr));
 		gap: 24px;
 		align-items: start;
 	}
@@ -355,17 +372,61 @@
 	.faq {
 		max-width: 720px;
 	}
-	@media (max-width: 1023px) {
+	@media (max-width: 767px) {
 		.prices {
-			grid-template-columns: minmax(0, 480px);
+			grid-template-columns: minmax(0, 1fr);
 		}
 	}
 	@media (max-width: 639px) {
 		.family .uin-badge {
 			margin-left: 0;
 		}
+		/* Phones: the feature full width, then Free and Plus as two compact cells; the words stay for screen readers. */
+		.grid thead {
+			position: absolute;
+			width: 1px;
+			height: 1px;
+			overflow: hidden;
+			clip: rect(0 0 0 0);
+		}
+		.grid tr {
+			display: grid;
+			grid-template-columns: 1fr 1fr;
+			column-gap: 16px;
+			padding-block: 10px;
+			border-bottom: 1px solid var(--cl-border);
+		}
+		.grid tr:last-child {
+			border-bottom: 0;
+		}
+		.grid th,
 		.grid td {
+			display: block;
 			width: auto;
+			padding: 0;
+			border: 0;
+		}
+		.grid th[scope='row'] {
+			grid-column: 1 / -1;
+			margin-bottom: 4px;
+		}
+		.grid td::before {
+			content: attr(data-label);
+			margin-right: 8px;
+			color: var(--cl-text-muted);
+			font-weight: 600;
+		}
+		.grid td {
+			display: flex;
+			align-items: center;
+		}
+		.grid .word {
+			position: absolute;
+			width: 1px;
+			height: 1px;
+			overflow: hidden;
+			clip: rect(0 0 0 0);
+			white-space: nowrap;
 		}
 	}
 </style>

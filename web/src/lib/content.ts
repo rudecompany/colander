@@ -3,14 +3,17 @@
 
 export const KAPWING_URL = 'https://www.kapwing.com/resources/the-tiktok-ai-slop-report/';
 
-/** Kapwing, The TikTok AI Slop Report, data from May 2026. One dot per video, filled row by row. */
+/**
+ * Kapwing, The TikTok AI Slop Report, data from May 2026. One dot per video, filled row by row.
+ * Each chart is 237.5 units wide, its column's width on desktop, so dots render at their size.
+ */
 export const KAPWING = [
 	{
 		number: '59%',
 		share: 59,
 		cols: 25,
 		rows: 20,
-		pitch: 12,
+		pitch: 9.5,
 		dot: 4,
 		filled: 295,
 		caption: "of the first 500 videos TikTok's For You feed showed a new account",
@@ -21,7 +24,7 @@ export const KAPWING = [
 		share: 57.4,
 		cols: 50,
 		rows: 40,
-		pitch: 6,
+		pitch: 4.75,
 		dot: 3,
 		filled: 1148,
 		caption: "of 2,000 videos in TikTok's Kids category",
@@ -32,7 +35,7 @@ export const KAPWING = [
 		share: 21,
 		cols: 25,
 		rows: 20,
-		pitch: 12,
+		pitch: 9.5,
 		dot: 4,
 		filled: 105,
 		caption: 'of the first 500 YouTube Shorts videos',
@@ -50,14 +53,18 @@ const S = {
 	aislist: { name: 'AiBlock and AiSList', url: 'https://aisloplist.com/' },
 	aiblockYt: { name: 'AI Block for YouTube, add-on listing', url: 'https://addons.mozilla.org/en-US/firefox/addon/ai-block-for-youtube/' },
 	slopblock: { name: 'SlopBlock', url: 'https://slopblock.cc/' },
-	vlad: { name: 'AI Slop Blocker (Vlad)', url: 'https://vladeeno.com/ai-slop-blocker' },
 	deslop: {
 		name: 'DeSlop, Chrome Web Store listing',
 		url: 'https://chromewebstore.google.com/detail/deslop-ai-slop-filter-for/ceeofbgdnlfkbmejalfggfkigjmkdkib'
 	}
 } satisfies Record<string, Source>;
 
-/** Rows of the comparison. Competitors are unnamed in the table; each row's sources are listed on /definition#comparison. */
+/**
+ * Rows of the comparison: released AI content blockers on the Chrome Web Store and Firefox Add-ons.
+ * Competitors are unnamed in the table; each row's sources are listed on /definition#comparison.
+ */
+export const COMPARISON_SCOPE = 'AI content blockers on the Chrome Web Store and Firefox Add-ons';
+
 export const COMPARISON: { check: string; common: string; colander: string; sources: Source[] }[] = [
 	{
 		check: 'What gets hidden',
@@ -69,7 +76,7 @@ export const COMPARISON: { check: string; common: string; colander: string; sour
 		check: 'Platforms',
 		common: 'YouTube only, for most',
 		colander: 'YouTube, TikTok, Instagram and Facebook',
-		sources: [S.aislist, S.aiblockYt, S.slopblock, S.vlad]
+		sources: [S.aislist, S.aiblockYt, S.slopblock]
 	},
 	{
 		check: 'Why an item is hidden',
@@ -77,7 +84,7 @@ export const COMPARISON: { check: string; common: string; colander: string; sour
 		colander: 'Every hidden item says which signals agreed',
 		sources: [S.aislist, S.aiblockYt, S.shield]
 	},
-	{ check: 'Undo', common: 'Varies', colander: 'One click, on the item and in the popup', sources: [S.deslop, S.vlad, S.shield] },
+	{ check: 'Undo', common: 'Varies', colander: 'One click, on the item and in the popup', sources: [S.deslop, S.shield] },
 	{
 		check: 'Creator appeals',
 		common: 'Rare',

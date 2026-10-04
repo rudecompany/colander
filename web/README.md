@@ -46,7 +46,7 @@ Variables are declared in `src/env.ts` and inlined at build time.
 | `PUBLIC_EXTENSION_ID` | empty | Chrome extension ID that receives `colander:plan-token` and `colander:reviewer-token` messages. When empty, the account page reports the extension as not installed. |
 | `PUBLIC_STORE_URL` | `https://chromewebstore.google.com/search/Colander` | Where every Add to Chrome button points. |
 | `COLANDER_API` | `http://localhost:8787` | Dev only: where `vite dev` proxies `/v1`. |
-| `COLANDER_BUILD_API` | empty | Build only: an API origin, such as `http://127.0.0.1:8787`, to read `/v1/stats` and the latest decisions from at build. Pages prerender with those numbers and their time, then refresh them in place. Without it, live numbers appear once the page loads. |
+| `COLANDER_BUILD_API` | empty | Build only: an API origin, such as `http://127.0.0.1:8787`, to read `/v1/stats` and the latest decisions from at build. Pages prerender with those numbers and their time, then refresh them in place. Without it, live numbers appear once the page loads, and the build prints a warning: set it for every production build. |
 
 ## Develop
 
@@ -67,6 +67,23 @@ pnpm -C web build            # checks the generated in-page tokens, then writes 
 
 `scripts/lint-tokens.ts` fails on a hex color, `Intl.DateTimeFormat` or a locale date string anywhere in `src/`: colors are tokens and dates are formats from `@colander/shared`.
 
+## Performance budget
+
+`tests/budget.spec.ts` measures the production build the tests serve, and fails when a page goes over.
+
+| Limit | Value |
+| --- | --- |
+| Requests on `/` | At most 40 |
+| Images on `/` | The favicon and the 8 demo feed thumbnails only, about 100 KB in all |
+| JavaScript, every route | At most 110 KB gzip |
+| CSS on `/` | At most 24 KB gzip |
+| Transfer on `/` | At most 300 KB with brotli |
+| Landing length (`landing.spec.ts`) | At most 8,200 px at 1440 and 12,500 px at 390 |
+
+The demo feed thumbnails are AI-generated illustrations (`packages/shared/src/assets/demo`), and every picture of the demo feed says so: "Thumbnails are AI-generated illustrations."
+They stay files and are never inlined into the JavaScript.
+`@colander/shared` is marked side-effect free, so a page loads only the components it uses, and modules that two or more pages share travel in one `common` chunk (`vite.config.ts`).
+
 ## Tests
 
 ```sh
@@ -79,7 +96,9 @@ A shared fixture fails any test that logs a page error or a CSP violation.
 
 | Spec | Covers |
 | --- | --- |
-| `landing.spec.ts` | Hero, the demo following the strictness table and Pause, the phone hero, the menu sheet, the live log preview |
+| `landing.spec.ts` | Hero, the demo following the strictness table and Pause, the badge counting hidden and collapsed items, a recreated feed per platform tab, the open popover drawn in its final state on load, keyboard focus through Why and Pause, the thumbnail disclosure, the length budget, the phone hero, the menu sheet, the live log preview |
+| `definition.spec.ts` | The strictness table fits the reading measure and stacks by level on phones |
+| `budget.spec.ts` | The performance budget above |
 | `source.spec.ts` | Source pages for all five verdicts, Not rated, unknown platforms, no support links |
 | `appeal.spec.ts` | Start an appeal, copy the code, Verify, every status, missing secret |
 | `log.spec.ts` | Platform and verdict filters, address sync, load more with the cursor |
@@ -88,8 +107,8 @@ A shared fixture fails any test that logs a page error or a CSP violation.
 | `support.spec.ts` | Donation body and redirect, custom amounts and limits, `503 billing_unavailable`, closed payment |
 | `console.spec.ts` | Keyboard queue, evidence, decision body and CSRF header, curator limits (large sources, appeals in review) and `403 staff_required`, AI evidence before Slop and `400 ai_evidence_required` |
 | `a11y.spec.ts` | axe WCAG 2.2 A and AA rules on every page, light and dark |
-| `brand.spec.ts` | The vocabulary table's "Not" words and exclamation marks never appear, nothing is below 12 px, controls are at least 32 px, nothing spills out of a card |
-| `reflow.spec.ts` | No page scrolls sideways or spills out of a card at 390 and 320 px |
+| `brand.spec.ts` | The vocabulary table's "Not" words and exclamation marks never appear, nothing is below 12 px (figure labels as rendered too), controls are at least 32 px, nothing spills out of a card |
+| `reflow.spec.ts` | No page scrolls sideways or spills out of a card at 390 and 320 px, and figure labels stay at 12 px and up |
 
 The committed screenshots in `screenshots/` are 1440 and 390 px wide, light and dark, reduced to 256 colors to keep the repository small.
 `pnpm -C web screenshots` writes full-color ones.

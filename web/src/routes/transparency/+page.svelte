@@ -64,7 +64,8 @@
 		{#if !stats && live.failed}
 			<Notice tone="error" title="Live numbers could not load"><p>Please try again in a moment.</p></Notice>
 		{:else if !stats}
-			<Loading />
+			<!-- The numbers' space is held while they load, so the sections below never jump. -->
+			<div class="reserve"><Loading /></div>
 		{:else}
 			<div class="cells uin-card">
 				<div class="cell"><StatCell size="lg" label="Sources on the list" value={total} reserve={6} /></div>
@@ -76,7 +77,7 @@
 				</div>
 			</div>
 
-			<div class="two">
+			<div class="two even">
 				<section class="uin-card uin-card-lg uin-card-pad" aria-labelledby="by-title">
 					<h3 class="cl-title" id="by-title">Sources by verdict</h3>
 					<VerdictTally counts={stats.sources} layout="rows" {perDot} />
@@ -217,6 +218,21 @@
 	.side {
 		display: grid;
 		gap: 24px;
+	}
+	.reserve {
+		min-height: 420px;
+	}
+	@media (max-width: 1023px) {
+		.reserve {
+			min-height: 940px;
+		}
+	}
+	/* The verdict card and the two beside it end on one line. */
+	.two.even {
+		align-items: stretch;
+	}
+	.even .side {
+		grid-template-rows: auto 1fr;
 	}
 	/* The 50-dot meters shrink with the card instead of pushing past it on phones. */
 	.two :global(.tally-rows) {

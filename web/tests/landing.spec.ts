@@ -16,12 +16,13 @@ test('landing explains the product and the hero demo follows the strictness tabl
 	const frame = page.locator('.frame-desk');
 	const feed = frame.locator('colander-ui');
 	await expect(frame.getByRole('dialog', { name: 'Why this is hidden' })).toBeVisible();
-	await expect(frame.getByText('2 hidden on this page')).toBeAttached();
+	// The badge counts hidden and collapsed items, as the extension's toolbar badge does.
+	await expect(frame.getByText('3 hidden on this page', { exact: true })).toBeAttached();
 	await expect(feed.getByText('Tide pools at low tide, a field guide')).toHaveCount(1);
 
 	const control = page.locator('.control');
 	await control.getByRole('radio', { name: 'No AI' }).click();
-	await expect(frame.getByText('4 hidden on this page')).toBeAttached();
+	await expect(frame.getByText('4 hidden on this page', { exact: true })).toBeAttached();
 	await expect(feed.getByText('Tide pools at low tide, a field guide')).toHaveCount(0);
 	// The docked popup's control follows the one under the frame.
 	await expect(frame.getByRole('radio', { name: 'No AI' })).toHaveAttribute('aria-checked', 'true');
@@ -64,4 +65,107 @@ test('the header menu traps focus, closes on Escape and returns focus to Menu', 
 	await page.keyboard.press('Escape');
 	await expect(sheet).toBeHidden();
 	await expect(menu).toBeFocused();
+});
+
+test('the open popover is drawn in its final state on load, and motion is only for changes', async ({ page }) => {
+	await page.setViewportSize({ width: 1440, height: 900 });
+	await mockApi(page);
+	await page.goto('/');
+	await page.waitForLoadState('networkidle');
+	const host = page.locator('.frame-desk colander-ui');
+	const running = () => host.evaluate((h) => h.shadowRoot!.getAnimations().length);
+	expect(await host.evaluate((h) => h.shadowRoot!.querySelector('#cl-pop-6')!.className)).toBe('cl-pop');
+	expect(await running()).toBe(0);
+	// A resize that hides and shows the frame does not replay anything.
+	await page.setViewportSize({ width: 390, height: 844 });
+	await page.setViewportSize({ width: 1440, height: 900 });
+	expect(await running()).toBe(0);
+});
+
+test('the hero Why popover takes focus, keeps it and hands it back on Escape', async ({ page }) => {
+	await page.setViewportSize({ width: 1440, height: 900 });
+	await mockApi(page);
+	await page.goto('/');
+	const frame = page.locator('.frame-desk');
+	const why = frame.locator('[data-k="why-6"]');
+	await expect(why).toHaveAttribute('aria-expanded', 'true');
+	await expect(why).toHaveAttribute('aria-controls', 'cl-pop-6');
+	const active = () =>
+		page.evaluate(() => {
+			let a = document.activeElement;
+			while (a?.shadowRoot?.activeElement) a = a.shadowRoot.activeElement;
+			return a?.getAttribute('data-k') ?? a?.textContent?.trim() ?? null;
+		});
+
+	await page.mouse.click(8, 300);
+	await expect(frame.getByRole('dialog', { name: 'Why this is hidden' })).toHaveCount(0);
+	await expect(why).toHaveAttribute('aria-expanded', 'false');
+	await why.focus();
+	await page.keyboard.press('Enter');
+	await expect.poll(active).toBe('pop-show-6');
+	// Tab stays inside the popover.
+	for (const key of ['pop-allow-6', 'pop-notslop-6', 'pop-show-6']) {
+		await page.keyboard.press('Tab');
+		await expect.poll(active).toBe(key);
+	}
+	await page.keyboard.press('Escape');
+	await expect(frame.getByRole('dialog', { name: 'Why this is hidden' })).toHaveCount(0);
+	await expect.poll(active).toBe('why-6');
+});
+
+test('pausing from the popup with the keyboard moves focus to Resume, and back', async ({ page }) => {
+	await page.setViewportSize({ width: 1440, height: 900 });
+	await mockApi(page);
+	await page.goto('/');
+	const frame = page.locator('.frame-desk');
+	await frame.getByRole('button', { name: 'Pause' }).focus();
+	await page.keyboard.press('Enter');
+	await expect(page.getByRole('menuitem', { name: 'Pause on this site' })).toBeFocused();
+	await page.keyboard.press('Enter');
+	await expect(frame.getByRole('button', { name: 'Resume' })).toBeFocused();
+	await page.keyboard.press('Enter');
+	await expect(frame.getByRole('button', { name: 'Pause' })).toBeFocused();
+});
+
+test('each platform tab recreates its own feed', async ({ page }) => {
+	await page.setViewportSize({ width: 1440, height: 900 });
+	await mockApi(page);
+	await page.goto('/');
+	const frame = page.locator('.frame-desk');
+	const layout = () => frame.locator('colander-ui').evaluate((h) => h.shadowRoot!.querySelector('.feed')!.className);
+	for (const [tab, cls, domain] of [
+		['TikTok', 'feed-swipe', 'tiktok.com'],
+		['Instagram', 'feed-square', 'instagram.com'],
+		['Facebook', 'feed-post', 'facebook.com'],
+		['YouTube', 'feed-grid', 'youtube.com']
+	]) {
+		await page.getByRole('tab', { name: tab }).click();
+		await expect.poll(layout).toContain(cls);
+		await expect(frame.getByText(`Active on ${domain}`)).toBeVisible();
+	}
+	// TikTok's For You shows one video at a time, with its action rail.
+	await page.getByRole('tab', { name: 'TikTok' }).click();
+	expect(await frame.locator('colander-ui').evaluate((h) => h.shadowRoot!.querySelectorAll('.reel').length)).toBe(1);
+});
+
+test('the landing page stays within its length budget', async ({ page }) => {
+	await mockApi(page);
+	for (const [width, cap] of [
+		[1440, 8200],
+		[390, 12500]
+	]) {
+		await page.setViewportSize({ width, height: 900 });
+		await page.goto('/');
+		await page.waitForLoadState('networkidle');
+		expect(await page.evaluate(() => document.documentElement.scrollHeight), `height at ${width}`).toBeLessThanOrEqual(cap);
+	}
+});
+
+test('every picture of the demo feed says its thumbnails are AI-generated', async ({ page }) => {
+	await page.setViewportSize({ width: 1440, height: 900 });
+	await mockApi(page);
+	await page.goto('/');
+	for (const where of ['.caption', '.after', '.bento-note']) {
+		await expect(page.locator(where)).toContainText('Thumbnails are AI-generated illustrations.');
+	}
 });

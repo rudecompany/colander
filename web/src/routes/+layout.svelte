@@ -33,9 +33,17 @@
 <Toaster />
 
 <style>
+	/* At least a screen tall under the header, so the footer never starts in the first view and
+	   jumps while a page loads its data (the CLS budget is 0.02). */
 	main {
 		display: block;
 		flex: 1;
+		min-height: calc(100dvh - 64px);
+	}
+	@media (max-width: 1023px) {
+		main {
+			min-height: calc(100dvh - 56px);
+		}
 	}
 	main:focus {
 		outline: none;

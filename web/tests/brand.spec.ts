@@ -1,7 +1,7 @@
 // The spec's brand rules on every page: the vocabulary table's "Not" words never appear, copy has no exclamation
 // marks, nothing is set below 12 px, and controls are at least 32 px tall (inline text links aside). A segmented
 // control is measured by its track, and inert pictures of the product (the landing's bento visuals) are not controls.
-import { test, expect, layoutSpills } from './fixtures.ts';
+import { test, expect, layoutSpills, smallSvgText } from './fixtures.ts';
 import { PAGES, mockApi } from './mocks.ts';
 
 // The "Not" column of the vocabulary table in docs/product-requirements.md.
@@ -43,6 +43,7 @@ for (const [path, mocks] of PAGES) {
 			return { small, short };
 		});
 		expect(small, 'text below 12 px').toEqual([]);
+		expect(await smallSvgText(page), 'figure text below 12 px as rendered').toEqual([]);
 		expect(short, 'controls under 32 px').toEqual([]);
 		expect(await layoutSpills(page), 'layout spills').toEqual([]);
 	});

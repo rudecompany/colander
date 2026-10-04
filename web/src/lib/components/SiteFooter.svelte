@@ -97,7 +97,7 @@ while their case is open.
 		display: grid;
 		justify-items: center;
 		gap: 24px;
-		padding-block: var(--cl-s9);
+		padding-block: var(--cl-s8);
 		text-align: center;
 	}
 	.cta h2 {
@@ -114,7 +114,7 @@ while their case is open.
 		display: grid;
 		grid-template-columns: repeat(4, minmax(0, 1fr));
 		gap: 24px;
-		padding-block: var(--cl-s7) var(--cl-s6);
+		padding-block: var(--cl-s6) var(--cl-s5);
 	}
 	nav h2 {
 		margin-bottom: 12px;
@@ -168,7 +168,7 @@ while their case is open.
 	@media (max-width: 639px) {
 		.cta-in {
 			justify-items: stretch;
-			padding-block: var(--cl-s8);
+			padding-block: var(--cl-s7);
 		}
 		.desktop {
 			display: none;
