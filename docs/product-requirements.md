@@ -183,7 +183,7 @@ As of early October 2026. AI Content Shield (20,000+ Chrome users) and AiBlock (
 3. Give creators due process. Reviews today run through GitHub issues and Discord, with no appeal path outside Kagi.
 4. Do not lead with a classifier. Those tools have the fewest users and carry the detector error rates described above.
 5. Fund it. Nearly every tool is an unfunded volunteer project, which limits review capacity and platform upkeep.
-6. Start with a seed list. AiSList is MIT licensed, so it can seed YouTube coverage with attribution, after re-scoring against this spec's definition.
+6. Start from licensed seed lists as review leads. A list whose license allows commercial use can put sources in the review queue, and a reviewer judges each one against this spec's definition.
 7. Pick a distinct name. At least two extensions are already called "AI Slop Blocker", and SlopBlock, SlopStop, DeSlop and Slop Evader are taken.
 
 ## Personas and user experience
@@ -429,7 +429,7 @@ Lists reach the device on the left and tags leave it on the right. The services 
 | --- | --- | --- | --- |
 | Extension framework | [WXT](https://github.com/wxt-dev/wxt) | MIT | Builds Manifest V3 for Chrome and later Firefox and Edge. |
 | Provenance reading | [c2pa-web](https://opensource.contentauthenticity.org/docs/c2pa-js/packages/c2pa-web/) from the [c2pa-js](https://github.com/contentauth/c2pa-js) project | MIT | Reads Content Credentials in the browser. Its inline build embeds the WebAssembly, which fits the no-remote-code rule. |
-| YouTube seed list | [AiSList](https://aisloplist.com/) | MIT | 12,826 channels. Use with attribution and re-score each entry, since its bar is "AI channel", not this spec's definition. |
+| YouTube seed lists | Licensed community lists | CC0, CC BY 4.0, MIT or a written grant only | Review leads only, never a verdict on their own, since most lists use a looser "AI channel" bar. Never name a list on public pages; credit only where a license requires it. |
 | Site seed list for 1.1 | [HUGE AI Blocklist](https://github.com/laylavish/uBlockOrigin-HUGE-AI-Blocklist) | License file present, type to confirm | 1,000+ curated domains. Confirm terms before bundling. |
 | Crowdsourcing design | [SponsorBlock](https://github.com/ajayyy/sponsorblockserver) | Extension GPL-3.0, server AGPL-3.0-only, [database CC BY-NC-SA 4.0](https://sponsor.ajay.app/database) | Study the design. Do not copy code or data into a commercial product without meeting those terms or getting permission. |
 | Consensus method | [Community Notes scoring](https://github.com/twitter/communitynotes) | Code is published, license to confirm | Reimplement bridging from the published method. Confirm the license before reusing code. |
@@ -689,7 +689,7 @@ The gravest risk is hiding a real creator's work by mistake, and most of the des
 | Review capacity | Reports outpace staff and the 7-day appeal target slips. | Triage by audience size, volunteer curators with spot audits, and the funding plan above. |
 | Privacy and regulation | Install IDs and tags are pseudonymous personal data under laws such as the GDPR. Verdicts concern identifiable creators. Child profiles touch children's privacy rules. | Data minimization as specified. A data protection impact assessment before public beta. Child profiles stored on the device only. Retention limits. |
 | Funding credibility | Any hint that money buys removal from a list would end user trust. | The independence rules, and published funding sources. |
-| Seed list quality | Imported lists use a looser bar of "AI channel". | Every imported entry is re-scored. Until reviewed, an imported entry can be Likely slop at most. |
+| Seed list quality | Imported lists use a looser bar of "AI channel". | An imported entry is a review lead only and never produces a verdict on its own. |
 | Reliance on platform labels | Platforms can change, drop or misapply AI labels. | A label only establishes AI-made, never Slop. |
 
 ### The legal picture in the United States
@@ -707,7 +707,7 @@ Bands are equal in width and not to scale. The dates are targets, and a gate tha
 | Phase | What ships | Gate to pass before the next phase |
 | --- | --- | --- |
 | 0. Foundations | Legal review of labels and platform terms. A hand-labeled calibration set of 1,000 sources. Name clearance. A YouTube adapter prototype. | Counsel sign-off. Thresholds calibrated against the labeled set. |
-| 1. Private beta | YouTube only, for 500 testers. Core list seeded from re-scored AiSList entries. Tagging and reporting. | Wrong calls at or under 1 in 100 on audit. |
+| 1. Private beta | YouTube only, for 500 testers. Core list built from reviewed leads, including licensed seed lists. Tagging and reporting. | Wrong calls at or under 1 in 100 on audit. |
 | 2. Public beta | TikTok and Instagram added. Appeals and the decision log go live. Donations open. | Median appeal within 7 days. A staged brigading attempt is caught. |
 | 3. Version 1.0 | Facebook added. Plus plan. Chrome Web Store launch. | The goals in Requirements are met on the monthly audit. |
 | 4. Version 1.1 | Articles and search results. Family plan. Firefox and Edge. | Set at the 1.0 review. |

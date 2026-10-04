@@ -1,6 +1,6 @@
 // Build configuration (docs/contracts.md section 11). Values are fixed at build time.
 
-/** The development public key, the same bytes as server/testdata/dev-signing.pub. */
+/** The development public key, the same bytes as testdata/dev-signing.pub. */
 export const DEV_PUBLIC_KEY = '/M2DK/bv47lip44F239fPlUbehIkyv3xaF6OJlkkZPY=';
 
 const trim = (s: string) => s.replace(/\/+$/, '');

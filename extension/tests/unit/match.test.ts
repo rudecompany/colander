@@ -2,7 +2,7 @@
 import { describe, expect, it } from 'vitest';
 import { STRICTNESS, VERDICTS, ACTION_TABLE, type Strictness, type TagVerdict, type Verdict } from '@colander/shared/verdicts';
 import { decide, type CardFacts, type MatchContext } from '../../src/lib/match';
-import type { ListHit } from '../../src/lib/list';
+import type { ListHit } from '@colander/shared/list';
 import type { Topic } from '../../src/lib/settings';
 
 const hit = (verdict: Verdict): ListHit => ({

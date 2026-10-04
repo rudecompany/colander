@@ -1,5 +1,5 @@
-// Serves build/ the way the Go server does: a file, then {path}.html, then {path}/index.html,
-// then the SPA fallback 200.html. The API is mocked per test with page.route.
+// Serves build/ with the lookup web/README.md asks of a host: a file, then {path}.html, then
+// {path}/index.html, then the SPA fallback 200.html. The API is mocked per test with page.route.
 import { createReadStream, statSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { extname, join, normalize } from 'node:path';

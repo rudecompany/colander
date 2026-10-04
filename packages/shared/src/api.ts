@@ -1,4 +1,4 @@
-// Wire types for the HTTP API in docs/contracts.md section 6. Keep in step with the Go server.
+// Wire types for the HTTP API in docs/contracts.md section 6. Keep in step with api/src/routes.
 import type { Platform, Signal, SlopType, TagVerdict, Test, Verdict } from './verdicts';
 
 export type ISODate = string;
@@ -71,7 +71,7 @@ export interface Source {
 	tests: Test[];
 	large: boolean;
 	imported: boolean;
-	/** Seed list attribution and license when the source came from an imported list, e.g. "AiSList (CC BY-NC 4.0), blocklist". */
+	/** Always null: public responses never name a data source. Kept for wire compatibility. */
 	attribution: string | null;
 	appeal_open: boolean;
 	updated_at: ISODate | null;

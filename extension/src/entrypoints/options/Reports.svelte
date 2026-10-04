@@ -6,7 +6,7 @@
 	import { PLATFORM_NAME } from '@colander/shared/verdicts';
 	import RefreshCw from '@lucide/svelte/icons/refresh-cw';
 	import { SITE } from '../../lib/env';
-	import { idSegment } from '../../lib/ids';
+	import { idSegment } from '@colander/shared/ids';
 	import { K } from '../../lib/settings';
 	import Card from '../../ui/Card.svelte';
 	import Section from '../../ui/Section.svelte';

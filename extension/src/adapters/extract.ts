@@ -1,7 +1,7 @@
 // Reads card facts out of the DOM with a declarative surface description. Runs in content
 // scripts (and in unit tests under jsdom); everything here is synchronous and allocation-light.
 import type { Platform } from '@colander/shared/verdicts';
-import { canonicalItem, canonicalSource, itemFromUrl, sourceFromUrl } from '../lib/ids';
+import { canonicalItem, canonicalSource, itemFromUrl, sourceFromUrl } from '@colander/shared/ids';
 import type { CardFacts } from '../lib/match';
 import type { Extractor, PageRule, Surface, TextProbe } from './schema';
 

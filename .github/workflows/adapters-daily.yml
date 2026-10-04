@@ -5,7 +5,8 @@
 # The run fails when any surface finds no cards, and when a surface whose platform has a storage
 # state secret is refused by the site: with credentials configured, every surface must be checked.
 # Surfaces without credentials are skipped as unverified; the job summary lists every surface and
-# each unverified one gets a warning annotation, so the gap is visible every day.
+# each unverified one gets a warning annotation, so the gap is visible every day. A failed run opens
+# an issue, or comments on the open one, so a broken adapter cannot go unnoticed.
 name: Adapters daily
 
 on:
@@ -15,15 +16,16 @@ on:
 
 permissions:
   contents: read
+  issues: write
 
 jobs:
   live:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: pnpm
@@ -49,8 +51,12 @@ jobs:
       # tests/live/summary-reporter.ts writes the table to $GITHUB_STEP_SUMMARY and the warnings.
       - run: pnpm -C extension test:live
       - if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: adapters-live-results
           path: extension/test-results
           retention-days: 14
+      - if: failure()
+        uses: ./.github/actions/report-failure
+        with:
+          title: Adapters daily check failing

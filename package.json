@@ -1,10 +1,14 @@
 {
   "name": "colander",
   "private": true,
+  "type": "module",
   "packageManager": "pnpm@10.32.1",
   "scripts": {
     "build": "pnpm -r build",
     "test": "pnpm -r test",
     "check": "pnpm -r check"
+  },
+  "devDependencies": {
+    "wrangler": "4.147.0"
   }
 }

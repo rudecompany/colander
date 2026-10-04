@@ -39,7 +39,7 @@ Build configuration (contract section 11) comes from the environment at build ti
 | --- | --- | --- |
 | `WXT_COLANDER_API` | `http://localhost:8787` | Server origin for every API call. |
 | `WXT_COLANDER_SITE` | the API origin | Website origin for links and `externally_connectable`. |
-| `WXT_COLANDER_PUBLIC_KEYS` | the key in `server/testdata/dev-signing.pub` | Trusted Ed25519 public keys, comma-separated base64. |
+| `WXT_COLANDER_PUBLIC_KEYS` | the key in `testdata/dev-signing.pub` | Trusted Ed25519 public keys, comma-separated base64. |
 
 `pnpm build:e2e` (`wxt build --mode e2e`) differs from the release build in one way only: it lists the platform hosts in `host_permissions`, so Chrome grants them at install.
 Automation cannot click Chrome's site access prompt, and asking for a permission that is already granted answers at once, so the welcome and Platforms flows run unchanged in tests.
@@ -196,7 +196,7 @@ When two active surfaces could match the same element, write the selectors so th
 | `re` | regex? | Applied to the value; capture group 1 (or the whole match) becomes the value. |
 | `as` | `url`, `id` or `text`? | `url` parses the value as a link with the contract 2.2 rules for the platform; `id` canonicalizes a raw ID; `text` keeps it, whitespace collapsed. Default `url` when reading `href`, `id` otherwise. |
 
-Canonicalization is code, not configuration, and follows contract 2.2 exactly (`src/lib/ids.ts`, table-tested in `tests/unit/ids.test.ts`): YouTube channel IDs keep their case and handles are lowercased with `@`; TikTok usernames are lowercased with `@`; Instagram usernames are lowercased without `@`; Facebook numeric IDs or lowercased vanity names; item IDs keep their case everywhere, and Shorts IDs are video IDs.
+Canonicalization is code, not configuration, and follows contract 2.2 exactly (`packages/shared/src/ids.ts`, shared with the server and table-tested in `packages/shared/test/ids.test.ts`): YouTube channel IDs keep their case and handles are lowercased with `@`; TikTok usernames are lowercased with `@`; Instagram usernames are lowercased without `@`; Facebook numeric IDs or lowercased vanity names; item IDs keep their case everywhere, and Shorts IDs are video IDs.
 
 ### Text probe
 

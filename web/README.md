@@ -2,7 +2,7 @@
 
 The public website, account pages and review console for Colander.
 It is a SvelteKit 3 app (Svelte 5 runes, TypeScript strict) built with `@sveltejs/adapter-static` into `web/build`.
-The Go server serves that folder and the API from the same origin, so every page calls relative `/v1/...` URLs.
+The Worker in `api/` serves that folder and the API from the same origin, so every page calls relative `/v1/...` URLs.
 
 ## Routes
 
@@ -36,6 +36,11 @@ Support and donation links never appear on `/s/*` or `/appeal/*` pages, includin
 - Each page carries its Content Security Policy as a `<meta http-equiv>` tag with script hashes.
   The server may also send `frame-ancestors 'none'` as a header, which a meta tag cannot carry.
 
+On Cloudflare (`api/wrangler.jsonc`), Workers Static Assets serves `build/` with `html_handling: auto-trailing-slash`, so `/definition` serves `definition.html`.
+`static/_redirects` rewrites `/s/*` and `/appeal/*` to the `200.html` shell with status 200.
+Unknown paths get `404.html` with status 404 (`not_found_handling: 404-page`); the `postbuild` script copies `200.html` to `404.html`, so the client still renders the 404 page.
+`static/_headers` adds HSTS, `nosniff`, `Referrer-Policy`, `X-Frame-Options: DENY`, a CSP header with only `frame-ancestors`, `object-src` and `base-uri`, and immutable caching for `/_app/immutable/*`.
+
 ## Environment
 
 Variables are declared in `src/env.ts` and inlined at build time.
@@ -50,23 +55,23 @@ Variables are declared in `src/env.ts` and inlined at build time.
 
 ```sh
 pnpm install                 # at the repository root
-pnpm -C web dev              # http://localhost:5173, /v1 proxied to the Go server on :8787
+pnpm -C web dev              # http://localhost:5173, /v1 proxied to wrangler dev on :8787 (make dev)
 ```
 
-Run the server with `COLANDER_DEV=1` so sign-in links are printed to its stdout.
-Set `COLANDER_PUBLIC_URL=http://localhost:5173` on the server so those links open the dev site.
+The Worker runs in dev mode (`COLANDER_DEV=1`), so sign-in links are printed in the `wrangler dev` output.
+Set `PUBLIC_URL=http://localhost:5173` in `api/.dev.vars` so those links open the dev site.
 
 ## Build and check
 
 ```sh
 pnpm -C web check            # svelte-kit sync and svelte-check
-pnpm -C web build            # writes web/build
+pnpm -C web build            # writes web/build, then copies 200.html to 404.html
 ```
 
 ## Tests
 
 ```sh
-pnpm -C web test             # builds, serves build/ like the Go server, runs Playwright in Chromium
+pnpm -C web test             # builds, serves build/ with the lookup above, runs Playwright in Chromium
 pnpm -C web screenshots      # full-page screenshots of every page into web/screenshots
 ```
 

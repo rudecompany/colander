@@ -6,7 +6,7 @@ import defaults from '../adapters/default-config.json';
 import { validateConfig, type AdapterConfig } from '../adapters/schema';
 import * as db from '../lib/db';
 import { SITE, PUBLIC_KEYS } from '../lib/env';
-import { targetKey } from '../lib/ids';
+import { targetKey } from '@colander/shared/ids';
 import type { ActivityEntry, HelloReply, PageCounts, ReportReply, ReportRequest, TagRequest, ToPage, ToWorker } from '../lib/messages';
 import { offered, ORIGINS } from '../lib/platforms';
 import {
@@ -21,7 +21,7 @@ import {
 	type Stats,
 	type Status
 } from '../lib/settings';
-import { CONFIG_CONTEXT, importKeys, verifyEnvelope, verifyPlanToken, type TrustedKey } from '../lib/signing';
+import { CONFIG_CONTEXT, importKeys, verifyEnvelope, verifyPlanToken, type TrustedKey } from '@colander/shared/signing';
 import { setGlobalIcon, setTabIcon } from './icons';
 import { clearList, getStatus, setStatus, syncList } from './listsync';
 import { ApiError, installId, json, request } from './net';
@@ -260,11 +260,15 @@ export async function refreshReports(): Promise<Report[] | null> {
 
 // ---- Plan, trial and settings sync -------------------------------------------------------------
 
+/**
+ * Stores a verified plan token. Every token arrives fresh from the server (website handoff, trial
+ * or refresh), so the plan counts as checked now and the daily refresh starts from here.
+ */
 export async function applyPlanToken(token: string): Promise<boolean> {
 	const p = await verifyPlanToken(token, await keys());
 	if (!p) return false;
 	const ent: Entitlement = { plus: true, trial: p.trial, exp: p.exp };
-	await chrome.storage.local.set({ [K.planToken]: token, [K.entitlement]: ent });
+	await chrome.storage.local.set({ [K.planToken]: token, [K.entitlement]: ent, [K.planCheckedAt]: Date.now() });
 	return true;
 }
 
@@ -304,7 +308,7 @@ export async function refreshEntitlement(): Promise<void> {
 	if (p.trial || Date.now() - ((got[K.planCheckedAt] as number | undefined) ?? 0) < 86_400_000) return;
 	try {
 		const { token } = await json<{ token: string }>(await request('/v1/entitlement/refresh', { body: { token: t } }));
-		if (await applyPlanToken(token)) await chrome.storage.local.set({ [K.planCheckedAt]: Date.now() });
+		await applyPlanToken(token);
 	} catch (e) {
 		if (e instanceof ApiError && e.status === 404 && e.code === 'no_plan') {
 			await chrome.storage.local.remove([K.planToken, K.planCheckedAt]);

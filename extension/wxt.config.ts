@@ -22,7 +22,9 @@ export default defineConfig({
 			name: 'Colander: drain the slop from your feed',
 			short_name: 'Colander',
 			description: 'Hides AI slop on YouTube, TikTok, Instagram and Facebook from shared, signed lists. Every action is explained and reversible.',
-			key: DEV_KEY,
+			// Store packages carry no key: the Chrome Web Store assigns the ID and rejects a key that
+			// is not the item's own (release.yml sets WXT_COLANDER_STORE_BUILD).
+			...(process.env.WXT_COLANDER_STORE_BUILD ? {} : { key: DEV_KEY }),
 			permissions: ['storage', 'alarms', 'sidePanel', 'scripting'],
 			optional_host_permissions: ALL_ORIGINS,
 			externally_connectable: { matches: [`${site}/*`] },

@@ -180,6 +180,13 @@ export async function syncNow(ext: Ext): Promise<Page> {
 	return options;
 }
 
+/**
+ * The list version the Options page shows, as digits. The page groups them like a count, so the
+ * Worker's unix-second sequences read as 1,791,070,723.
+ */
+export const shownSequence = async (options: Page): Promise<string> =>
+	((await options.locator('dl.facts div', { hasText: 'Version' }).locator('dd').textContent()) ?? '').replace(/\D/g, '');
+
 /** A card on the search page. */
 export const card = (page: Page, n: number): Locator => page.locator('ytd-search ytd-video-renderer').nth(n);
 export const chip = (c: Locator) => c.locator('colander-ui[data-kind="chip"]');
