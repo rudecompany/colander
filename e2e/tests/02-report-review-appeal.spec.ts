@@ -3,7 +3,9 @@
 // review, and the upheld appeal clears it.
 import type { Page } from '@playwright/test';
 import { CARD, CHANNEL, REPORTED, SEARCH, card, chip, expect, launch, onboard, signIn, syncNow, test, type Ext } from './harness.ts';
-import { ORIGIN, STAFF, listSequence, logMark, mailsSince, publishedAfter } from './stack.ts';
+import { BASE_URL, LOCAL_ONLY, ORIGIN, STAFF, listSequence, logMark, mailsSince, publishedAfter } from './stack.ts';
+
+test.skip(!!BASE_URL, LOCAL_ONLY);
 
 test.describe.configure({ mode: 'serial' });
 

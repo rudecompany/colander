@@ -11,5 +11,5 @@
     "noEmit": true,
     "lib": ["ES2022", "DOM", "DOM.Iterable"]
   },
-  "include": ["src/**/*.ts", "src/**/*.svelte", "scripts/**/*.ts", "test/**/*.ts"]
+  "include": ["src/**/*.ts", "src/**/*.svelte", "scripts/**/*.ts", "test/**/*.ts", "vitest.config.ts"]
 }

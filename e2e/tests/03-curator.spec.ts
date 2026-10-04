@@ -1,8 +1,10 @@
 // Journey 5: a curator reviews within their limits. The console says up front that large sources
 // and appeals need staff, the server refuses them when forced, and the side panel lets a curator
 // decide a source they are allowed to decide.
-import { CURATOR, ORIGIN } from './stack.ts';
+import { BASE_URL, CURATOR, LOCAL_ONLY, ORIGIN } from './stack.ts';
 import { expect, launch, onboard, signIn, test, type Ext } from './harness.ts';
+
+test.skip(!!BASE_URL, LOCAL_ONLY);
 
 let ext: Ext;
 test.beforeAll(async () => {

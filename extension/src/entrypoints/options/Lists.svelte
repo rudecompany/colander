@@ -11,7 +11,7 @@
 	import Download from '@lucide/svelte/icons/download';
 	import RefreshCw from '@lucide/svelte/icons/refresh-cw';
 	import Upload from '@lucide/svelte/icons/upload';
-	import { itemFromUrl, parseTargetKey, sourceFromUrl, targetKey } from '../../lib/ids';
+	import { itemFromUrl, parseTargetKey, sourceFromUrl, targetKey } from '@colander/shared/ids';
 	import { ORIGINS } from '../../lib/platforms';
 	import { DEFAULT_STATUS, K, withDefaults, type MyListEntry, type Settings, type Status } from '../../lib/settings';
 	import { send, stored } from '../../ui/store.svelte';

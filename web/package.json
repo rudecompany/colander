@@ -9,7 +9,8 @@
   },
   "scripts": {
     "dev": "vite dev",
-    "build": "node ../packages/shared/scripts/gen-inpage-tokens.ts --check && vite build && cp build/200.html build/404.html",
+    "build": "node ../packages/shared/scripts/gen-inpage-tokens.ts --check && vite build",
+    "postbuild": "node -e \"require('node:fs').copyFileSync('build/200.html', 'build/404.html')\"",
     "preview": "vite preview",
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json && node scripts/lint-tokens.ts",
     "test": "playwright test",

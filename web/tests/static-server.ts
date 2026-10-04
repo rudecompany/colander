@@ -1,7 +1,8 @@
-// Serves build/ the way the Go server does: a file, then {path}.html, then {path}/index.html. The
-// client-rendered routes (/s/{platform}/{id}, /appeal/{platform}/{id}, /appeal/status/{id}) get the
-// SPA fallback 200.html; any other path is a real 404, with 404.html or the same 200.html shell,
-// which renders the not-found page. The API is mocked per test with page.route.
+// Serves build/ with the lookup web/README.md asks of a host, as Workers Static Assets does: a file,
+// then {path}.html, then {path}/index.html. The client-rendered routes (/s/{platform}/{id},
+// /appeal/{platform}/{id}, /appeal/status/{id}) get the SPA fallback 200.html; any other path is a
+// real 404 with 404.html, a copy of the same shell, which renders the not-found page. The API is
+// mocked per test with page.route.
 import { createReadStream, statSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { extname, join, normalize } from 'node:path';

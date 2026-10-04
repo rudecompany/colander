@@ -355,7 +355,6 @@ Uses a reviewer token sent by the website's account page through externally_conn
 					<dl class="facts">
 						<div><dt>Taggers</dt><dd>{fmtNum(s.evidence.taggers)}</dd></div>
 						<div><dt>AI share</dt><dd>{s.evidence.ai_item_share == null ? 'Not known' : `${fmtPct(s.evidence.ai_item_share)} of ${fmtNum(s.evidence.items_seen)}`}</dd></div>
-						<div><dt>Uploads a day</dt><dd>{s.evidence.uploads_per_day ?? 'Not known'}</dd></div>
 					</dl>
 				</Card>
 

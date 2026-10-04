@@ -1,5 +1,7 @@
 // The running stack from Node's side: paths, the server origin, its log, and plain API calls.
-// Global setup starts the server and puts its origin and a staff session in the environment.
+// Global setup starts the Worker under `wrangler dev` and puts its origin and a staff session in
+// the environment. With COLANDER_E2E_BASE_URL it starts nothing and the specs that need the local
+// stack (dev mail, the seeded data, the server log) skip themselves.
 import { expect } from '@playwright/test';
 import { readFileSync, statSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -13,14 +15,27 @@ export const EXT_DIR = resolve(RUN, 'extension/chrome-mv3-e2e');
 export const ORIGIN = process.env.COLANDER_E2E_ORIGIN ?? '';
 const origin = () => process.env.COLANDER_E2E_ORIGIN!;
 
+/** A deployed origin to test instead of the local stack, such as https://staging.getcolander.com. */
+export const BASE_URL = process.env.COLANDER_E2E_BASE_URL?.replace(/\/+$/, '') ?? '';
+/** Why the journeys skip against a deployed origin. */
+export const LOCAL_ONLY = 'needs the local stack: the seeded data, dev mail and the server log';
+
 export const STAFF = 'rae@colander.test';
 export const CURATOR = 'sam@colander.test';
 
 /** The server log as bytes written so far; pass it to `mailsSince` to read only what follows. */
 export const logMark = () => statSync(LOG).size;
-export const serverLog = () => readFileSync(LOG, 'utf8');
+/**
+ * What the Worker logged. `wrangler dev` adds a `[wrangler:info] <method> <path>` line per request,
+ * which production never writes (invocation logs are off), so those lines are left out.
+ */
+export const serverLog = () =>
+	readFileSync(LOG, 'utf8')
+		.split('\n')
+		.filter((l) => !l.startsWith('[wrangler:'))
+		.join('\n');
 
-/** Emails the dev server printed instead of sending (COLANDER_DEV=1), oldest first. */
+/** Emails the Worker printed instead of sending (COLANDER_DEV=1), oldest first. */
 export function mailsSince(mark: number): { to: string; subject: string; body: string }[] {
 	const text = readFileSync(LOG).subarray(mark).toString('utf8');
 	return text
@@ -52,6 +67,21 @@ export interface Reply<T> {
 	headers: Headers;
 }
 
+/**
+ * One request to the origin under test, with the Cloudflare Access service token when
+ * CF_ACCESS_CLIENT_ID and CF_ACCESS_CLIENT_SECRET are set (staging sits behind Access).
+ */
+export function http(path: string, init: RequestInit = {}): Promise<Response> {
+	const headers = new Headers(init.headers);
+	const id = process.env.CF_ACCESS_CLIENT_ID;
+	const secret = process.env.CF_ACCESS_CLIENT_SECRET;
+	if (id && secret) {
+		headers.set('CF-Access-Client-Id', id);
+		headers.set('CF-Access-Client-Secret', secret);
+	}
+	return fetch(`${origin()}${path}`, { ...init, headers });
+}
+
 /** One API call from Node. Non-GET calls carry the CSRF header that cookie routes require. */
 export async function api<T = any>(path: string, init: { method?: string; body?: unknown; cookie?: string; auth?: string } = {}): Promise<Reply<T>> {
 	const method = init.method ?? (init.body === undefined ? 'GET' : 'POST');
@@ -60,7 +90,7 @@ export async function api<T = any>(path: string, init: { method?: string; body?:
 	if (method !== 'GET') headers['X-Colander-CSRF'] = '1';
 	if (init.cookie) headers.Cookie = init.cookie;
 	if (init.auth) headers.Authorization = init.auth;
-	const res = await fetch(`${origin()}${path}`, { method, headers, body: init.body === undefined ? undefined : JSON.stringify(init.body) });
+	const res = await http(path, { method, headers, body: init.body === undefined ? undefined : JSON.stringify(init.body) });
 	const text = await res.text();
 	return { status: res.status, json: (text ? JSON.parse(text) : null) as T, headers: res.headers };
 }
@@ -85,7 +115,7 @@ export const asStaff = <T = any>(path: string, init: { method?: string; body?: u
 
 export const listSequence = async () => (await api<{ list_sequence: number }>('/v1/stats')).json.list_sequence;
 
-/** Waits until the server publishes a list sequence after `seq` (at most one publication per 10 seconds). */
+/** Waits until the Worker publishes a list sequence after `seq` (at most one publication per 10 seconds). */
 export async function publishedAfter(seq: number): Promise<number> {
 	await expect.poll(listSequence, { timeout: 20_000, message: 'a new list publication' }).toBeGreaterThan(seq);
 	return listSequence();

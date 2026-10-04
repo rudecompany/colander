@@ -1,6 +1,6 @@
 // HTTP to the Colander API (docs/contracts.md section 6). The server sends CORS headers, so
 // the extension needs no host permission for it. No request carries a page URL (section 8).
-import { b64url } from '../lib/bytes';
+import { b64url } from '@colander/shared/bytes';
 import { API } from '../lib/env';
 import { K } from '../lib/settings';
 

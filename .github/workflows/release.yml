@@ -1,0 +1,320 @@
+# Releases. release-please keeps one release PR open per component (release-please-config.json);
+# merging it is the human approval. Its draft releases are then:
+#   platform  (vX.Y.Z)            deployed to production once staging has passed the same commit,
+#                                 smoke-tested, rolled back automatically on failure, published
+#   extension (extension-vX.Y.Z)  built for the store with provenance, attached and published, then
+#                                 submitted to the Chrome Web Store as a staged publish
+name: Release
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  release-please:
+    name: release-please
+    # Skips, and with it every release job, until the release App is set up (docs/deploy.md).
+    if: vars.RELEASE_APP_CLIENT_ID != ''
+    runs-on: ubuntu-latest
+    # release-please works through the GitHub App token, so the workflow token needs nothing.
+    permissions: {}
+    concurrency:
+      group: release-please
+      cancel-in-progress: false
+    outputs:
+      platform: ${{ steps.release.outputs.release_created }}
+      platform_tag: ${{ steps.release.outputs.tag_name }}
+      platform_sha: ${{ steps.release.outputs.sha }}
+      extension: ${{ steps.release.outputs['extension--release_created'] }}
+      extension_tag: ${{ steps.release.outputs['extension--tag_name'] }}
+      extension_sha: ${{ steps.release.outputs['extension--sha'] }}
+    steps:
+      # The App token, unlike the workflow token, lets CI run on the release PRs it opens.
+      - uses: actions/create-github-app-token@v3
+        id: app
+        with:
+          client-id: ${{ vars.RELEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
+          permission-issues: write
+      - uses: googleapis/release-please-action@v5
+        id: release
+        with:
+          token: ${{ steps.app.outputs.token }}
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+
+  deploy-production:
+    name: deploy-production
+    needs: release-please
+    if: needs.release-please.outputs.platform == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    environment:
+      name: production
+      url: https://getcolander.com
+    concurrency:
+      group: production
+      cancel-in-progress: false
+    permissions:
+      contents: write # publishes the draft release
+      deployments: read
+      actions: read
+    env:
+      TAG: ${{ needs.release-please.outputs.platform_tag }}
+      SHA: ${{ needs.release-please.outputs.platform_sha }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.release-please.outputs.platform_sha }}
+      - name: Wait until staging has passed this commit
+        timeout-minutes: 120
+        run: |
+          while :; do
+            id=$(gh api "repos/$GITHUB_REPOSITORY/deployments?sha=$SHA&environment=staging&per_page=1" --jq '.[0].id // empty')
+            state=""
+            if [ -n "$id" ]; then
+              state=$(gh api "repos/$GITHUB_REPOSITORY/deployments/$id/statuses?per_page=1" --jq '.[0].state // empty')
+            fi
+            case "$state" in
+            success)
+              echo "Staging deployment $id of $SHA succeeded."
+              break
+              ;;
+            failure | error)
+              echo "::error::Staging deployment $id of $SHA failed. Fix staging, re-run deploy-staging for this commit, then re-run this job."
+              exit 1
+              ;;
+            esac
+            ci=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow ci.yml --commit "$SHA" --json status,conclusion \
+              --jq 'if length > 0 and all(.status == "completed") and (map(.conclusion) | index("success") | not) then "failed" else "" end')
+            if [ "$ci" = failed ]; then
+              echo "::error::CI failed for $SHA, so staging will never deploy it."
+              exit 1
+            fi
+            echo "Waiting for staging to deploy $SHA (deployment status: ${state:-none yet})"
+            sleep 30
+          done
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          package-manager-cache: false
+      - run: pnpm install --frozen-lockfile
+      - name: Build the website
+        run: pnpm -C web build
+        env:
+          PUBLIC_EXTENSION_ID: ${{ vars.CWS_ITEM_ID }}
+          PUBLIC_STORE_URL: https://chromewebstore.google.com/detail/${{ vars.CWS_ITEM_ID }}
+      - name: Record the live version and list head
+        id: before
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          version=$(pnpm --silent -C api exec wrangler deployments status --json | jq -r '.versions | max_by(.percentage) | .version_id // empty')
+          if [ -z "$version" ]; then
+            echo "::error::Could not read the live Worker version, so there would be no rollback target."
+            exit 1
+          fi
+          seq=$(curl -sS --fail -o /dev/null -D - https://getcolander.com/v1/list/snapshot \
+            | tr -d '\r' | awk -F': ' 'tolower($1) == "x-colander-sequence" { print $2 }')
+          echo "Live version $version, list head ${seq:-unknown}"
+          echo "version=$version" >>"$GITHUB_OUTPUT"
+          echo "seq=$seq" >>"$GITHUB_OUTPUT"
+      - name: Deploy
+        uses: cloudflare/wrangler-action@v4
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: api
+          packageManager: pnpm
+          command: deploy --tag ${{ needs.release-please.outputs.platform_tag }} --message "Release ${{ needs.release-please.outputs.platform_tag }} (${{ needs.release-please.outputs.platform_sha }})"
+      - name: Smoke test production (read-only)
+        run: node scripts/smoke.ts --expect-cache ${SINCE:+--since "$SINCE"}
+        env:
+          COLANDER_BASE_URL: https://getcolander.com
+          COLANDER_PUBLIC_KEYS: ${{ vars.COLANDER_PUBLIC_KEYS }}
+          SINCE: ${{ steps.before.outputs.seq }}
+      - name: Roll back to the version that was live before
+        if: failure() && steps.before.outputs.version != ''
+        env:
+          PREVIOUS: ${{ steps.before.outputs.version }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          live=$(pnpm --silent -C api exec wrangler deployments status --json | jq -r '.versions | max_by(.percentage) | .version_id // empty')
+          if [ "$live" = "$PREVIOUS" ]; then
+            echo "Version $PREVIOUS is still live; nothing to roll back."
+            exit 0
+          fi
+          pnpm -C api exec wrangler rollback "$PREVIOUS" --message "Auto-rollback: $TAG failed its production checks" --yes
+          echo "::error::$TAG failed its production checks and was rolled back to version $PREVIOUS."
+      - name: Publish the release
+        run: gh release edit "$TAG" --draft=false --repo "$GITHUB_REPOSITORY"
+
+  release-extension:
+    name: release-extension
+    needs: release-please
+    if: needs.release-please.outputs.extension == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write # uploads to and publishes the draft release
+      id-token: write
+      attestations: write
+      artifact-metadata: write
+    env:
+      TAG: ${{ needs.release-please.outputs.extension_tag }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.release-please.outputs.extension_sha }}
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          package-manager-cache: false
+      - run: pnpm install --frozen-lockfile
+      - name: Build the store package
+        env:
+          WXT_COLANDER_API: https://getcolander.com
+          WXT_COLANDER_SITE: https://getcolander.com
+          WXT_COLANDER_PUBLIC_KEYS: ${{ vars.COLANDER_PUBLIC_KEYS }}
+          WXT_COLANDER_STORE_BUILD: '1'
+        run: |
+          if [ -z "$WXT_COLANDER_PUBLIC_KEYS" ]; then
+            echo "::error::The repository variable COLANDER_PUBLIC_KEYS is empty."
+            exit 1
+          fi
+          rm -rf extension/dist
+          pnpm -C extension zip
+          zip=$(ls extension/dist/*-chrome.zip)
+          manifest=$(unzip -p "$zip" manifest.json)
+          version=$(jq -r .version <<<"$manifest")
+          if [ "extension-v$version" != "$TAG" ]; then
+            echo "::error::The manifest version $version does not match $TAG."
+            exit 1
+          fi
+          if jq -e 'has("key")' <<<"$manifest" >/dev/null; then
+            echo "::error::The store package carries a manifest key; the Chrome Web Store rejects it."
+            exit 1
+          fi
+          # Never ship a build that trusts the published development key or talks to localhost.
+          if unzip -p "$zip" | grep -a -q -e "$(cat testdata/dev-signing.pub)" -e 'localhost:8787'; then
+            echo "::error::The store package contains the development signing key or a localhost origin."
+            exit 1
+          fi
+          echo "ZIP=$zip" >>"$GITHUB_ENV"
+      - uses: actions/attest@v4
+        with:
+          subject-path: ${{ env.ZIP }}
+      - name: Attach the package and publish the release
+        run: |
+          gh release upload "$TAG" "$ZIP" --repo "$GITHUB_REPOSITORY"
+          gh release edit "$TAG" --draft=false --repo "$GITHUB_REPOSITORY"
+
+  submit-chrome-web-store:
+    name: submit-chrome-web-store
+    needs: [release-please, release-extension]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment:
+      name: chrome-web-store
+      url: https://chromewebstore.google.com/detail/${{ vars.CWS_ITEM_ID }}
+    concurrency:
+      group: chrome-web-store
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      id-token: write
+      attestations: read
+    env:
+      TAG: ${{ needs.release-please.outputs.extension_tag }}
+      GH_TOKEN: ${{ github.token }}
+      ITEM: publishers/${{ vars.CWS_PUBLISHER_ID }}/items/${{ vars.CWS_ITEM_ID }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.release-please.outputs.extension_sha }}
+      - name: Download the released package and verify its provenance
+        run: |
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern '*-chrome.zip' --dir "$RUNNER_TEMP/package"
+          zip=$(ls "$RUNNER_TEMP"/package/*-chrome.zip)
+          gh attestation verify "$zip" --repo "$GITHUB_REPOSITORY"
+          echo "ZIP=$zip" >>"$GITHUB_ENV"
+      - uses: google-github-actions/auth@v3
+        id: google
+        with:
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_SERVICE_ACCOUNT }}
+          token_format: access_token
+          access_token_scopes: https://www.googleapis.com/auth/chromewebstore
+          access_token_lifetime: 1800s
+          create_credentials_file: false
+          export_environment_variables: false
+      - name: Upload, submit as a staged publish, and confirm the submission
+        env:
+          TOKEN: ${{ steps.google.outputs.access_token }}
+        run: |
+          api=https://chromewebstore.googleapis.com
+          version=${TAG#extension-v}
+          cws() { curl -sS --fail-with-body -H "Authorization: Bearer $TOKEN" "$@"; }
+
+          upload=$(cws -X POST -T "$ZIP" "$api/upload/v2/$ITEM:upload")
+          echo "upload: $upload"
+          state=$(jq -r '.uploadState // empty' <<<"$upload")
+          for _ in $(seq 60); do
+            case "$state" in
+            SUCCEEDED) break ;;
+            IN_PROGRESS | UPLOAD_IN_PROGRESS)
+              sleep 10
+              state=$(cws "$api/v2/$ITEM:fetchStatus" | jq -r '.lastAsyncUploadState // empty')
+              ;;
+            *)
+              echo "::error::The upload ended in state ${state:-unknown}."
+              exit 1
+              ;;
+            esac
+          done
+          if [ "$state" != SUCCEEDED ]; then
+            echo "::error::The upload was still processing after 10 minutes."
+            exit 1
+          fi
+
+          # STAGED_PUBLISH: after review the item waits in the dashboard until you publish it,
+          # once the production backend it needs is live.
+          publish=$(jq -n '{publishType: "STAGED_PUBLISH"}' | cws -X POST -H 'Content-Type: application/json' -d @- "$api/v2/$ITEM:publish")
+          echo "publish: $publish"
+
+          for _ in $(seq 30); do
+            status=$(cws "$api/v2/$ITEM:fetchStatus")
+            submitted=$(jq -r '.submittedItemRevisionStatus.state // empty' <<<"$status")
+            submitted_version=$(jq -r '.submittedItemRevisionStatus.distributionChannels[0].crxVersion // empty' <<<"$status")
+            published_version=$(jq -r '.publishedItemRevisionStatus.distributionChannels[0].crxVersion // empty' <<<"$status")
+            if [ "$(jq -r '.takenDown // false' <<<"$status")" = true ]; then
+              echo "::error::The item is taken down for a policy violation; see the developer dashboard."
+              exit 1
+            fi
+            case "$submitted" in
+            REJECTED | CANCELLED)
+              echo "::error::The submission is $submitted: $status"
+              exit 1
+              ;;
+            esac
+            if [ "$submitted_version" = "$version" ] || [ "$published_version" = "$version" ]; then
+              echo "### Chrome Web Store: $version is ${submitted:-published}" >>"$GITHUB_STEP_SUMMARY"
+              echo "Review takes days. Publish the staged item in the developer dashboard once its backend is live." >>"$GITHUB_STEP_SUMMARY"
+              echo "Submitted $version: ${submitted:-published}"
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "::error::fetchStatus never showed version $version as submitted: $status"
+          exit 1

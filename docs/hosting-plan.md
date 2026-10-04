@@ -1,6 +1,7 @@
 # Colander on Cloudflare: hosting recommendation
 
 Prepared 2026-10-03 for the product owner to approve.
+Status: approved and built; the Go server was deleted once the parity harness passed, as section 4 planned, and stays in git history.
 Inputs: the project context, six research tracks, four proposals and two judge verdicts.
 Key facts were spot-checked today with Tavily and Exa against the Cloudflare docs and against the v1 worktree.
 

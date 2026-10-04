@@ -8,7 +8,7 @@ website hero renders the same component, so the two cannot drift. 360 wide, neve
 	import { sourcePath } from '@colander/shared/format';
 	import { PLATFORM_NAME, STRICTNESS_WORD, type Platform, type Strictness } from '@colander/shared/verdicts';
 	import { SITE } from '../../lib/env';
-	import { targetKey } from '../../lib/ids';
+	import { targetKey } from '@colander/shared/ids';
 	import type { PageAction, PageState, ToPage } from '../../lib/messages';
 	import { ORIGINS } from '../../lib/platforms';
 	import { dayKey, isPlus, K, needsAttention, withDefaults, DEFAULT_STATUS, type Entitlement, type Settings, type Stats, type Status } from '../../lib/settings';

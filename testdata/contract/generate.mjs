@@ -1,5 +1,5 @@
 // Generates the cross-language contract fixtures described in docs/contracts.md.
-// Both the Go server and the extension test against these exact bytes, so encoders must be byte-identical.
+// The Worker (through packages/shared) and the extension test against these exact bytes, so encoders must be byte-identical.
 // Usage: node testdata/contract/generate.mjs
 import { createHash, createPrivateKey, sign } from 'node:crypto';
 import { readFileSync, writeFileSync } from 'node:fs';
@@ -8,8 +8,8 @@ import { fileURLToPath } from 'node:url';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, '..', '..');
-const seed = Buffer.from(readFileSync(join(root, 'server/testdata/dev-signing.key'), 'utf8').trim(), 'base64');
-const pub = Buffer.from(readFileSync(join(root, 'server/testdata/dev-signing.pub'), 'utf8').trim(), 'base64');
+const seed = Buffer.from(readFileSync(join(root, 'testdata/dev-signing.key'), 'utf8').trim(), 'base64');
+const pub = Buffer.from(readFileSync(join(root, 'testdata/dev-signing.pub'), 'utf8').trim(), 'base64');
 // PKCS#8 wrapper for a raw Ed25519 seed.
 const key = createPrivateKey({
 	key: Buffer.concat([Buffer.from('302e020100300506032b657004220420', 'hex'), seed]),

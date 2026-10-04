@@ -1,0 +1,17 @@
+{
+  "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
+  "draft": true,
+  "force-tag-creation": true,
+  "packages": {
+    ".": {
+      "component": "platform",
+      "release-type": "node",
+      "include-component-in-tag": false,
+      "exclude-paths": ["extension"]
+    },
+    "extension": {
+      "component": "extension",
+      "release-type": "node"
+    }
+  }
+}

@@ -4,8 +4,8 @@ import adapter from '@sveltejs/adapter-static';
 import { sveltekit } from '@sveltejs/kit/vite';
 import { defineConfig } from 'vite';
 
-// The Go server serves build/ and the API from one origin, so pages call relative /v1 URLs.
-// In dev, Vite proxies /v1 to the server.
+// The Worker in api/ serves build/ and the API from one origin, so pages call relative /v1 URLs.
+// In dev, Vite proxies /v1 to it (wrangler dev).
 const API = process.env.COLANDER_API ?? 'http://localhost:8787';
 
 /** The extension's version, and the commit date of its release tag when one exists. */

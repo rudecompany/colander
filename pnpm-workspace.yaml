@@ -1,5 +1,11 @@
 packages:
   - packages/*
+  - api
   - extension
   - web
   - e2e
+
+# Wrangler's runtime (workerd) and bundler (esbuild) verify their platform binaries on install.
+onlyBuiltDependencies:
+  - esbuild
+  - workerd

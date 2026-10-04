@@ -1,7 +1,9 @@
 // Journey 7: the 14-day trial with no card, Plus features unlocking, and settings sync through
 // the real /v1/sync in both directions.
 import { CARD, SEARCH, card, chip, expect, launch, onboard, syncNow, test, type Ext } from './harness.ts';
-import { ORIGIN, api } from './stack.ts';
+import { BASE_URL, LOCAL_ONLY, ORIGIN, api } from './stack.ts';
+
+test.skip(!!BASE_URL, LOCAL_ONLY);
 
 let ext: Ext;
 test.beforeAll(async () => {

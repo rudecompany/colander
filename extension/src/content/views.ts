@@ -3,7 +3,7 @@
 import { evidence, type Evidence } from '@colander/shared/inpage/evidence.ts';
 import type { ItemView } from '@colander/shared/inpage/ui.ts';
 import type { Platform, Verdict } from '@colander/shared/verdicts';
-import { dayToDate } from '../lib/list';
+import { dayToDate } from '@colander/shared/list';
 import type { Decision } from '../lib/match';
 
 /** An own tag's verdict back to the words of the tag the person chose. */

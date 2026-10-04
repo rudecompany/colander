@@ -19,7 +19,7 @@ export const fixtureHtml = (name: string) => fixture(`${name}.html`).toString('u
 
 /** Signs payloads with the published development key, like the server does in dev. */
 export function devSign(context: string, payload: Buffer): Buffer {
-	const seed = Buffer.from(readFileSync(resolve(REPO, 'server/testdata/dev-signing.key'), 'utf8').trim(), 'base64');
+	const seed = Buffer.from(readFileSync(resolve(REPO, 'testdata/dev-signing.key'), 'utf8').trim(), 'base64');
 	const key = createPrivateKey({ key: Buffer.concat([Buffer.from('302e020100300506032b657004220420', 'hex'), seed]), format: 'der', type: 'pkcs8' });
 	return sign(null, Buffer.concat([Buffer.from(context), Buffer.from([0]), payload]), key);
 }

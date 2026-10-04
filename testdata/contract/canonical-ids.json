@@ -1,5 +1,5 @@
 {
-  "note": "Contract section 2.2 source ID normalization. The Go server and the extension must both turn each raw token into exactly `source` (null means rejected). Raw tokens are written as they appear in page links or seed lists.",
+  "note": "Contract section 2.2 source ID normalization. The server and the extension must both turn each raw token into exactly `source` (null means rejected). Raw tokens are written as they appear in page links or seed lists.",
   "sources": [
     { "platform": "yt", "raw": "UCX6OQ3DkcsbYNE6H8uQQuVA", "source": "UCX6OQ3DkcsbYNE6H8uQQuVA" },
     { "platform": "yt", "raw": "@MrBeast", "source": "@mrbeast" },

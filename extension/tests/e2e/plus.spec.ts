@@ -92,6 +92,11 @@ test('a paid plan is checked daily, and a cancel or refund turns Plus off within
 	await expect.poll(() => ext.storage('entitlement')).toEqual({ plus: true, trial: false, exp });
 
 	const refreshes = () => ext.api.posted('/v1/entitlement/refresh');
+	// The handed-over token is fresh from the server, so it counts as checked now.
+	await ext.send({ type: 'sync-now' });
+	expect(refreshes()).toHaveLength(0);
+	// A day later the hourly sync checks it once, with only the token and no install ID.
+	await ext.ctl.evaluate(() => chrome.storage.local.set({ planCheckedAt: Date.now() - 25 * 3600_000 }));
 	await ext.send({ type: 'sync-now' });
 	expect(refreshes()).toHaveLength(1);
 	expect(refreshes()[0]!.auth).toBeUndefined();

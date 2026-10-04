@@ -1,7 +1,7 @@
 // What a decorated card says: the chip and the evidence behind Why, from a decision.
 import { popoverRows } from '@colander/shared/inpage';
 import { describe, expect, it } from 'vitest';
-import type { ListHit } from '../../src/lib/list';
+import type { ListHit } from '@colander/shared/list';
 import type { Decision } from '../../src/lib/match';
 import { itemView, whyEvidence } from '../../src/content/views';
 

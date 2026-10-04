@@ -5,7 +5,11 @@
   "type": "module",
   "sideEffects": ["**/*.css"],
   "exports": {
-    ".": { "types": "./src/index.ts", "svelte": "./src/index.ts", "default": "./src/index.ts" },
+    ".": {
+      "types": "./src/index.ts",
+      "svelte": "./src/index.ts",
+      "default": "./src/index.ts"
+    },
     "./verdicts": "./src/verdicts.ts",
     "./glyphs": "./src/glyphs.ts",
     "./api": "./src/api.ts",
@@ -15,6 +19,11 @@
     "./inpage": "./src/inpage/index.ts",
     "./inpage/*": "./src/inpage/*",
     "./utils/*": "./src/utils/*",
+    "./bytes": "./src/bytes.ts",
+    "./sha256": "./src/sha256.ts",
+    "./ids": "./src/ids.ts",
+    "./list": "./src/list.ts",
+    "./signing": "./src/signing.ts",
     "./styles/*": "./src/styles/*",
     "./components/*": "./src/components/*"
   },
@@ -38,6 +47,6 @@
     "svelte": "^5.57.1",
     "svelte-check": "^4.0.0",
     "typescript": "^5.9.0",
-    "vitest": "^4"
+    "vitest": "^4.1.11"
   }
 }

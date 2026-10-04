@@ -1,7 +1,9 @@
 // Journey 9: without Stripe keys, Get Plus explains calmly that checkout is not open, after a
 // real sign-in, and no page breaks along the way.
-import { ORIGIN, logMark, signInLink } from './stack.ts';
+import { BASE_URL, LOCAL_ONLY, ORIGIN, logMark, signInLink } from './stack.ts';
 import { expect, test } from './harness.ts';
+
+test.skip(!!BASE_URL, LOCAL_ONLY);
 
 test('Get Plus without Stripe shows the billing-unavailable message, and nothing crashes', async ({ page }) => {
 	const errors: string[] = [];

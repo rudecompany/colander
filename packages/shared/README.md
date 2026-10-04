@@ -15,6 +15,8 @@ No app defines its own button, card, chip, badge, segmented control, stat, date 
 | `src/copy.ts` | The definition, privacy facts, permissions, plan copy, platform surfaces, in-page strings and the demo feed. |
 | `src/layers.ts` | The four evidence layers and their words. |
 | `src/utils/format.ts` | Every date, time, number and price format (en-GB dates). |
+| `src/api.ts` | Wire types for the HTTP API (docs/contracts.md section 6). |
+| `src/list.ts`, `src/signing.ts`, `src/ids.ts`, `src/bytes.ts`, `src/sha256.ts` | The list format, Ed25519 signing and canonical IDs, used by the extension and the Worker in `api/` and tested against the contract fixtures in `testdata/contract`. |
 | `src/glyphs.ts` | Geometry for the mark, the small mark, the paused marks and the 5 verdict glyphs, plus the toolbar colors. |
 | `src/inpage/` | The in-page builders, their stylesheet (SHEET), Declarative Shadow DOM helpers and the demo feed. |
 | `src/components/colander/` | Colander components for both apps. |

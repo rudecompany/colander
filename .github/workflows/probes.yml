@@ -1,0 +1,61 @@
+# Hourly outside check of production, next to the in-Cloudflare watchdog cron (the primary alarm).
+# GitHub may delay or skip scheduled runs, so this is the second line, not the first.
+name: Probes
+
+on:
+  schedule:
+    - cron: '41 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: probes
+  cancel-in-progress: false
+
+jobs:
+  production:
+    name: probe-production
+    # Skips until the Cloudflare account is set up (docs/deploy.md step 15).
+    if: vars.CLOUDFLARE_ACCOUNT_ID != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: production
+      deployment: false
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          package-manager-cache: false
+      # Site, /healthz, the snapshot signed by the production key, delta 204 at head, CORS.
+      - name: Read-only smoke test
+        run: node scripts/smoke.ts
+        env:
+          COLANDER_BASE_URL: https://getcolander.com
+          COLANDER_PUBLIC_KEYS: ${{ vars.COLANDER_PUBLIC_KEYS }}
+      - name: Store health from /ops/status
+        env:
+          OPS_TOKEN: ${{ secrets.OPS_TOKEN }}
+        run: |
+          status=$(curl -sS --fail-with-body -X POST https://getcolander.com/ops/status \
+            -H "Authorization: Bearer $OPS_TOKEN" -H 'Content-Type: application/json' -d '{}')
+          echo "$status" | jq .
+          # Scoring pass under 15 minutes old, newest dump under 7 hours, no verdict change waiting
+          # longer than the 6-hour list update bound (spec P0-8).
+          failed=$(jq -r '[
+              (if (.pass_age_s | type) != "number" or .pass_age_s >= 900 then "pass_age_s \(.pass_age_s) is not under 900" else empty end),
+              (if (.dump_age_s | type) != "number" or .dump_age_s >= 25200 then "dump_age_s \(.dump_age_s) is not under 25200" else empty end),
+              (if (.publish_lag_s | type) != "number" or .publish_lag_s >= 21600 then "publish_lag_s \(.publish_lag_s) is not under 21600" else empty end)
+            ] | join("; ")' <<<"$status")
+          if [ -n "$failed" ]; then
+            echo "::error::$failed"
+            exit 1
+          fi
+      - if: failure()
+        uses: ./.github/actions/report-failure
+        with:
+          title: Production probe failing

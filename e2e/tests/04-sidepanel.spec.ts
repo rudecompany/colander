@@ -1,7 +1,9 @@
 // Journey 6: staff connect the review side panel from the website (externally_connectable),
 // work the real queue there, and the decision lands in the public log.
-import { ORIGIN, STAFF } from './stack.ts';
+import { BASE_URL, LOCAL_ONLY, ORIGIN, STAFF } from './stack.ts';
 import { expect, launch, onboard, signIn, test, type Ext } from './harness.ts';
+
+test.skip(!!BASE_URL, LOCAL_ONLY);
 
 let ext: Ext;
 test.beforeAll(async () => {

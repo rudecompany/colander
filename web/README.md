@@ -2,7 +2,7 @@
 
 The public website, account pages and review console for Colander.
 It is a SvelteKit 3 app (Svelte 5 runes, TypeScript strict) built with `@sveltejs/adapter-static` into `web/build`.
-The Go server serves that folder and the API from the same origin, so every page calls relative `/v1/...` URLs.
+The Worker in `api/` serves that folder and the API from the same origin, so every page calls relative `/v1/...` URLs.
 
 ## Routes
 
@@ -31,13 +31,17 @@ Support and donation links never appear on `/s/*` or `/appeal/*` pages, includin
 ### What the server needs to do
 
 - Serve `build/` with this lookup order: the file itself, then `{path}.html`, then `{path}/index.html`.
-  The Go server (`server/internal/api/site.go`) and `tests/static-server.ts` both do exactly this, and the tests run against the second.
+  Workers Static Assets (below) and `tests/static-server.ts` both do exactly this, and the tests run against the second.
 - `200.html` is the SPA fallback for the client-rendered routes only: `/s/{platform}/{id}`, `/appeal/{platform}/{id}` and `/appeal/status/{id}`.
 - Any other path is a real 404: `404.html` with status 404.
-  It is the same shell, written by `pnpm build`, so the client renders the not-found page.
-  Static hosts need the same rule (see `docs/hosting-plan.md`).
+  It is the same shell, copied by `pnpm build`, so the client renders the not-found page.
 - Each page carries its Content Security Policy as a `<meta http-equiv>` tag with script hashes.
   The server may also send `frame-ancestors 'none'` as a header, which a meta tag cannot carry.
+
+On Cloudflare (`api/wrangler.jsonc`), Workers Static Assets serves `build/` with `html_handling: auto-trailing-slash`, so `/definition` serves `definition.html`.
+`static/_redirects` rewrites the client-rendered routes (`/s/{platform}/{id}`, `/appeal/{platform}/{id}` and `/appeal/status/{id}`) to the `200.html` shell with status 200.
+Every other unknown path, including a source or appeal URL with an unknown platform or extra segments, gets `404.html` with status 404 (`not_found_handling: 404-page`); the `postbuild` script copies `200.html` to `404.html`, so the client still renders the 404 page.
+`static/_headers` adds HSTS, `nosniff`, `Referrer-Policy`, `X-Frame-Options: DENY`, a CSP header with only `frame-ancestors`, `object-src` and `base-uri`, and immutable caching for `/_app/immutable/*`.
 
 ## Environment
 
@@ -54,17 +58,17 @@ Variables are declared in `src/env.ts` and inlined at build time.
 
 ```sh
 pnpm install                 # at the repository root
-pnpm -C web dev              # http://localhost:5173, /v1 proxied to the Go server on :8787
+pnpm -C web dev              # http://localhost:5173, /v1 proxied to wrangler dev on :8787 (make dev)
 ```
 
-Run the server with `COLANDER_DEV=1` so sign-in links are printed to its stdout.
-Set `COLANDER_PUBLIC_URL=http://localhost:5173` on the server so those links open the dev site.
+The Worker runs in dev mode (`COLANDER_DEV=1`), so sign-in links are printed in the `wrangler dev` output.
+Set `PUBLIC_URL=http://localhost:5173` in `api/.dev.vars` so those links open the dev site.
 
 ## Build and check
 
 ```sh
 pnpm -C web check            # svelte-kit sync, svelte-check, and the token and date-format lint
-pnpm -C web build            # checks the generated in-page tokens, then writes web/build
+pnpm -C web build            # checks the generated in-page tokens, writes web/build, copies 200.html to 404.html
 ```
 
 `scripts/lint-tokens.ts` fails on a hex color, `Intl.DateTimeFormat` or a locale date string anywhere in `src/`: colors are tokens and dates are formats from `@colander/shared`.
@@ -89,7 +93,7 @@ They stay files and are never inlined into the JavaScript.
 ## Tests
 
 ```sh
-pnpm -C web test             # builds, serves build/ like the Go server, runs Playwright in Chromium
+pnpm -C web test             # builds, serves build/ with the lookup above, runs Playwright in Chromium
 pnpm -C web screenshots      # full-page screenshots of every page into web/screenshots
 ```
 

@@ -15,7 +15,7 @@ export default defineConfig({
 	projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
 	// Tests run against a fresh production build, with an extension ID so the handoff code is live.
 	webServer: {
-		command: 'vite build && node tests/static-server.ts',
+		command: 'pnpm build && node tests/static-server.ts',
 		env: { PUBLIC_EXTENSION_ID: 'test-extension-id', PORT: String(port) },
 		port,
 		timeout: 120_000,

@@ -1,7 +1,5 @@
 node_modules/
 .DS_Store
-/data/
-server/data/
 *.db
 *.db-wal
 *.db-shm
@@ -16,3 +14,11 @@ coverage/
 .env
 .env.*
 !.env.example
+
+# Wrangler: local secrets and local state.
+.dev.vars*
+.wrangler/
+
+# Signing keys made with scripts/keygen.ts never belong in git.
+*.key
+!/testdata/dev-signing.key
