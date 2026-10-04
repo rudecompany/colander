@@ -20,7 +20,7 @@ test('the account page hands the reviewer token to the side panel, which decides
 	const site = await ext.ctx.newPage();
 	await signIn(site, STAFF, '/account');
 	await expect(site.getByRole('heading', { name: 'Hello, Rae' })).toBeVisible();
-	await site.getByRole('button', { name: 'Connect the review side panel' }).click();
+	await site.getByRole('button', { name: 'Connect side panel' }).click();
 	await expect(site.getByText('Connected. The side panel can now open the review queue.')).toBeVisible();
 	const token = await ext.storage<string>('reviewerToken');
 	expect(token).toBeTruthy();
@@ -35,15 +35,15 @@ test('the account page hands the reviewer token to the side panel, which decides
 	await side.screenshot({ path: 'screenshots/sidepanel-queue.png', animations: 'disabled' });
 
 	await gossip.click();
-	await expect(side.getByRole('heading', { level: 1, name: 'Celebrity Gossip Narrated' })).toBeVisible();
-	await side.getByLabel('Verdict').selectOption('slop');
+	await expect(side.getByRole('heading', { level: 2, name: 'Celebrity Gossip Narrated' })).toBeVisible();
+	await side.getByRole('radiogroup', { name: 'Verdict' }).getByRole('radio', { name: /^Slop/ }).click();
 	await side.getByLabel('Reason, published in the decision log').fill('Staff review confirmed synthetic narration over celebrity photos, nineteen uploads a day.');
 	await side.getByRole('button', { name: 'Record decision' }).click();
 	await expect(side.getByText('Decision recorded.')).toBeVisible();
 
 	await site.goto(`${ORIGIN}/log`);
-	const entry = site.locator('article.entry').first();
-	await expect(entry.getByRole('link', { name: 'Celebrity Gossip Narrated' })).toBeVisible();
+	const entry = site.locator('ol.entries > li').first();
+	await expect(entry.locator('.src')).toHaveText('Celebrity Gossip Narrated');
 	await expect(entry.locator('.change')).toContainText('Slop');
 	await expect(entry).toContainText('nineteen uploads a day');
 	await expect(entry).toContainText('Rae');

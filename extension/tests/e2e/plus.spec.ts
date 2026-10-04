@@ -48,7 +48,7 @@ test('the popup shows the week once: every 30 days with Get Plus, weekly with Pl
 		const d = new Date(Date.now() - n * DAY);
 		return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 	};
-	const days = { [day(0)]: { hidden: 3, collapsed: 1, labeled: 2 }, [day(3)]: { hidden: 10, collapsed: 0, labeled: 5 }, [day(9)]: { hidden: 99, collapsed: 0, labeled: 0 } };
+	const days = { [day(0)]: { hidden: 4, labeled: 2 }, [day(3)]: { hidden: 10, labeled: 5 }, [day(9)]: { hidden: 99, labeled: 0 } };
 	await ext.ctl.evaluate((days) => chrome.storage.local.set({ stats: { firstRunAt: Date.now() - 10 * 86_400_000, days } }), days);
 	const popup = await ext.ctx.newPage();
 	const card = popup.getByText('You skipped 14 slop items this week.');

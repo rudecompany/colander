@@ -147,14 +147,17 @@ export async function launch(): Promise<Ext> {
 	return ext;
 }
 
-/** First run as a person does it: the welcome tab that opened on install, YouTube on, Standard. */
+/** First run as a person does it: the welcome tab that opened on install, in its 3 steps: Standard, YouTube on, pin. */
 export async function onboard(ext: Ext): Promise<void> {
 	await expect.poll(() => ext.ctx.pages().some((p) => p.url() === `chrome-extension://${EXT_ID}/welcome.html`)).toBe(true);
 	const welcome = ext.ctx.pages().find((p) => p.url() === `chrome-extension://${EXT_ID}/welcome.html`)!;
 	await expect(welcome.getByRole('radio', { name: /Standard/ })).toHaveAttribute('aria-checked', 'true');
+	await welcome.getByRole('button', { name: 'Continue' }).click();
 	await expect(welcome.getByRole('checkbox', { name: /YouTube/ })).toBeChecked();
+	await welcome.getByRole('button', { name: 'Continue' }).click();
+	await expect(welcome.getByRole('heading', { name: 'Pin Colander' })).toBeVisible();
 	const opened = ext.ctx.waitForEvent('page');
-	await welcome.getByRole('button', { name: 'Start using Colander' }).click();
+	await welcome.getByRole('button', { name: 'Done' }).click();
 	await expect(welcome.getByRole('heading', { name: 'You are set' })).toBeVisible();
 	await (await opened).close();
 	await welcome.close();

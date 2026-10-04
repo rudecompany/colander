@@ -57,8 +57,8 @@ The release build asks for site access per platform through `optional_host_permi
  │             writes data-colander-bridge   │          │  list sync, verify, IndexedDB         │
  │ content.js  isolated world:               │◀──storage│  adapter config, tag queue, reports   │
  │   MutationObserver ▸ extract ▸ decide     │   .local │  plan token, Plus sync, badge, icons  │
- │   ▸ hide / collapse / label / Tag / Why   │──msgs───▶│  content script registration          │
- │ content.css host rules (hide, collapse)   │          │  externally_connectable               │
+ │   ▸ hide / reflow / label / Tag / Why     │──msgs───▶│  content script registration          │
+ │ content.css host rules (hide, skip)       │          │  externally_connectable               │
  └───────────────────────────────────────────┘          │ popup · options · welcome · side panel│
                                                          └──────────────────────────────────────┘
 ```
@@ -102,14 +102,25 @@ The welcome page sets up Colander in 3 steps (strictness on the recreated feed, 
 
 The verdict maps to an action through `ACTION_TABLE` and the strictness: the global level, or with Plus the platform's own level, raised by any matching topic that is stricter.
 Disputed is always labeled with its mark, and Clear is always allowed.
+There are three levels: Label labels everything with AI evidence, Standard (the default) hides Slop and Likely slop and labels AI-made, and No AI also hides AI-made.
+Settings stored or synced with the retired Strict level, globally, per platform or per topic, read as Standard (`withDefaults`), and the first run after an update rewrites them and syncs the change.
 
 ### Treatments
 
 | Action | Grid or list | Swipe feed |
 | --- | --- | --- |
 | Label | A verdict chip on the thumbnail (ink background, media color glyph and word). | The chip beside the creator name. |
-| Collapse | Lists keep a 40 px bar (chip, "Hidden for you", one reason, Show and Why) from the thumbnail's left edge to the row's right edge. Grids keep the thumbnail's footprint as a hairline stub, so the grid never moves. Enter shows it. | The video is covered and paused until Show or Skip. |
-| Hide | The card leaves the layout, so the grid closes up, and the page count goes up. | The video is skipped when it becomes active, with "Skipped 1 slop video." plus Undo and Why for 4 seconds (a 4-dot countdown that pauses on hover and focus), announced politely, never stacked. |
+| Hide | The card leaves the layout like an ad under an ad blocker: no gap, no placeholder. Grids reflow so their rows stay full (below). | The video is skipped the moment it becomes active, its slot showing nothing and its video paused. Silent by default; with Appearance's skip notice on, "Skipped 1 slop video." plus Undo and Why for 4 seconds (a 4-dot countdown that pauses on hover and focus), announced politely, never stacked. |
+
+Every hidden item is still counted on the toolbar badge and listed in the popup, hidden items first, with Show, Always allow, Not slop and Why.
+Why from the popup shows the card for this page view and opens its evidence on it.
+
+**Grid reflow.**
+In a flex or grid container, a hidden card leaves no box, so the browser closes the grid up by itself.
+Two things it cannot fix alone: a full-width child, such as YouTube's Shorts shelf between rows on Home and Subscriptions, then follows a row with a hole at its end; and YouTube styles its first column by position (`is-in-first-column` drops the left margin), which stays on cards that moved out of it.
+So for each container holding a hidden card, the content script reads the layout once per frame, counts columns from the card widths, and gives the container's children `order` values (counting up to -1, so a card the page appends before the next pass still lands last) that hold every full-width child back until the row before it is full, which pulls cards from after the shelf up into the hole.
+The page's own left margins for its first and other columns, read once before any override, then follow the new first column.
+The container is marked `data-colander-reflow`; a resize, a new card or a card shown again runs the pass again, and when nothing in it is hidden any more every override is removed.
 
 Every card with an item or a source gets a 28 px Tag button: shown on hover or keyboard focus in grids and lists, always in swipe feeds, and always when Appearance says so.
 Where a card shows no source (the Instagram Explore grid), the item tag goes out without `source_id` (contract 6.2).
@@ -124,7 +135,7 @@ Content scripts cannot open the extension origin's IndexedDB, so everything they
 
 | Where | Key or store | Contents |
 | --- | --- | --- |
-| `storage.local` | `settings` | Strictness, per-platform levels and topics (Plus), platforms switched on, paused sites, My list allows and blocks, plain chips, onboarded. Read by content scripts. |
+| `storage.local` | `settings` | Strictness, per-platform levels and topics (Plus), platforms switched on, paused sites, My list allows and blocks, plain chips, the always-on Tag button, the skip notice, onboarded. Read by content scripts. |
 | `storage.local` | `ownTags` | Target key to your latest tag verdict. Read by content scripts. |
 | `storage.local` | `listIndex` | The compact match index: list sequence, count and the sorted 16-byte entries as base64 (800 KB for 50,000 entries). Read by content scripts, which decode it once and binary-search it with a synchronous SHA-256. |
 | `storage.local` | `adapterConfig` | A verified remote adapter config newer than the bundled one. Read by content scripts. |
@@ -190,7 +201,6 @@ When two active surfaces could match the same element, write the selectors so th
 | `aiLabel` | text probe? | The platform's own AI disclosure on the card. |
 | `chip` | anchor? | Where the chip goes. Default: overlay on the card. |
 | `tag` | anchor? | Where the Tag button goes. Without it, the card gets no Tag button. |
-| `cover` | selector? | Swipe feeds: the element the cover is laid over. Default: the card. |
 | `next` | selector? | Swipe feeds: the platform's own next control, clicked to skip. Default: scroll the next card into view. |
 
 ### Extractor
@@ -261,8 +271,8 @@ There is no remote code, no `eval` and no inline script.
 
 - `tests/unit`: the list decoder and verifier against `testdata/contract` (snapshot, delta, tampering, length, sort order, unknown keys, delta on the wrong base), the config envelope and plan token, the synchronous SHA-256 against Node's, canonical IDs per platform from real-looking URLs, matching precedence and the strictness table, the tag queue's offline retry planning, and adapter extraction against a saved fixture of every surface.
 - `tests/e2e`: the built extension in Chromium with fixtures served on the real hostnames and the API mocked by route handlers serving the contract fixtures.
-  It covers hiding, collapsing and labeling per strictness, re-applying within 1 second without a reload (P0-3), pause by site and tab, the badge, delta sync, a tampered list, a signed config fixing a renamed selector, no layout jump during infinite scroll, Tag in two clicks and the exact tag body (one POST per tag menu, item tags without a source on the Instagram Explore grid), the offline queue, keyboard-only use of the tag menu and collapsed bar, Why (every signal that fired, Appeal only for list verdicts), Show, Always allow and Not slop, swipe skip with Undo and covers, the welcome flow's permission request, Report source, website messaging, the trial and Plus sync, Plus early access, the weekly summary and the daily plan check, no install ID on a fresh install's sync, a dismissed report closed calmly, the side panel, and the performance budgets.
-- Performance on a 200-card page: slop cards are hidden within about 6 ms of insertion at the 95th percentile (budget 150 ms), and the content script adds about 30 ms in total (budget 50 ms), a third of it the one batched layout read per frame that lines collapsed bars and grid stubs up with their thumbnails.
+  It covers hiding without a trace and labeling per strictness, the YouTube Home and Subscriptions grids reflowing so every row before the Shorts shelf stays full, re-applying within 1 second without a reload (P0-3), pause by site and tab, the badge, delta sync, a tampered list, a signed config fixing a renamed selector, no layout jump during infinite scroll, Tag in two clicks and the exact tag body (one POST per tag menu, item tags without a source on the Instagram Explore grid), the offline queue, keyboard-only use of the tag menu, Why (every signal that fired, Appeal only for list verdicts), Show, Always allow, Not slop and Why for hidden items from the popup, silent swipe skips and the optional skip notice with Undo, the welcome flow's permission request, Report source, website messaging, the trial and Plus sync, Plus early access, the weekly summary and the daily plan check, no install ID on a fresh install's sync, a dismissed report closed calmly, the side panel, and the performance budgets.
+- Performance on a 200-card page: slop cards are hidden within about 6 ms of insertion at the 95th percentile (budget 150 ms), and the content script adds about 30 ms in total (budget 50 ms), including the one batched layout read per frame that reflows grids with a hidden card.
   On live YouTube pages it adds 7 to 23 ms per page.
 - `tests/live`: the real YouTube and TikTok pages, no login.
   Signed-in surfaces run only with a Playwright storage state in `COLANDER_LIVE_STATE_YT`, `_TT`, `_IG` or `_FB`.
@@ -270,13 +280,13 @@ There is no remote code, no `eval` and no inline script.
   A surface that finds no cards fails the run, and so does a surface whose platform has a storage state when the site refuses the automated browser.
   Without credentials, such surfaces are skipped as unverified: `tests/live/summary-reporter.ts` lists every surface in the job summary and adds a warning annotation for each unverified one.
 - `tests/e2e/shots.spec.ts` writes the screenshots in `screenshots/`, light and dark, only under `pnpm screenshots` (`SCREENSHOTS=1`).
-- `tests/e2e/a11y.spec.ts` runs axe-core (WCAG 2.2 A and AA) over the popup and its menu, every Options section and the delete dialog, each welcome step, the side panel and its shortcuts, and every in-page element (chip, collapsed bar, Tag button, tag menu, tag toast and Add detail, Why, both report steps, skip notice, cover), light and dark, and checks the radio group keys.
+- `tests/e2e/a11y.spec.ts` runs axe-core (WCAG 2.2 A and AA) over the popup and its menu, every Options section and the delete dialog, each welcome step, the side panel and its shortcuts, and every in-page element (chip, Tag button, tag menu, tag toast and Add detail, Why, both report steps, skip notice), light and dark, and checks the radio group keys.
 - `tests/e2e/popup.spec.ts` keeps the popup at most 600 px tall in every state (default, show all, paused, each slot item, an empty page, an unsupported site), in both themes, with long titles.
 
 ## Fixtures
 
 `tests/fixtures/yt-*.html` and `tt-foryou.html`, `tt-profile.html` were captured from the live sites by `scripts/capture-fixtures.ts`: the real element structure from `<body>` down to a few cards, without scripts, styles, media or unused attributes, with the bridge's reading baked in and a few cards seeded with IDs from the contract list.
-YouTube home and subscriptions need an account, so their fixtures reuse real rich-grid cards from a channel's videos tab, which has the same structure.
+YouTube home and subscriptions need an account, so their fixtures reuse real rich-grid cards from a channel's videos tab, which has the same structure, laid out as those feeds are: 4 to a row with the first of each marked `is-in-first-column`, and a full-width Shorts shelf between rows (`retarget.grid`). `styles/yt.css` uses YouTube's own rich-grid rules for them, so a hidden card leaves the same hole before the shelf that it would on YouTube.
 `tt-search.html`, `ig-*.html` and `fb-*.html` are written by hand from those platforms' stable attributes, because their feeds need an account.
 `tests/fixtures/styles/*.css` is a stand-in layout so screenshots look like the sites; the adapters never depend on it.
 

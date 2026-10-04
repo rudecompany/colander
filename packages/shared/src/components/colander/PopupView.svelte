@@ -8,7 +8,11 @@ strictness card 80, stats card 104, On this page card (a 36 header and up to 3 r
 "Show all" folds the stats card to one 40 line and scrolls the list inside the card.
 Flat: the website adds the shadow where it docks the popup. Only "Show all" caps the height at
 600 (the extension's window); otherwise the popup grows with its content, so a narrow website
-column never clips it. Long row titles keep their end ("Ancient Rome facts… Part 46").
+column never clips it. Hidden items leave the page without a trace, so this list is where each one
+stays reachable: Show, and the menu's Always allow, Not slop and Why. A row title is always one
+line, clipped by its own box: a long one ends in an ellipsis, and a numbered one keeps its number
+("Ancient Rome facts… Part 46"), so the parts of a series stay apart. The chip and the actions keep
+their size and alignment.
 -->
 <script lang="ts" module>
 	import type { Action, Strictness, Verdict } from '../../verdicts';
@@ -31,10 +35,10 @@ column never clips it. Long row titles keep their end ("Ancient Rome facts… Pa
 		pausedScope?: 'site' | 'tab';
 		plus?: boolean;
 		strictness: Strictness;
-		/** A per-platform override line, such as "YouTube uses Strict, set in Options." */
+		/** A per-platform override line, such as "YouTube uses No AI, set in Options." */
 		strictnessNote?: string;
 		hiddenToday: number;
-		/** Hidden and collapsed on this page. */
+		/** Hidden on this page. */
 		onPage?: number;
 		/** The item noun, for the summary sentence. */
 		noun?: string;
@@ -93,20 +97,25 @@ column never clips it. Long row titles keep their end ("Ancient Rome facts… Pa
 
 	let { state: s, actions: a = {} }: { state: PopupState; actions?: PopupActions } = $props();
 
+	function isHidden(r: PopupRow) {
+		return r.action === 'hide' && !r.shown;
+	}
+
 	const uid = $props.id();
 	let all = $state(false);
-	const rows = $derived(s.rows ?? []);
-	const onPage = $derived(s.onPage ?? rows.filter((r) => r.action === 'hide' || r.action === 'collapse').length);
-	// The tally breaks down "On this page": hidden and collapsed items by verdict, so it fits one line.
+	// Hidden items first: they leave no trace on the page, so this list is where they are reached.
+	const rows = $derived([...(s.rows ?? [])].sort((x, y) => Number(isHidden(y)) - Number(isHidden(x))));
+	const onPage = $derived(s.onPage ?? rows.filter((r) => r.action === 'hide').length);
+	// The tally breaks down "Hidden on this page" by verdict, so it fits one line.
 	const tally = $derived.by(() => {
 		const t: Partial<Record<Verdict, number>> = {};
-		for (const r of rows) if (r.verdict && (r.action === 'hide' || r.action === 'collapse')) t[r.verdict] = (t[r.verdict] ?? 0) + 1;
+		for (const r of rows) if (r.verdict && r.action === 'hide') t[r.verdict] = (t[r.verdict] ?? 0) + 1;
 		return t;
 	});
 	const summary = $derived.by(() => {
 		const noun = s.noun ?? 'item';
 		const parts: string[] = [];
-		const verbs = [['hide', 'hid'], ['collapse', 'collapsed'], ['label', 'labeled']] as const;
+		const verbs = [['hide', 'hid'], ['label', 'labeled']] as const;
 		for (const [action, verb] of verbs) {
 			const by = new Map<Verdict, number>();
 			for (const r of rows) if (r.action === action && r.verdict) by.set(r.verdict, (by.get(r.verdict) ?? 0) + 1);
@@ -117,7 +126,15 @@ column never clips it. Long row titles keep their end ("Ancient Rome facts… Pa
 		return `On this page Colander ${parts.length ? `${parts.join(', ')} and ${last}` : last}.`;
 	});
 	const visible = $derived(all ? rows : rows.slice(0, 3));
-	const hidden = (r: PopupRow) => (r.action === 'hide' || r.action === 'collapse') && !r.shown;
+
+	/** A numbered title keeps its last words (up to 9 characters) when cut: "Ancient Rome facts… Part 46". */
+	function ends(t: string): [string, string] {
+		if (!/\d$/.test(t)) return [t, ''];
+		let cut = -1;
+		for (let i = t.lastIndexOf(' '); i > 0 && t.length - i <= 9; i = t.lastIndexOf(' ', i - 1)) cut = i;
+		return cut < 0 ? [t, ''] : [t.slice(0, cut), t.slice(cut)];
+	}
+	const hidden = isHidden;
 
 	// The same icon for an action everywhere: the Why popover, the row menu and in-page.
 	function rowItems(r: PopupRow): MenuItem[] {
@@ -128,14 +145,6 @@ column never clips it. Long row titles keep their end ("Ancient Rome facts… Pa
 			...(a.why ? [{ label: 'Why', icon: Info, onSelect: () => a.why!(r) }] : []),
 			...(a.sourcePage ? [{ label: 'Source page', icon: ArrowRight, onSelect: () => a.sourcePage!(r) }] : [])
 		];
-	}
-
-	/** A numbered title keeps its last words (up to 9 characters) when truncated: "Ancient Rome fa… Part 46". */
-	function ends(t: string): [string, string] {
-		if (!/\d$/.test(t)) return [t, ''];
-		let cut = -1;
-		for (let i = t.lastIndexOf(' '); i > 0 && t.length - i <= 9; i = t.lastIndexOf(' ', i - 1)) cut = i;
-		return cut < 0 ? [t, ''] : [t.slice(0, cut), t.slice(cut)];
 	}
 
 	// Pause and Resume replace each other, so focus moves to the new control instead of the page.
@@ -228,7 +237,7 @@ column never clips it. Long row titles keep their end ("Ancient Rome facts… Pa
 									{#snippet trigger(props)}
 										<button {...props} type="button" class="row-btn">
 											{#if r.verdict}<VerdictChip verdict={r.verdict} size="sm" />{:else}<span class="uin-badge uin-badge-md">Your rule</span>{/if}
-											<span class="title"><span class="t-start">{head}</span>{#if tail}<span class="t-end">{tail}</span>{/if}</span>
+											<span class="title" title={r.title}><span class="t-start">{head}</span>{#if tail}<span class="t-end">{tail}</span>{/if}</span>
 											<!-- The row opens a menu: say so, so it never reads as a static line. -->
 											<ChevronDown size={16} aria-hidden="true" class="more" />
 										</button>
@@ -468,14 +477,23 @@ column never clips it. Long row titles keep their end ("Ancient Rome facts… Pa
 	.row-btn:hover {
 		background: color-mix(in srgb, var(--cl-text) 6%, transparent);
 	}
-	.row-btn :global(.more) {
+	/* The chip, the chevron and Show keep their size; only the title gives way, on one line. */
+	.row-btn > :global(*),
+	.row > :global(.uin-btn) {
 		flex: none;
+	}
+	.row-btn :global(.more) {
 		color: var(--cl-text-muted);
 	}
-	.title {
+	/* One line whatever happens: the title clips itself, and only its start gives way. */
+	.row-btn > .title {
 		display: flex;
-		flex: 1 1 auto;
+		flex: 1 1 0;
+		align-items: baseline;
 		min-width: 0;
+		height: 20px;
+		overflow: hidden;
+		line-height: 20px;
 		white-space: nowrap;
 	}
 	.t-start {
@@ -483,6 +501,7 @@ column never clips it. Long row titles keep their end ("Ancient Rome facts… Pa
 		min-width: 0;
 		overflow: hidden;
 		text-overflow: ellipsis;
+		white-space: nowrap;
 	}
 	.t-end {
 		flex: none;

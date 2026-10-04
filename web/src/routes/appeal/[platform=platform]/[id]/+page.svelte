@@ -82,7 +82,7 @@
 		<Notice tone="error" title="This page could not load"><p>{source.message}</p></Notice>
 	{:else if !s || !s.verdict}
 		<Notice title="There is nothing to appeal">
-			<p>Colander has no verdict for this {noun}, so nothing from it is hidden, collapsed or labeled.</p>
+			<p>Colander has no verdict for this {noun}, so nothing from it is hidden or labeled.</p>
 		</Notice>
 	{:else if s.verdict === 'clear'}
 		<Notice title="This {noun} is already Clear">

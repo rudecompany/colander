@@ -75,7 +75,7 @@
 
 	const compare: [string, boolean, boolean][] = [
 		['Blocking on all 4 platforms', true, true],
-		['All 4 strictness levels', true, true],
+		['All 3 strictness levels', true, true],
 		['Tagging, reports and appeals', true, true],
 		['Your own block and allow lists', true, true],
 		['Sync across browsers', false, true],

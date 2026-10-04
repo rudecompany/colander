@@ -5,10 +5,12 @@
 over it; the host page runs on under the popup. The platform picks the page: a YouTube Home grid,
 one TikTok For You video, an Instagram feed or a Facebook feed. `level`, `platform` and `paused`
 are bindable, so a StrictnessControl or tabs outside drive it, and the docked popup drives them
-back. Paused is the feed without Colander: the before and after, with no slider. The evidence
-card of item 6 is open on first render, drawn in its final state: motion is only for changes the
-visitor makes. The popup docks while the frame is at least 1200 wide, so it never covers the feed
-or an open popover; narrower, it hides and the page shows PopupView under the frame instead. With
+back. Paused is the feed without Colander: the before and after, with no slider. Hidden items are
+not drawn, so the page closes up around them, and the docked popup lists them with Show. The
+evidence card of the AI-made item is open on first render, drawn in its final state: motion is
+only for changes the visitor makes. The popup docks while the frame is at least 1200 wide, so it never covers the feed
+or an open popover; narrower, it hides, and `below` can show the same popup, with the same state,
+under the frame (the page wraps it and decides when it shows). With
 a fixed `height`, the page fades out over its last 48 px.
 
 Keyboard: Why moves focus into the popover, Tab stays inside it, and Escape or any of its actions
@@ -18,7 +20,7 @@ closes it and returns focus to Why (or to the card when Why went away).
 it from demoCounts().
 -->
 <script lang="ts">
-	import { untrack } from 'svelte';
+	import { untrack, type Snippet } from 'svelte';
 	import BrowserFrame from './BrowserFrame.svelte';
 	import InPage from './InPage.svelte';
 	import PopupView, { type PopupActions, type PopupState } from './PopupView.svelte';
@@ -41,7 +43,8 @@ it from demoCounts().
 		listDate = null,
 		list,
 		theme = 'auto',
-		site = ''
+		site = '',
+		below
 	}: {
 		variant?: 'full' | 'mini';
 		platform?: Platform;
@@ -59,15 +62,16 @@ it from demoCounts().
 		list?: { sequence: number | null; updatedAt?: DateInput | null };
 		theme?: Theme;
 		site?: string;
+		/** Under the frame: the page's wrapper, given the popup to render inside it. */
+		below?: Snippet<[Snippet]>;
 	} = $props();
 
 	let revealed = $state<number[]>([]);
 	let allowed = $state<number[]>([]);
-	let skipped = $state<number[]>([]);
 
 	const mode = $derived<DemoLayout>(variant === 'mini' ? 'mini' : (layout ?? PLATFORM_LAYOUT[platform]));
 	const pick = $derived(ids ?? (variant === 'mini' ? DEMO_MINI_ITEMS : (DEMO_ORDER[mode] ?? DEMO_FEED.map((i) => i.id))));
-	const items = $derived(pick.map((id) => DEMO_FEED.find((i) => i.id === id)!).filter((i) => !skipped.includes(i.id)));
+	const items = $derived(pick.map((id) => DEMO_FEED.find((i) => i.id === id)!));
 	const badge = $derived(demoHiddenCount(level, paused, items));
 
 	// One-shot effects of the visitor's last change, read by the next build and then cleared:
@@ -84,34 +88,36 @@ it from demoCounts().
 				pending.changed = items.filter((i) => demoAction(i, was.level, was.paused) !== demoAction(i, next.level, next.paused)).map((i) => i.id);
 				revealed = [];
 			}
-			if (next.open !== was.open && next.open != null) pending.opened = next.open;
+			if (next.open !== was.open && next.open != null) {
+				pending.opened = next.open;
+				// Why on a hidden item (from a popup row) shows it first, so its evidence has a card to open on.
+				const it = items.find((i) => i.id === next.open);
+				if (it && demoAction(it, next.level, next.paused) === 'hide' && !revealed.includes(it.id)) {
+					revealed = [...revealed, it.id];
+					pending.changed = [it.id];
+				}
+			}
 		});
 	});
 
 	const back = (id: number) => [`why-${id}`, `card-${id}`];
 	const handlers = {
-		show: (id: number) => ((revealed = [...revealed, id]), (open = null)),
+		show: (id: number) => ((pending.changed = [id]), (revealed = [...revealed, id]), (open = null)),
 		why: (id: number) => {
 			if (open === id) {
 				pending.focus = back(id);
 				open = null;
 				return;
 			}
-			pending.focus = [`pop-show-${id}`, `pop-allow-${id}`, `pop-${id}`];
+			pending.focus = [`pop-allow-${id}`, `pop-${id}`];
 			open = id;
 		},
 		allow: (id: number) => ((allowed = [...allowed, id]), (open = null)),
-		notSlop: (id: number) => ((allowed = [...allowed, id]), (open = null)),
-		skip: (id: number) => {
-			skipped = [...skipped, id];
-			const next = items[0]?.id;
-			if (next != null) pending.focus = [`skip-${next}`, `why-${next}`, `card-${next}`];
-		}
+		notSlop: (id: number) => ((allowed = [...allowed, id]), (open = null))
 	};
 	// Actions taken in the feed hand focus back to the item; the popup's own rows keep theirs.
 	const feedHandlers = {
 		...handlers,
-		show: (id: number) => ((pending.focus = back(id)), handlers.show(id)),
 		allow: (id: number) => ((pending.focus = back(id)), handlers.allow(id)),
 		notSlop: (id: number) => ((pending.focus = back(id)), handlers.notSlop(id))
 	};
@@ -188,6 +194,7 @@ it from demoCounts().
 		<BrowserFrame count={badge} {paused} {height} docked={popup ? docked : undefined}>
 			<div class="host" class:beside={popup}>{@render feed()}</div>
 		</BrowserFrame>
+		{#if below}{@render below(docked)}{/if}
 	</div>
 {/if}
 
@@ -200,10 +207,11 @@ it from demoCounts().
 		height: 100%;
 	}
 	/* The host page runs under the docked popup; its feed keeps to the left 780 px, and a popover at
-	   the grid's right edge may reach 48 px into the gap before the popup. */
+	   the grid's right edge may reach 56 px into the gap before the popup, clear of the next card's
+	   title. */
 	.beside {
 		--demo-end: max(16px, calc(100% - 764px));
-		--demo-pop-out: -48px;
+		--demo-pop-out: -56px;
 	}
 	.mini {
 		overflow: hidden;

@@ -247,7 +247,7 @@ sticky bar holds Back and Continue; Done opens the first platform.
 	}
 	.rec {
 		display: grid;
-		grid-template-columns: repeat(4, minmax(0, 1fr));
+		grid-template-columns: repeat(3, minmax(0, 1fr));
 		order: -1;
 		width: 560px;
 		max-width: 100%;

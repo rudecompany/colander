@@ -1,6 +1,6 @@
 // Journey 7: the 14-day trial with no card, Plus features unlocking, and settings sync through
 // the real /v1/sync in both directions.
-import { CARD, SEARCH, card, expect, launch, onboard, syncNow, test, type Ext } from './harness.ts';
+import { CARD, SEARCH, card, chip, expect, launch, onboard, syncNow, test, type Ext } from './harness.ts';
 import { ORIGIN, api } from './stack.ts';
 
 let ext: Ext;
@@ -17,9 +17,9 @@ type SyncState = { version: number; dirty: boolean };
 
 test('the trial unlocks Plus, per-platform strictness applies, and settings sync round-trips', async () => {
 	const options = await ext.page('options.html#plan');
-	await expect(options.getByRole('heading', { level: 3, name: 'Free' })).toBeVisible();
-	await options.getByRole('button', { name: 'Start 14-day trial, no card' }).click();
-	await expect(options.getByRole('heading', { level: 3, name: 'Plus trial' })).toBeVisible();
+	await expect(options.getByRole('heading', { level: 2, name: 'Current plan: Free' })).toBeVisible();
+	await options.getByRole('button', { name: 'Start 14 days free' }).click();
+	await expect(options.getByRole('heading', { level: 2, name: 'Plus trial, active' })).toBeVisible();
 
 	// The server issued the token: no card, no account, just the install.
 	const trial = ext.seen.find((s) => s.method === 'POST' && s.url === `${ORIGIN}/v1/trial`)!;
@@ -29,19 +29,20 @@ test('the trial unlocks Plus, per-platform strictness applies, and settings sync
 	const claims = JSON.parse(Buffer.from(token.split('.')[0]!, 'base64url').toString()) as { plan: string; trial: boolean; exp: number; iat: number };
 	expect(claims).toMatchObject({ plan: 'plus', trial: true });
 	expect(claims.exp - claims.iat).toBe(14 * 86_400);
-	const ends = await options.evaluate((ms) => new Date(ms).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' }), claims.exp * 1000);
+	const ends = new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' }).format(claims.exp * 1000);
 	await expect(options.getByText('Your trial ends on')).toContainText(ends);
 
 	// Plus sections are open: topics and a level per platform.
 	await options.goto(options.url().replace(/#.*/, '#plus'));
 	await expect(options.getByRole('button', { name: 'Add topic' })).toBeVisible();
 	await options.goto(options.url().replace(/#.*/, '#strictness'));
-	await options.getByLabel('YouTube').selectOption('strict');
-	await expect.poll(() => ext.storage<Settings>('settings').then((s) => s.perPlatform)).toEqual({ yt: 'strict' });
+	const youtube = options.getByRole('radiogroup', { name: 'YouTube strictness' });
+	await youtube.getByRole('radio', { name: 'No AI' }).click();
+	await expect.poll(() => ext.storage<Settings>('settings').then((s) => s.perPlatform)).toEqual({ yt: 'no_ai' });
 
-	// YouTube alone now runs at Strict: Likely slop is hidden instead of collapsed.
+	// YouTube alone now runs at No AI: AI-made is hidden instead of labeled.
 	const page = await ext.youtube(SEARCH);
-	await expect(card(page, CARD.likely)).toHaveAttribute('data-colander', 'hide');
+	await expect(card(page, CARD.aiMade)).toHaveAttribute('data-colander', 'hide');
 
 	// The change went up with the plan token, and the server holds it under the version the extension knows.
 	await expect.poll(() => ext.storage<SyncState>('syncState')).toMatchObject({ dirty: false, version: 1 });
@@ -51,7 +52,7 @@ test('the trial unlocks Plus, per-platform strictness applies, and settings sync
 	const stored = await api<{ version: number; data: Settings }>('/v1/sync', { auth });
 	expect(stored.status).toBe(200);
 	expect(stored.json.version).toBe(1);
-	expect(stored.json.data.perPlatform).toEqual({ yt: 'strict' });
+	expect(stored.json.data.perPlatform).toEqual({ yt: 'no_ai' });
 
 	// A stale write is refused with the current blob.
 	const stale = await api<{ version: number }>('/v1/sync', { method: 'PUT', auth, body: { version: 0, data: { perPlatform: {} } } });
@@ -59,16 +60,30 @@ test('the trial unlocks Plus, per-platform strictness applies, and settings sync
 	expect(stale.json.version).toBe(1);
 
 	// Another browser on this plan changes the level; Sync now brings it here.
-	const other = await api<{ version: number }>('/v1/sync', { method: 'PUT', auth, body: { version: 1, data: { ...stored.json.data, perPlatform: { yt: 'no_ai' } } } });
+	const other = await api<{ version: number }>('/v1/sync', { method: 'PUT', auth, body: { version: 1, data: { ...stored.json.data, perPlatform: { yt: 'label' } } } });
 	expect(other.status).toBe(200);
 	expect(other.json.version).toBe(2);
-	const from = ext.seen.length;
+	let from = ext.seen.length;
 	await (await syncNow(ext)).close();
-	await expect.poll(() => ext.storage<Settings>('settings').then((s) => s.perPlatform)).toEqual({ yt: 'no_ai' });
-	await expect(options.getByLabel('YouTube')).toHaveValue('no_ai');
-	await expect(card(page, CARD.aiMade)).toHaveAttribute('data-colander', 'hide');
+	await expect.poll(() => ext.storage<Settings>('settings').then((s) => s.perPlatform)).toEqual({ yt: 'label' });
+	await expect(youtube.getByRole('radio', { name: 'Label' })).toHaveAttribute('aria-checked', 'true');
+	await expect(chip(card(page, CARD.likely))).toContainText('Likely slop');
 	expect(await ext.storage<SyncState>('syncState')).toEqual({ version: 2, dirty: false });
 	// Taking the other browser's settings is not a local edit: nothing is written back.
 	const after = ext.seen.slice(from).filter((s) => s.url === `${ORIGIN}/v1/sync`).map((s) => s.method);
 	expect(after).toEqual(['GET']);
+
+	// A browser on an older version still syncs the removed Strict level. It arrives as Standard,
+	// and the synced copy is written back as Standard, so every browser moves off it.
+	const old = await api<{ version: number }>('/v1/sync', { method: 'PUT', auth, body: { version: 2, data: { ...stored.json.data, strictness: 'strict', perPlatform: { yt: 'strict' } } } });
+	expect(old.json.version).toBe(3);
+	from = ext.seen.length;
+	await (await syncNow(ext)).close();
+	await expect.poll(() => ext.storage<{ strictness: string } & Settings>('settings').then((s) => [s.strictness, s.perPlatform])).toEqual(['standard', { yt: 'standard' }]);
+	await expect(youtube.getByRole('radio', { name: 'Standard' })).toHaveAttribute('aria-checked', 'true');
+	await expect(card(page, CARD.likely)).toHaveAttribute('data-colander', 'hide');
+	await expect(chip(card(page, CARD.aiMade))).toContainText('AI-made');
+	await expect.poll(() => ext.storage<SyncState>('syncState')).toEqual({ version: 4, dirty: false });
+	const migrated = await api<{ version: number; data: { strictness: string } & Settings }>('/v1/sync', { auth });
+	expect([migrated.json.data.strictness, migrated.json.data.perPlatform]).toEqual(['standard', { yt: 'standard' }]);
 });

@@ -171,7 +171,6 @@
 					"aiLabel": { "sel": "[class*=\"LeadingTagsContainer\"] *, [class*=\"Aigc\"], [class*=\"AIGC\"], [data-e2e*=\"aigc\"]", "text": "ai-generated" },
 					"chip": { "sel": "[class*=\"CreatorInfoContainer\"]", "place": "append" },
 					"tag": { "sel": "[class*=\"CreatorInfoContainer\"]", "place": "append" },
-					"cover": "section[data-e2e=\"feed-video\"]",
 					"next": "[data-e2e=\"feed-navigation-next\"]"
 				},
 				{

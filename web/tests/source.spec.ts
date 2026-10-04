@@ -3,7 +3,7 @@ import { LOG, SOURCES, mockApi } from './mocks.ts';
 
 const cases = [
 	{ path: '/s/yt/UCq3x9Vb2m4LkT7pQe8sW1aZ', name: 'Ancient Facts Daily', chip: 'Slop', plain: 'Low-effort AI content', summary: 'Hidden for people on Standard', appeal: true },
-	{ path: '/s/tt/@historybites247', name: 'History Bites 24/7', chip: 'Likely slop', plain: 'Probably low-effort AI content', summary: 'Collapsed to one line', appeal: true },
+	{ path: '/s/tt/@historybites247', name: 'History Bites 24/7', chip: 'Likely slop', plain: 'Probably low-effort AI content', summary: 'Hidden for people on Standard', appeal: true },
 	{ path: '/s/ig/studiolumen', name: 'Studio Lumen', chip: 'AI-made', plain: 'Made with AI', summary: 'Labeled AI-made', appeal: true },
 	{ path: '/s/yt/@numisnotes', name: 'Numis Notes', chip: 'Disputed', plain: 'People disagree about this', summary: 'Shown to everyone, with a disputed mark', appeal: false },
 	{ path: '/s/fb/104729388112', name: 'Coastal Science Club', chip: 'Clear', plain: 'Checked and fine', summary: 'Allowed for everyone', appeal: false }

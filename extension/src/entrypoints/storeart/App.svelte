@@ -18,13 +18,13 @@ carry the thumbnail disclosure.
 
 	const frame = new URLSearchParams(location.search).get('frame') ?? '1';
 	const noop = () => {};
-	const handlers = { show: noop, why: noop, allow: noop, notSlop: noop, skip: noop };
+	const handlers = { why: noop, allow: noop, notSlop: noop };
 	const item = (id: number) => DEMO_FEED.find((i) => i.id === id)!;
 
 	const COPY: Record<string, { title: string; title2?: string; lead: string }> = {
 		'1': { title: TAGLINE.first, title2: TAGLINE.second, lead: 'Hides AI slop on YouTube, TikTok, Instagram and Facebook, the way an ad blocker hides ads.' },
-		'2': { title: 'Every hide comes with a reason.', lead: 'Why shows which signals agreed, the list and the date. Show, Always allow and Not slop are one click away.' },
-		'3': { title: 'You choose how strict.', lead: 'Label, Standard, Strict or No AI. Standard hides slop and labels other AI-made videos.' },
+		'2': { title: 'Every label comes with a reason.', lead: 'Why shows which signals agreed, the list and the date. Hidden videos wait in the popup with Show, Always allow and Not slop.' },
+		'3': { title: 'You choose how strict.', lead: 'Label, Standard or No AI. Standard hides slop and likely slop, and labels other AI-made videos.' },
 		'4': { title: 'Every verdict change is public.', lead: 'Creators can appeal and are unhidden while staff review. Every outcome goes in the decision log.' },
 		'5': { title: 'Matched on your device.', title2: 'No account needed.', lead: 'Colander never asks a server about the page you are viewing.' },
 		marquee: { title: TAGLINE.first, title2: TAGLINE.second, lead: 'Hides AI slop on YouTube, TikTok, Instagram and Facebook, the way an ad blocker hides ads.' }
@@ -44,16 +44,16 @@ carry the thumbnail disclosure.
 	/** A fixed list date for the Why caption: store art never shows live values. */
 	const LIST_DATE = '2026-10-02';
 
-	// Frame 1: the grid at Standard, its first column beside the docked popup, which covers the rest
-	// of the page as a real popup does.
+	// Frame 1: the grid at Standard, closed up around what it hides, its first column beside the
+	// docked popup, which covers the rest of the page as a real popup does.
 	const GRID_CSS = `${DEMO_CSS}.feed-grid{grid-template-columns:repeat(3,152px)}`;
 	const grid = (ctx: InpageContext) => demoFeed(ctx, { layout: 'grid', level: 'standard', items: [3, 1, 5, 6, 7, 8, 9].map(item) }, handlers);
 
-	// Frame 2: a list with the collapsed bar, its Why open and floating, as on a host page. The bar
-	// is wide enough for its reason, as on YouTube search.
+	// Frame 2: a list with an AI-made video, its Why open and floating, as on a host page. The
+	// hidden videos between them have left no gap.
 	const LIST_CSS = `${DEMO_CSS}.feed{padding:12px}`;
 	const why = (ctx: InpageContext) => {
-		const feed = demoFeed(ctx, { layout: 'list', level: 'standard', items: [5, 6, 7].map(item), open: 6, listDate: LIST_DATE }, handlers);
+		const feed = demoFeed(ctx, { layout: 'list', level: 'standard', items: [5, 6, 3, 2, 7].map(item), open: 3, listDate: LIST_DATE }, handlers);
 		feed.querySelector('.cl-pop')?.classList.remove('cl-flat');
 		return feed;
 	};
@@ -241,11 +241,15 @@ carry the thumbnail disclosure.
 		border: 1px solid var(--cl-border);
 		border-radius: var(--cl-r-card);
 	}
+	/* Label, with every row, beside Standard and No AI, which hide some of them. */
 	.f3 {
 		display: grid;
 		grid-template-columns: repeat(2, minmax(0, 1fr));
 		gap: 12px;
 		zoom: 1.25;
+	}
+	.f3 > :global(:first-child) {
+		grid-row: span 2;
 	}
 	.f4 {
 		display: grid;

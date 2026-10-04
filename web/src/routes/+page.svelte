@@ -7,22 +7,18 @@
 		ColanderMark,
 		DEFINITION,
 		DEMO_FEED,
-		DEMO_POPUP,
 		DEMO_THUMBS_NOTE,
 		DotField,
 		DotMeter,
 		DotUnitChart,
 		EvidenceCard,
 		FeedDemo,
-		ITEM_NOUN,
 		LogRow,
 		PLATFORMS,
-		PLATFORM_DOMAIN,
 		PLATFORM_NAME,
 		PLATFORM_SURFACES,
 		PLAN_COPY,
 		PlatformTag,
-		PopupView,
 		PriceCard,
 		PrivacyFacts,
 		StatCell,
@@ -42,22 +38,20 @@
 		fmtNum,
 		fmtShortDate,
 		type Platform,
-		type PopupState,
 		type Strictness
 	} from '@colander/shared';
-	import { demoAction, demoCounts } from '@colander/shared/inpage';
+	import { demoCounts } from '@colander/shared/inpage';
 	import { evidence } from '@colander/shared/inpage/evidence.ts';
 	import type { LogEntry } from '@colander/shared/api';
 	import Button from '@colander/shared/components/ui/button/button.svelte';
 	import NativeSelect from '@colander/shared/components/ui/native-select/native-select.svelte';
 	import Tabs from '@colander/shared/components/ui/tabs/tabs.svelte';
 	import ChevronDown from '@lucide/svelte/icons/chevron-down';
-	import ChevronsDownUp from '@lucide/svelte/icons/chevrons-down-up';
 	import Eye from '@lucide/svelte/icons/eye';
 	import EyeOff from '@lucide/svelte/icons/eye-off';
 	import InfinityIcon from '@lucide/svelte/icons/infinity';
 	import ArrowRight from '@lucide/svelte/icons/arrow-right';
-import Lock from '@lucide/svelte/icons/lock';
+	import Lock from '@lucide/svelte/icons/lock';
 	import Scale from '@lucide/svelte/icons/scale';
 	import Tag from '@lucide/svelte/icons/tag';
 	import Undo2 from '@lucide/svelte/icons/undo-2';
@@ -68,43 +62,25 @@ import Lock from '@lucide/svelte/icons/lock';
 	import { COMPARISON, COMPARISON_CHECKED, COMPARISON_SCOPE, FAQ, KAPWING, KAPWING_URL } from '#lib/content.ts';
 	import { live } from '#lib/live.svelte.ts';
 
-	/* Hero demo: one state drives the frame, the docked popup, the phone feed and the phone popup. */
-	const PHONE = [3, 6, 1];
+	/* Hero demo: one state drives the frame, the phone feed and the popup each of them carries. */
+	const PHONE = [6, 3, 1];
 	let platform = $state<Platform>('yt');
 	let level = $state<Strictness>('standard');
 	let paused = $state(false);
-	let openPhone = $state<number | null>(6);
+	let openPhone = $state<number | null>(3);
 
 	const stats = $derived(live.stats);
 	const listInfo = $derived({ sequence: stats?.list_sequence ?? null, updatedAt: stats?.list_updated_at ?? null });
 	const listDate = $derived(stats?.list_updated_at ?? null);
 	const release = __RELEASE__;
 
-	const popupState = $derived<PopupState>({
-		status: paused ? 'paused' : 'active',
-		domain: PLATFORM_DOMAIN[platform],
-		pausedScope: 'site',
-		strictness: level,
-		hiddenToday: DEMO_POPUP.hiddenToday,
-		noun: ITEM_NOUN[platform],
-		// The phone popup counts the phone feed's items, so it agrees with that frame's badge.
-		rows: paused
-			? []
-			: DEMO_FEED.filter((i) => PHONE.includes(i.id) && i.verdict && demoAction(i, level) !== 'allow').map((i) => ({
-					id: i.id,
-					verdict: i.verdict,
-					title: i.title,
-					action: demoAction(i, level)
-				})),
-		list: listInfo
-	});
-
 	/* Live strip. */
 	const sources = $derived(stats ? VERDICTS.reduce((n, v) => n + stats.sources[v], 0) : null);
 
-	/* Strictness cards and the specimen strip. */
+	/* Strictness cards, the specimen strip and the popup rows in tile 02. */
 	const MINI = [2, 6, 3, 1].map((id) => DEMO_FEED.find((i) => i.id === id)!);
-	const ACTION_ICON = { hide: EyeOff, collapse: ChevronsDownUp, label: Tag, allow: Eye };
+	const ACTION_ICON = { hide: EyeOff, label: Tag, allow: Eye };
+	const HIDDEN_ROWS = [2, 6].map((id) => DEMO_FEED.find((i) => i.id === id)!);
 
 	/* Bento. */
 	const item6 = DEMO_FEED.find((i) => i.id === 6)!;
@@ -198,12 +174,20 @@ import Lock from '@lucide/svelte/icons/lock';
 			<NativeSelect id="hero-platform" size="lg" options={PLATFORMS.map((p) => ({ value: p, label: PLATFORM_NAME[p] }))} bind:value={platform} />
 		</div>
 
+		<!-- Each frame shows its own popup under it when the popup does not dock, so the popup always
+		     lists the feed above it. -->
+		{#snippet popupBelow(popup: import('svelte').Snippet)}
+			<div class="popup-phone">
+				<p class="cl-eyebrow">The popup in your toolbar</p>
+				<div class="popup-box">{@render popup()}</div>
+			</div>
+		{/snippet}
 		<div class="frame-desk">
-			<FeedDemo bind:platform bind:level bind:paused height={696} list={listInfo} {listDate} />
+			<FeedDemo bind:platform bind:level bind:paused height={696} list={listInfo} {listDate} below={popupBelow} />
 		</div>
 		<div class="frame-phone" class:reserved={!phoneFeed}>
 			{#if phoneFeed}
-				<FeedDemo bind:platform bind:level bind:paused bind:open={openPhone} layout="list" items={PHONE} popup={false} {listDate} />
+				<FeedDemo bind:platform bind:level bind:paused layout="list" items={PHONE} bind:open={openPhone} popup={false} list={listInfo} {listDate} below={popupBelow} />
 			{/if}
 		</div>
 		<noscript><style>.frame-desk{display:block!important}.frame-phone{display:none!important}</style></noscript>
@@ -211,20 +195,6 @@ import Lock from '@lucide/svelte/icons/lock';
 		<div class="control">
 			<span class="control-label" aria-hidden="true">Strictness</span>
 			<StrictnessControl bind:value={level} size="xl" label="Strictness" hint={false} />
-		</div>
-		<div class="popup-phone">
-			<p class="cl-eyebrow">The popup in your toolbar</p>
-			<div class="popup-box">
-				<PopupView
-					state={popupState}
-					actions={{
-						strictness: (l) => (level = l),
-						pause: () => (paused = true),
-						resume: () => (paused = false),
-						why: (r) => (openPhone = Number(r.id))
-					}}
-				/>
-			</div>
 		</div>
 		<p class="cl-figure caption">
 			Recreated feed, drawn with the components the extension ships. Pause Colander in the popup to see it without them.
@@ -371,12 +341,19 @@ import Lock from '@lucide/svelte/icons/lock';
 			</li>
 			<li class="tile">
 				<span class="cl-figure step">02</span>
-				<div class="vis" inert role="img" aria-label="A list where one item is collapsed to a single line: Likely slop, hidden for you, with Show and Why.">
+				<div class="vis" inert role="img" aria-label="The popup's On this page list: a Slop video and a Likely slop video, each with Show.">
 					<DotField class="vis-dots" />
-					<div class="vis-in list-demo"><FeedDemo variant="mini" items={[5, 6, 9]} /></div>
+					<div class="vis-in rows-demo">
+						<p class="rows-head">On this page</p>
+						{#each HIDDEN_ROWS as it (it.id)}
+							<p class="rows-row">
+								<VerdictChip verdict={it.verdict} size="sm" /><span class="rows-t">{it.title}</span><span class="rows-show"><Eye size={16} aria-hidden="true" />Show</span>
+							</p>
+						{/each}
+					</div>
 				</div>
 				<h3>Hidden for you, not for everyone</h3>
-				<p>Likely slop collapses to one line. Show brings it back.</p>
+				<p>Slop leaves no gap, like a blocked ad. The popup lists it with Show.</p>
 			</li>
 			<li class="tile">
 				<span class="cl-figure step">03</span>
@@ -389,14 +366,14 @@ import Lock from '@lucide/svelte/icons/lock';
 			</li>
 			<li class="tile">
 				<span class="cl-figure step">04</span>
-				<div class="vis" inert role="img" aria-label="A notice that says Skipped 1 slop video, with Undo.">
+				<div class="vis" inert role="img" aria-label="A notice that says Shown again, with Undo.">
 					<DotField class="vis-dots" />
 					<div class="vis-in toast-demo">
-						<Toast text="Skipped 1 slop video." verdict="slop" paused actions={[{ label: 'Undo', icon: Undo2, onClick: noop }]} />
+						<Toast text="Shown again." paused actions={[{ label: 'Undo', icon: Undo2, onClick: noop }]} />
 					</div>
 				</div>
 				<h3>One click to undo</h3>
-				<p>Undo is here and in the popup.</p>
+				<p>Show brings an item back. Undo hides it again.</p>
 			</li>
 			<li class="tile">
 				<span class="cl-figure step">05</span>
@@ -503,10 +480,7 @@ import Lock from '@lucide/svelte/icons/lock';
 				</tbody>
 			</table>
 		</div>
-		<p class="compare-cap">
-			Based on {COMPARISON_SCOPE}, checked {fmtShortDate(COMPARISON_CHECKED)}.
-			<ArrowLink href="/definition#comparison" size="sm">Sources</ArrowLink>
-		</p>
+		<p class="compare-cap">Based on {COMPARISON_SCOPE}, checked {fmtShortDate(COMPARISON_CHECKED)}.</p>
 	</div>
 </section>
 
@@ -1022,7 +996,7 @@ import Lock from '@lucide/svelte/icons/lock';
 	/* 5. Strictness */
 	.levels {
 		display: grid;
-		grid-template-columns: repeat(4, minmax(0, 1fr));
+		grid-template-columns: repeat(3, minmax(0, 1fr));
 		gap: 24px;
 		list-style: none;
 	}
@@ -1060,7 +1034,10 @@ import Lock from '@lucide/svelte/icons/lock';
 	}
 	@media (max-width: 1023px) {
 		.levels {
-			grid-template-columns: repeat(2, minmax(0, 1fr));
+			gap: 16px;
+		}
+		.level {
+			padding: 16px;
 		}
 	}
 	@media (max-width: 639px) {
@@ -1103,25 +1080,19 @@ import Lock from '@lucide/svelte/icons/lock';
 	.step {
 		color: var(--cl-text-muted);
 	}
-	/* The perforated connector runs from each step number to the next across a row. */
-	.tile:not(:nth-child(3n))::after,
-	.tile:not(:nth-child(3n + 1))::before {
+	/* A perforated rule runs from the step number to the tile's padding, toward the next step in
+	   the row; it never crosses the tile's border. */
+	.tile:not(:nth-child(3n))::after {
 		content: '';
 		position: absolute;
 		top: 30px;
+		right: 24px;
+		left: 56px;
 		height: 3px;
 		background: radial-gradient(circle at 1.5px 1.5px, var(--cl-dot-strong) 1.5px, transparent 1.6px) 0 0 / 8px 3px repeat-x;
 	}
-	.tile:not(:nth-child(3n))::after {
-		right: -25px;
-		left: 56px;
-	}
-	.tile:not(:nth-child(3n + 1))::before {
-		left: -1px;
-		width: 16px;
-	}
-	/* Each picture spans the tile's full width, so the notice in 04 stays on one line and the bar in
-	   02 keeps "Hidden for you", as they do on a host page. */
+	/* Each picture spans the tile's full width, so the notice in 04 stays on one line, as it does on
+	   a host page. */
 	.vis {
 		position: relative;
 		display: grid;
@@ -1156,12 +1127,43 @@ import Lock from '@lucide/svelte/icons/lock';
 		top: 8px;
 		left: 8px;
 	}
-	.list-demo {
+	/* The popup's On this page rows, as PopupView draws them: one-line titles, Show at the end. */
+	.rows-demo {
 		width: calc(100% - 24px);
-		padding: 12px;
+		padding: 4px 4px 4px 12px;
 		border: 1px solid var(--cl-border);
 		border-radius: var(--cl-r-card);
 		background: var(--cl-surface);
+	}
+	.tile .rows-head {
+		padding: 8px 0 4px;
+		color: var(--cl-text);
+		font: var(--cl-body-strong);
+	}
+	.tile .rows-row {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		height: 44px;
+		color: var(--cl-text);
+	}
+	.rows-row > :global(*) {
+		flex: none;
+	}
+	.rows-row > .rows-t {
+		flex: 1 1 0;
+		min-width: 0;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+	.rows-show {
+		display: inline-flex;
+		align-items: center;
+		gap: 6px;
+		padding: 0 8px;
+		color: var(--cl-brand);
+		font: var(--cl-body-strong);
 	}
 	.pop-demo :global(.cl-pop) {
 		width: 312px;
@@ -1210,6 +1212,11 @@ import Lock from '@lucide/svelte/icons/lock';
 	.log-demo :global(.log) {
 		border-top: 0;
 	}
+	/* The whole entry, its reason in 2 lines, fits the picture. */
+	.log-demo :global(.row) {
+		row-gap: 2px;
+		padding-block: 6px;
+	}
 	.tile h3 {
 		font: var(--cl-title);
 	}
@@ -1222,23 +1229,13 @@ import Lock from '@lucide/svelte/icons/lock';
 			grid-template-columns: 1fr;
 			max-width: 560px;
 		}
-		.tile::before,
+		/* Stacked or scrolling, the steps read in order without a rule. */
 		.tile::after {
 			display: none;
 		}
-		.tile:not(:last-child)::after {
-			display: block;
-			top: auto;
-			right: auto;
-			bottom: -25px;
-			left: 31px;
-			width: 3px;
-			height: 24px;
-			background: radial-gradient(circle at 1.5px 1.5px, var(--cl-dot-strong) 1.5px, transparent 1.6px) 0 0 / 3px 8px repeat-y;
-		}
 	}
 	/* Phones: the six steps are one row that scrolls sideways and snaps to each tile, the next one
-	   peeking in, with the perforated connector between their numbers. */
+	   peeking in. */
 	@media (max-width: 639px) {
 		.bento {
 			grid-template-columns: none;
@@ -1262,15 +1259,6 @@ import Lock from '@lucide/svelte/icons/lock';
 		}
 		.vis {
 			margin-inline: -16px;
-		}
-		.tile:not(:last-child)::after {
-			top: 24px;
-			right: -13px;
-			bottom: auto;
-			left: auto;
-			width: 12px;
-			height: 3px;
-			background: radial-gradient(circle at 1.5px 1.5px, var(--cl-dot-strong) 1.5px, transparent 1.6px) 0 0 / 8px 3px repeat-x;
 		}
 	}
 

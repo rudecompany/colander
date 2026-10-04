@@ -39,7 +39,10 @@ test('200 cards: hide latency p95 under 150 ms and added time under 50 ms', asyn
 	expect(slowdown, 'machine slowdown against the reference').toBeLessThan(12);
 	const result = await page.evaluate(async () => {
 		const grid = document.querySelector('ytd-rich-grid-renderer #contents')!;
-		const templates = [...grid.querySelectorAll('ytd-rich-item-renderer')].map((c) => {
+		const cards = [...grid.querySelectorAll('ytd-rich-item-renderer')];
+		// Fixture cards from a listed channel are hidden at Standard wherever they are cloned.
+		const listed = cards.map((c) => c.getAttribute('data-colander') === 'hide');
+		const templates = cards.map((c) => {
 			const t = c.cloneNode(true) as Element;
 			t.removeAttribute('data-colander');
 			t.removeAttribute('data-colander-card');
@@ -65,10 +68,8 @@ test('200 cards: hide latency p95 under 150 ms and added time under 50 ms', asyn
 				const id = `perf${String(n).padStart(7, '0')}`;
 				card.querySelectorAll('a[href*="watch?v="]').forEach((a) => a.setAttribute('href', `/watch?v=${id}`));
 				const bridge = JSON.parse(card.getAttribute('data-colander-bridge') || '{}');
-				if (n % 4 === 0) {
-					bridge.s = ['/@aihistorydaily'];
-					slop++;
-				}
+				if (n % 4 === 0) bridge.s = ['/@aihistorydaily'];
+				if (n % 4 === 0 || listed[n % templates.length]) slop++;
 				bridge.i = id;
 				card.setAttribute('data-colander-bridge', JSON.stringify(bridge));
 				inserted.set(card, performance.now());

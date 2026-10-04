@@ -1,4 +1,4 @@
-<!-- @component Appearance: larger plain-language chips, and a Tag button that is always in view. -->
+<!-- @component Appearance: larger plain-language chips, a Tag button that is always in view, and a notice when a swipe feed skips a hidden video. -->
 <script lang="ts">
 	import { InPage, PageHeader, SettingRow } from '@colander/shared';
 	import { DEMO_THUMBS_NOTE } from '@colander/shared/copy';
@@ -28,14 +28,14 @@
 			h(
 				'figure',
 				{ 'data-current': isPlain === plain || undefined },
-				h('div', { class: 'th' }, thumbSvg(ctx.doc, 'tide-pool'), h('div', { class: 'on' }, chip(ctx, { verdict: 'ai_made', reason: '', plain: isPlain }, { tone: 'ink' }))),
+				h('div', { class: 'th' }, thumbSvg(ctx.doc, 'tide-pool'), h('div', { class: 'on' }, chip(ctx, { verdict: 'ai_made', plain: isPlain }, { tone: 'ink' }))),
 				h('figcaption', {}, label)
 			);
 		return h('div', { class: 'pv' }, fig(false, 'Default'), fig(true, 'Larger, plain-language'));
 	};
 </script>
 
-<PageHeader variant="app" eyebrow="Options" title="Appearance" lede="How labels look on YouTube, TikTok, Instagram and Facebook." />
+<PageHeader variant="app" eyebrow="Options" title="Appearance" lede="How labels and notices look on YouTube, TikTok, Instagram and Facebook." />
 
 <div class="cards">
 	<Card>
@@ -53,6 +53,14 @@
 		<SettingRow title="Always show the Tag button" description="Off, the Tag button appears when you point at a card or move to it with the keyboard. It always shows in swipe feeds.">
 			{#snippet control({ labelledby, describedby })}
 				<Switch checked={settings.alwaysTag} aria-labelledby={labelledby} aria-describedby={describedby} onCheckedChange={(v) => send({ type: 'settings', patch: { alwaysTag: v } })} />
+			{/snippet}
+		</SettingRow>
+		<SettingRow
+			title="Say when a swipe feed skips a video"
+			description="Off, Shorts, TikTok and Reels move past hidden videos without a word, and the popup lists them. On, a short notice says what was skipped, with Undo and Why."
+		>
+			{#snippet control({ labelledby, describedby })}
+				<Switch checked={settings.skipNotice} aria-labelledby={labelledby} aria-describedby={describedby} onCheckedChange={(v) => send({ type: 'settings', patch: { skipNotice: v } })} />
 			{/snippet}
 		</SettingRow>
 	</Card>

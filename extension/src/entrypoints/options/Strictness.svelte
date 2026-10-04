@@ -1,6 +1,7 @@
 <!--
-@component Strictness: the four levels as cards with the recreated feed at each level, the table
-of what each level does, and per-platform levels for Plus.
+@component Strictness: the three levels as cards with the recreated feed at each level, the table
+of what each level does, and per-platform levels for Plus. Label, with every row, sits beside
+Standard and No AI, which hide some of them without a gap.
 -->
 <script lang="ts">
 	import { PageHeader, PlatformTag, PlusTag, StrictnessTable } from '@colander/shared';
@@ -31,7 +32,7 @@ of what each level does, and per-platform levels for Plus.
 	}
 </script>
 
-<PageHeader variant="app" eyebrow="Options" title="Strictness" lede="You decide how strict Colander is. Disputed items always show with their mark, and Clear items are always allowed." />
+<PageHeader variant="app" eyebrow="Options" title="Strictness" lede="You decide how strict Colander is. Hidden items leave no gap, and the popup lists each one with Show. Disputed items always show with their mark, and Clear items are always allowed." />
 
 <div class="cards">
 	<section aria-labelledby="{uid}-every">
@@ -85,9 +86,8 @@ of what each level does, and per-platform levels for Plus.
 		grid-template-columns: repeat(2, minmax(0, 1fr));
 		gap: 12px;
 	}
-	/* Side by side, a one-line level line keeps the room of two, so the rows start level. */
-	.levels :global(.hint) {
-		min-height: 32px;
+	.levels > :global(:first-child) {
+		grid-row: span 2;
 	}
 	.muted {
 		margin-bottom: 8px;
@@ -117,8 +117,8 @@ of what each level does, and per-platform levels for Plus.
 		.levels {
 			grid-template-columns: minmax(0, 1fr);
 		}
-		.levels :global(.hint) {
-			min-height: 0;
+		.levels > :global(:first-child) {
+			grid-row: auto;
 		}
 		.rows li {
 			flex-direction: column;

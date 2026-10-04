@@ -34,7 +34,7 @@ export interface Evidence {
 export interface EvidenceInput {
 	verdict: Verdict | null;
 	signals?: Signal[];
-	/** Hidden or collapsed, as opposed to labeled. Picks the title. */
+	/** Hidden, as opposed to labeled. Picks the title. */
 	hidden: boolean;
 	/** Rows given directly, such as the demo's or the person's own rules. Replaces the signal rows. */
 	rows?: { layer?: LayerKey; key?: string; label?: string; text: string; agreed: boolean }[];

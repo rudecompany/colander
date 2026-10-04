@@ -55,8 +55,6 @@ export interface Surface {
 	chip?: Anchor;
 	/** Where the Tag button goes. Default: appended to the card. */
 	tag?: Anchor;
-	/** Swipe feeds: the element the cover is laid over. Default: the card. */
-	cover?: string;
 	/** Swipe feeds: the platform's own "next" control, a document-level selector. Default: scroll to the next card. */
 	next?: string;
 }

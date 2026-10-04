@@ -1,7 +1,7 @@
 // Screenshots of every surface, light and dark, saved to screenshots/ for review.
 // Run with `pnpm screenshots`; skipped in the normal end-to-end run so it never rewrites them.
 import type { Page } from '@playwright/test';
-import { EXT_ID, REVIEW_QUEUE, REVIEW_SOURCE, SHOTS, expect, fixtureHtml, test, type Ext } from './harness';
+import { EXT_ID, REVIEW_QUEUE, REVIEW_SOURCE, SHOTS, expect, test, type Ext } from './harness';
 
 test.skip(!SHOTS, 'Set SCREENSHOTS=1 (pnpm screenshots) to capture screenshots.');
 
@@ -20,13 +20,13 @@ async function richState(ext: Ext) {
 	};
 	await ext.ctl.evaluate(
 		({ days }) => chrome.storage.local.set({ stats: { firstRunAt: Date.now() - 9 * 86_400_000, days } }),
-		{ days: Object.fromEntries([18, 31, 24, 40, 12, 27, 35].map((n, i) => [day(6 - i), { hidden: n, collapsed: Math.round(n / 4), labeled: n * 2 }])) }
+		{ days: Object.fromEntries([18, 31, 24, 40, 12, 27, 35].map((n, i) => [day(6 - i), { hidden: n, labeled: n * 2 }])) }
 	);
 	await ext.send({
 		type: 'settings',
 		patch: {
 			topics: [{ id: 't1', name: 'Kids', terms: ['#kids', 'cartoon', 'nursery rhymes'], strictness: 'no_ai', hide: false }],
-			perPlatform: { tt: 'strict' },
+			perPlatform: { tt: 'no_ai' },
 			blocks: [{ key: 'yt:s:@endlessfacts', name: 'Endless Facts', at: Date.now() }],
 			allows: [{ key: 'yt:s:@handmadehistory', name: 'Handmade History', at: Date.now() - 1000 }]
 		}
@@ -158,7 +158,7 @@ for (const scheme of ['light', 'dark'] as const) {
 	test.describe(`in-page ${scheme}`, () => {
 		test.use({ colorScheme: scheme, viewport: { width: 1280, height: 900 } });
 
-		test(`chips, bars, menus and notices ${scheme}`, async ({ ext }) => {
+		test(`chips, menus, notices and closed-up feeds ${scheme}`, async ({ ext }) => {
 			await ext.setup();
 			const dark = scheme === 'dark';
 			const page = await ext.open('https://www.youtube.com/results?search_query=history', { dark });
@@ -167,11 +167,8 @@ for (const scheme of ['light', 'dark'] as const) {
 			// The chip on a thumbnail, with Why on hover.
 			await cards.nth(2).locator('colander-ui[data-kind="chip"] button').hover();
 			await cards.nth(2).screenshot({ path: `screenshots/inpage-chip-${scheme}.png`, animations: 'disabled' });
-			// The collapsed bar.
-			await page.mouse.move(0, 0);
-			await cards.nth(1).screenshot({ path: `screenshots/inpage-collapsed-${scheme}.png`, animations: 'disabled' });
-			// The Why popover on the collapsed bar.
-			await cards.nth(1).locator('colander-ui[data-kind="bar"]').getByRole('button', { name: 'Why' }).click();
+			// The Why popover on the AI-made chip.
+			await cards.nth(2).locator('colander-ui[data-kind="chip"] button').click();
 			await page.waitForTimeout(150);
 			await shot(page, `inpage-why-${scheme}`);
 			await page.keyboard.press('Escape');
@@ -202,12 +199,16 @@ for (const scheme of ['light', 'dark'] as const) {
 			await page.screenshot({ path: `screenshots/inpage-why-signals-${scheme}.png`, clip: { x: 0, y: 0, width: 760, height: 460 }, animations: 'disabled' });
 			await page.keyboard.press('Escape');
 
-			// Home grid at Strict: hidden, grid stubs and labeled cards side by side.
-			await ext.send({ type: 'settings', patch: { strictness: 'strict' } });
-			const home = await ext.open('https://www.youtube.com/', { dark });
-			await home.locator('ytd-rich-item-renderer').nth(3).hover();
-			await shot(home, `inpage-home-strict-${scheme}`);
+			// Home and subscriptions at Standard: hidden cards leave no gap, and the grid reflows so
+			// the rows before the Shorts shelf stay full.
 			await ext.send({ type: 'settings', patch: { strictness: 'standard' } });
+			const home = await ext.open('https://www.youtube.com/', { dark });
+			await expect(home.locator('[data-colander-reflow]')).toHaveCount(1);
+			await home.locator('ytd-rich-item-renderer:not([data-colander])').nth(3).hover();
+			await shot(home, `inpage-home-${scheme}`, true);
+			const subs = await ext.open('https://www.youtube.com/feed/subscriptions', { dark });
+			await expect(subs.locator('[data-colander-reflow]')).toHaveCount(1);
+			await shot(subs, `inpage-subscriptions-${scheme}`, true);
 
 			// Report source on a channel page, both steps.
 			const channel = await ext.open('https://www.youtube.com/@NASA/videos', { dark });
@@ -218,15 +219,14 @@ for (const scheme of ['light', 'dark'] as const) {
 			await channel.waitForTimeout(150);
 			await shot(channel, `inpage-report-2-${scheme}`);
 
-			// Shorts: the skip notice, then a covered Short.
+			// Shorts: the skip notice, with it switched on in Appearance (off by default, skips are silent).
+			await ext.send({ type: 'settings', patch: { skipNotice: true } });
 			const shorts = await ext.open('https://www.youtube.com/shorts/_k2w1cC69qY', { dark });
 			await expect(layer(shorts).locator('.cl-toast')).toBeVisible();
 			await layer(shorts).locator('.cl-toast').hover();
 			await shorts.waitForTimeout(600);
 			await shot(shorts, `inpage-skip-notice-${scheme}`, false, 'allow');
-			const covered = await ext.open('https://www.youtube.com/shorts/_k2w1cC69qY', { dark, html: fixtureHtml('yt-shorts').replaceAll('aihistorydaily', 'catrescuetales') });
-			await covered.waitForTimeout(300);
-			await shot(covered, `inpage-cover-${scheme}`);
+			await ext.send({ type: 'settings', patch: { skipNotice: false } });
 
 			// TikTok For You: the chip beside the creator name, and the Tag button.
 			await ext.send({ type: 'set-platform', platform: 'tt', on: true });

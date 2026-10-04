@@ -3,7 +3,7 @@
 // in-page checks cover only the colander-ui hosts and their shadow roots.
 import AxeBuilder from '@axe-core/playwright';
 import type { Page } from '@playwright/test';
-import { EXT_ID, REVIEW_QUEUE, REVIEW_SOURCE, expect, fixtureHtml, test, type Ext } from './harness';
+import { EXT_ID, REVIEW_QUEUE, REVIEW_SOURCE, expect, test, type Ext } from './harness';
 
 const TAGS = ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa'];
 const SECTIONS = ['lists', 'platforms', 'strictness', 'plus', 'appearance', 'plan', 'reports', 'data', 'privacy'];
@@ -35,13 +35,13 @@ async function richState(ext: Ext) {
 	};
 	await ext.ctl.evaluate(
 		({ days }) => chrome.storage.local.set({ stats: { firstRunAt: Date.now() - 9 * 86_400_000, days } }),
-		{ days: Object.fromEntries([18, 31, 24, 40, 12, 27, 35].map((n, i) => [day(6 - i), { hidden: n, collapsed: Math.round(n / 4), labeled: n * 2 }])) }
+		{ days: Object.fromEntries([18, 31, 24, 40, 12, 27, 35].map((n, i) => [day(6 - i), { hidden: n, labeled: n * 2 }])) }
 	);
 	await ext.send({
 		type: 'settings',
 		patch: {
 			topics: [{ id: 't1', name: 'Kids', terms: ['#kids', 'cartoon'], strictness: 'no_ai', hide: false }],
-			perPlatform: { tt: 'strict' },
+			perPlatform: { tt: 'no_ai' },
 			blocks: [{ key: 'yt:s:@endlessfacts', name: 'Endless Facts', at: Date.now() }],
 			allows: [{ key: 'yt:s:@handmadehistory', name: 'Handmade History', at: Date.now() }]
 		}
@@ -131,10 +131,10 @@ for (const scheme of ['light', 'dark'] as const) {
 			const page = await ext.open('https://www.youtube.com/results?search_query=history', { dark });
 			const cards = page.locator('ytd-search ytd-video-renderer');
 			const layer = page.locator('colander-ui[data-kind="layer"]');
-			// Chips, the collapsed bar and the Tag button (shown on hover).
+			// Chips and the Tag button (shown on hover).
 			await cards.nth(3).hover();
 			await expect(cards.nth(3).locator('colander-ui[data-kind="tag"]')).toHaveCSS('opacity', '1');
-			expect.soft(await audit(page, UI), 'chips, collapsed bar, Tag button').toEqual([]);
+			expect.soft(await audit(page, UI), 'chips, Tag button').toEqual([]);
 			// The tag menu, then its confirmation and Add detail.
 			await cards.nth(3).locator('colander-ui[data-kind="tag"] button').click();
 			await expect(layer.locator('.cl-pop')).toBeVisible();
@@ -146,7 +146,7 @@ for (const scheme of ['light', 'dark'] as const) {
 			await page.keyboard.press('Escape');
 			await layer.getByRole('button', { name: 'Undo' }).click();
 			// The Why popover.
-			await cards.nth(1).locator('colander-ui[data-kind="bar"]').getByRole('button', { name: 'Why' }).click();
+			await cards.nth(2).locator('colander-ui[data-kind="chip"] button').click();
 			await expect(layer.locator('.cl-pop')).toBeVisible();
 			expect.soft(await audit(page, UI), 'Why popover').toEqual([]);
 			await page.keyboard.press('Escape');
@@ -162,20 +162,19 @@ for (const scheme of ['light', 'dark'] as const) {
 			await expect(sheet.getByRole('alert')).toBeVisible();
 			expect.soft(await audit(channel, UI), 'report sheet, reason with an error').toEqual([]);
 
-			// Swipe feeds: the skip notice, then a cover.
+			// Swipe feeds: the skip notice, with it switched on in Appearance.
+			await ext.send({ type: 'settings', patch: { skipNotice: true } });
 			const shorts = await ext.open('https://www.youtube.com/shorts/_k2w1cC69qY', { dark });
 			await expect(shorts.locator('colander-ui[data-kind="layer"] .cl-toast')).toBeVisible();
 			expect.soft(await audit(shorts, UI), 'skip notice').toEqual([]);
-			const covered = await ext.open('https://www.youtube.com/shorts/_k2w1cC69qY', { dark, html: fixtureHtml('yt-shorts').replaceAll('aihistorydaily', 'catrescuetales') });
-			await expect(covered.locator('colander-ui[data-kind="cover"]').first()).toBeVisible();
-			expect.soft(await audit(covered, UI), 'swipe cover').toEqual([]);
 
-			// Plain-language chips.
+			// Plain-language chips, on a card shown again from the popup too. Plain words read neutrally (VERDICT_PLAIN).
 			await ext.send({ type: 'settings', patch: { plainChips: true } });
 			await expect(cards.nth(2).locator('colander-ui[data-kind="chip"]')).toContainText('Made with AI');
-			// Plain words read neutrally (VERDICT_PLAIN).
-			await expect(cards.nth(1).locator('colander-ui[data-kind="bar"]')).toContainText('Probably low-effort AI content');
-			expect.soft(await audit(page, UI), 'plain-language chips and bar').toEqual([]);
+			const shown = (await ext.pageState(page)).actions.find((a: { verdict: string }) => a.verdict === 'likely_slop');
+			await ext.ctl.evaluate(async ([tabId, id]) => chrome.tabs.sendMessage(tabId, { type: 'show', id }), [await ext.tabId(page), shown.id] as const);
+			await expect(cards.nth(1).locator('colander-ui[data-kind="chip"]')).toContainText('Probably low-effort AI content');
+			expect.soft(await audit(page, UI), 'plain-language chips').toEqual([]);
 		});
 	});
 }
@@ -189,20 +188,21 @@ test('radio groups: one tab stop, arrow keys, Home and End (WAI-ARIA)', async ({
 	await group.getByRole('radio', { name: 'Standard' }).focus();
 	const strictness = () => ext.storage<{ strictness: string }>('settings').then((s) => s.strictness);
 	for (const [key, name, value] of [
-		['ArrowRight', 'Strict', 'strict'],
-		['ArrowDown', 'No AI', 'no_ai'],
-		['ArrowRight', 'Label', 'label'],
+		['ArrowRight', 'No AI', 'no_ai'],
+		['ArrowDown', 'Label', 'label'],
+		['ArrowRight', 'Standard', 'standard'],
+		['ArrowLeft', 'Label', 'label'],
 		['ArrowLeft', 'No AI', 'no_ai'],
 		['Home', 'Label', 'label'],
 		['End', 'No AI', 'no_ai'],
-		['ArrowUp', 'Strict', 'strict']
+		['ArrowUp', 'Standard', 'standard']
 	] as const) {
 		await popup.keyboard.press(key);
 		await expect(group.getByRole('radio', { name })).toBeFocused();
 		await expect(group.getByRole('radio', { name })).toHaveAttribute('aria-checked', 'true');
 		await expect.poll(strictness).toBe(value);
 	}
-	await expect(group.locator('[role="radio"][tabindex="0"]')).toHaveText('Strict');
+	await expect(group.locator('[role="radio"][tabindex="0"]')).toHaveText('Standard');
 	// Tab leaves the group in one step.
 	await popup.keyboard.press('Tab');
 	await expect(group.locator(':focus')).toHaveCount(0);
@@ -213,8 +213,8 @@ test('radio groups: one tab stop, arrow keys, Home and End (WAI-ARIA)', async ({
 	await expect(levels.locator('[role="radio"][tabindex="0"]')).toHaveCount(1);
 	await levels.getByRole('radio', { name: /^Standard/ }).focus();
 	await welcome.keyboard.press('ArrowDown');
-	await expect(levels.getByRole('radio', { name: /^Strict/ })).toBeFocused();
-	await expect(levels.getByRole('radio', { name: /^Strict/ })).toHaveAttribute('aria-checked', 'true');
+	await expect(levels.getByRole('radio', { name: /^No AI/ })).toBeFocused();
+	await expect(levels.getByRole('radio', { name: /^No AI/ })).toHaveAttribute('aria-checked', 'true');
 	await welcome.keyboard.press('Home');
 	await expect(levels.getByRole('radio', { name: /^Label/ })).toHaveAttribute('aria-checked', 'true');
 });

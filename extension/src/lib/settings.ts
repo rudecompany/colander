@@ -34,6 +34,8 @@ export interface Settings {
 	plainChips: boolean;
 	/** Appearance: the Tag button stays visible on every card, not only on hover and focus. */
 	alwaysTag: boolean;
+	/** Appearance: a notice with Undo when a swipe feed skips a hidden video. Off: skips are silent. */
+	skipNotice: boolean;
 	onboarded: boolean;
 }
 
@@ -52,6 +54,7 @@ export const DEFAULT_SETTINGS: Settings = {
 	blocks: [],
 	plainChips: false,
 	alwaysTag: false,
+	skipNotice: false,
 	onboarded: false
 };
 
@@ -102,7 +105,6 @@ export const DEFAULT_STATUS: Status = {
 
 export interface DayStats {
 	hidden: number;
-	collapsed: number;
 	labeled: number;
 }
 
@@ -144,13 +146,21 @@ export function isPlus(e: Entitlement | undefined, now = Date.now()): boolean {
 	return !!e?.plus && e.exp * 1000 > now;
 }
 
+/** A stored level, from any version or another browser's sync: the removed Strict, and anything unknown, read as Standard. */
+export function level(v: unknown): Strictness {
+	return v === 'label' || v === 'no_ai' ? v : 'standard';
+}
+
+/** Settings as stored, from any version or from sync, with defaults filled in and every level valid. */
 export function withDefaults(s: Partial<Settings> | undefined): Settings {
 	return {
 		...DEFAULT_SETTINGS,
 		...s,
+		strictness: level(s?.strictness ?? DEFAULT_SETTINGS.strictness),
 		platforms: { ...DEFAULT_SETTINGS.platforms, ...s?.platforms },
-		perPlatform: { ...s?.perPlatform }
+		perPlatform: Object.fromEntries(Object.entries(s?.perPlatform ?? {}).map(([p, v]) => [p, level(v)])),
+		topics: (s?.topics ?? []).map((t) => ({ ...t, strictness: level(t.strictness) }))
 	};
 }
 
-export const STRICTNESS_RANK: Record<Strictness, number> = { label: 0, standard: 1, strict: 2, no_ai: 3 };
+export const STRICTNESS_RANK: Record<Strictness, number> = { label: 0, standard: 1, no_ai: 2 };

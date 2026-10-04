@@ -68,9 +68,9 @@ Everything else is paper, ink and neutral, and color is never the only signal.
 | `--cl-brand-fg` | #FFFFFF | #FFFFFF | Text on brand-fill |
 | `--cl-brand-tint` | #E4EAF1 | #1F2A3A | Selected segment, nav item and strictness card |
 | `--cl-mark` | #4F88D8 | #4F88D8 | Toolbar icon, favicon and store icon only |
-| `--cl-ink` | #1A1C1F | #1A1C1F | Ink chips on media, toasts, the swipe cover |
+| `--cl-ink` | #1A1C1F | #1A1C1F | Ink chips on media and toasts |
 | `--cl-on-ink`, `--cl-on-ink-muted`, `--cl-on-ink-brand` | #F2F0EB, #A7ABB1, #8FB8F0 | same | Text and links on ink and on the band |
-| `--cl-on-ink-fill` | #3870C0 | #3870C0 | Primary buttons on ink, such as Skip |
+| `--cl-on-ink-fill` | #3870C0 | #3870C0 | Primary buttons on ink |
 | `--cl-band`, `--cl-band-card`, `--cl-band-line` | #1A1C1F, #24272C, #3A3E44 | #1F2226, #2A2E33, #3A3E44 | The one ink band per page and the Plus price card |
 | `--cl-dot` | #D9D5CC | #2C3035 | Decorative dots |
 | `--cl-dot-strong` | #8A857B | #6B7078 | Data dots and bullets |
@@ -79,7 +79,7 @@ Everything else is paper, ink and neutral, and color is never the only signal.
 Contrast ratios for every pair are recorded beside the tokens in colander.css.
 A new color is added only with its computed ratio.
 The `.cl-band` class gives its whole subtree the dark values, in both modes; a test keeps them equal to the dark block.
-The `.cl-ink` class does the same for toasts and the swipe cover.
+The `.cl-ink` class does the same for toasts.
 
 ## Type
 
@@ -114,7 +114,7 @@ Page layout adds 48, 64, 96 and 128 (`--cl-s7` to `--cl-s10`).
 `.cl-container` is the website's 1200 px container with 32, 24 or 16 px of side padding, and `.cl-grid` its 12 columns with a 24 px gutter.
 `.cl-section` gives 128, 96 or 64 px of block padding.
 Radius 6 (`--cl-r-chip`) is for chips, badges, inputs, buttons, menu items, Kbd, checkboxes and segmented selections.
-Radius 10 (`--cl-r-card`) is for cards, popovers, menus, toasts, dialogs, bars, stubs, tracks and frames.
+Radius 10 (`--cl-r-card`) is for cards, popovers, menus, toasts, dialogs, tracks and frames.
 Full (`--cl-r-full`) is for badges, switches, radios, pills and dots, and no other radius is allowed.
 Depth comes from tone and hairlines: paper, then surface cards with 1 px borders, then floating things.
 `--cl-shadow-pop` is the one shadow, only on popovers, menus, tooltips, toasts, dialogs and the popup drawn on the website.
@@ -150,7 +150,7 @@ Field errors are the circle-alert icon and the message in the text color, never 
 | VerdictTransition | Chip, arrow, chip, read as "Verdict changed from X to Y" |
 | VerdictTally | Chips with counts, inline or as rows with a DotMeter |
 | EvidenceCard | Why an item has its verdict: `popover`, `inline` or `full` |
-| StrictnessControl, StrictnessTable | The four-stop control with its hint, and the table of treatments |
+| StrictnessControl, StrictnessTable | The three-stop control with its hint, and the table of treatments |
 | FeedDemo, Thumb, BrowserFrame | The recreated feed (`full` or `mini`), its thumbnails and the browser window |
 | PopupView | The toolbar popup as pure presentation, for the extension and the website |
 | PageHeader, Eyebrow | Eyebrow, two-tone title and lede for inner pages and options sections |
@@ -171,7 +171,8 @@ Field errors are the circle-alert icon and the message in the text color, never 
 
 ## In-page UI
 
-The builders in `src/inpage/ui.ts` make the chip, collapsed bar, grid stub, swipe cover, Tag and Report pills, evidence popover, tag menu, detail and report sheets, and toast.
+The builders in `src/inpage/ui.ts` make the chip, Tag and Report pills, evidence popover, tag menu, detail and report sheets, and toast.
+Hidden items have no builder: they leave the page like ads under an ad blocker, and the popup lists them.
 Each takes a context `{ doc, site, fmt, strings }` from `inpageContext()` and callbacks, and returns plain elements.
 They never touch `chrome.*` or the global document, and icons render from Lucide icon nodes through the context's document.
 `Layer` keeps one popover, one sheet and one toast at a time above a host page.

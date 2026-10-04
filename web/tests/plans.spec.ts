@@ -35,20 +35,20 @@ test('signed out, Get Plus asks for a sign-in that returns to checkout', async (
 	expect(calls.find((c) => c.path === '/v1/auth/email')!.body).toEqual({ email: 'maya@example.com', next: '/plans?checkout=plus_yearly' });
 });
 
-test('checkout redirects to the hosted page', async ({ page }) => {
+test('checkout redirects to the hosted page', async ({ page, baseURL }) => {
 	await mockApi(page, {
 		'GET /v1/account': { json: { account: ACCOUNT } },
-		'POST /v1/billing/checkout': { json: { url: 'http://localhost:4173/terms?checkout=done' } }
+		'POST /v1/billing/checkout': { json: { url: `${baseURL}/terms?checkout=done` } }
 	});
 	await page.goto('/plans?checkout=plus_yearly');
 	await page.getByRole('button', { name: 'Continue to checkout' }).click();
 	await expect(page).toHaveURL(/\/terms\?checkout=done$/);
 });
 
-test('a cancelled checkout comes back calmly and can continue', async ({ page }) => {
+test('a cancelled checkout comes back calmly and can continue', async ({ page, baseURL }) => {
 	const calls = await mockApi(page, {
 		'GET /v1/account': { json: { account: ACCOUNT } },
-		'POST /v1/billing/checkout': { json: { url: 'http://localhost:4173/terms?checkout=again' } }
+		'POST /v1/billing/checkout': { json: { url: `${baseURL}/terms?checkout=again` } }
 	});
 	await page.goto('/plans?checkout=plus_monthly&cancelled=1');
 	await expect(page.getByText('Checkout closed before payment')).toBeVisible();

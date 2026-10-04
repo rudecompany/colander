@@ -56,7 +56,7 @@ export const PERMISSIONS: { permission: string; why: string; never: string }[] =
 	},
 	{ permission: 'Storage', why: 'Keep the list, your settings and your own tags', never: 'Share them, unless you turn on Plus sync' },
 	{ permission: 'Alarms', why: 'Check for list updates on a schedule', never: 'Run anything on the pages you visit' },
-	{ permission: 'Scripting', why: 'Draw chips, bars and notices on the platforms you chose', never: 'Run on any other site' },
+	{ permission: 'Scripting', why: 'Hide slop, and draw chips and notices, on the platforms you chose', never: 'Run on any other site' },
 	{ permission: 'Side panel', why: 'Show the review queue to curators who connect it', never: 'Open on its own' }
 ];
 
@@ -74,7 +74,7 @@ export const PLAN_COPY = {
 		price: '$0',
 		line: 'Blocking, forever. No account needed.',
 		summary: '$0. Blocking, forever. No account needed.',
-		features: ['Blocking on all 4 platforms', 'All 4 strictness levels', 'Tagging, reports and appeals', 'Your own block and allow lists'],
+		features: ['Blocking on all 4 platforms', 'All 3 strictness levels', 'Tagging, reports and appeals', 'Your own block and allow lists'],
 		cta: 'Add to Chrome'
 	},
 	plus: {
@@ -171,10 +171,8 @@ export const TAG_GLYPH: Record<TagVerdict, Verdict> = { slop: 'slop', ai_fine: '
 /* In-page UI: every string the shared builders show. */
 
 export const INPAGE_COPY = {
-	hiddenForYou: 'Hidden for you',
 	show: 'Show',
 	why: 'Why',
-	skip: 'Skip',
 	undo: 'Undo',
 	close: 'Close',
 	tag: 'Tag',
@@ -201,8 +199,6 @@ export const INPAGE_COPY = {
 	} satisfies Record<TagVerdict, string>,
 	skipped: (n: number, noun: string) => `Skipped ${n} slop ${n === 1 ? noun : `${noun}s`}.`,
 	chipName: (word: string, hidden: boolean) => `${word}, why this is ${hidden ? 'hidden' : 'labeled'}`,
-	barName: (word: string, reason: string) => `${INPAGE_COPY.hiddenForYou}: ${word}.${reason ? ` ${reason}.` : ''}`,
-	coverName: (word: string) => `${INPAGE_COPY.hiddenForYou}: ${word}`,
 	report: {
 		title: (handle: string) => `Report ${handle}`,
 		step: (n: number) => `Step ${n} of 2`,
@@ -298,10 +294,10 @@ export const DEMO_FEED: DemoItem[] = [
 	{ id: 9, title: 'Descaling a kettle with one lemon', handle: '@kitchen.fixes', verdict: null, signals: [], scene: 'kettle', age: '1 month ago' }
 ];
 
-/** The item whose evidence card is open when the demo first renders. */
-export const DEMO_OPEN_ITEM = 6;
+/** The item whose evidence card is open when the demo first renders: labeled, so it is on the page at Standard. */
+export const DEMO_OPEN_ITEM = 3;
 
-/** The rows of a strictness card: Slop, Likely slop, AI-made and a clear item. */
+/** The rows of a strictness card: Slop, Likely slop, AI-made and a clear item, before any is hidden. */
 export const DEMO_MINI_ITEMS = [2, 6, 3, 1];
 
 /** Demo popup values for the hero and the store art. Never live community counts. */

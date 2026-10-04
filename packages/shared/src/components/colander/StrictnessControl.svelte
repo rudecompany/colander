@@ -1,5 +1,5 @@
 <!--
-@component StrictnessControl: the four-stop segmented control and the one line that says what
+@component StrictnessControl: the three-stop segmented control and the one line that says what
 the chosen level does. The same control in the popup, the hero, welcome and options.
 Heights: `md` 32 (extension), `lg` 40, `xl` 44 (website hero, welcome).
 -->

@@ -25,8 +25,18 @@ ytd-rich-item-renderer:nth-child(3n) yt-thumbnail-view-model, ytd-video-renderer
 ytd-thumbnail-overlay-now-playing-renderer, ytd-thumbnail #time-status yt-icon { display: none; }
 #overlays ytd-thumbnail-overlay-time-status-renderer .thumbnail-overlay-badge-shape ~ #time-status { display: none; }
 
-/* Home, subscriptions and channel grids. */
-ytd-rich-grid-renderer #contents { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 40px 16px; }
+/* Home, subscriptions and channel grids, with YouTube's own rules: one wrapping flex row of cards,
+   each a quarter wide less its 16 px of margin, the first of each row flush left, and full-width
+   sections between rows. */
+ytd-rich-grid-renderer { --ytd-rich-grid-items-per-row: 4; --ytd-rich-grid-item-margin: 16px; --ytd-rich-grid-row-margin: 40px; }
+ytd-rich-grid-renderer #contents { display: flex; flex-wrap: wrap; }
+ytd-rich-item-renderer { margin: 0 calc(var(--ytd-rich-grid-item-margin) / 2) var(--ytd-rich-grid-row-margin); width: calc(100% / var(--ytd-rich-grid-items-per-row) - var(--ytd-rich-grid-item-margin)); }
+ytd-rich-item-renderer[no-gutter-margins][is-in-first-column] { margin-left: 0; }
+ytd-rich-section-renderer, ytd-rich-shelf-renderer { display: block; }
+ytd-rich-section-renderer { width: 100%; margin: 0 0 var(--ytd-rich-grid-row-margin); }
+ytd-rich-shelf-renderer h2 { margin: 0 0 12px; font-size: 20px; line-height: 28px; }
+.fixture-shelf { display: flex; gap: 8px; }
+.fixture-shelf i { flex: 1; height: 220px; border-radius: 12px; background: var(--thumb); }
 .ytLockupViewModelVertical { display: flex; flex-direction: column; gap: 12px; }
 .ytLockupMetadataViewModelHost { display: flex; gap: 12px; }
 .ytLockupMetadataViewModelTextContainer { flex: 1; min-width: 0; }

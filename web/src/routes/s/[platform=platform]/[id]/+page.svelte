@@ -35,7 +35,6 @@
 	import { evidence } from '@colander/shared/inpage/evidence.ts';
 	import type { SourceResponse } from '@colander/shared/api';
 	import Button from '@colander/shared/components/ui/button/button.svelte';
-	import ChevronsDownUp from '@lucide/svelte/icons/chevrons-down-up';
 	import ExternalLink from '@lucide/svelte/icons/external-link';
 	import Eye from '@lucide/svelte/icons/eye';
 	import EyeOff from '@lucide/svelte/icons/eye-off';
@@ -74,14 +73,13 @@
 	const verdict = $derived(source?.verdict ?? null);
 	const name = $derived(source?.name ?? id);
 	const appealable = $derived(canAppeal(source));
-	const ACTION_ICON = { hide: EyeOff, collapse: ChevronsDownUp, label: Tag, allow: Eye };
+	const ACTION_ICON = { hide: EyeOff, label: Tag, allow: Eye };
 
 	/** What Standard, the default, does with this source, from the strictness table. */
 	function summary(v: Verdict): string {
 		const a = ACTION_TABLE.standard[v];
 		if (v === 'disputed') return 'Shown to everyone, with a disputed mark.';
 		if (v === 'clear') return 'Allowed for everyone, at every strictness level.';
-		if (a === 'collapse') return 'Collapsed to one line for people on Standard, the default level.';
 		if (a === 'label') return 'Labeled AI-made for people on Standard, the default level.';
 		return `${ACTION_DONE_WORD[a]} for people on Standard, the default level.`;
 	}
@@ -129,7 +127,7 @@
 				<VerdictChip verdict={null} size="lg" />
 				<p class="cl-title">Colander has no verdict for this {noun}.</p>
 				<p class="cl-muted">
-					Nothing from it is hidden, collapsed or labeled by the shared list. Verdicts need AI evidence first, and two layers of
+					Nothing from it is hidden or labeled by the shared list. Verdicts need AI evidence first, and two layers of
 					evidence must agree before anything is hidden.
 				</p>
 				{#if source?.imported}<p class="cl-muted">Imported from {source.attribution ?? 'a seed list'}.</p>{/if}
@@ -377,7 +375,7 @@
 	}
 	.levels {
 		display: grid;
-		grid-template-columns: repeat(4, minmax(0, 1fr));
+		grid-template-columns: repeat(3, minmax(0, 1fr));
 		overflow: hidden;
 		border: 1px solid var(--cl-border);
 		border-radius: var(--cl-r-card);
@@ -491,14 +489,21 @@
 		}
 	}
 	@media (max-width: 639px) {
+		/* Phones: one row per level, its name beside what it does. */
 		.levels {
-			grid-template-columns: repeat(2, minmax(0, 1fr));
+			grid-template-columns: minmax(0, 1fr);
 		}
-		.levels li:nth-child(3) {
-			border-left: 0;
+		.levels li {
+			display: flex;
+			flex-wrap: wrap;
+			align-items: center;
+			justify-content: space-between;
+			gap: 8px 16px;
+			padding: 12px 16px;
 		}
-		.levels li:nth-child(n + 3) {
+		.levels li + li {
 			border-top: 1px solid var(--cl-border);
+			border-left: 0;
 		}
 		.banner-actions {
 			justify-items: start;

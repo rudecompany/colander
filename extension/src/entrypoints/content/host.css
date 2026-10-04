@@ -1,10 +1,12 @@
 /* Host-page rules, registered with the content script so page CSP does not apply.
-   Hidden cards leave no box, so the grid closes up; collapsed cards keep only the bar or stub. */
+   Hidden cards leave no box, so the page closes up around them like around a blocked ad; the
+   content script reflows grids so their rows stay full. A swipe feed keeps the slot its own
+   scroller counts on, shows nothing in it, and skips past it. */
 [data-colander='hide'] {
 	display: none !important;
 }
-[data-colander='collapse'] > :not(colander-ui) {
-	display: none !important;
+[data-colander='skip'] > * {
+	visibility: hidden !important;
 }
 [data-colander-anchor] {
 	position: relative !important;
@@ -53,25 +55,6 @@ colander-ui[data-kind='tag'][data-place='block'] {
 	display: block !important;
 	width: max-content !important;
 	margin-top: 8px !important;
-}
-/* The bar lines up with the card's content: from the thumbnail's left edge to the row's right
-   edge, measured once at mount. The grid stub keeps the thumbnail's footprint (16:9 until measured). */
-colander-ui[data-kind='bar'],
-colander-ui[data-kind='stub'] {
-	width: var(--cl-w, 100%) !important;
-	max-width: 100% !important;
-	margin-left: var(--cl-x, 0px) !important;
-	margin-top: var(--cl-y, 0px) !important;
-}
-colander-ui[data-kind='stub'] {
-	height: var(--cl-h, auto) !important;
-	aspect-ratio: 16 / 9 !important;
-}
-colander-ui[data-kind='cover'] {
-	position: absolute !important;
-	inset: 0 !important;
-	z-index: 20 !important;
-	border-radius: inherit !important;
 }
 colander-ui[data-kind='layer'] {
 	position: fixed !important;

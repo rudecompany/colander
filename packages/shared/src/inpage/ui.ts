@@ -1,10 +1,10 @@
-// In-page builders: chip, collapsed bar, grid stub, swipe cover, Tag and Report pills, the
-// evidence popover, the tag menu, the detail and report sheets, and the toast. Each takes a
+// In-page builders: chip, Tag and Report pills, the evidence popover, the tag menu, the detail and
+// report sheets, and the toast. Hidden items get no builder: they leave the page with no trace. Each takes a
 // context { doc, site, fmt, strings } and callbacks, returns plain elements, and never touches
 // chrome.* or the global document, so the website runs the same code at prerender.
 // Layer keeps one popover, one sheet and one toast at a time above the page.
 import type { IconNode } from 'lucide';
-import { ArrowRight, Check, CircleAlert, Eye, Flag, Info, Tag, Undo2, X } from 'lucide';
+import { ArrowRight, Check, CircleAlert, Eye, Flag, Tag, Undo2, X } from 'lucide';
 import { TAG_GLYPH, TAG_MEANING } from '../copy';
 import {
 	SLOP_TYPES,
@@ -30,11 +30,9 @@ export interface ItemView {
 	verdict: Verdict | null;
 	/** The chip word when there is no verdict, such as "Your rule". */
 	word?: string;
-	/** The short reason: "Mass-produced, AI-made". */
-	reason: string;
 	/** Larger, plain-language chips (Appearance setting). */
 	plain?: boolean;
-	/** Hidden or collapsed, as opposed to labeled. */
+	/** Hidden at this level and shown again, as opposed to labeled: names what Why explains. */
 	hidden?: boolean;
 }
 
@@ -89,62 +87,6 @@ export function chip(
 	);
 	btn.addEventListener('click', () => opts.onWhy!(btn));
 	return btn;
-}
-
-type Reveal = { onShow: () => void; onWhy: (anchor: HTMLElement) => void } & Anchor;
-
-function hiddenParts(ctx: InpageContext, v: ItemView, x: Reveal, cls: string): HTMLElement {
-	const h = hyper(ctx.doc);
-	const s = ctx.strings;
-	const why = button(ctx, { label: s.why, icon: Info, attrs: whyAttrs(x) });
-	why.addEventListener('click', () => x.onWhy(why));
-	const el = h(
-		'div',
-		{ class: cls, role: 'group', tabindex: 0, 'aria-label': s.barName(chipWord(v), v.reason) },
-		chip(ctx, v, { tone: 'tint' }),
-		h('span', { class: 't' }, s.hiddenForYou),
-		v.reason ? h('span', { class: 'r' }, v.reason) : null,
-		h('span', { class: 'acts' }, button(ctx, { label: s.show, icon: Eye, onClick: x.onShow, attrs: { 'data-k': k('show', x.key) } }), why)
-	);
-	el.addEventListener('keydown', (e) => {
-		if (e.key === 'Enter' && e.target === el) {
-			e.preventDefault();
-			x.onShow();
-		}
-	});
-	return el;
-}
-
-/** List layouts: one 40 px line in place of the card. Enter shows the item. */
-export function bar(ctx: InpageContext, v: ItemView, x: Reveal): HTMLElement {
-	return hiddenParts(ctx, v, x, 'bar');
-}
-
-/** Grid layouts: keeps the thumbnail's footprint as a hairline box, so the grid never moves. */
-export function gridStub(ctx: InpageContext, v: ItemView, x: Reveal): HTMLElement {
-	return hiddenParts(ctx, v, x, 'stub');
-}
-
-/** Swipe feeds: covers the paused video until Show or Skip. */
-export function cover(ctx: InpageContext, v: ItemView, x: Reveal & { onSkip: () => void }): HTMLElement {
-	const h = hyper(ctx.doc);
-	const s = ctx.strings;
-	const why = button(ctx, { label: s.why, attrs: whyAttrs(x) });
-	why.addEventListener('click', () => x.onWhy(why));
-	return h(
-		'div',
-		{ class: 'cover cl-ink', role: 'group', 'aria-label': s.coverName(chipWord(v)) },
-		chip(ctx, v, { tone: 'ink' }),
-		h('p', { class: 't' }, s.hiddenForYou),
-		v.reason ? h('p', { class: 'r' }, v.reason) : null,
-		h(
-			'div',
-			{ class: 'acts' },
-			button(ctx, { label: s.show, icon: Eye, kind: 's', onClick: x.onShow, attrs: { 'data-k': k('show', x.key) } }),
-			button(ctx, { label: s.skip, kind: 'p', onClick: x.onSkip, attrs: { 'data-k': k('skip', x.key) } }),
-			why
-		)
-	);
 }
 
 /** The 28 px Tag pill. The host page's own CSS shows it on card hover and focus-within. */
@@ -209,7 +151,7 @@ export function evidencePopover(
 		h(
 			'div',
 			{ class: 'cl-ev-head' },
-			chip(ctx, { verdict: ev.verdict, word: ev.word ?? undefined, reason: '' }, { tone: 'tint' }),
+			chip(ctx, { verdict: ev.verdict, word: ev.word ?? undefined }, { tone: 'tint' }),
 			h('h2', { class: 'cl-ev-title', id: titleId }, ev.title)
 		),
 		h(

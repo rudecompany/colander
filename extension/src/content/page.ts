@@ -1,11 +1,13 @@
 // The content script's controller: finds cards as they are inserted, decides what happens to
-// each with the matching engine, and applies the treatment before the page paints.
+// each with the matching engine, and applies the treatment before the page paints. A hidden card
+// leaves the page like an ad under an ad blocker: no gap, no placeholder. Grids reflow so their
+// rows stay full, swipe feeds skip it, and the popup still lists it with Show.
 import { INPAGE_COPY } from '@colander/shared/copy';
 // Deep imports, not the inpage barrel: the barrel also carries the demo feed and its bundled
 // thumbnail images, which belong to extension pages only (a build test checks).
 import { hyper, pageIsDark, reducedMotion } from '@colander/shared/inpage/dom.ts';
 import { inpageContext, makeHost, setTheme } from '@colander/shared/inpage/host.ts';
-import { Layer, bar, chip, cover, gridStub, reportPill, tagPill, type EvidenceActions } from '@colander/shared/inpage/ui.ts';
+import { Layer, chip, reportPill, tagPill, type EvidenceActions } from '@colander/shared/inpage/ui.ts';
 import { SLOP_TYPE_HINT, SLOP_TYPE_WORD, TEST_WORD, type Action, type SlopType, type TagVerdict, type Test } from '@colander/shared/verdicts';
 import { Info, Undo2 } from 'lucide';
 import defaults from '../adapters/default-config.json';
@@ -34,18 +36,7 @@ interface CardState {
 	counted: boolean;
 	/** Swipe feeds: already skipped once automatically. */
 	skipped: boolean;
-	/** Where the thumbnail sits in the card, measured once before the first collapse. */
-	geo?: Geo | null;
-	ui: Partial<Record<'chip' | 'bar' | 'cover' | 'tag', HTMLElement>>;
-}
-
-/** The thumbnail's box inside the card's content box, in px: the bar starts at its left edge, the grid stub takes its footprint. */
-interface Geo {
-	x: number;
-	y: number;
-	w: number;
-	h: number;
-	tw: number;
+	ui: Partial<Record<'chip' | 'tag', HTMLElement>>;
 }
 
 type Effective = Action | 'none';
@@ -221,7 +212,7 @@ export function start(): void {
 
 	function effective(st: CardState): Effective {
 		const a = st.decision.action;
-		if (st.shown && (a === 'hide' || a === 'collapse')) return st.decision.verdict ? 'label' : 'none';
+		if (st.shown && a === 'hide') return st.decision.verdict ? 'label' : 'none';
 		return a;
 	}
 
@@ -303,8 +294,9 @@ export function start(): void {
 		else delete st.ui[slot];
 	}
 
-	const hidden = (st: CardState) => effective(st) === 'hide' || effective(st) === 'collapse';
-	const view = (st: CardState) => itemView(st.decision, hidden(st), settings.plainChips);
+	const hidden = (st: CardState) => effective(st) === 'hide';
+	// A card shown again with Show keeps saying it is hidden at this level.
+	const view = (st: CardState) => itemView(st.decision, st.decision.action === 'hide', settings.plainChips);
 
 	/** One shadow host per decorated element, holding one builder's element. `local` adds LOCAL_SHEET (ink pills, primary buttons). */
 	function hostWith(kind: string, el: Element, local = false): HTMLElement {
@@ -314,70 +306,10 @@ export function start(): void {
 		return host;
 	}
 
-	/**
-	 * The one layout read per collapsed card: where its thumbnail sits in its content box. Cards
-	 * collapsed in one task are measured together in the next animation frame, before it paints:
-	 * their collapse is lifted, every rect is read in one layout, and the collapse goes back. Not
-	 * before the document is parsed, when page styles may still be on their way.
-	 */
-	const toMeasure = new Set<Element>();
-	let measureFrame = 0;
-	function queueMeasure(card: Element) {
-		toMeasure.add(card);
-		measureFrame ||= requestAnimationFrame(measureAll);
-	}
-	function measureAll() {
-		measureFrame = 0;
-		if (document.readyState === 'loading') {
-			document.addEventListener('DOMContentLoaded', () => (measureFrame ||= requestAnimationFrame(measureAll)), { once: true });
-			return;
-		}
-		const t0 = performance.now();
-		const list = [...toMeasure].flatMap((card) => {
-			const st = states.get(card);
-			return st?.ui.bar && card.isConnected ? [{ card, st, bar: st.ui.bar, was: card.getAttribute('data-colander') }] : [];
-		});
-		toMeasure.clear();
-		for (const m of list) {
-			m.card.removeAttribute('data-colander');
-			m.bar.style.setProperty('display', 'none', 'important');
-		}
-		const read = list.map((m) => ({ ...m, geo: rects(m.card, m.st) }));
-		for (const m of read) {
-			m.bar.style.removeProperty('display');
-			if (m.was) m.card.setAttribute('data-colander', m.was);
-			m.st.geo = m.geo;
-			place(m.bar, m.geo, m.st.surface.mode === 'grid');
-		}
-		if (list.length) record(performance.now() - t0);
-	}
-	function rects(card: Element, st: CardState): Geo | null {
-		const thumb = resolve(card, st.surface.chip, { place: 'overlay' })?.el ?? card;
-		const c = card.getBoundingClientRect();
-		const t = thumb.getBoundingClientRect();
-		if (!c.width || !t.width || !t.height) return null;
-		const cs = getComputedStyle(card);
-		const left = c.left + parseFloat(cs.paddingLeft) + parseFloat(cs.borderLeftWidth);
-		const right = c.right - parseFloat(cs.paddingRight) - parseFloat(cs.borderRightWidth);
-		const top = c.top + parseFloat(cs.paddingTop) + parseFloat(cs.borderTopWidth);
-		const x = Math.max(0, Math.round(t.left - left));
-		const w = Math.round(right - left - x);
-		return { x, y: Math.max(0, Math.round(t.top - top)), w, h: Math.round(t.height), tw: Math.min(Math.round(t.width), w) };
-	}
-
-	function place(host: HTMLElement, geo: Geo | null | undefined, grid: boolean) {
-		if (!geo) return;
-		host.style.setProperty('--cl-x', `${geo.x}px`);
-		host.style.setProperty('--cl-y', `${geo.y}px`);
-		host.style.setProperty('--cl-w', `${grid ? geo.tw : geo.w}px`);
-		if (grid) host.style.setProperty('--cl-h', `${geo.h}px`);
-	}
-
 	function render(card: Element, st: CardState) {
 		if (!card.isConnected) return;
 		const action = effective(st);
 		const swipe = st.surface.mode === 'swipe';
-		const grid = st.surface.mode === 'grid';
 		const paused = ctx.paused;
 		card.setAttribute('data-colander-card', '');
 
@@ -390,45 +322,14 @@ export function start(): void {
 			if (owner === card) stray.remove();
 		}
 
-		if (!swipe) {
-			if (action === 'hide') card.setAttribute('data-colander', 'hide');
-			else if (action === 'collapse') card.setAttribute('data-colander', 'collapse');
-			else card.removeAttribute('data-colander');
-		}
-		const reveal = { onShow: () => show(card, st), onWhy: (a: HTMLElement) => why(a, card, st) };
-		// Lists keep a 40 px bar; grids keep the thumbnail's footprint, so the grid never moves.
-		ensure(
-			st,
-			'bar',
-			!swipe && action === 'collapse',
-			card,
-			() => {
-				const host = hostWith(grid ? 'stub' : 'bar', (grid ? gridStub : bar)(ip, view(st), reveal), true);
-				place(host, st.geo, grid);
-				return host;
-			},
-			(host) => {
-				card.prepend(host);
-				return true;
-			}
-		);
-		if (st.ui.bar && st.geo === undefined) queueMeasure(card);
-		const covered = swipe && (action === 'hide' || action === 'collapse');
-		ensure(
-			st,
-			'cover',
-			covered,
-			card,
-			() => hostWith('cover', cover(ip, view(st), { ...reveal, onSkip: () => skip(card, st, false) }), true),
-			(host) => {
-				const at = resolve(card, st.surface.cover ? { sel: st.surface.cover, place: 'overlay' } : undefined, { place: 'overlay' });
-				if (!at) return false;
-				if (getComputedStyle(at.el).position === 'static') at.el.setAttribute('data-colander-anchor', '');
-				at.el.append(host);
-				return true;
-			}
-		);
-		if (covered) guard(card);
+		// Grids and lists drop the card from the layout; a swipe feed keeps its slot, which the
+		// platform's own scroller counts on, shows nothing in it, and skips past it.
+		const was = card.getAttribute('data-colander');
+		const now = action === 'hide' ? (swipe ? 'skip' : 'hide') : null;
+		if (now) card.setAttribute('data-colander', now);
+		else card.removeAttribute('data-colander');
+		if (st.surface.mode === 'grid' && (was !== now || reflowed.size)) queueReflow(card.parentElement);
+		if (swipe && now) guard(card);
 		else unguard(card);
 
 		const tone = swipe || resolve(card, st.surface.chip, { place: 'overlay' })?.place.startsWith('overlay') ? 'ink' : 'tint';
@@ -452,7 +353,7 @@ export function start(): void {
 		ensure(
 			st,
 			'tag',
-			taggable && !paused && !covered && action !== 'collapse' && action !== 'hide',
+			taggable && !paused && action !== 'hide',
 			card,
 			() => {
 				const ink = swipe || !!st.surface.tag?.place.startsWith('overlay');
@@ -470,7 +371,7 @@ export function start(): void {
 			}
 		);
 
-		if (!st.counted && (action === 'hide' || action === 'collapse' || action === 'label') && st.decision.reason !== 'none') {
+		if (!st.counted && (action === 'hide' || action === 'label') && st.decision.reason !== 'none') {
 			st.counted = true;
 			queueActivity(st, action);
 		}
@@ -500,7 +401,7 @@ export function start(): void {
 			for (const e of entries) {
 				if (!e.isIntersecting || e.intersectionRatio < 0.6) continue;
 				const st = states.get(e.target);
-				if (st && effective(st) === 'hide' && !st.skipped) skip(e.target, st, true);
+				if (st && effective(st) === 'hide' && !st.skipped) skip(e.target, st);
 			}
 		},
 		{ threshold: [0, 0.6] }
@@ -509,8 +410,14 @@ export function start(): void {
 
 	let skipRun = { n: 0, at: 0 };
 	let lastSkipped: { card: Element; st: CardState } | null = null;
-	function skip(card: Element, st: CardState, auto: boolean) {
-		st.skipped = true;
+	/** A hidden card that became active before the feed had a next one: skipped once one arrives. */
+	let waiting: Element | null = null;
+	/**
+	 * Moves past a hidden card the moment it becomes active: the platform's own next control, or the
+	 * next card. Silent, unless Appearance turns on the skip notice (Undo and Why). Either way the
+	 * popup lists the card with Show.
+	 */
+	function skip(card: Element, st: CardState) {
 		const cards = [...document.querySelectorAll(st.surface.card)];
 		const next = cards[cards.indexOf(card) + 1];
 		let button: HTMLElement | null = null;
@@ -522,8 +429,14 @@ export function start(): void {
 			}
 		}
 		if (button && button.getClientRects().length) button.click();
-		else next?.scrollIntoView({ block: 'start', behavior: reducedMotion(document) ? 'auto' : 'smooth' });
-		if (!auto) return;
+		else if (next) next.scrollIntoView({ block: 'start', behavior: reducedMotion(document) ? 'auto' : 'smooth' });
+		else {
+			waiting = card;
+			return;
+		}
+		st.skipped = true;
+		if (waiting === card) waiting = null;
+		if (!settings.skipNotice) return;
 		const now = Date.now();
 		skipRun = now - skipRun.at < 4000 ? { n: skipRun.n + 1, at: now } : { n: 1, at: now };
 		lastSkipped = { card, st };
@@ -557,6 +470,136 @@ export function start(): void {
 		});
 	}
 
+	// ---- Grid reflow -------------------------------------------------------------------
+
+	/**
+	 * A hidden card leaves no box, so a flex or grid container closes up by itself. Two things it
+	 * cannot fix alone: a full-width child, such as a shelf of Shorts, now follows a row with a hole
+	 * at its end, and a page that styles its first column by position (YouTube's first-column
+	 * margin) keeps that style on cards that moved out of it. So in each container with a hidden
+	 * card, `order` holds every full-width child back until the row before it is full, and the
+	 * first-column margin follows the first column. One layout read per frame for all containers;
+	 * orders count up to -1, so a card the page appends before the next pass still lands last.
+	 */
+	const reflowed = new Set<Element>();
+	/** Per container, the page's own left margin for its first column and for the others. */
+	const margins = new WeakMap<Element, [number, number]>();
+	const toReflow = new Set<Element>();
+	let reflowFrame = 0;
+	/** `el` holds cards: their parent, or a container the page just changed. */
+	function queueReflow(el: Element | null) {
+		if (el) toReflow.add(el);
+		reflowFrame ||= requestAnimationFrame(reflowAll);
+	}
+	addEventListener('resize', () => {
+		for (const box of reflowed) toReflow.add(box);
+		reflowFrame ||= requestAnimationFrame(reflowAll);
+	});
+
+	/** The element whose box lays the card out: its parent, or further up past `display: contents`. */
+	function layoutBox(el: Element): Element | null {
+		let box: Element | null = el;
+		while (box && getComputedStyle(box).display === 'contents') box = box.parentElement;
+		return box;
+	}
+	/** The layout children of a box, in document order, looking through `display: contents`. */
+	function layoutKids(box: Element): Element[] {
+		return [...box.children].flatMap((k) => (getComputedStyle(k).display === 'contents' ? layoutKids(k) : [k]));
+	}
+	const px = (el: Element) => parseFloat(getComputedStyle(el).marginLeft) || 0;
+
+	interface Plan {
+		box: Element;
+		order: Map<Element, number>;
+		/** Cards and the left margin each should have, when the page styles its first column apart. */
+		margin: Map<HTMLElement, number>;
+	}
+
+	function plan(box: Element): Plan | 'clear' | null {
+		const cs = getComputedStyle(box);
+		const flows = cs.display.endsWith('grid') || (cs.display.endsWith('flex') && cs.flexWrap.startsWith('wrap') && cs.flexDirection.startsWith('row'));
+		const kids = layoutKids(box);
+		const isCard = (k: Element) => states.has(k);
+		const gone = (k: Element) => k.getAttribute('data-colander') === 'hide';
+		if (!flows || !kids.some(gone)) return reflowed.has(box) ? 'clear' : null;
+		if (!margins.has(box)) {
+			// Read once, before any override: the first card is in the first column, the second is not.
+			const cards = kids.filter(isCard);
+			margins.set(box, [cards[0] ? px(cards[0]) : 0, cards[1] ? px(cards[1]) : 0]);
+		}
+		const width = box.getBoundingClientRect().width;
+		const shown = kids.filter((k) => !gone(k) && getComputedStyle(k).display !== 'none');
+		const rects = new Map(shown.map((k) => [k, k.getBoundingClientRect()]));
+		// A child as wide as most of the box breaks the rows: a shelf, a header, a spinner.
+		const breaks = (k: Element) => rects.get(k)!.width > width * 0.75;
+		// Columns from the widths, not from the rows on screen: those are short where a card is gone.
+		// A card's slot is its width with both margins; the widest slot is a column without the
+		// first column's own margin.
+		const gap = parseFloat(cs.columnGap) || 0;
+		let slot = 0;
+		for (const k of shown) {
+			if (breaks(k)) continue;
+			const m = getComputedStyle(k);
+			slot = Math.max(slot, rects.get(k)!.width + (parseFloat(m.marginLeft) || 0) + (parseFloat(m.marginRight) || 0));
+		}
+		const cols = slot ? Math.max(1, Math.round((width + gap) / (slot + gap))) : 1;
+		const order = new Map<Element, number>();
+		const first = new Set<Element>();
+		const held: Element[] = [];
+		let n = 0;
+		let col = 0;
+		for (const k of shown) {
+			if (breaks(k)) {
+				if (col === 0) order.set(k, n++);
+				else held.push(k);
+				continue;
+			}
+			if (col === 0) first.add(k);
+			order.set(k, n++);
+			col = (col + 1) % cols;
+			if (col === 0) for (const x of held.splice(0)) order.set(x, n++);
+		}
+		for (const x of held) order.set(x, n++);
+		for (const [k, i] of order) order.set(k, i - n);
+		const [m1, m2] = margins.get(box)!;
+		const margin = new Map<HTMLElement, number>();
+		if (m1 !== m2) for (const k of shown) if (isCard(k) && k instanceof HTMLElement) margin.set(k, first.has(k) ? m1 : m2);
+		return { box, order, margin };
+	}
+
+	function clear(box: Element) {
+		reflowed.delete(box);
+		box.removeAttribute('data-colander-reflow');
+		for (const k of layoutKids(box)) {
+			if (!(k instanceof HTMLElement)) continue;
+			k.style.removeProperty('order');
+			k.style.removeProperty('margin-left');
+		}
+	}
+
+	function reflowAll() {
+		reflowFrame = 0;
+		if (document.readyState === 'loading') {
+			document.addEventListener('DOMContentLoaded', () => (reflowFrame ||= requestAnimationFrame(reflowAll)), { once: true });
+			return;
+		}
+		const t0 = performance.now();
+		const boxes = new Set([...toReflow].flatMap((el) => (el.isConnected ? [layoutBox(el)] : [])).filter((b): b is Element => !!b));
+		toReflow.clear();
+		for (const box of reflowed) if (!box.isConnected) reflowed.delete(box);
+		// Every read first, then every write, so the frame lays out once.
+		const plans = [...boxes].map((box) => [box, plan(box)] as const);
+		for (const [box, p] of plans) {
+			if (p === 'clear') clear(box);
+			if (!p || p === 'clear') continue;
+			reflowed.add(box);
+			box.setAttribute('data-colander-reflow', '');
+			for (const [k, o] of p.order) if (k instanceof HTMLElement) k.style.setProperty('order', String(o), 'important');
+			for (const [k, m] of p.margin) k.style.setProperty('margin-left', `${m}px`, 'important');
+		}
+		if (plans.length) record(performance.now() - t0);
+	}
+
 	// ---- Actions from the UI ------------------------------------------------------------
 
 	function show(card: Element, st: CardState, quiet = false) {
@@ -571,7 +614,8 @@ export function start(): void {
 		});
 	}
 
-	function evidenceFor(st: CardState, isHidden = hidden(st)) {
+	/** Why a card is hidden at this level, also once Show brought it back; or why it is labeled. */
+	function evidenceFor(st: CardState, isHidden = st.decision.action === 'hide') {
 		return whyEvidence(st.decision, { hidden: isHidden, platform: platform!, sourceId: preferredSource(st.facts), site: SITE });
 	}
 
@@ -743,10 +787,12 @@ export function start(): void {
 	}
 
 	function watch(card: Element, s: Surface) {
-		if (s.mode === 'swipe' && !watched.has(card)) {
-			watched.add(card);
-			io.observe(card);
-		}
+		if (s.mode !== 'swipe' || watched.has(card)) return;
+		watched.add(card);
+		io.observe(card);
+		// A new card gives a hidden card that is still active somewhere to skip to.
+		const w = waiting && states.get(waiting);
+		if (w && waiting!.isConnected && effective(w) === 'hide') skip(waiting!, w);
 	}
 
 	function scanAll() {
@@ -800,12 +846,11 @@ export function start(): void {
 	let countsTimer = 0;
 	let lastCounts = '';
 	function counts(): PageCounts {
-		const c = { hidden: 0, collapsed: 0, labeled: 0 };
+		const c = { hidden: 0, labeled: 0 };
 		for (const [card, st] of states) {
 			if (!card.isConnected || !surfaces.includes(st.surface)) continue;
 			const a = effective(st);
 			if (a === 'hide') c.hidden++;
-			else if (a === 'collapse') c.collapsed++;
 			else if (a === 'label') c.labeled++;
 		}
 		return c;
@@ -857,7 +902,7 @@ export function start(): void {
 			if (st.facts.itemId) (withItem++, b.withItem++);
 			if (st.facts.sourceIds.length) (withSource++, b.withSource++);
 			const d = st.decision;
-			if (d.action !== 'hide' && d.action !== 'collapse' && d.action !== 'label') continue;
+			if (d.action !== 'hide' && d.action !== 'label') continue;
 			actions.push({
 				id: st.id,
 				at: 0,
@@ -919,6 +964,7 @@ export function start(): void {
 		for (const r of records) {
 			if (r.type === 'childList') {
 				const t = r.target as Element;
+				if (reflowed.has(t)) queueReflow(t);
 				if (t.nodeType === 1 && t.nodeName !== 'COLANDER-UI') touched.add(t);
 				for (const n of r.addedNodes) if (n.nodeType === 1 && n.nodeName !== 'COLANDER-UI') touched.add(n as Element);
 			} else if (r.target.nodeType === 1) touched.add(r.target as Element);
@@ -996,9 +1042,7 @@ export function start(): void {
 					if (st.id !== m.id) continue;
 					if (effective(st) === 'hide') show(card, st, true);
 					if (card instanceof HTMLElement) card.scrollIntoView({ block: 'center', behavior: 'auto' });
-					const anchor =
-						st.ui.chip?.shadowRoot?.querySelector<HTMLElement>('button') ??
-						[...(st.ui.bar?.shadowRoot?.querySelectorAll<HTMLElement>('button') ?? [])].find((b) => b.textContent === copy.why);
+					const anchor = st.ui.chip?.shadowRoot?.querySelector<HTMLElement>('button');
 					if (anchor) why(anchor, card, st);
 				}
 				reply({ ok: true });
@@ -1023,12 +1067,11 @@ export function start(): void {
 		if (changes[K.settings]) {
 			const before = settings;
 			settings = withDefaults(changes[K.settings]!.newValue as Partial<Settings>);
-			// Appearance changed: chips, bars and Tag buttons are built again in the new look.
+			// Appearance changed: chips and Tag buttons are built again in the new look.
 			if (before.plainChips !== settings.plainChips || before.alwaysTag !== settings.alwaysTag) {
 				for (const st of states.values()) {
-					for (const k of ['chip', 'bar', 'tag'] as const) st.ui[k]?.remove();
+					for (const k of ['chip', 'tag'] as const) st.ui[k]?.remove();
 					delete st.ui.chip;
-					delete st.ui.bar;
 					delete st.ui.tag;
 				}
 			}

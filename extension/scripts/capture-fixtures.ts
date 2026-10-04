@@ -22,8 +22,12 @@ interface Capture {
 	/** Extra subtrees to keep whole (page headers). */
 	keep?: string[];
 	seeds?: Seed[];
-	/** Rewrites applied to the captured DOM before saving. */
-	retarget?: { pageSubtype?: string; drop?: string[]; path: string; owner?: string };
+	/**
+	 * Rewrites applied to the captured DOM before saving. `grid` lays the cards out as YouTube's home
+	 * and subscriptions feeds do: `perRow` to a row, the first of each marked `is-in-first-column`,
+	 * and a full-width section (a stand-in Shorts shelf) after `section` cards.
+	 */
+	retarget?: { pageSubtype?: string; drop?: string[]; path: string; owner?: string; grid?: { perRow: number; section: number } };
 	title: string;
 }
 
@@ -67,7 +71,7 @@ const CAPTURES: Capture[] = [
 		url: 'https://www.youtube.com/@NASA/videos',
 		platform: 'yt',
 		cards: [['ytd-browse[page-subtype="channels"] ytd-rich-item-renderer', 12]],
-		retarget: { pageSubtype: 'home', drop: ['#page-header-container', 'ytd-tabbed-page-header', '#tabs-container'], path: '/', owner: '/@NASA' },
+		retarget: { pageSubtype: 'home', drop: ['#page-header-container', 'ytd-tabbed-page-header', '#tabs-container'], path: '/', owner: '/@NASA', grid: { perRow: 4, section: 8 } },
 		seeds: [
 			{ card: 0, source: 'UCaaaaaaaaaaaaaaaaaaaaaa', name: 'Endless Facts' },
 			{ card: 1, source: '@catrescuetales', name: 'Cat Rescue Tales' },
@@ -81,7 +85,7 @@ const CAPTURES: Capture[] = [
 		url: 'https://www.youtube.com/@NASA/videos',
 		platform: 'yt',
 		cards: [['ytd-browse[page-subtype="channels"] ytd-rich-item-renderer', 6]],
-		retarget: { pageSubtype: 'subscriptions', drop: ['#page-header-container', 'ytd-tabbed-page-header', '#tabs-container'], path: '/feed/subscriptions', owner: '/@NASA' },
+		retarget: { pageSubtype: 'subscriptions', drop: ['#page-header-container', 'ytd-tabbed-page-header', '#tabs-container'], path: '/feed/subscriptions', owner: '/@NASA', grid: { perRow: 4, section: 4 } },
 		seeds: [{ card: 2, source: '@aihistorydaily', name: 'AI History Daily' }],
 		title: 'Subscriptions - YouTube'
 	},
@@ -197,6 +201,19 @@ async function seed(page: Page, c: Capture, body: string) {
 					const b = JSON.parse(card.getAttribute('data-colander-bridge') || '{}');
 					if (!b.s) card.setAttribute('data-colander-bridge', JSON.stringify({ ...b, s: [c.retarget.owner] }));
 				}
+			}
+			// A feed's grid: YouTube marks the first card of each row, and breaks rows with full-width
+			// sections, where a hidden card would leave a hole at the end of the row before it.
+			const grid = c.retarget?.grid;
+			if (grid) {
+				cards.forEach((card, n) => {
+					for (const a of ['rendered-from-rich-grid', 'no-gutter-margins']) card.setAttribute(a, '');
+					card.setAttribute('items-per-row', String(grid.perRow));
+					card.toggleAttribute('is-in-first-column', n % grid.perRow === 0);
+				});
+				const section = document.createElement('ytd-rich-section-renderer');
+				section.innerHTML = '<div id="content"><ytd-rich-shelf-renderer><h2 id="title">Shorts</h2><div class="fixture-shelf"><i></i><i></i><i></i><i></i><i></i></div></ytd-rich-shelf-renderer></div>';
+				cards[grid.section - 1]?.after(section);
 			}
 			// Feeds virtualize: cards far from the viewport are empty shells until scrolled near.
 			// Fill them from the first rendered card with fresh IDs so every card has content.

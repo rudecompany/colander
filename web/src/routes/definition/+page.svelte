@@ -15,15 +15,12 @@
 		TAG_WORD,
 		VerdictChip,
 		VERDICTS,
-		fmtDate,
 		type Verdict
 	} from '@colander/shared';
-	import ChevronsDownUp from '@lucide/svelte/icons/chevrons-down-up';
 	import Eye from '@lucide/svelte/icons/eye';
 	import EyeOff from '@lucide/svelte/icons/eye-off';
 	import Tag from '@lucide/svelte/icons/tag';
 	import Figure from '#lib/components/Figure.svelte';
-	import { COMPARISON, COMPARISON_CHECKED, COMPARISON_SCOPE } from '#lib/content.ts';
 
 	const toc = [
 		['definition', 'The definition'],
@@ -39,7 +36,6 @@
 		['rubric', 'The tagging rubric'],
 		['appeals', 'Appeals'],
 		['detectors', 'Why not an AI detector'],
-		['comparison', 'Comparison sources'],
 		['sources', 'Research']
 	] as const;
 
@@ -62,7 +58,7 @@
 		disputed: 'Tags and counter-tags split, or an appeal is open',
 		clear: '"Not slop" consensus or a successful appeal'
 	};
-	const ACTION_ICON = { hide: EyeOff, collapse: ChevronsDownUp, label: Tag, allow: Eye };
+	const ACTION_ICON = { hide: EyeOff, label: Tag, allow: Eye };
 
 	const research = [
 		['Kommers et al., "Why Slop Matters", ACM AI Letters, March 2026', 'https://doi.org/10.1145/3786777', 'Three family-resemblance features: superficial competence, asymmetric effort and mass producibility.'],
@@ -240,7 +236,12 @@
 			<h2>Strictness</h2>
 			<p>You choose what each verdict does to your own feed. Standard is the default. Colander never decides what an adult may see.</p>
 			<div class="wide"><StrictnessTable current="standard" /></div>
-			<p>Disputed items are always labeled, and Clear items are always shown.</p>
+			<p>
+				A hidden item leaves the page the way an ad does under an ad blocker: no gap and no placeholder, and grids close up so
+				their rows stay full. In swipe feeds it is skipped. The toolbar badge still counts it, and the popup lists it with Show,
+				Always allow, Not slop and Why, so every call can be checked and undone.
+			</p>
+			<p>Disputed items always stay visible with their mark, and Clear items are always shown.</p>
 		</section>
 
 		<section id="signing" class="prose">
@@ -319,24 +320,6 @@
 				Detector models are therefore optional, run on your device, and can only add weight to the AI-made question. They can never
 				mark something as slop.
 			</p>
-		</section>
-
-		<section id="comparison" class="prose">
-			<h2>Comparison sources</h2>
-			<p>
-				The comparison on the home page describes what is common among {COMPARISON_SCOPE}, without naming them. These are the
-				listings each row was checked against on {fmtDate(COMPARISON_CHECKED)}. They are checked again for every release.
-			</p>
-			<dl class="sources-list">
-				{#each COMPARISON as row (row.check)}
-					<div>
-						<dt>{row.check}: {row.common}</dt>
-						<dd>
-							{#each row.sources as s, i (s.url)}{#if i > 0}{'; '}{/if}<a href={s.url} rel="noreferrer">{s.name}</a>{/each}
-						</dd>
-					</div>
-				{/each}
-			</dl>
 		</section>
 
 		<section id="sources" class="prose">
@@ -435,14 +418,6 @@
 		border-radius: var(--cl-r-card);
 		background: var(--cl-surface);
 		font: var(--cl-body);
-	}
-	.sources-list {
-		display: grid;
-		gap: 16px;
-		font: var(--cl-body);
-	}
-	.sources-list dt {
-		font-weight: 600;
 	}
 	.research {
 		display: grid;

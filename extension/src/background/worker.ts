@@ -13,6 +13,7 @@ import {
 	dayKey,
 	isPlus,
 	K,
+	level,
 	withDefaults,
 	type Entitlement,
 	type MyListEntry,
@@ -365,7 +366,20 @@ export function mergeRemote(local: Settings, remote: Partial<Settings>, preferLo
 		return [...m.values()];
 	};
 	const scalars = preferLocal ? {} : { strictness: remote.strictness ?? local.strictness, perPlatform: remote.perPlatform ?? local.perPlatform, topics: remote.topics ?? local.topics, plainChips: remote.plainChips ?? local.plainChips };
-	return { ...local, ...scalars, allows: union(local.allows, remote.allows), blocks: union(local.blocks, remote.blocks) };
+	// Through withDefaults, so a level another browser still syncs, such as the removed Strict, arrives as Standard.
+	return withDefaults({ ...local, ...scalars, allows: union(local.allows, remote.allows), blocks: union(local.blocks, remote.blocks) });
+}
+
+/**
+ * Once, after an update: levels an older version stored, such as the removed Strict, are rewritten
+ * as Standard, and the synced copy is marked to go out again, so other browsers get them too.
+ */
+export async function migrateSettings(): Promise<void> {
+	const raw = (await chrome.storage.local.get(K.settings))[K.settings] as Partial<Settings> | undefined;
+	if (!raw) return;
+	const levels = [raw.strictness, ...Object.values(raw.perPlatform ?? {}), ...(raw.topics ?? []).map((t) => t.strictness)];
+	if (levels.every((v) => v === undefined || level(v) === v)) return;
+	await chrome.storage.local.set({ [K.settings]: withDefaults(raw), [K.syncState]: { ...(await syncState()), dirty: true } });
 }
 
 export async function pullSettings(): Promise<void> {
@@ -422,7 +436,7 @@ export async function refreshIcons(): Promise<void> {
 
 async function setCounts(tabId: number, platform: Platform, counts: PageCounts) {
 	const { tabInfo } = await tabs();
-	const count = counts.hidden + counts.collapsed;
+	const count = counts.hidden;
 	tabInfo[tabId] = { platform, count };
 	await chrome.storage.session.set({ tabInfo });
 	await setTabIcon(tabId, await tabPaused(tabId, platform), await getStatus(), count);
@@ -442,10 +456,9 @@ async function logActivity(entries: ActivityEntry[]) {
 	await db.trim('activity', 1000);
 	const got = (await chrome.storage.local.get(K.stats))[K.stats] as Stats | undefined;
 	const stats: Stats = got ?? { firstRunAt: Date.now(), days: {} };
-	const day = (stats.days[dayKey()] ??= { hidden: 0, collapsed: 0, labeled: 0 });
+	const day = (stats.days[dayKey()] ??= { hidden: 0, labeled: 0 });
 	for (const e of entries) {
 		if (e.action === 'hide') day.hidden++;
-		else if (e.action === 'collapse') day.collapsed++;
 		else if (e.action === 'label') day.labeled++;
 	}
 	const keep = Object.keys(stats.days).sort().slice(-60);
@@ -468,6 +481,7 @@ async function ensureInstall() {
 export function startWorker(): void {
 	chrome.runtime.onInstalled.addListener(async ({ reason }) => {
 		await ensureInstall();
+		if (reason === 'update') await migrateSettings();
 		await chrome.alarms.create('sync', { periodInMinutes: 60, delayInMinutes: 60 });
 		if (reason === 'install') await chrome.tabs.create({ url: chrome.runtime.getURL('/welcome.html') });
 		await reconcileScripts();

@@ -1,16 +1,27 @@
 // Fixing a wrong call (P0-7): Why shows the layers that agreed, Show reveals once, Always allow
-// overrides every list for this viewer, Not slop files a counter-tag. The popup offers the same (P0-12).
+// overrides every list for this viewer, Not slop files a counter-tag. Hidden items leave no trace on
+// the page, so the popup is where each one keeps all four (P0-12).
 import type { Page } from '@playwright/test';
 import { EXT_ID, expect, test } from './harness';
 
 const SEARCH = 'https://www.youtube.com/results?search_query=history';
 const rows = (page: Page) => page.locator('colander-ui[data-kind="layer"] .cl-pop .cl-ev-row');
 
-test('Why, Show, Not slop and Always allow', async ({ ext }) => {
+test('Why, Show, Not slop and Always allow, for hidden items from the popup', async ({ ext }) => {
 	await ext.setup();
 	const page = await ext.open(SEARCH);
 	const cards = page.locator('ytd-search ytd-video-renderer');
-	await cards.nth(1).locator('colander-ui[data-kind="bar"]').getByRole('button', { name: 'Why' }).click();
+	const openPopup = async () => {
+		const popup = await ext.ctx.newPage();
+		await popup.goto(`chrome-extension://${EXT_ID}/popup.html?tab=${await ext.tabId(page)}`);
+		return popup;
+	};
+	const row = (popup: Page, v: string) => popup.locator('.row', { has: popup.locator(`[data-v="${v}"]`) });
+
+	// A hidden card has no trace on the page; Why from its popup row shows it and opens its evidence.
+	let popup = await openPopup();
+	await row(popup, 'likely_slop').locator('.row-btn').click();
+	await popup.getByRole('menuitem', { name: 'Why' }).click();
 	const pop = page.locator('colander-ui[data-kind="layer"] .cl-pop');
 	await expect(page.getByRole('dialog', { name: 'Why this is hidden' })).toBeVisible();
 	await expect(rows(page)).toHaveText(['Source behavior: Most recent items are AI-made.', 'Content: Taggers found it hollow.', 'AI evidence: No AI label or credentials found yet.']);
@@ -19,14 +30,10 @@ test('Why, Show, Not slop and Always allow', async ({ ext }) => {
 	await expect(pop.locator('.cl-ev-list')).toHaveText('Core list, updated 1 Aug 2026');
 	await expect(pop.getByRole('link', { name: 'Source page' })).toHaveAttribute('href', 'http://localhost:8787/s/yt/@catrescuetales');
 	await expect(pop.getByRole('link', { name: 'Is this your channel? Appeal this verdict.' })).toHaveAttribute('href', 'http://localhost:8787/appeal/yt/@catrescuetales');
-
-	await pop.getByRole('button', { name: 'Show' }).click();
 	await expect(cards.nth(1)).not.toHaveAttribute('data-colander', /./);
 	await expect(cards.nth(1).locator('colander-ui[data-kind="chip"]')).toContainText('Likely slop');
-	await expect(page.locator('colander-ui[data-kind="layer"] .cl-toast')).toContainText('Shown again.');
 
-	// Not slop from the chip's Why files a source-level counter-tag once its toast ends.
-	await cards.nth(1).locator('colander-ui[data-kind="chip"] button').click();
+	// Not slop from the Why files a source-level counter-tag once its toast ends.
 	await pop.getByRole('button', { name: 'Not slop' }).click();
 	await expect(page.locator('colander-ui[data-kind="layer"] .cl-toast')).toContainText('Tagged as not slop.');
 	await expect(cards.nth(1).locator('colander-ui[data-kind="chip"]')).toHaveCount(0);
@@ -35,13 +42,17 @@ test('Why, Show, Not slop and Always allow', async ({ ext }) => {
 	expect(tag).toMatchObject({ target_type: 'source', target_id: '@catrescuetales', verdict: 'not_slop' });
 	expect(tag.source_id).toBeUndefined();
 
-	// Always allow from the popup's row menu, for the hidden card.
-	const popup = await ext.ctx.newPage();
-	await popup.goto(`chrome-extension://${EXT_ID}/popup.html?tab=${await ext.tabId(page)}`);
-	const row = popup.locator('.row', { has: popup.locator('[data-v="slop"]') });
-	await row.locator('.row-btn').click();
+	// Show from the popup row brings the hidden Slop card back for this page view, with its chip.
+	popup = await openPopup();
+	await row(popup, 'slop').getByRole('button', { name: 'Show' }).click();
+	await expect(cards.nth(0)).toBeVisible();
+	await expect(cards.nth(0).locator('colander-ui[data-kind="chip"]')).toContainText('Slop');
+	await expect(page.locator('colander-ui[data-kind="layer"] .cl-toast')).toContainText('Shown again.');
+
+	// Always allow from the popup's row menu.
+	await row(popup, 'slop').locator('.row-btn').click();
 	await popup.getByRole('menuitem', { name: 'Always allow this source' }).click();
-	await expect(cards.nth(0)).not.toHaveAttribute('data-colander', /./);
+	await expect(cards.nth(0).locator('colander-ui[data-kind="chip"]')).toHaveCount(0);
 	const settings = await ext.storage<{ allows: { key: string }[] }>('settings');
 	expect(settings.allows.map((a) => a.key)).toContain('yt:s:@aihistorydaily');
 	// It overrides the list after a reload too.

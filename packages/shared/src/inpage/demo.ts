@@ -1,16 +1,17 @@
 // The recreated feed for the website hero, the strictness cards, the welcome page and the store
-// art. One shadow host holds the whole host page, so the sheet ships once. The chips, bars,
-// stubs, covers and popover inside are the builders the extension ships; the host pages around
-// them are drawn here, one per platform tab: a YouTube Home grid, a TikTok For You video, an
-// Instagram feed and a Facebook feed. Phones get a plain list.
+// art. One shadow host holds the whole host page, so the sheet ships once. The chips and popover
+// inside are the builders the extension ships; the host pages around them are drawn here, one per
+// platform tab: a YouTube Home grid, a TikTok For You video, an Instagram feed and a Facebook feed.
+// Phones get a plain list. Hidden items are simply not drawn, so the page closes up around them,
+// as it does under the extension.
 import { Heart, MessageCircle, Send, Share2, ThumbsUp } from 'lucide';
 import { DEMO_FEED, ITEM_NOUN, type DemoItem, type ThumbScene } from '../copy';
-import { ACTION_TABLE, PLATFORM_NAME, barReason, type Action, type Platform, type Strictness } from '../verdicts';
+import { ACTION_TABLE, PLATFORM_NAME, type Action, type Platform, type Strictness } from '../verdicts';
 import { hyper, icon, trapFocus } from './dom';
 import { evidence } from './evidence';
 import type { InpageContext } from './host';
 import { THUMB_CSS, THUMB_SCENES, numeralText, toneVar } from './thumbs';
-import { bar, chip, cover, evidencePopover, gridStub, type ItemView } from './ui';
+import { chip, evidencePopover, type ItemView } from './ui';
 
 /** grid: YouTube Home. swipe: one TikTok For You video. square: Instagram feed. post: Facebook feed. */
 export type DemoLayout = 'grid' | 'list' | 'swipe' | 'square' | 'post' | 'mini';
@@ -18,12 +19,14 @@ export type DemoLayout = 'grid' | 'list' | 'swipe' | 'square' | 'post' | 'mini';
 export const PLATFORM_LAYOUT: Record<Platform, Exclude<DemoLayout, 'mini'>> = { yt: 'grid', tt: 'swipe', ig: 'square', fb: 'post' };
 
 /**
- * Item order per layout, when the caller does not pick items. The grid puts the Likely slop stub
- * at the end of row 2 at Standard, so its open popover drops into the free end of row 3 and covers
- * no card. Feeds of tall posts start with it, so the bar and its popover are in the first view.
+ * Item order per layout, when the caller does not pick items. The grid keeps the open AI-made
+ * item at the end of row 2 at Label and at Standard, and the items Standard hides in row 3, so at
+ * Standard the grid is two full rows and the popover hangs over the card's own title into the free
+ * space below them, covering no other card. The swipe feed and the feeds of tall posts start with the Likely slop item, so
+ * Label shows it first and Standard closes up to the AI-made item and its popover.
  */
 export const DEMO_ORDER: Partial<Record<DemoLayout, number[]>> = {
-	grid: [1, 2, 3, 4, 5, 7, 8, 6, 9],
+	grid: [1, 5, 7, 8, 9, 3, 2, 6, 4],
 	swipe: [6, 2, 4, 3, 1, 5, 7, 8, 9],
 	square: [6, 3, 1, 5, 2, 7, 4, 8, 9],
 	post: [6, 3, 1, 5, 2, 7, 4, 8, 9]
@@ -53,11 +56,9 @@ export interface DemoState {
 }
 
 export interface DemoHandlers {
-	show(id: number): void;
 	why(id: number): void;
 	allow(id: number): void;
 	notSlop(id: number): void;
-	skip(id: number): void;
 }
 
 /** What the strictness level does to an item, before Show and Always allow. */
@@ -66,20 +67,17 @@ export function demoAction(item: DemoItem, level: Strictness, paused = false): A
 }
 
 /**
- * Hidden and collapsed items at a level: the toolbar badge and the popup's "Hidden on this page",
- * as the extension counts them. Label 0, Standard 3, Strict 4, No AI 4.
+ * Hidden items at a level: the toolbar badge and the popup's "Hidden on this page", as the
+ * extension counts them. Label 0, Standard 3, No AI 4.
  */
 export function demoHiddenCount(level: Strictness, paused = false, items = DEMO_FEED): number {
-	return items.filter((i) => {
-		const a = demoAction(i, level, paused);
-		return a === 'hide' || a === 'collapse';
-	}).length;
+	return items.filter((i) => demoAction(i, level, paused) === 'hide').length;
 }
 
-/** "1 hidden, 1 collapsed, 1 labeled", the count line under a strictness card. */
+/** "2 hidden, 1 labeled", the count line under a strictness card. */
 export function demoCounts(level: Strictness, items = DEMO_FEED): string {
 	const n = (a: Action) => items.filter((i) => demoAction(i, level) === a).length;
-	return `${n('hide')} hidden, ${n('collapse')} collapsed, ${n('label')} labeled`;
+	return `${n('hide')} hidden, ${n('label')} labeled`;
 }
 
 /** The thumbnail picture, in the given document. */
@@ -125,32 +123,33 @@ export function demoFeed(ctx: InpageContext, s: DemoState, x: DemoHandlers): HTM
 	const noun = ITEM_NOUN[platform];
 	const mini = s.layout === 'mini';
 	const swipe = s.layout === 'swipe';
-	// Flat popovers sit in the flow under their bar; the grid and the video float theirs.
+	// Flat popovers sit in the flow under their card; the grid and the video float theirs.
 	const inline = s.layout === 'list' || s.layout === 'square' || s.layout === 'post';
-	// The For You page shows one video at a time; Skip moves to the next.
-	const items = swipe ? (s.items ?? DEMO_FEED).slice(0, 1) : (s.items ?? DEMO_FEED);
+	// What each item gets: hidden items are not drawn at all; Show labels them, Always allow clears them.
+	const shown = (item: DemoItem) => {
+		const level = demoAction(item, s.level, s.paused);
+		const action: Action = s.allowed?.includes(item.id) ? 'allow' : level === 'hide' && s.revealed?.includes(item.id) ? 'label' : level;
+		return { item, action, hidden: level === 'hide' };
+	};
+	const all = (s.items ?? DEMO_FEED).map(shown).filter((v) => v.action !== 'hide');
+	// The For You page shows one video at a time, and hidden ones are skipped.
+	const visible = swipe ? all.slice(0, 1) : all;
 	const cards: HTMLElement[] = [];
 
-	for (const item of items) {
-		let action = demoAction(item, s.level, s.paused);
-		if (s.allowed?.includes(item.id)) action = 'allow';
-		if (action === 'hide' && !swipe) continue;
-		const covered = action === 'hide' || action === 'collapse';
-		const shown = s.revealed?.includes(item.id) ?? false;
-		const open = s.open === item.id && !!item.verdict && !mini;
+	for (const { item, action, hidden } of visible) {
+		const open = s.open === item.id && action === 'label' && !!item.verdict && !mini;
 		const popId = `cl-pop-${item.id}`;
-		const view: ItemView = { verdict: item.verdict, reason: barReason(item.signals, item.verdict), hidden: covered };
+		const view: ItemView = { verdict: item.verdict, hidden };
 		const anchor = { key: item.id, expanded: open, controls: popId };
-		const reveal = { onShow: () => x.show(item.id), onWhy: () => x.why(item.id), ...anchor };
 		const label =
-			!shown && action === 'label' && item.verdict
+			action === 'label' && item.verdict
 				? chip(ctx, view, mini ? { tone: 'tint', size: 'sm' } : { tone: s.layout === 'square' || s.layout === 'post' ? 'tint' : 'ink', onWhy: () => x.why(item.id), ...anchor })
 				: null;
 		let pop: HTMLElement | null = null;
 		if (open) {
 			const ev = evidence({
 				verdict: item.verdict,
-				hidden: covered,
+				hidden,
 				signals: item.signals,
 				rows: item.evidence,
 				listDate: s.listDate,
@@ -159,12 +158,7 @@ export function demoFeed(ctx: InpageContext, s: DemoState, x: DemoHandlers): HTM
 				appealable: true,
 				inertLinks: true
 			});
-			pop = evidencePopover(
-				ctx,
-				ev,
-				{ show: covered && !shown ? () => x.show(item.id) : undefined, allow: () => x.allow(item.id), notSlop: () => x.notSlop(item.id) },
-				{ flat: inline, key: item.id, id: popId }
-			);
+			pop = evidencePopover(ctx, ev, { allow: () => x.allow(item.id), notSlop: () => x.notSlop(item.id) }, { flat: inline, key: item.id, id: popId });
 			if (s.opened === item.id) once(pop, 'pop-in');
 			const popEl = pop;
 			popEl.addEventListener('keydown', (e) => trapFocus(popEl.getRootNode() as ShadowRoot, popEl, e));
@@ -173,13 +167,7 @@ export function demoFeed(ctx: InpageContext, s: DemoState, x: DemoHandlers): HTM
 		const meta = (text: string) => h('p', { class: 'meta' }, text);
 		let card: HTMLElement;
 
-		if (covered && !shown && swipe) {
-			card = h('article', { class: 'card reel' }, h('div', { class: 'video' }, art(), cover(ctx, view, { ...reveal, onSkip: () => x.skip(item.id) }), pop), rail(ctx));
-		} else if (covered && !shown && s.layout === 'grid') {
-			card = h('article', { class: 'card stubbed' }, h('div', { class: 'thumb' }, gridStub(ctx, view, reveal), pop));
-		} else if (covered && !shown) {
-			card = h('article', { class: 'card barred' }, bar(ctx, view, reveal), pop);
-		} else if (swipe) {
+		if (swipe) {
 			const caption = h('div', { class: 'cap' }, h('p', { class: 'creator' }, h('b', {}, item.handle), label), h('p', { class: 'title' }, item.title));
 			card = h('article', { class: 'card reel' }, h('div', { class: 'video' }, art(), caption, pop), rail(ctx));
 		} else if (s.layout === 'square') {
@@ -209,12 +197,14 @@ export function demoFeed(ctx: InpageContext, s: DemoState, x: DemoHandlers): HTM
 			);
 		} else {
 			// Grid, list and mini rows. Mini rows are too small for a chip on the thumbnail, so it sits under the title.
+			// In the grid the popover hangs from the thumbnail over the card's own title, so it covers no other card.
+			const grid = s.layout === 'grid';
 			card = h(
 				'article',
 				{ class: 'card' },
-				h('div', { class: 'thumb' }, art(), !mini && label && h('div', { class: 'on-media' }, label)),
+				h('div', { class: 'thumb' }, art(), !mini && label && h('div', { class: 'on-media' }, label), grid && pop),
 				h('div', { class: 'text' }, h('p', { class: 'title' }, item.title), mini ? label : meta(`${item.handle} · ${item.age}`)),
-				pop
+				!grid && pop
 			);
 		}
 		if (s.changed?.includes(item.id)) once(card, 'enter');
@@ -268,25 +258,21 @@ export const DEMO_CSS =
 .card{position:relative;min-width:0;border-radius:10px}
 .card:focus{outline:none}
 .card:focus-visible{outline:2px solid var(--cl-brand);outline-offset:2px}
-.bar,.stub,.cover{animation:none}
 .thumb,.video,.media{position:relative;aspect-ratio:16/9;border-radius:10px;overflow:hidden;container-type:inline-size}
-.barred{container-type:inline-size}
 .thumb>svg,.video>svg,.media>svg{width:100%;height:100%}
-.stubbed .thumb{overflow:visible}
 .on-media{position:absolute;top:8px;left:8px}
 .title{margin:8px 0 0;font:600 14px/20px var(--cl-font-system);display:-webkit-box;overflow:hidden;-webkit-line-clamp:2;-webkit-box-orient:vertical}
 .meta{margin:2px 0 0;color:var(--hm);font:400 12px/16px var(--cl-font-system)}
 .feed-grid{grid-template-columns:repeat(3,minmax(0,1fr));gap:24px 16px;align-content:start}
-.feed-grid .card>.cl-pop{position:absolute;top:36px;left:8px;z-index:2}
-.feed-grid .card:nth-child(3n)>.cl-pop{left:auto;right:8px}
-.feed-grid .stubbed .thumb>.cl-pop{position:absolute;top:calc(100% + 8px);left:0;z-index:2}
-.feed-grid .stubbed:nth-child(3n) .thumb>.cl-pop{left:auto;right:var(--demo-pop-out,0px)}
+.feed-grid .thumb:has(>.cl-pop){overflow:visible}
+.feed-grid .thumb>svg{border-radius:10px}
+.feed-grid .thumb>.cl-pop{position:absolute;top:calc(100% + 8px);left:0;z-index:2;width:312px}
+.feed-grid .card:nth-child(3n) .thumb>.cl-pop{left:auto;right:var(--demo-pop-out,0px)}
 .feed-list .card{display:grid;grid-template-columns:160px minmax(0,1fr);gap:12px;align-items:start}
 .feed-list .title{margin:0}
 .feed-list .text{min-width:0;padding-right:4px}
 .feed-list .meta{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.feed-list .barred,.feed-list .card:has(>.cl-pop){display:block}
-.feed-list .card>.cl-pop{margin-top:8px}
+.feed-list .card>.cl-pop{grid-column:1/-1}
 @media (max-width:379px){.feed-list .card{grid-template-columns:minmax(96px,40%) minmax(0,1fr)}}
 .feed-swipe{justify-content:center;align-content:start}
 .reel{display:flex;align-items:flex-end;gap:12px;margin-left:56px}
@@ -299,13 +285,9 @@ export const DEMO_CSS =
 .rail span{display:grid;justify-items:center;gap:4px}
 .rail i{display:grid;place-items:center;width:44px;height:44px;border-radius:50%;background:var(--hf);color:var(--cl-text)}
 .feed-swipe .video>.cl-pop{position:absolute;bottom:112px;left:50%;margin-left:-160px;z-index:2}
-.feed-swipe .video:has(>.cover)>.cl-pop{top:224px;bottom:auto}
-.feed-swipe .video:has(>.cl-pop)>.cover{justify-content:flex-start;padding-top:40px}
-.feed-swipe .cover{border-radius:10px}
 .feed-square,.feed-post{justify-items:center;align-content:start}
-.feed-square .card,.feed-square .barred{width:min(100%,420px)}
+.feed-square .card{width:min(100%,420px)}
 .feed-post .card{width:min(100%,500px);padding:12px 16px 4px;background:var(--hs);border-radius:8px}
-.feed-post .barred{padding:8px}
 .post-head{display:flex;align-items:center;gap:8px;min-height:48px}
 .avatar{flex:none;width:32px;height:32px;border-radius:50%;background:var(--hf);box-shadow:inset 0 0 0 1px var(--hl)}
 .feed-post .avatar{width:40px;height:40px}
@@ -324,7 +306,6 @@ export const DEMO_CSS =
 .feed-mini{gap:8px;padding:0;min-height:0;background:transparent}
 .feed-mini .card{display:grid;grid-template-columns:64px 1fr;gap:8px;align-items:center}
 .feed-mini .text{display:grid;gap:4px;justify-items:start}
-.feed-mini .barred{display:block}
 .feed-mini .thumb{border-radius:6px}
 .feed-mini .title{margin:0;-webkit-line-clamp:1}
 .enter{animation:cl-in var(--cl-slow) var(--cl-ease)}

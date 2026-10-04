@@ -9,7 +9,7 @@ The Go server serves that folder and the API from the same origin, so every page
 | Route | What it is | Rendering |
 | --- | --- | --- |
 | `/` | Landing page: the hero demo, live strip, Kapwing figures, verdicts, strictness, fair by design, open by default, privacy, comparison, plans and questions | Prerendered, live numbers refreshed in the browser |
-| `/definition` | How Colander decides: the definition, tests, layers, verdicts, safeguards, strictness, signing, consensus, appeals and comparison sources | Prerendered |
+| `/definition` | How Colander decides: the definition, tests, layers, verdicts, safeguards, strictness, signing, consensus, appeals and research | Prerendered |
 | `/s/{platform}/{id}` | Public source page, with a Not rated state | SPA fallback |
 | `/appeal/{platform}/{id}` | Start an appeal | SPA fallback |
 | `/appeal/status/{id}?secret=` | Appeal code, instructions, Verify and status | SPA fallback |
@@ -91,12 +91,14 @@ pnpm -C web test             # builds, serves build/ like the Go server, runs Pl
 pnpm -C web screenshots      # full-page screenshots of every page into web/screenshots
 ```
 
+The test server listens on 4173; set `PORT` to move it when that port is taken.
+
 Every test mocks `/v1` with `page.route` using fixtures typed by `packages/shared/src/api.ts` (`tests/mocks.ts`).
 A shared fixture fails any test that logs a page error or a CSP violation.
 
 | Spec | Covers |
 | --- | --- |
-| `landing.spec.ts` | Hero, the demo following the strictness table and Pause, the badge counting hidden and collapsed items, a recreated feed per platform tab, the open popover drawn in its final state on load, keyboard focus through Why and Pause, the thumbnail disclosure, the length budget, the phone hero, the menu sheet, the live log preview |
+| `landing.spec.ts` | Hero, the demo following the strictness table and Pause, hidden items leaving no trace while the badge counts them and the docked popup lists them with Show, a recreated feed per platform tab with TikTok skipping hidden videos, the open popover drawn in its final state on load, popup rows, strictness cards, step rules, tile pictures and decision rows fitting at every width in both themes, the comparison without a sources link, keyboard focus through Why and Pause, the thumbnail disclosure, the length budget, the phone hero, the menu sheet, the live log preview |
 | `definition.spec.ts` | The strictness table fits the reading measure and stacks by level on phones |
 | `budget.spec.ts` | The performance budget above |
 | `source.spec.ts` | Source pages for all five verdicts, Not rated, unknown platforms, no support links |

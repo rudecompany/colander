@@ -141,7 +141,7 @@ test('tags queue while offline and are sent when the connection returns', async 
 	expect(ext.api.sent.filter((s) => s.path === '/v1/tags' && s.method === 'POST').length).toBeGreaterThanOrEqual(2);
 });
 
-test('keyboard only: tag menu and collapsed bar', async ({ ext }) => {
+test('keyboard only: the tag menu', async ({ ext }) => {
 	await ext.setup();
 	const page = await ext.open(SEARCH);
 	const isTagFocused = () =>
@@ -170,13 +170,4 @@ test('keyboard only: tag menu and collapsed bar', async ({ ext }) => {
 	await page.keyboard.press('Enter');
 	await expect(page.locator('ytd-search ytd-video-renderer').nth(3)).toHaveAttribute('data-colander', 'hide');
 	await expect(layer(page).locator('.cl-toast')).toContainText('Tagged and hidden.');
-
-	// The collapsed bar takes focus and Enter shows the item.
-	const bar = page.locator('ytd-search ytd-video-renderer').nth(1).locator('colander-ui[data-kind="bar"] .bar');
-	await bar.focus();
-	await expect(bar).toBeFocused();
-	await expect(bar).toHaveAttribute('aria-label', 'Hidden for you: Likely slop. Mostly AI, Hollow.');
-	await page.keyboard.press('Enter');
-	await expect(page.locator('ytd-search ytd-video-renderer').nth(1)).not.toHaveAttribute('data-colander', /./);
-	await expect(page.locator('ytd-search ytd-video-renderer').nth(1).locator('colander-ui[data-kind="chip"]')).toContainText('Likely slop');
 });

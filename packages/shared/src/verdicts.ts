@@ -50,28 +50,26 @@ export const VERDICT_PLAIN: Record<Verdict, string> = {
 	clear: 'Checked and fine'
 };
 
-export type Strictness = 'label' | 'standard' | 'strict' | 'no_ai';
-export const STRICTNESS: Strictness[] = ['label', 'standard', 'strict', 'no_ai'];
+export type Strictness = 'label' | 'standard' | 'no_ai';
+export const STRICTNESS: Strictness[] = ['label', 'standard', 'no_ai'];
 export const STRICTNESS_WORD: Record<Strictness, string> = {
 	label: 'Label',
 	standard: 'Standard',
-	strict: 'Strict',
 	no_ai: 'No AI'
 };
 /** The one line under the strictness control that says what the level does. */
 export const STRICTNESS_HINT: Record<Strictness, string> = {
-	label: 'Labels everything. Nothing is hidden or collapsed.',
-	standard: 'Hides slop, collapses likely slop and labels AI-made items.',
-	strict: 'Hides slop and likely slop, and collapses AI-made items.',
-	no_ai: 'Hides everything that carries AI evidence.'
+	label: 'Labels everything with AI evidence. Nothing is hidden.',
+	standard: 'Hides slop and likely slop, and labels AI-made items.',
+	no_ai: 'Hides slop, likely slop and AI-made items.'
 };
 
-export type Action = 'hide' | 'collapse' | 'label' | 'allow';
+/** Hidden items leave the page like ads under an ad blocker: no gap, no placeholder. */
+export type Action = 'hide' | 'label' | 'allow';
 /** The strictness table from the spec. Disputed is always labeled and Clear is always allowed. */
 export const ACTION_TABLE: Record<Strictness, Record<Verdict, Action>> = {
 	label: { slop: 'label', likely_slop: 'label', ai_made: 'label', disputed: 'label', clear: 'allow' },
-	standard: { slop: 'hide', likely_slop: 'collapse', ai_made: 'label', disputed: 'label', clear: 'allow' },
-	strict: { slop: 'hide', likely_slop: 'hide', ai_made: 'collapse', disputed: 'label', clear: 'allow' },
+	standard: { slop: 'hide', likely_slop: 'hide', ai_made: 'label', disputed: 'label', clear: 'allow' },
 	no_ai: { slop: 'hide', likely_slop: 'hide', ai_made: 'hide', disputed: 'label', clear: 'allow' }
 };
 
@@ -132,7 +130,7 @@ export const SIGNALS = [
 ] as const;
 export type Signal = (typeof SIGNALS)[number];
 export const SIGNAL_BIT = Object.fromEntries(SIGNALS.map((s, i) => [s, i])) as Record<Signal, number>;
-/** Short reasons used in collapsed bars and the Why popover. */
+/** Short reasons used in the Why popover. */
 export const SIGNAL_TEXT: Record<Signal, string> = {
 	platform_label: 'The platform labels it AI-generated',
 	content_credentials: 'Content Credentials say it was made with AI',
@@ -151,25 +149,6 @@ export const SIGNAL_TEXT: Record<Signal, string> = {
 	open_appeal: 'An appeal is open',
 	not_slop_consensus: 'The community says it is not slop'
 };
-/** Very short reason words for the one-line collapsed bar ("Likely slop · Mass-produced, AI-made"). */
-export const SIGNAL_SHORT: Record<Signal, string> = {
-	platform_label: 'AI-made',
-	content_credentials: 'AI-made',
-	creator_statement: 'AI-made',
-	watermark: 'AI-made',
-	high_volume: 'Mass-produced',
-	mostly_ai: 'Mostly AI',
-	templated: 'Mass-produced',
-	near_duplicates: 'Mass-produced',
-	link_funnel: 'Bait',
-	cross_posting: 'Mass-produced',
-	rubric_low_effort: 'Low effort',
-	rubric_hollow: 'Hollow',
-	community_consensus: 'Community',
-	staff_review: 'Reviewed',
-	open_appeal: 'Appeal open',
-	not_slop_consensus: 'Not slop'
-};
 
 export function signalsFromMask(mask: number): Signal[] {
 	return SIGNALS.filter((_, i) => (mask >> i) & 1);
@@ -179,30 +158,9 @@ export function maskFromSignals(list: Signal[]): number {
 	return list.reduce((m, s) => m | (1 << SIGNAL_BIT[s]), 0);
 }
 
-/** "Mass-produced, AI-made" style summary, deduplicated, at most `max` words. */
-export function shortReason(signals: Signal[], max = 2): string {
-	const words: string[] = [];
-	for (const s of signals) {
-		const w = SIGNAL_SHORT[s];
-		if (!words.includes(w)) words.push(w);
-	}
-	return words.slice(0, max).join(', ');
-}
-
-/** The collapsed-bar reason, which never repeats the verdict word ("Likely slop · Mass-produced, AI-made"). */
-export function barReason(signals: Signal[], verdict: Verdict | null): string {
-	const word = verdict ? VERDICT_WORD[verdict] : '';
-	return shortReason(signals, 4)
-		.split(', ')
-		.filter((w) => w && w !== word)
-		.slice(0, 2)
-		.join(', ');
-}
-
-/** The treatment as a past-tense word: "Hidden", "Collapsed", "Labeled", "Shown". */
+/** The treatment as a past-tense word: "Hidden", "Labeled", "Shown". */
 export const ACTION_DONE_WORD: Record<Action, string> = {
 	hide: 'Hidden',
-	collapse: 'Collapsed',
 	label: 'Labeled',
 	allow: 'Shown'
 };

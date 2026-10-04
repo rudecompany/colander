@@ -4,48 +4,87 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { EXT_ID, ROOT, devSign, expect, test } from './harness';
 import defaults from '../../src/adapters/default-config.json' with { type: 'json' };
+import type { PageAction } from '../../src/lib/messages';
 
 const SEARCH = 'https://www.youtube.com/results?search_query=history';
 
-test('Standard hides slop, collapses likely slop and labels AI-made', async ({ ext }) => {
+test('Standard hides slop and likely slop without a trace, and labels AI-made', async ({ ext }) => {
 	await ext.setup();
 	const page = await ext.open(SEARCH);
 	const cards = page.locator('ytd-search ytd-video-renderer');
-	await expect(cards.nth(0)).toHaveAttribute('data-colander', 'hide');
-	await expect(cards.nth(0)).toBeHidden();
-	await expect(cards.nth(1)).toHaveAttribute('data-colander', 'collapse');
-	await expect(cards.nth(1).locator('colander-ui[data-kind="bar"]')).toBeVisible();
-	await expect(cards.nth(1).locator('colander-ui[data-kind="bar"]')).toHaveCSS('height', '40px');
+	for (const n of [0, 1]) {
+		await expect(cards.nth(n)).toHaveAttribute('data-colander', 'hide');
+		await expect(cards.nth(n)).toBeHidden();
+		await expect(cards.nth(n).locator('colander-ui')).toHaveCount(0);
+	}
+	// The list closes up: the first card left starts where the first card did.
+	expect(await page.evaluate(() => {
+		const list = [...document.querySelectorAll('ytd-search ytd-video-renderer')];
+		return list[2]!.getBoundingClientRect().top - list[0]!.parentElement!.getBoundingClientRect().top;
+	})).toBeLessThan(1);
 	await expect(cards.nth(2).locator('colander-ui[data-kind="chip"]')).toContainText('AI-made');
 	// The platform's own AI label alone gives the AI-made chip (P0-4).
 	await expect(cards.nth(4).locator('colander-ui[data-kind="chip"]')).toContainText('AI-made');
 	await expect(cards.nth(3).locator('colander-ui[data-kind="chip"]')).toHaveCount(0);
 	const state = await ext.pageState(page);
-	expect(state.counts).toEqual({ hidden: 1, collapsed: 1, labeled: 2 });
+	expect(state.counts).toEqual({ hidden: 2, labeled: 2 });
+	// Nothing is lost: both hidden items are in the page's actions, which the popup lists with Show.
+	expect(state.actions.filter((a: PageAction) => a.action === 'hide').map((a: PageAction) => a.verdict)).toEqual(['slop', 'likely_slop']);
+});
+
+test('YouTube home and subscriptions grids close up and reflow, so every row stays full', async ({ ext }) => {
+	await ext.setup();
+	for (const [url, hidden] of [['https://www.youtube.com/', 3], ['https://www.youtube.com/feed/subscriptions', 1]] as const) {
+		const page = await ext.open(url);
+		await expect(page.locator('[data-colander="hide"]')).toHaveCount(hidden);
+		await expect(page.locator('[data-colander-reflow]')).toHaveCount(1);
+		// Laid out as it paints: visible cards and the full-width shelf, top to bottom, left to right.
+		const layout = await page.evaluate(() => {
+			const box = document.querySelector('[data-colander-reflow]')!;
+			const r0 = box.getBoundingClientRect();
+			return [...box.children]
+				.filter((el) => el.getBoundingClientRect().height > 0)
+				.map((el) => {
+					const r = el.getBoundingClientRect();
+					return { shelf: el.tagName === 'YTD-RICH-SECTION-RENDERER', top: Math.round(r.top), left: Math.round(r.left - r0.left), width: Math.round(r.width) };
+				})
+				.sort((a, b) => a.top - b.top || a.left - b.left);
+		});
+		const rows = new Map<number, typeof layout>();
+		for (const el of layout) rows.set(el.top, [...(rows.get(el.top) ?? []), el]);
+		const list = [...rows.values()];
+		const shelf = list.findIndex((row) => row[0]!.shelf);
+		expect(shelf, 'the shelf is still on the page').toBeGreaterThan(0);
+		// Every row above the shelf is full, its 4 cards in YouTube's own columns.
+		const columns = list[0]!.map((el) => el.left);
+		expect(columns).toHaveLength(4);
+		for (const row of list.slice(0, shelf)) expect(row.map((el) => el.left)).toEqual(columns);
+		// The first column stays flush left, the others keep YouTube's 8 px margin.
+		expect(columns[0]).toBe(0);
+	}
 });
 
 test('changing strictness in the popup re-applies within 1 second, no reload (P0-3)', async ({ ext }) => {
 	await ext.setup();
 	const page = await ext.open(SEARCH);
 	const cards = page.locator('ytd-search ytd-video-renderer');
-	await expect(cards.nth(1)).toHaveAttribute('data-colander', 'collapse');
+	await expect(cards.nth(1)).toHaveAttribute('data-colander', 'hide');
 	const popup = await ext.ctx.newPage();
 	await popup.goto(`chrome-extension://${EXT_ID}/popup.html?tab=${await ext.tabId(page)}`);
-	await popup.getByRole('radio', { name: 'Strict' }).click();
+	await expect(popup.getByRole('radio')).toHaveText(['Label', 'Standard', 'No AI']);
+	await popup.getByRole('radio', { name: 'No AI' }).click();
 	const t0 = Date.now();
-	await expect(cards.nth(1)).toHaveAttribute('data-colander', 'hide', { timeout: 1000 });
-	await expect(cards.nth(2)).toHaveAttribute('data-colander', 'collapse', { timeout: 1000 });
+	await expect(cards.nth(2)).toHaveAttribute('data-colander', 'hide', { timeout: 1000 });
+	await expect(cards.nth(4)).toHaveAttribute('data-colander', 'hide', { timeout: 1000 });
 	expect(Date.now() - t0).toBeLessThan(1000);
 	await popup.getByRole('radio', { name: 'Label' }).click();
 	await expect(cards.nth(0)).not.toHaveAttribute('data-colander', /./, { timeout: 1000 });
 	await expect(cards.nth(0).locator('colander-ui[data-kind="chip"]')).toContainText('Slop');
-	await popup.getByRole('radio', { name: 'No AI' }).click();
-	await expect(cards.nth(2)).toHaveAttribute('data-colander', 'hide', { timeout: 1000 });
-	await expect(cards.nth(4)).toHaveAttribute('data-colander', 'hide', { timeout: 1000 });
+	await expect(cards.nth(1).locator('colander-ui[data-kind="chip"]')).toContainText('Likely slop');
 });
 
 test('the toolbar badge counts what is hidden on the page', async ({ ext }) => {
-	await ext.setup({ strictness: 'strict' });
+	await ext.setup({ strictness: 'no_ai' });
 	const page = await ext.open(SEARCH);
 	const tabId = await ext.tabId(page);
 	await expect.poll(() => ext.ctl.evaluate((id) => chrome.action.getBadgeText({ tabId: id }), tabId)).toBe('4');
@@ -56,13 +95,15 @@ test('a delta moves the open page without a reload', async ({ ext }) => {
 	await ext.setup();
 	const page = await ext.open(SEARCH);
 	const second = page.locator('ytd-search ytd-video-renderer').nth(1);
-	await expect(second).toHaveAttribute('data-colander', 'collapse');
+	await expect(second).toHaveAttribute('data-colander', 'hide');
+	const third = page.locator('ytd-search ytd-video-renderer').nth(2);
+	await expect(third.locator('colander-ui[data-kind="chip"]')).toContainText('AI-made');
 	ext.api.delta = true;
 	await ext.send({ type: 'sync-now' });
 	await expect.poll(() => ext.storage<{ sequence: number }>('listIndex').then((i) => i.sequence)).toBe(43);
-	// @catrescuetales went from Likely slop to Slop; the AI-made video left the list.
+	// @catrescuetales went from Likely slop to Slop and stays hidden; the AI-made video left the list.
 	await expect(second).toHaveAttribute('data-colander', 'hide');
-	const third = page.locator('ytd-search ytd-video-renderer').nth(2);
+	await expect.poll(() => ext.pageState(page).then((s) => s.actions.find((a: PageAction) => a.sourceId === '@catrescuetales')?.verdict)).toBe('slop');
 	await expect(third.locator('colander-ui[data-kind="chip"]')).toHaveCount(0);
 	const delta = ext.api.sent.filter((s) => s.path.startsWith('/v1/list/'));
 	expect(delta.every((s) => s.auth === undefined)).toBe(true);

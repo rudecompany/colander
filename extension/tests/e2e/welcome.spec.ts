@@ -30,9 +30,12 @@ test('choose strictness and platforms, then Chrome asks for those sites only', a
 	expect((await levels.boundingBox())!.y).toBeLessThan((await demo.boundingBox())!.y);
 	await expect(page.getByText('Thumbnails are AI-generated illustrations.')).toBeVisible();
 	await recordRequests(page, true);
-	await levels.getByRole('radio', { name: 'Strict' }).click();
-	// The recreated feed follows the level: at Strict the AI-made item collapses too.
-	await expect(demo.getByRole('group', { name: /Hidden for you: AI-made/ })).toBeVisible();
+	await expect(levels.getByRole('radio')).toHaveText(['Label', 'Standard', 'No AI']);
+	// The recreated feed follows the level: at No AI the AI-made item leaves the page too, without a gap.
+	await expect(demo.getByText('Tide pools at low tide, a field guide')).toHaveCount(1);
+	await levels.getByRole('radio', { name: 'No AI' }).click();
+	await expect(demo.getByText('Tide pools at low tide, a field guide')).toHaveCount(0);
+	await expect(demo.getByText('Ancient Rome facts you never knew, Part 46')).toHaveCount(0);
 	await page.getByRole('button', { name: 'Continue' }).click();
 	await expect(page.getByText('Step 2 of 3')).toBeVisible();
 	await page.getByRole('checkbox', { name: /TikTok/ }).click();
@@ -50,7 +53,7 @@ test('choose strictness and platforms, then Chrome asks for those sites only', a
 	await expect(page.getByRole('heading', { name: 'You are set' })).toBeVisible();
 	const s = await ext.storage<{ platforms: Record<string, boolean>; strictness: string; onboarded: boolean }>('settings');
 	expect(s.platforms).toEqual({ yt: true, tt: true, ig: false, fb: false });
-	expect(s.strictness).toBe('strict');
+	expect(s.strictness).toBe('no_ai');
 	expect(s.onboarded).toBe(true);
 	await expect
 		.poll(() => ext.sw.evaluate(async () => (await chrome.scripting.getRegisteredContentScripts()).map((s) => s.id).sort()))

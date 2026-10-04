@@ -39,13 +39,13 @@
 	--cl-brand-tint: #e4eaf1;
 	/* Toolbar icon, favicon and store icon only. 3.59 on #FFFFFF, 3.23 on #F1F3F4 toolbars. */
 	--cl-mark: #4f88d8;
-	/* Ink chips on media, toasts, the swipe cover. */
+	/* Ink chips on media and toasts. */
 	--cl-ink: #1a1c1f;
 	/* Text and links on ink and on the band: 14.99, 7.40 and 8.36 on #1A1C1F. */
 	--cl-on-ink: #f2f0eb;
 	--cl-on-ink-muted: #a7abb1;
 	--cl-on-ink-brand: #8fb8f0;
-	/* Primary buttons on ink, such as Skip on the swipe cover: white on it 4.94. */
+	/* Primary buttons on ink: white on it 4.94. */
 	--cl-on-ink-fill: #3870c0;
 	/* The one ink band per page, and the Plus price card. */
 	--cl-band: #1a1c1f;
@@ -118,7 +118,7 @@
 	/* The only shadow, for floating things: popovers, menus, tooltips, toasts, dialogs. */
 	--cl-shadow-pop: 0 8px 28px rgb(26 28 31 / 0.16), 0 1px 3px rgb(26 28 31 / 0.08);
 
-	/* Motion: 120 ms hover and press, 200 ms collapse and reveal, ease-out. */
+	/* Motion: 120 ms hover and press, 200 ms reveal, ease-out. */
 	--cl-fast: 120ms;
 	--cl-slow: 200ms;
 	--cl-ease: cubic-bezier(0, 0, 0.2, 1);
@@ -451,9 +451,7 @@ html {
 	.cl-badge,
 	.uin-badge,
 	.uin-card,
-	.uin-seg-ind,
-	.cl-bar,
-	.cl-stub {
+	.uin-seg-ind {
 		border: 1px solid CanvasText;
 	}
 	.cl-glyph,

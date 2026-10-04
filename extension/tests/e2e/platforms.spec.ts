@@ -44,11 +44,11 @@ test('Facebook feed: a listed post is hidden, suggested or not; AI info labels',
 	const posts = page.locator('[role="feed"] [aria-posinset]');
 	await expect(posts.nth(0)).toHaveAttribute('data-colander', 'hide');
 	await expect(posts.nth(2).locator('colander-ui[data-kind="chip"]')).toContainText('AI-made');
-	expect((await ext.pageState(page)).counts).toEqual({ hidden: 1, collapsed: 0, labeled: 1 });
+	expect((await ext.pageState(page)).counts).toEqual({ hidden: 1, labeled: 1 });
 });
 
-test('Facebook Reels: a hidden reel is skipped', async ({ ext }) => {
-	await ext.setup({ platforms: ['fb'], settings: { blocks: [{ key: 'fb:i:987654321098765', at: 1 }] } });
+test('Facebook Reels: a hidden reel is skipped, and with the notice on it says so', async ({ ext }) => {
+	await ext.setup({ platforms: ['fb'], settings: { skipNotice: true, blocks: [{ key: 'fb:i:987654321098765', at: 1 }] } });
 	const page = await ext.open('https://www.facebook.com/reel/987654321098765');
 	await expect(page.locator('colander-ui[data-kind="layer"] .cl-toast')).toContainText('Skipped 1 slop reel.');
 });
@@ -61,6 +61,7 @@ test('TikTok search: the platform label and a listed creator', async ({ ext }) =
 	const cards = page.locator('div:has(> [data-e2e="search_video-item"])');
 	// @sloppyfacts is Disputed: shown with its mark.
 	await expect(cards.nth(0).locator('colander-ui[data-kind="chip"]')).toContainText('Disputed');
-	// tt:i:7412345678901234567 is Likely slop after the delta: collapsed.
-	await expect(cards.nth(2)).toHaveAttribute('data-colander', 'collapse');
+	// tt:i:7412345678901234567 is Likely slop after the delta: hidden, and the grid closes up.
+	await expect(cards.nth(2)).toHaveAttribute('data-colander', 'hide');
+	await expect(cards.nth(2)).toBeHidden();
 });

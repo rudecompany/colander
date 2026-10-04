@@ -29,7 +29,6 @@ export interface PageAction extends ActivityEntry {
 
 export interface PageCounts {
 	hidden: number;
-	collapsed: number;
 	labeled: number;
 }
 

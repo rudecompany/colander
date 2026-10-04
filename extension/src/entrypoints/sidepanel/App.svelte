@@ -283,7 +283,9 @@ Uses a reviewer token sent by the website's account page through externally_conn
 	}
 </script>
 
-<svelte:window onkeydown={onKey} />
+<!-- Capture phase: the shortcuts dialog closes on Escape in a document listener, which would
+     otherwise run first and leave this handler to read the same Escape as Back to the queue. -->
+<svelte:window onkeydowncapture={onKey} />
 
 <div class="panel" class:deciding={!!open && !!detail}>
 	<header class="head">

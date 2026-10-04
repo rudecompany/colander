@@ -1,8 +1,8 @@
 import { test, expect } from './fixtures.ts';
 import { mockApi } from './mocks.ts';
 
-test('a monthly donation with credit goes to the hosted checkout', async ({ page }) => {
-	const calls = await mockApi(page, { 'POST /v1/billing/donate': { json: { url: 'http://localhost:4173/support/thanks' } } });
+test('a monthly donation with credit goes to the hosted checkout', async ({ page, baseURL }) => {
+	const calls = await mockApi(page, { 'POST /v1/billing/donate': { json: { url: `${baseURL}/support/thanks` } } });
 	await page.goto('/support');
 	await expect(page.getByRole('radio', { name: 'Monthly' })).toHaveAttribute('aria-checked', 'true');
 	await page.getByLabel('Name for the supporters page').fill('  Ana  ');

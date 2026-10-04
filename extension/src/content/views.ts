@@ -1,32 +1,16 @@
-// What a decorated card shows, from the matching engine's decision: the chip and bar view and
-// the evidence behind Why. Pure, so it is unit tested; the shared builders draw the result.
+// What a decorated card shows, from the matching engine's decision: the chip and the evidence
+// behind Why. Pure, so it is unit tested; the shared builders draw the result.
 import { evidence, type Evidence } from '@colander/shared/inpage/evidence.ts';
 import type { ItemView } from '@colander/shared/inpage/ui.ts';
-import { barReason, type Platform, type Verdict } from '@colander/shared/verdicts';
+import type { Platform, Verdict } from '@colander/shared/verdicts';
 import { dayToDate } from '../lib/list';
 import type { Decision } from '../lib/match';
 
 /** An own tag's verdict back to the words of the tag the person chose. */
 const TAGGED_AS: Partial<Record<Verdict, string>> = { slop: 'slop', ai_made: 'AI-made but fine', clear: 'not slop' };
 
-/** The short reason in a collapsed bar or cover ("Mass-produced, AI-made"). Never repeats the verdict word. */
-export function reasonText(d: Decision): string {
-	switch (d.reason) {
-		case 'own_tag':
-			return 'Your tag';
-		case 'my_list':
-			return 'On My list';
-		case 'topic':
-			return `Your rule: ${d.topic}`;
-		case 'platform_label':
-			return 'Labeled by the platform';
-		default:
-			return barReason(d.signals, d.verdict) || 'Core list';
-	}
-}
-
 export function itemView(d: Decision, hidden: boolean, plain: boolean): ItemView {
-	return { verdict: d.verdict, word: d.verdict ? undefined : 'Your rule', reason: reasonText(d), plain, hidden };
+	return { verdict: d.verdict, word: d.verdict ? undefined : 'Your rule', plain, hidden };
 }
 
 /**

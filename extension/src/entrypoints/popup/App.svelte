@@ -45,13 +45,13 @@ website hero renders the same component, so the two cannot drift. 360 wide, neve
 	const override = $derived(plus && platform ? settings.perPlatform[platform] : undefined);
 	const today = $derived.by(() => {
 		const d = stats.value?.days[dayKey()];
-		return d ? d.hidden + d.collapsed : 0;
+		return d?.hidden ?? 0;
 	});
 	const week = $derived.by(() => {
 		let n = 0;
 		for (let i = 0; i < 7; i++) {
 			const d = stats.value?.days[dayKey(Date.now() - i * DAY)];
-			if (d) n += d.hidden + d.collapsed;
+			if (d) n += d.hidden;
 		}
 		return n;
 	});
@@ -89,7 +89,7 @@ website hero renders the same component, so the two cannot drift. 360 wide, neve
 	const title = (a: PageAction) => a.title || a.sourceName || a.itemId || a.sourceId || '';
 	const byId = (r: PopupRow) => page?.actions.find((a) => a.id === r.id);
 
-	const onPage = $derived(page ? page.counts.hidden + page.counts.collapsed : 0);
+	const onPage = $derived(page?.counts.hidden ?? 0);
 	const popup = $derived<PopupState>({
 		status: !loaded ? 'loading' : !running ? 'unsupported' : sitePaused || tabPaused ? 'paused' : 'active',
 		domain: platform ? PLATFORM_DOMAIN[platform] : undefined,

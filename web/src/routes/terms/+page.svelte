@@ -39,7 +39,7 @@
 		<section id="what">
 			<h2>What Colander is</h2>
 			<p>
-				Colander is a browser extension that hides, collapses or labels content on your own device, based on shared lists
+				Colander is a browser extension that hides or labels content on your own device, based on shared lists
 				and your own settings. It does not act on your accounts, and everything it hides stays on the platform for everyone else.
 			</p>
 		</section>

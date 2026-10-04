@@ -9,7 +9,6 @@ scrolls sideways and no chip is ever cut.
 -->
 <script lang="ts">
 	import '../ui/badge/badge.css';
-	import ChevronsDownUp from '@lucide/svelte/icons/chevrons-down-up';
 	import Eye from '@lucide/svelte/icons/eye';
 	import EyeOff from '@lucide/svelte/icons/eye-off';
 	import Tag from '@lucide/svelte/icons/tag';
@@ -17,7 +16,7 @@ scrolls sideways and no chip is ever cut.
 	import { ACTION_DONE_WORD, ACTION_TABLE, STRICTNESS, STRICTNESS_WORD, VERDICTS, type Strictness, type Verdict } from '../../verdicts';
 
 	let { current, caption = 'What each strictness level does' }: { current?: Strictness; caption?: string } = $props();
-	const ICON = { hide: EyeOff, collapse: ChevronsDownUp, label: Tag, allow: Eye };
+	const ICON = { hide: EyeOff, label: Tag, allow: Eye };
 </script>
 
 {#snippet level(l: Strictness)}

@@ -16,7 +16,7 @@ test.afterAll(async () => {
 
 const TAG_FIELDS = ['client_id', 'platform', 'target_type', 'target_id', 'source_id', 'verdict', 'slop_type', 'tests', 'platform_label', 'created_at', 'ext_version'];
 
-test('the real signed list hides, collapses and labels by strictness, and Strict applies within 1 second', async () => {
+test('the real signed list hides and labels by strictness, the popup keeps every hidden item, and No AI applies within 1 second', async () => {
 	await onboard(ext);
 
 	// The install synced the server's snapshot: the Lists section shows its sequence and size.
@@ -26,15 +26,17 @@ test('the real signed list hides, collapses and labels by strictness, and Strict
 	expect(count).toBeGreaterThan(30);
 	const options = await ext.page('options.html#lists');
 	const facts = options.locator('dl.facts');
-	await expect(facts.locator('div', { hasText: 'Version' }).locator('dd')).toHaveText(String(sequence));
+	await expect(facts.locator('div', { hasText: 'Version' }).locator('dd')).toHaveText(`v.${sequence}`);
 	await expect(facts.locator('div', { hasText: 'Entries' }).locator('dd')).toHaveText(String(count));
 	await options.close();
 
+	// Standard hides Slop and Likely slop without a trace, and labels AI-made and Disputed.
 	const page = await ext.youtube(SEARCH);
-	await expect(card(page, CARD.slop)).toHaveAttribute('data-colander', 'hide');
-	await expect(card(page, CARD.slop)).toBeHidden();
-	await expect(card(page, CARD.likely)).toHaveAttribute('data-colander', 'collapse');
-	await expect(card(page, CARD.likely).locator('colander-ui[data-kind="bar"]')).toContainText('Likely slop');
+	for (const n of [CARD.slop, CARD.likely]) {
+		await expect(card(page, n)).toHaveAttribute('data-colander', 'hide');
+		await expect(card(page, n)).toBeHidden();
+		await expect(card(page, n).locator('colander-ui')).toHaveCount(0);
+	}
 	await expect(chip(card(page, CARD.aiMade))).toContainText('AI-made');
 	await expect(chip(card(page, CARD.disputed))).toContainText('Disputed');
 	// YouTube's own AI label on a card from an unrated channel gives the AI-made chip (P0-4).
@@ -45,9 +47,17 @@ test('the real signed list hides, collapses and labels by strictness, and Strict
 	}
 	for (const n of [CARD.clear, CARD.unlisted, CARD.reported]) await expect(chip(card(page, n))).toHaveCount(0);
 
-	// Why links to the server's public page for the channel, which shows the same verdict.
-	await card(page, CARD.likely).locator('colander-ui[data-kind="bar"]').getByRole('button', { name: 'Why' }).click();
-	const why = page.locator('colander-ui[data-kind="layer"] .pop');
+	// The popup still counts and lists both hidden items, and Why from its row opens on the card,
+	// which links to the server's public page for the channel with the same verdict.
+	let popup = await ext.popup(page);
+	await expect(popup.locator('.cell').filter({ hasText: 'Hidden on this page' }).locator('.value')).toHaveText('2');
+	const row = popup.getByRole('listitem').filter({ hasText: 'Likely slop' });
+	await expect(row.getByRole('button', { name: 'Show' })).toBeVisible();
+	await row.getByRole('button', { name: /Likely slop/ }).click();
+	await popup.getByRole('menuitem', { name: 'Why' }).click();
+	await expect(card(page, CARD.likely)).toBeVisible();
+	const why = page.locator('colander-ui[data-kind="layer"] .cl-pop');
+	await expect(why).toContainText('Why this is hidden');
 	const opened = ext.ctx.waitForEvent('page');
 	await why.getByRole('link', { name: 'Source page' }).click();
 	const source = await opened;
@@ -58,19 +68,23 @@ test('the real signed list hides, collapses and labels by strictness, and Strict
 	await page.keyboard.press('Escape');
 	await expect(why).toHaveCount(0);
 
-	const popup = await ext.popup(page);
+	popup = await ext.popup(page);
 	await expect(popup.getByRole('radio', { name: 'Standard' })).toBeChecked();
-	await popup.getByRole('radio', { name: 'Strict' }).click();
+	await expect(popup.getByRole('radio')).toHaveText(['Label', 'Standard', 'No AI']);
+	await popup.getByRole('radio', { name: 'No AI' }).click();
 	const t0 = Date.now();
-	await expect(card(page, CARD.likely)).toHaveAttribute('data-colander', 'hide', { timeout: 1000 });
-	await expect(card(page, CARD.aiMade)).toHaveAttribute('data-colander', 'collapse', { timeout: 1000 });
+	await expect(card(page, CARD.aiMade)).toHaveAttribute('data-colander', 'hide', { timeout: 1000 });
 	expect(Date.now() - t0).toBeLessThan(1000);
 	// Disputed is always labeled and Clear is always allowed, at every level.
 	await expect(chip(card(page, CARD.disputed))).toContainText('Disputed');
 	await expect(card(page, CARD.clear)).not.toHaveAttribute('data-colander', /./);
 
+	await popup.getByRole('radio', { name: 'Label' }).click();
+	await expect(chip(card(page, CARD.slop))).toContainText('Slop', { timeout: 1000 });
+	await expect(chip(card(page, CARD.aiMade))).toContainText('AI-made');
+
 	await popup.getByRole('radio', { name: 'Standard' }).click();
-	await expect(card(page, CARD.likely)).toHaveAttribute('data-colander', 'collapse', { timeout: 1000 });
+	await expect(card(page, CARD.slop)).toHaveAttribute('data-colander', 'hide', { timeout: 1000 });
 	await popup.close();
 	await page.close();
 });
@@ -80,11 +94,12 @@ test('a tag in two clicks hides the card at once and reaches the server with con
 	const target = card(page, CARD.unlisted);
 	await target.hover();
 	await target.locator('colander-ui[data-kind="tag"] button').click();
-	const menu = page.locator('colander-ui[data-kind="layer"] .pop');
-	await menu.getByRole('button', { name: /^Slop/ }).click();
+	const layer = page.locator('colander-ui[data-kind="layer"]');
+	await layer.getByRole('menuitem', { name: /^Slop/ }).click();
 	await expect(target).toHaveAttribute('data-colander', 'hide');
-	// One tag per menu: it is held while type and tests may still change, and sent on Done.
-	await menu.getByRole('button', { name: 'Done' }).click();
+	// One tag per menu: it is held while its toast can still undo or refine it, and sent when the toast ends.
+	await expect(layer.locator('.cl-toast')).toContainText('Tagged and hidden.');
+	await layer.locator('.cl-toast').getByRole('button', { name: 'Close' }).click();
 
 	await expect.poll(() => ext.seen.filter((s) => s.method === 'POST' && s.url === `${ORIGIN}/v1/tags`).length).toBe(1);
 	const sent = ext.seen.find((s) => s.method === 'POST' && s.url === `${ORIGIN}/v1/tags`)!;

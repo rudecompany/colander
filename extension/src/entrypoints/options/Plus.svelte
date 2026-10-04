@@ -43,10 +43,10 @@ strictness, and the week in data dots. Gated parts stay in view, inert, at 60% o
 		const days = [];
 		for (let i = 6; i >= 0; i--) {
 			const t = new Date(Date.now() - i * 86_400_000);
-			const d = stats.value?.days[dayKey(t.getTime())] ?? { hidden: 0, collapsed: 0, labeled: 0 };
+			const d = stats.value?.days[dayKey(t.getTime())] ?? { hidden: 0, labeled: 0 };
 			// fmtDay reads UTC; the local calendar day goes in as a UTC date.
 			const day = fmtDay(Date.UTC(t.getFullYear(), t.getMonth(), t.getDate())).split(' ')[0]!;
-			days.push({ day, n: d.hidden + d.collapsed, labeled: d.labeled });
+			days.push({ day, n: d.hidden, labeled: d.labeled });
 		}
 		return days;
 	});
@@ -58,7 +58,7 @@ strictness, and the week in data dots. Gated parts stay in view, inert, at 60% o
 	// Topics
 	let name = $state('');
 	let terms = $state('');
-	let level = $state<Strictness>('strict');
+	let level = $state<Strictness>('no_ai');
 	let hide = $state(false);
 	let topicError = $state('');
 	const parseTerms = (s: string) => s.split(',').map((t) => t.trim()).filter(Boolean).slice(0, 50);
@@ -134,14 +134,14 @@ strictness, and the week in data dots. Gated parts stay in view, inert, at 60% o
 	<Card title="This week" headingLevel={2}>
 		{#snippet aside()}{#if !plus}<PlusTag />{/if}{/snippet}
 		<Gated locked={!plus}>
-			<p class="sum"><span class="cl-stat">{fmtNum(total)}</span> <span class="muted">hidden or collapsed in 7 days</span></p>
+			<p class="sum"><span class="cl-stat">{fmtNum(total)}</span> <span class="muted">hidden in 7 days</span></p>
 			<div class="chart">
 				<svg
 					viewBox="0 0 {7 * 48} {ROWS * 12}"
 					width={7 * 48}
 					height={ROWS * 12}
 					role="img"
-					aria-label="Hidden or collapsed per day: {week.map((d) => `${d.day} ${d.n}`).join(', ')}. Each dot is {perDot} {perDot === 1 ? 'item' : 'items'}."
+					aria-label="Hidden per day: {week.map((d) => `${d.day} ${d.n}`).join(', ')}. Each dot is {perDot} {perDot === 1 ? 'item' : 'items'}."
 				>
 					{#each week as d, x (x)}
 						{#each Array.from({ length: ROWS }, (_, i) => i) as y (y)}

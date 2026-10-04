@@ -1,5 +1,5 @@
-// Website-only copy that more than one page shows: the Kapwing figures, the comparison and its
-// sources, and the FAQ. Copy shared with the extension lives in @colander/shared (copy.ts).
+// Website-only copy: the Kapwing figures, the comparison and the FAQ. Copy shared with the
+// extension lives in @colander/shared (copy.ts).
 
 export const KAPWING_URL = 'https://www.kapwing.com/resources/the-tiktok-ai-slop-report/';
 
@@ -46,62 +46,43 @@ export const KAPWING = [
 /** The date every comparison cell was last checked. Re-verify each release and move this date. */
 export const COMPARISON_CHECKED = '2026-10-03';
 
-type Source = { name: string; url: string };
-const S = {
-	shield: { name: 'AI Content Shield, add-on listing', url: 'https://addons.mozilla.org/en-US/firefox/addon/ai-content-shield/' },
-	shieldFaq: { name: 'AI Content Shield, FAQ and pricing', url: 'https://www.aicontentshield.app/faq' },
-	aislist: { name: 'AiBlock and AiSList', url: 'https://aisloplist.com/' },
-	aiblockYt: { name: 'AI Block for YouTube, add-on listing', url: 'https://addons.mozilla.org/en-US/firefox/addon/ai-block-for-youtube/' },
-	slopblock: { name: 'SlopBlock', url: 'https://slopblock.cc/' },
-	deslop: {
-		name: 'DeSlop, Chrome Web Store listing',
-		url: 'https://chromewebstore.google.com/detail/deslop-ai-slop-filter-for/ceeofbgdnlfkbmejalfggfkigjmkdkib'
-	}
-} satisfies Record<string, Source>;
-
 /**
  * Rows of the comparison: released AI content blockers on the Chrome Web Store and Firefox Add-ons.
- * Competitors are unnamed in the table; each row's sources are listed on /definition#comparison.
+ * Competitors are never named.
  */
 export const COMPARISON_SCOPE = 'AI content blockers on the Chrome Web Store and Firefox Add-ons';
 
-export const COMPARISON: { check: string; common: string; colander: string; sources: Source[] }[] = [
+export const COMPARISON: { check: string; common: string; colander: string }[] = [
 	{
 		check: 'What gets hidden',
 		common: 'All AI content, or anything about AI',
-		colander: 'Slop. AI-made items stay visible with a label at Standard.',
-		sources: [S.shield, S.aislist]
+		colander: 'Slop. AI-made items stay visible with a label at Standard.'
 	},
 	{
 		check: 'Platforms',
 		common: 'YouTube only, for most',
-		colander: 'YouTube, TikTok, Instagram and Facebook',
-		sources: [S.aislist, S.aiblockYt, S.slopblock]
+		colander: 'YouTube, TikTok, Instagram and Facebook'
 	},
 	{
 		check: 'Why an item is hidden',
 		common: 'Rarely shown',
-		colander: 'Every hidden item says which signals agreed',
-		sources: [S.aislist, S.aiblockYt, S.shield]
+		colander: 'Every hidden item says which signals agreed'
 	},
-	{ check: 'Undo', common: 'Varies', colander: 'One click, on the item and in the popup', sources: [S.deslop, S.shield] },
+	{ check: 'Undo', common: 'Varies', colander: 'One click, in the popup, for every hidden item' },
 	{
 		check: 'Creator appeals',
 		common: 'Rare',
-		colander: 'Yes. The source is unhidden while staff review.',
-		sources: [S.aislist, S.aiblockYt]
+		colander: 'Yes. The source is unhidden while staff review.'
 	},
 	{
 		check: 'Public record of decisions',
 		common: 'None found',
-		colander: 'Every verdict change is in the decision log',
-		sources: [S.aislist, S.slopblock, S.shield]
+		colander: 'Every verdict change is in the decision log'
 	},
 	{
 		check: 'Price of blocking',
 		common: 'Often part of a paid tier',
-		colander: 'Free, forever. Plus is $3 a month for extra control.',
-		sources: [S.shieldFaq]
+		colander: 'Free, forever. Plus is $3 a month for extra control.'
 	}
 ];
 
@@ -116,7 +97,7 @@ export const FAQ: { q: string; a: string }[] = [
 	},
 	{
 		q: 'What does Colander hide, and what does it leave?',
-		a: 'At Standard, the default, it hides Slop, collapses Likely slop to one line and labels AI-made items. AI use alone never makes something slop, so AI-made work stays visible with a label. You can pick Label, Strict or No AI instead.'
+		a: 'At Standard, the default, it hides Slop and Likely slop and labels AI-made items. Hidden items leave no gap, like blocked ads, and the popup lists each one with Show. AI use alone never makes something slop, so AI-made work stays visible with a label. You can pick Label or No AI instead.'
 	},
 	{
 		q: 'Does Colander see what I watch?',

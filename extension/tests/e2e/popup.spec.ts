@@ -67,7 +67,7 @@ for (const scheme of ['light', 'dark'] as const) {
 				const d = new Date();
 				return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 			});
-			await ext.ctl.evaluate((day) => chrome.storage.local.set({ stats: { firstRunAt: Date.now() - 9 * 86_400_000, days: { [day]: { hidden: 9, collapsed: 3, labeled: 4 } } } }), today);
+			await ext.ctl.evaluate((day) => chrome.storage.local.set({ stats: { firstRunAt: Date.now() - 9 * 86_400_000, days: { [day]: { hidden: 12, labeled: 4 } } } }), today);
 			await popup.reload();
 			// The page's own activity can land in today's count too, so the number is not pinned.
 			await expect(popup.getByText(/^You skipped \d+ slop items this week\.$/)).toBeVisible();
