@@ -6,9 +6,10 @@ goes back, Ctrl or Cmd with Enter records, and ? lists them all.
 Uses a reviewer token sent by the website's account page through externally_connectable, or pasted here.
 -->
 <script lang="ts">
-	import { ColanderMark, CopyButton, EvidenceCard, LiveBadge, LogRow, PerforatedDisc, PlatformTag, VerdictChip, VerdictTally } from '@colander/shared';
+	import { ColanderMark, CopyButton, DotMeter, EvidenceCard, LiveBadge, LogRow, PerforatedDisc, PlatformTag, VerdictChip, VerdictGlyph } from '@colander/shared';
 	import type { DecisionInput, QueueItem, ReviewSourceResponse } from '@colander/shared/api';
-	import { fmtAgo, fmtNum, fmtPct, fmtShortDate, middleTruncate, plural, sourcePath } from '@colander/shared/format';
+	import { RESCORE_LINE, TAG_GLYPH } from '@colander/shared/copy';
+	import { fmtAgo, fmtNum, fmtPct, fmtShortDate, middleTruncate, platformItemUrl, plural, sourcePath } from '@colander/shared/format';
 	import type { Evidence } from '@colander/shared/inpage';
 	import { LAYER_KEYS, LAYER_QUESTION, LAYER_SHORT, LAYER_WORD } from '@colander/shared/layers';
 	import Badge from '@colander/shared/components/ui/badge/badge.svelte';
@@ -26,16 +27,19 @@ Uses a reviewer token sent by the website's account page through externally_conn
 		SIGNAL_TEXT,
 		SLOP_TYPES,
 		SLOP_TYPE_WORD,
+		TAG_WORD,
 		TESTS,
 		TEST_WORD,
 		VERDICT_WORD,
 		type Signal,
 		type SlopType,
+		type TagVerdict,
 		type Test,
 		type Verdict
 	} from '@colander/shared/verdicts';
 	import ArrowRight from '@lucide/svelte/icons/arrow-right';
 	import ChevronLeft from '@lucide/svelte/icons/chevron-left';
+	import ChevronRight from '@lucide/svelte/icons/chevron-right';
 	import CircleAlert from '@lucide/svelte/icons/circle-alert';
 	import Keyboard from '@lucide/svelte/icons/keyboard';
 	import LogOut from '@lucide/svelte/icons/log-out';
@@ -85,6 +89,7 @@ Uses a reviewer token sent by the website's account page through externally_conn
 	]);
 	const index = $derived(open ? shown.findIndex((q) => q.id === open!.id) : -1);
 	const mac = /Mac/.test(navigator.platform);
+	const TAGS: TagVerdict[] = ['slop', 'ai_fine', 'not_slop'];
 	const CHOICES: { v: Choice; key: string }[] = [
 		{ v: 'slop', key: '1' },
 		{ v: 'likely_slop', key: '2' },
@@ -328,15 +333,22 @@ Uses a reviewer token sent by the website's account page through externally_conn
 						{#if open.computed_verdict && open.computed_verdict !== s.verdict}<span class="caption">Scoring says {VERDICT_WORD[open.computed_verdict]}</span>{/if}
 					</p>
 					{#if s.attribution}<p class="caption">Imported from {s.attribution}</p>{/if}
-					<p class="caption">Re-scored {s.rescore_at ? fmtShortDate(s.rescore_at) : 'when it changes'}</p>
+					<p class="caption">{RESCORE_LINE(s.rescore_at ? fmtShortDate(s.rescore_at) : null)}</p>
 					<a class="cl-link" href="{SITE}{sourcePath(s.platform, s.id)}" target="_blank" rel="noopener">Public page<ArrowRight size={16} aria-hidden="true" /></a>
 				</section>
 
 				<Card title="Signals" headingLevel={3}>
 					<p class="lead">{fmtNum(s.evidence.tags.slop)} tagged Slop, {fmtNum(s.evidence.tags.ai_fine)} AI-made but fine, {fmtNum(s.evidence.tags.not_slop)} Not slop</p>
-					<div class="tally">
-						<VerdictTally layout="rows" hideZero counts={{ slop: s.evidence.tags.slop, ai_made: s.evidence.tags.ai_fine, clear: s.evidence.tags.not_slop }} perDot={Math.max(1, Math.ceil(s.evidence.taggers / 50))} />
-					</div>
+					<!-- Tag counts in the tag words with their monochrome glyphs: tags are not verdicts. -->
+					<ul class="tags" aria-label="Tags">
+						{#each TAGS as t (t)}
+							<li>
+								<Badge><VerdictGlyph verdict={TAG_GLYPH[t]} />{TAG_WORD[t]}</Badge>
+								<DotMeter value={s.evidence.tags[t]} max={50 * Math.max(1, Math.ceil(s.evidence.taggers / 50))} />
+								<span class="n">{fmtNum(s.evidence.tags[t])}</span>
+							</li>
+						{/each}
+					</ul>
 					<p class="caption">Each dot is {plural(Math.max(1, Math.ceil(s.evidence.taggers / 50)), 'tag')}.</p>
 					<dl class="facts">
 						<div><dt>Taggers</dt><dd>{fmtNum(s.evidence.taggers)}</dd></div>
@@ -393,9 +405,10 @@ Uses a reviewer token sent by the website's account page through externally_conn
 						<ul class="items">
 							{#each detail.items as it (it.id)}
 								<li>
-									<span class="cl-figure">{it.id}</span>
+									<a class="cl-link cl-figure item" href={platformItemUrl(it.platform, it.id, s.id)} target="_blank" rel="noopener" title={it.id}>{middleTruncate(it.id, 16)}<ArrowRight size={16} aria-hidden="true" /></a>
+									<CopyButton text={it.id} />
 									{#if it.verdict}<VerdictChip verdict={it.verdict} size="sm" />{/if}
-									<span class="caption">{plural(it.tags.slop, 'Slop tag')}</span>
+									<span class="caption tags-n">{plural(it.tags.slop, 'Slop tag')}</span>
 								</li>
 							{/each}
 						</ul>
@@ -469,9 +482,17 @@ Uses a reviewer token sent by the website's account page through externally_conn
 						<VerdictChip verdict={verdict === 'none' ? null : verdict} size="sm" />
 						{#if index >= 0}<span class="cl-figure pos">{index + 1} of {shown.length}</span>{/if}
 					</span>
-					<Button variant="secondary" onclick={() => step(-1)} disabled={index <= 0}>Previous<Kbd>K</Kbd></Button>
-					<Button variant="secondary" onclick={() => step(1)} disabled={index < 0 || index >= shown.length - 1}>Next<Kbd>J</Kbd></Button>
-					<Button variant="primary" type="submit" form="decision" loading={saving}>Record decision</Button>
+					<!-- Narrow panels keep every key hint: Previous and Next drop their word (below 560 px), and
+					     Record decision reads Record (below 440 px), named in full for assistive tech. -->
+					<Button variant="secondary" class="step" onclick={() => step(-1)} disabled={index <= 0} aria-label="Previous" aria-keyshortcuts="K"
+						><ChevronLeft size={16} aria-hidden="true" /><span class="word">Previous</span><Kbd>K</Kbd></Button
+					>
+					<Button variant="secondary" class="step" onclick={() => step(1)} disabled={index < 0 || index >= shown.length - 1} aria-label="Next" aria-keyshortcuts="J"
+						><span class="word">Next</span><ChevronRight size={16} aria-hidden="true" /><Kbd>J</Kbd></Button
+					>
+					<Button variant="primary" type="submit" form="decision" loading={saving} aria-label="Record decision" aria-keyshortcuts={mac ? 'Meta+Enter' : 'Control+Enter'}
+						><span>Record<span class="rest"> decision</span></span><span class="key" aria-hidden="true"><Kbd>{mac ? '⌘↵' : 'Ctrl ↵'}</Kbd></span></Button
+					>
 				</div>
 			{/if}
 		</main>
@@ -711,11 +732,26 @@ Uses a reviewer token sent by the website's account page through externally_conn
 	.lead {
 		margin-bottom: 12px;
 	}
-	/* The dot meters take the room left beside the chip and the count, so the tally fits 360 px. */
-	.tally :global(.tally-rows) {
+	/* The dot meters take the room left beside the tag and the count, so the rows fit 360 px. */
+	.tags {
+		display: grid;
 		grid-template-columns: max-content minmax(0, 1fr) max-content;
+		align-items: center;
+		gap: 8px 12px;
 	}
-	.tally + .caption {
+	.tags li {
+		display: contents;
+	}
+	.tags :global(.uin-badge) {
+		justify-self: start;
+		gap: 4px;
+	}
+	.n {
+		font: var(--cl-body-strong);
+		font-variant-numeric: tabular-nums;
+		text-align: right;
+	}
+	.tags + .caption {
 		margin-top: 8px;
 	}
 	.facts {
@@ -788,8 +824,19 @@ Uses a reviewer token sent by the website's account page through externally_conn
 	.items li {
 		display: flex;
 		align-items: center;
-		gap: 8px;
-		min-height: 32px;
+		gap: 4px 8px;
+		min-height: 40px;
+		border-top: 1px solid var(--cl-border);
+	}
+	.items li:first-child {
+		border-top: 0;
+	}
+	.item {
+		min-width: 0;
+	}
+	.tags-n {
+		margin-left: auto;
+		white-space: nowrap;
 	}
 	.decide {
 		display: grid;
@@ -885,13 +932,35 @@ Uses a reviewer token sent by the website's account page through externally_conn
 	.bar :global(.uin-kbd) {
 		margin-left: 2px;
 	}
-	@media (max-width: 439px) {
-		.pos,
-		.bar :global(.uin-kbd) {
+	.key {
+		display: inline-flex;
+	}
+	/* The key on the primary button: an outline cap in the button's own text color. */
+	.bar :global(.uin-btn-primary .uin-kbd) {
+		border-color: color-mix(in srgb, currentColor 55%, transparent);
+		background: transparent;
+		color: inherit;
+	}
+	@media (max-width: 559px) {
+		.bar {
+			gap: 6px;
+		}
+		.bar :global(.step) {
+			gap: 4px;
+			padding: 0 8px;
+		}
+		.word {
 			display: none;
 		}
-		.bar :global(.uin-btn-outline) {
-			padding: 0 10px;
+	}
+	@media (max-width: 439px) {
+		.now {
+			flex-direction: column;
+			align-items: flex-start;
+			gap: 2px;
+		}
+		.rest {
+			display: none;
 		}
 	}
 	.keys {

@@ -3,11 +3,14 @@
 scripts/make-store-art.ts: five 1280 by 800 screenshots, the 440 by 280 promo tile and the
 1400 by 560 marquee. Every picture of Colander here is a shipped component rendered live from
 demo values (DEMO_FEED and DEMO_POPUP), never live counts. ?frame=1 to 5, tile or marquee.
+The UI sits between x 560 and 1200 at zoom 1.25, so captions read at 15 px; where a component is
+taller than the canvas it is cropped at a card boundary with a fade. Pictures of the demo feed
+carry the thumbnail disclosure.
 -->
 <script lang="ts">
 	import { BrowserFrame, ColanderMark, DotField, InPage, Lifecycle, LogRow, PlatformTag, PopupView, VerdictChip, type PopupState } from '@colander/shared';
 	import type { LogEntry } from '@colander/shared/api';
-	import { DEMO_FEED, DEMO_POPUP, PRIVACY_HEADINGS, PRIVACY_NEVER, TAGLINE } from '@colander/shared/copy';
+	import { DEMO_FEED, DEMO_POPUP, DEMO_THUMBS_NOTE, PRIVACY_HEADINGS, PRIVACY_NEVER, TAGLINE } from '@colander/shared/copy';
 	import { DEMO_CSS, demoAction, demoFeed, demoHiddenCount, type InpageContext } from '@colander/shared/inpage';
 	import { STRICTNESS, type Verdict } from '@colander/shared/verdicts';
 	import Card from '@colander/shared/components/ui/card/card.svelte';
@@ -38,13 +41,19 @@ demo values (DEMO_FEED and DEMO_POPUP), never live counts. ?frame=1 to 5, tile o
 		rows: DEMO_FEED.filter((i) => i.verdict && demoAction(i, 'standard') !== 'allow').map((i) => ({ id: i.id, verdict: i.verdict, title: i.title, action: demoAction(i, 'standard') }))
 	};
 
-	// Frame 1: the grid in two columns, so the left one shows beside the docked popup.
-	const GRID_CSS = `${DEMO_CSS}.feed-grid{grid-template-columns:repeat(2,172px)}`;
-	const grid = (ctx: InpageContext) => demoFeed(ctx, { layout: 'grid', level: 'standard', items: [3, 1, 6, 7, 9, 5].map(item) }, handlers);
+	/** A fixed list date for the Why caption: store art never shows live values. */
+	const LIST_DATE = '2026-10-02';
 
-	// Frame 2: a list with the collapsed bar, its Why open and floating, as on a host page.
+	// Frame 1: the grid at Standard, its first column beside the docked popup, which covers the rest
+	// of the page as a real popup does.
+	const GRID_CSS = `${DEMO_CSS}.feed-grid{grid-template-columns:repeat(3,152px)}`;
+	const grid = (ctx: InpageContext) => demoFeed(ctx, { layout: 'grid', level: 'standard', items: [3, 1, 5, 6, 7, 8, 9].map(item) }, handlers);
+
+	// Frame 2: a list with the collapsed bar, its Why open and floating, as on a host page. The bar
+	// is wide enough for its reason, as on YouTube search.
+	const LIST_CSS = `${DEMO_CSS}.feed{padding:12px}`;
 	const why = (ctx: InpageContext) => {
-		const feed = demoFeed(ctx, { layout: 'list', level: 'standard', items: [5, 6, 7].map(item), open: 6 }, handlers);
+		const feed = demoFeed(ctx, { layout: 'list', level: 'standard', items: [5, 6, 7].map(item), open: 6, listDate: LIST_DATE }, handlers);
 		feed.querySelector('.cl-pop')?.classList.remove('cl-flat');
 		return feed;
 	};
@@ -78,17 +87,20 @@ demo values (DEMO_FEED and DEMO_POPUP), never live counts. ?frame=1 to 5, tile o
 		<div class="ui">
 			{#if frame === '1' || frame === 'marquee'}
 				<div class="f1">
-					<BrowserFrame count={demoHiddenCount('standard')} height={680}>
+					<BrowserFrame count={demoHiddenCount('standard')}>
 						{#snippet docked()}<PopupView state={popup} />{/snippet}
 						<InPage kind="demo" css={GRID_CSS} build={grid} />
 					</BrowserFrame>
 				</div>
+				<p class="note">{DEMO_THUMBS_NOTE}</p>
 			{:else if frame === '2'}
-				<div class="f2"><InPage kind="demo" css={DEMO_CSS} build={why} /></div>
+				<div class="f2"><InPage kind="demo" css={LIST_CSS} build={why} /></div>
+				<p class="note">{DEMO_THUMBS_NOTE}</p>
 			{:else if frame === '3'}
 				<div class="f3" role="radiogroup" aria-label="Strictness">
-					{#each STRICTNESS as level (level)}<LevelCard {level} on={level === 'standard'} />{/each}
+					{#each STRICTNESS as level (level)}<LevelCard {level} on={level === 'standard'} hint={false} />{/each}
 				</div>
+				<p class="note">{DEMO_THUMBS_NOTE}</p>
 			{:else if frame === '4'}
 				<div class="f4">
 					<Card>
@@ -112,15 +124,18 @@ demo values (DEMO_FEED and DEMO_POPUP), never live counts. ?frame=1 to 5, tile o
 					</Card>
 				</div>
 			{:else if frame === '5'}
-				<div class="f5">
-					<div class="pop"><PopupView state={popup} /></div>
-					<Card>
-						<h2 class="never-h">{PRIVACY_HEADINGS.never}</h2>
-						<ul class="never">{#each PRIVACY_NEVER as n (n)}<li>{n}</li>{/each}</ul>
-					</Card>
-				</div>
+				<div class="pop"><PopupView state={popup} /></div>
 			{/if}
 		</div>
+		{#if frame === '5'}
+			<!-- Beside the popup at 1.25 there is no room, so the privacy card sits under the lead. -->
+			<div class="f5-card">
+				<Card>
+					<h2 class="never-h">{PRIVACY_HEADINGS.never}</h2>
+					<ul class="never">{#each PRIVACY_NEVER as n (n)}<li>{n}</li>{/each}</ul>
+				</Card>
+			</div>
+		{/if}
 	</div>
 {/if}
 
@@ -183,6 +198,7 @@ demo values (DEMO_FEED and DEMO_POPUP), never live counts. ?frame=1 to 5, tile o
 	.marquee .brand {
 		top: 480px;
 	}
+	/* The UI box: x 560 to 1200, the composition centered in it. */
 	.ui {
 		position: absolute;
 		top: 0;
@@ -191,20 +207,36 @@ demo values (DEMO_FEED and DEMO_POPUP), never live counts. ?frame=1 to 5, tile o
 		width: 640px;
 		display: grid;
 		align-content: center;
+		gap: 16px;
 	}
-	/* Frame 1 is a crop: the window reaches the right edge and runs off the bottom. */
-	.f1 {
-		position: absolute;
-		top: 60px;
-		left: 0;
-		width: 576px;
-		zoom: 1.25;
+	.marquee .ui {
+		width: 760px;
 	}
 	.marquee .f1 {
-		top: 48px;
+		width: 608px;
+	}
+	/* The thumbnail disclosure, in caption style at canvas scale. */
+	.note {
+		color: var(--cl-text-muted);
+		font: 400 16px/24px var(--cl-font);
+		text-align: center;
+	}
+	/* Frame 1: the window, cropped on purpose under the popup's On this page card, with a fade. */
+	.f1 {
+		width: 512px;
+		min-width: 0;
+		zoom: 1.25;
+		mask-image: linear-gradient(to bottom, black calc(100% - 40px), transparent);
+	}
+	.f1 :global(.frame) {
+		height: 552px;
+	}
+	/* The marquee is 560 tall: the same window, cropped under the stats card. */
+	.marquee .f1 :global(.frame) {
+		height: 360px;
 	}
 	.f2 {
-		zoom: 1.5;
+		zoom: 1.1;
 		overflow: hidden;
 		border: 1px solid var(--cl-border);
 		border-radius: var(--cl-r-card);
@@ -213,6 +245,7 @@ demo values (DEMO_FEED and DEMO_POPUP), never live counts. ?frame=1 to 5, tile o
 		display: grid;
 		grid-template-columns: repeat(2, minmax(0, 1fr));
 		gap: 12px;
+		zoom: 1.25;
 	}
 	.f4 {
 		display: grid;
@@ -241,12 +274,11 @@ demo values (DEMO_FEED and DEMO_POPUP), never live counts. ?frame=1 to 5, tile o
 		margin-bottom: 8px;
 		font: var(--cl-title);
 	}
-	/* Two components side by side need the whole width at 1:1. */
-	.f5 {
-		display: grid;
-		grid-template-columns: 360px minmax(0, 1fr);
-		align-items: center;
-		gap: 16px;
+	.f5-card {
+		position: absolute;
+		top: 456px;
+		left: 80px;
+		width: 400px;
 	}
 	.never-h {
 		margin-bottom: 12px;
@@ -256,24 +288,29 @@ demo values (DEMO_FEED and DEMO_POPUP), never live counts. ?frame=1 to 5, tile o
 	/* The privacy list's own look: 6 px dot bullets, as PrivacyFacts draws them. */
 	.never {
 		display: grid;
-		gap: 12px;
+		gap: 8px;
 	}
 	.never li {
 		position: relative;
 		padding-left: 18px;
-		font: var(--cl-body-strong);
+		font: 600 16px/24px var(--cl-font);
 	}
 	.never li::before {
 		content: '';
 		position: absolute;
-		top: 7px;
+		top: 9px;
 		left: 0;
 		width: 6px;
 		height: 6px;
 		border-radius: 50%;
 		background: var(--cl-dot-strong);
 	}
+	/* The popup at 1.25, with a hairline so its edge reads on dark paper, where the shadow does not. */
 	.pop {
+		justify-self: center;
+		zoom: 1.25;
+		overflow: hidden;
+		border: 1px solid var(--cl-border);
 		border-radius: var(--cl-r-card);
 		box-shadow: var(--cl-shadow-pop);
 	}

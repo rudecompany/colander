@@ -33,10 +33,14 @@ test('tag Slop in two clicks: applies at once and sends only the allowed fields'
 	const menu = layer(page).locator('.cl-pop');
 	await expect(menu.getByRole('heading', { name: 'Tag this video' })).toBeVisible();
 	await expect(menu.getByRole('menuitem')).toHaveText([/^Slop/, /^AI-made but fine/, /^Not slop/]);
+	// Said before the choice, so the confirmation can stay one line.
+	await expect(menu).toContainText('Your tag counts toward the shared list.');
 	await menu.getByRole('menuitem', { name: /^Slop/ }).click();
 	await expect(card).toHaveAttribute('data-colander', 'hide');
 	const toast = layer(page).locator('.cl-toast');
-	await expect(toast).toContainText('Tagged. Hidden for you now, and counted toward the shared list.');
+	await expect(toast.locator('.cl-toast-t')).toHaveText('Tagged and hidden.');
+	// One 44 px row: the message, Undo, Add detail, the countdown and Close.
+	expect((await toast.boundingBox())!.height).toBeLessThanOrEqual(44);
 
 	// The tag is queued at once, and held while its toast can still undo or refine it.
 	await expect.poll(async () => (await queued(ext.ctl)).length).toBe(1);
@@ -92,7 +96,7 @@ test('Not slop and AI-made but fine confirm with a notice', async ({ ext }) => {
 	await openTag(page, 3);
 	await layer(page).getByRole('menuitem', { name: /^AI-made but fine/ }).click();
 	const notice = layer(page).locator('.cl-toast');
-	await expect(notice).toContainText('Tagged as AI-made but fine. Counted toward the shared list.');
+	await expect(notice).toContainText('Tagged as AI-made but fine.');
 	await expect(notice).toHaveAttribute('aria-live', 'polite');
 	await expect(page.locator('ytd-search ytd-video-renderer').nth(3).locator('colander-ui[data-kind="chip"]')).toContainText('AI-made');
 	// The 4-dot countdown ends the notice, and the tag goes out then.
@@ -165,7 +169,7 @@ test('keyboard only: tag menu and collapsed bar', async ({ ext }) => {
 	await page.keyboard.press('Enter');
 	await page.keyboard.press('Enter');
 	await expect(page.locator('ytd-search ytd-video-renderer').nth(3)).toHaveAttribute('data-colander', 'hide');
-	await expect(layer(page).locator('.cl-toast')).toContainText('Tagged.');
+	await expect(layer(page).locator('.cl-toast')).toContainText('Tagged and hidden.');
 
 	// The collapsed bar takes focus and Enter shows the item.
 	const bar = page.locator('ytd-search ytd-video-renderer').nth(1).locator('colander-ui[data-kind="bar"] .bar');

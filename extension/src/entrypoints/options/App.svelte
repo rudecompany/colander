@@ -1,8 +1,9 @@
 <!--
 @component Options: a sticky 232 px nav, one section at a time addressed by the URL hash (so the
 popup and in-page notices can link to #reports or #platforms), and from 1200 px a 280 px rail
-with the list status and links to the matching website pages. Below 800 px the nav becomes a
-Section select.
+with the list status and links to the matching website pages; the content and rail center in
+the room beside the nav. Lists shows the list status in its own Core list card, so the rail
+leaves it out there. Below 800 px the nav becomes a Section select.
 -->
 <script lang="ts">
 	import { ColanderMark } from '@colander/shared';
@@ -99,7 +100,7 @@ Section select.
 	</main>
 
 	<aside class="rail" aria-label="List status and links">
-		<ListStatus />
+		{#if active.id !== 'lists'}<ListStatus />{/if}
 		<Card title="Learn more" headingLevel={2}>
 			<ul class="learn">
 				{#each active.learn as [label, path] (path)}
@@ -196,10 +197,15 @@ Section select.
 		gap: 8px;
 	}
 	@media (min-width: 1200px) {
+		/* The 784 content and the 312 rail (a 280 card and 32 of gutter) center beside the nav. */
 		.shell {
-			grid-template-columns: 232px minmax(0, 784px) 280px;
+			grid-template-columns: 232px minmax(0, 1fr) minmax(0, 784px) 312px minmax(0, 1fr);
+		}
+		main {
+			grid-column: 3;
 		}
 		.rail {
+			grid-column: 4;
 			position: sticky;
 			top: 0;
 			display: grid;
@@ -207,9 +213,6 @@ Section select.
 			gap: 24px;
 			height: 100vh;
 			padding: 48px 32px 0 0;
-		}
-		main :global(.lead-status) {
-			display: none;
 		}
 	}
 	@media (max-width: 799px) {

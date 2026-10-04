@@ -1,6 +1,7 @@
 // What a decorated card shows, from the matching engine's decision: the chip and bar view and
 // the evidence behind Why. Pure, so it is unit tested; the shared builders draw the result.
-import { evidence, type Evidence, type ItemView } from '@colander/shared/inpage';
+import { evidence, type Evidence } from '@colander/shared/inpage/evidence.ts';
+import type { ItemView } from '@colander/shared/inpage/ui.ts';
 import { barReason, type Platform, type Verdict } from '@colander/shared/verdicts';
 import { dayToDate } from '../lib/list';
 import type { Decision } from '../lib/match';
@@ -48,7 +49,6 @@ export function whyEvidence(d: Decision, o: { hidden: boolean; platform: Platfor
 				hidden: o.hidden,
 				signals: d.signals,
 				listDate: d.hit ? dayToDate(d.hit.updated) : null,
-				imported: d.hit?.imported,
 				platform: o.platform,
 				sourceId: listed || d.reason === 'platform_label' ? o.sourceId : null,
 				site: o.site,

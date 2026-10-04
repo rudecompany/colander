@@ -25,7 +25,7 @@ describe('views', () => {
 			'Content: Taggers found it hollow.',
 			'AI evidence: No AI label or credentials found yet.'
 		]);
-		expect(ev.list).toBe('Core list, updated 1 Aug 2025, imported and not yet reviewed');
+		expect(ev.list).toBe('Core list, updated 1 Aug 2025');
 		expect(ev.sourceUrl).toBe('https://colander.app/s/yt/@catrescuetales');
 		expect(ev.appealUrl).toBe('https://colander.app/appeal/yt/@catrescuetales');
 	});

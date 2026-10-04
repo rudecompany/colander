@@ -25,10 +25,14 @@ test('choose strictness and platforms, then Chrome asks for those sites only', a
 	await expect(page.getByText('Step 1 of 3')).toBeVisible();
 	const levels = page.getByRole('radiogroup', { name: 'How strict should it be?' });
 	await expect(levels.getByRole('radio', { name: 'Standard' })).toHaveAttribute('aria-checked', 'true');
+	// The step's one control comes before the recreated feed, and the feed says its thumbnails are generated.
+	const demo = page.locator('colander-ui[data-kind="demo"]');
+	expect((await levels.boundingBox())!.y).toBeLessThan((await demo.boundingBox())!.y);
+	await expect(page.getByText('Thumbnails are AI-generated illustrations.')).toBeVisible();
 	await recordRequests(page, true);
 	await levels.getByRole('radio', { name: 'Strict' }).click();
 	// The recreated feed follows the level: at Strict the AI-made item collapses too.
-	await expect(page.locator('colander-ui[data-kind="demo"]').getByRole('group', { name: /Hidden for you: AI-made/ })).toBeVisible();
+	await expect(demo.getByRole('group', { name: /Hidden for you: AI-made/ })).toBeVisible();
 	await page.getByRole('button', { name: 'Continue' }).click();
 	await expect(page.getByText('Step 2 of 3')).toBeVisible();
 	await page.getByRole('checkbox', { name: /TikTok/ }).click();

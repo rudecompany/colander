@@ -1,6 +1,7 @@
 <!--
-@component One strictness level as a radio card: the recreated rows at that level (the shared
-FeedDemo, drawn by the in-page builders), what happened to them, the level and its line.
+@component One strictness level as a radio card: the radio, the level and its line first, then the
+recreated rows at that level (the shared FeedDemo, drawn by the in-page builders) and what
+happened to them. Leading with the name keeps radios aligned; spare height falls at the bottom.
 Selected: brand tint, a 2 px brand outline and a filled radio dot, so it differs in shape too.
 Used by Options, Strictness, and by the store art.
 -->
@@ -11,7 +12,8 @@ Used by Options, Strictness, and by the store art.
 	import { radioGroupKeydown } from '@colander/shared/components/ui/segmented-control/segmented-control.svelte';
 	import { STRICTNESS_HINT, STRICTNESS_WORD, type Strictness } from '@colander/shared/verdicts';
 
-	let { level, on, onpick }: { level: Strictness; on: boolean; onpick?: (level: Strictness) => void } = $props();
+	// `hint` false drops the level's line, for the store art's larger 2 by 2 picture.
+	let { level, on, onpick, hint = true }: { level: Strictness; on: boolean; onpick?: (level: Strictness) => void; hint?: boolean } = $props();
 	const uid = $props.id();
 	const items = DEMO_MINI_ITEMS.map((id) => DEMO_FEED.find((i) => i.id === id)!);
 
@@ -29,21 +31,21 @@ Used by Options, Strictness, and by the store art.
 	role="radio"
 	aria-checked={on}
 	aria-labelledby="{uid}-name"
-	aria-describedby="{uid}-hint"
+	aria-describedby={hint ? `${uid}-hint` : undefined}
 	tabindex={on ? 0 : -1}
 	onclick={() => onpick?.(level)}
 	onkeydown={keydown}
 >
-	<div class="demo">
-		<FeedDemo variant="mini" {level} />
-		<span class="cl-figure count" aria-hidden="true">{demoCounts(level, items)}</span>
-	</div>
 	<span class="head">
 		<span class="radio" aria-hidden="true"></span>
 		<span class="name" id="{uid}-name">{STRICTNESS_WORD[level]}</span>
 		{#if level === 'standard'}<span class="uin-badge uin-badge-md">Default</span>{/if}
 	</span>
-	<span class="hint" id="{uid}-hint">{STRICTNESS_HINT[level]}</span>
+	{#if hint}<span class="hint" id="{uid}-hint">{STRICTNESS_HINT[level]}</span>{/if}
+	<div class="demo">
+		<FeedDemo variant="mini" {level} />
+		<span class="cl-figure count" aria-hidden="true">{demoCounts(level, items)}</span>
+	</div>
 </div>
 
 <style>
@@ -70,17 +72,16 @@ Used by Options, Strictness, and by the store art.
 		background: var(--cl-brand-tint);
 		box-shadow: inset 0 0 0 1px var(--cl-brand);
 	}
-	/* The rows take the card's spare height, so level names line up across a row of cards. */
 	.demo {
 		display: flex;
-		flex: 1;
 		flex-direction: column;
 		gap: 8px;
-		margin-bottom: 4px;
+		margin-top: 4px;
+		padding-top: 12px;
+		border-top: 1px solid var(--cl-border);
 		pointer-events: none;
 	}
 	.count {
-		margin-top: auto;
 		color: var(--cl-text-muted);
 	}
 	.head {
@@ -106,6 +107,7 @@ Used by Options, Strictness, and by the store art.
 		font-weight: 600;
 	}
 	.hint {
+		min-height: 32px;
 		color: var(--cl-text-muted);
 		font: var(--cl-caption);
 	}

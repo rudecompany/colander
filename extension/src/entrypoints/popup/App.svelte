@@ -89,6 +89,7 @@ website hero renders the same component, so the two cannot drift. 360 wide, neve
 	const title = (a: PageAction) => a.title || a.sourceName || a.itemId || a.sourceId || '';
 	const byId = (r: PopupRow) => page?.actions.find((a) => a.id === r.id);
 
+	const onPage = $derived(page ? page.counts.hidden + page.counts.collapsed : 0);
 	const popup = $derived<PopupState>({
 		status: !loaded ? 'loading' : !running ? 'unsupported' : sitePaused || tabPaused ? 'paused' : 'active',
 		domain: platform ? PLATFORM_DOMAIN[platform] : undefined,
@@ -96,8 +97,9 @@ website hero renders the same component, so the two cannot drift. 360 wide, neve
 		plus,
 		strictness: settings.strictness,
 		strictnessNote: override && platform ? `${PLATFORM_NAME[platform]} uses ${STRICTNESS_WORD[override]}, set in Options.` : undefined,
-		hiddenToday: today,
-		onPage: page ? page.counts.hidden + page.counts.collapsed : 0,
+		// Today's count is written after the page's counts arrive, so it never reads lower than this page.
+		hiddenToday: Math.max(today, onPage),
+		onPage,
 		noun: platform ? ITEM_NOUN[platform] : undefined,
 		rows: page?.actions.map((a) => ({ id: a.id, verdict: a.verdict, title: title(a), action: a.action, shown: a.shown })) ?? [],
 		// One slot, by priority: a sync failure, a report verdict, the weekly card, else the footer.

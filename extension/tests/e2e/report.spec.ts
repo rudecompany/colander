@@ -19,6 +19,12 @@ test('report a channel with examples, a type, tests and a note', async ({ ext })
 
 	await sheet.getByRole('button', { name: 'Next' }).click();
 	await expect(sheet).toContainText('Step 2 of 2');
+	// Only the body scrolls: Back and Send report stay inside the sheet without scrolling it.
+	const box = (await sheet.boundingBox())!;
+	for (const name of ['Back', 'Send report']) {
+		const b = (await sheet.getByRole('button', { name }).boundingBox())!;
+		expect(b.y + b.height, name).toBeLessThanOrEqual(box.y + box.height);
+	}
 	await sheet.getByRole('button', { name: 'Send report' }).click();
 	await expect(sheet.getByRole('alert')).toHaveText('Choose a type or a test, or add a note, so reviewers know what to look for.');
 	await sheet.getByLabel(/Filler/).check();

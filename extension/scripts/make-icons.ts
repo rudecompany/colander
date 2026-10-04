@@ -2,7 +2,8 @@
 // Usage: node scripts/make-icons.ts   (writes public/icons/*.png and screenshots/toolbar-icons.png)
 //
 // Active is the filled mark in the mark color with its holes knocked out, no tile and no halo.
-// Paused is the outlined mark in the paused gray, with pause bars in place of the holes from 32 px.
+// Paused is the outlined mark in the paused gray, with pause bars in place of the holes from 32 px;
+// at 16 px it is drawn on whole pixels so no edge is a faint half-alpha pixel.
 // Attention adds a paper dot with an ink ring at the top right, set off by a 1 px knockout.
 // 16 and 32 px are drawn on the pixel grid from MARK_SMALL's proportions: a rim, the bowl and
 // 3 holes of 2 by 2 px at 16, two rows of holes at 32. 48 and 128 use the full MARK, and 128 is the
@@ -37,12 +38,25 @@ function small(size: 16 | 32, paused: boolean): string {
 		const bowl = `M${2 * k} ${5 * k}H${14 * k}A${6 * k} ${7 * k} 0 0 1 ${2 * k} ${5 * k}Z`;
 		return `<path d="${rim}" fill="${c}"/><path d="${bowl}${holes.join('')}" fill="${c}" fill-rule="evenodd"/>`;
 	}
-	// Paused: the rim as one line and the bowl as an open arc, so it reads lighter than active by
-	// shape as well as color, with two pause bars at 32.
-	const w = size === 16 ? 1.5 : 2;
-	const rim = `M${1.75 * k} ${size === 16 ? 4.25 : 8}H${14.25 * k}`;
+	// Paused at 16: whole pixels only, so every outline pixel is the full paused gray (anti-aliased
+	// 1.5 px walls fall below 3:1 on light toolbars): the 2 px rim over a hollow bowl of 1 px walls.
+	if (size === 16) {
+		const px = [
+			[1, 3, 14, 2], // rim
+			[2, 5, 1, 2], [13, 5, 1, 2], // walls, stepping in toward the floor
+			[3, 7, 1, 2], [12, 7, 1, 2],
+			[4, 9, 1, 1], [11, 9, 1, 1],
+			[5, 10, 1, 1], [10, 10, 1, 1],
+			[6, 11, 4, 1] // floor
+		];
+		return `<path d="${px.map(([x, y, w, h]) => `M${x} ${y}h${w}v${h}h${-w!}Z`).join('')}" fill="${c}" shape-rendering="crispEdges"/>`;
+	}
+	// Paused from 32: the rim as one line and the bowl as an open arc, so it reads lighter than
+	// active by shape as well as color, with two pause bars.
+	const w = 2;
+	const rim = `M${1.75 * k} 8H${14.25 * k}`;
 	const bowl = `M${2.75 * k} ${5.5 * k}A${5.25 * k} ${6.5 * k} 0 0 0 ${13.25 * k} ${5.5 * k}`;
-	const bars = size === 32 ? `<path d="M12 12h3v8h-3ZM17 12h3v8h-3Z" fill="${c}"/>` : '';
+	const bars = `<path d="M12 12h3v8h-3ZM17 12h3v8h-3Z" fill="${c}"/>`;
 	return `<g fill="none" stroke="${c}" stroke-width="${w}" stroke-linecap="round" stroke-linejoin="round"><path d="${rim}"/><path d="${bowl}"/></g>${bars}`;
 }
 
@@ -140,6 +154,23 @@ for (const size of SIZES) {
 	if (diff <= 0.3) failures.push(`active and paused at ${size} px differ by ${(diff * 100).toFixed(0)}% in filled pixels, 30% needed`);
 	console.log(`${size} px: active ${a} filled pixels, paused ${p}, ${(diff * 100).toFixed(0)}% apart`);
 }
+
+// Contrast is judged on opaque pixels: at 16 px every paused pixel is either clear or the full
+// paused gray, so no anti-aliased edge falls below 3:1 on a toolbar. (The attention variant shares
+// the geometry; its round dot is anti-aliased on purpose.)
+const partial = await page.evaluate(async (src) => {
+	const img = new Image();
+	img.src = src;
+	await img.decode();
+	const c = new OffscreenCanvas(img.width, img.height);
+	const ctx = c.getContext('2d')!;
+	ctx.drawImage(img, 0, 0);
+	const d = ctx.getImageData(0, 0, img.width, img.height).data;
+	let n = 0;
+	for (let i = 3; i < d.length; i += 4) if (d[i]! > 0 && d[i]! < 255) n++;
+	return n;
+}, `data:image/png;base64,${png['paused-16']!.toString('base64')}`);
+if (partial) failures.push(`paused at 16 px has ${partial} partly transparent pixels; draw it on whole pixels`);
 
 // The contact sheet: every state and size on the six toolbars, then the toolbar sizes at 8x.
 const tag = (state: State, size: number, scale = 1) =>

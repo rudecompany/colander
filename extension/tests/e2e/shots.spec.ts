@@ -52,6 +52,10 @@ for (const scheme of ['light', 'dark'] as const) {
 				await popup.waitForTimeout(250);
 			};
 			const tab = await ext.tabId(yt);
+			// Today's count is written after the page reports its counts; picture the settled popup.
+			await expect
+				.poll(() => ext.ctl.evaluate(async () => Object.values(((await chrome.storage.local.get('stats')).stats as { days: Record<string, { hidden: number }> } | undefined)?.days ?? {}).reduce((n, d) => n + d.hidden, 0)))
+				.toBeGreaterThan(0);
 			await open(tab);
 			await shot(popup, `popup-${scheme}`);
 			await popup.getByRole('button', { name: /Show all/ }).click().catch(() => undefined);
@@ -139,6 +143,8 @@ for (const scheme of ['light', 'dark'] as const) {
 			await shot(side, `sidepanel-evidence-${scheme}`);
 			await side.getByRole('heading', { name: 'Decision' }).scrollIntoViewIfNeeded();
 			await shot(side, `sidepanel-decision-${scheme}`);
+			await side.setViewportSize({ width: 360, height: 860 });
+			await shot(side, `sidepanel-decision-360-${scheme}`);
 			await side.setViewportSize({ width: 480, height: 860 });
 			await shot(side, `sidepanel-decision-480-${scheme}`);
 			await side.keyboard.press('?');

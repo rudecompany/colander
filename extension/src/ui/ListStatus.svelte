@@ -1,6 +1,7 @@
 <!--
 @component The list and plan at a glance: "Core list v.412", when it last updated, Sync now, and
-the plan line. Leads the options rail at 1200 px and up, and the Lists section below that.
+the plan line. Leads the options rail at 1200 px and up, except on Lists, whose Core list card
+says the same.
 -->
 <script lang="ts">
 	import { fmtAgo, fmtListVersion, fmtShortDate } from '@colander/shared/format';
@@ -9,8 +10,6 @@ the plan line. Leads the options rail at 1200 px and up, and the Lists section b
 	import RefreshCw from '@lucide/svelte/icons/refresh-cw';
 	import { DEFAULT_STATUS, isPlus, K, type Entitlement, type Status } from '../lib/settings';
 	import { send, stored } from './store.svelte';
-
-	let { class: className = '' }: { class?: string } = $props();
 
 	const status = stored<Status>(K.status, DEFAULT_STATUS);
 	const entitlement = stored<Entitlement | undefined>(K.entitlement, undefined);
@@ -28,7 +27,7 @@ the plan line. Leads the options rail at 1200 px and up, and the Lists section b
 	}
 </script>
 
-<Card class="list-status {className}">
+<Card class="list-status">
 	<p class="cl-figure">Core list {status.value.listSequence ? fmtListVersion(status.value.listSequence) : 'not downloaded yet'}</p>
 	<p class="ago">{status.value.lastSyncAt ? `Updated ${fmtAgo(status.value.lastSyncAt)}` : 'Not updated yet'}</p>
 	<Button variant="secondary" onclick={syncNow} loading={syncing}><RefreshCw size={16} aria-hidden="true" />Sync now</Button>

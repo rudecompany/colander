@@ -1,6 +1,7 @@
 <!-- @component Appearance: larger plain-language chips, and a Tag button that is always in view. -->
 <script lang="ts">
 	import { InPage, PageHeader, SettingRow } from '@colander/shared';
+	import { DEMO_THUMBS_NOTE } from '@colander/shared/copy';
 	import { chip, hyper, thumbSvg, THUMB_CSS, type InpageContext } from '@colander/shared/inpage';
 	import Card from '@colander/shared/components/ui/card/card.svelte';
 	import Switch from '@colander/shared/components/ui/switch/switch.svelte';
@@ -43,8 +44,11 @@
 				<Switch checked={settings.plainChips} aria-labelledby={labelledby} aria-describedby={describedby} onCheckedChange={(v) => send({ type: 'settings', patch: { plainChips: v } })} />
 			{/snippet}
 		</SettingRow>
-		<div class="preview" role="img" aria-label="Preview: an AI-made chip on a thumbnail, in the default size and in the larger, plain-language size">
-			<InPage kind="preview" css={PREVIEW_CSS} build={preview(settings.plainChips)} />
+		<div class="preview">
+			<div role="img" aria-label="Preview: an AI-made chip on a thumbnail, in the default size and in the larger, plain-language size">
+				<InPage kind="preview" css={PREVIEW_CSS} build={preview(settings.plainChips)} />
+			</div>
+			<p class="caption">{DEMO_THUMBS_NOTE}</p>
 		</div>
 		<SettingRow title="Always show the Tag button" description="Off, the Tag button appears when you point at a card or move to it with the keyboard. It always shows in swipe feeds.">
 			{#snippet control({ labelledby, describedby })}
@@ -66,12 +70,16 @@
 		padding-block: 0;
 	}
 	.preview {
+		display: grid;
+		gap: 12px;
 		padding: 4px 0 16px;
 		border-bottom: 1px solid var(--cl-border);
 	}
 	.caption {
-		margin-top: -12px;
 		color: var(--cl-text-muted);
 		font: var(--cl-caption);
+	}
+	.cards > .caption {
+		margin-top: -12px;
 	}
 </style>

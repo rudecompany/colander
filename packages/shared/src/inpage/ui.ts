@@ -219,7 +219,7 @@ export function tagMenu(ctx: InpageContext, noun: string, onTag: (verdict: TagVe
 		)
 	);
 	list.addEventListener('keydown', (e) => menuKeys(list, e));
-	return h('div', { class: 'cl-pop menu' }, h('h2', { id: titleId }, ctx.strings.tagTitle(noun)), list);
+	return h('div', { class: 'cl-pop menu' }, h('h2', { id: titleId }, ctx.strings.tagTitle(noun)), list, h('p', { class: 'note' }, ctx.strings.tagCounts));
 }
 
 function choices<T extends string>(
@@ -270,6 +270,8 @@ export interface ReportSheetInput {
 	handle: string;
 	/** Items already on the page; thumbnails reuse the page's own image URLs. */
 	items: { id: string; title: string; thumb?: string }[];
+	/** The platform's item noun, shown where an item has no thumbnail: "video" or "post". */
+	noun: string;
 	send(input: { examples: string[]; slopType: SlopType | null; tests: Test[]; note: string }): Promise<{ ok: true } | { ok: false; error: string }>;
 	openReports(): void;
 }
@@ -303,7 +305,7 @@ export function reportSheet(ctx: InpageContext, r: ReportSheetInput, close: () =
 			'label',
 			{ class: 'tile' },
 			boxes[i],
-			it.thumb ? h('img', { src: it.thumb, alt: '', width: 48, height: 48, loading: 'lazy' }) : h('span', { class: 'ph' }),
+			it.thumb ? h('img', { src: it.thumb, alt: '', width: 48, height: 48, loading: 'lazy' }) : h('span', { class: 'ph', 'aria-hidden': 'true' }, r.noun),
 			h('span', { title: it.title }, it.title || it.id)
 		)
 	);
@@ -318,18 +320,14 @@ export function reportSheet(ctx: InpageContext, r: ReportSheetInput, close: () =
 		'div',
 		{ class: 'sheet' },
 		head(1),
-		h('fieldset', {}, h('legend', {}, s.examples), h('div', { class: 'tiles' }, ...tiles)),
+		h('div', { class: 'body' }, h('fieldset', {}, h('legend', {}, s.examples), h('div', { class: 'tiles' }, ...tiles))),
 		h('div', { class: 'foot' }, button(ctx, { label: ctx.strings.close, kind: 's', onClick: close }), button(ctx, { label: s.next, kind: 'p', onClick: () => go(step2) }))
 	);
 	const step2 = h(
 		'form',
 		{ class: 'sheet' },
 		head(2),
-		h('p', { class: 't' }, s.why),
-		type.el,
-		tests.el,
-		h('div', { class: 'stack' }, h('label', { for: noteId, class: 't' }, s.note), note),
-		error,
+		h('div', { class: 'body' }, h('p', { class: 't' }, s.why), type.el, tests.el, h('div', { class: 'stack' }, h('label', { for: noteId, class: 't' }, s.note), note), error),
 		h('div', { class: 'foot' }, button(ctx, { label: s.back, kind: 's', onClick: () => go(step1) }), send)
 	);
 	error.hidden = true;
@@ -356,7 +354,7 @@ export function reportSheet(ctx: InpageContext, r: ReportSheetInput, close: () =
 			s.myReports,
 			icon(ctx.doc, ArrowRight)
 		);
-		go(h('div', { class: 'sheet', role: 'status' }, head(null), h('p', {}, s.received), h('div', { class: 'foot' }, mine)));
+		go(h('div', { class: 'sheet', role: 'status' }, head(null), h('div', { class: 'body' }, h('p', {}, s.received)), h('div', { class: 'foot' }, mine)));
 	});
 	return sheet;
 }
@@ -479,7 +477,10 @@ export class Layer {
 		const m = 8;
 		let top = r.bottom + 4;
 		if (top + ht > win.innerHeight - m && r.top - 4 - ht > m) top = r.top - 4 - ht;
-		const left = Math.min(Math.max(m, r.left), win.innerWidth - w - m);
+		// Start-aligned to the anchor; end-aligned to it when that would cross the viewport edge, so it
+		// never overhangs the card it belongs to.
+		const start = r.left + w > win.innerWidth - m ? r.right - w : r.left;
+		const left = Math.min(Math.max(m, start), win.innerWidth - w - m);
 		el.style.left = `${Math.round(left)}px`;
 		el.style.top = `${Math.round(Math.min(Math.max(m, top), win.innerHeight - ht - m))}px`;
 	}

@@ -52,6 +52,7 @@ button.cl-chip { cursor: pointer; }
 .head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .menu { width: 280px; padding: 8px; }
 .menu h2 { padding: 4px 8px 8px; font: var(--cl-body-strong); }
+.menu .note { margin-top: 4px; padding: 8px 8px 4px; border-top: 1px solid var(--cl-border); color: var(--cl-text-muted); font: var(--cl-caption); }
 .opt { display: flex; align-items: flex-start; gap: 8px; width: 100%; padding: 8px; border: 0; border-radius: var(--cl-r-chip); background: none; text-align: left; transition: background-color var(--cl-fast) var(--cl-ease); }
 .opt:hover, .opt:focus-visible { background: color-mix(in srgb, var(--cl-text) 6%, transparent); }
 .opt .cl-glyph { margin-top: 2px; }
@@ -66,13 +67,19 @@ legend { margin-bottom: 8px; padding: 0; font: var(--cl-body-strong); }
 .choice { padding: 8px 12px; border: 1px solid var(--cl-border-strong); border-radius: var(--cl-r-chip); }
 .choice:has(input:checked), .tile:has(input:checked) { border-color: var(--cl-brand); box-shadow: inset 0 0 0 1px var(--cl-brand); background: var(--cl-brand-tint); }
 .stack { display: grid; gap: 8px; }
-.tiles { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-.tile { display: flex; align-items: center; gap: 8px; padding: 8px; border: 1px solid var(--cl-border); border-radius: var(--cl-r-chip); cursor: pointer; }
+.tiles { display: grid; gap: 6px; }
+.tile { display: flex; align-items: center; gap: 12px; min-height: 58px; padding: 4px 12px; border: 1px solid var(--cl-border); border-radius: var(--cl-r-chip); cursor: pointer; }
 .tile input { flex: none; width: 16px; height: 16px; margin: 0; accent-color: var(--cl-brand-fill); }
-.tile img, .tile .ph { flex: none; width: 48px; height: 48px; border-radius: var(--cl-r-chip); object-fit: cover; background: var(--cl-surface-raised); }
+.tile img, .tile .ph { flex: none; width: 48px; height: 48px; border-radius: var(--cl-r-chip); object-fit: cover; background: var(--cl-host-fill); }
+.tile .ph { display: grid; place-items: center; color: var(--cl-text-muted); font: var(--cl-caption); }
 .tile span { display: -webkit-box; overflow: hidden; font: var(--cl-caption); -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
 textarea { display: block; width: 100%; padding: 8px 12px; border: 1px solid var(--cl-border-strong); border-radius: var(--cl-r-chip); background: var(--cl-surface); color: var(--cl-text); font: var(--cl-body); resize: vertical; }
-.report { top: 72px; right: 24px; width: 400px; max-height: min(560px, calc(100vh - 96px)); overflow: auto; }
+/* The report sheet: the head and the actions stay put, only the body between them scrolls. */
+.report { top: 72px; right: 24px; display: flex; flex-direction: column; width: 400px; max-height: min(560px, calc(100vh - 96px)); padding: 0; overflow: hidden; }
+.report > .sheet { display: flex; flex-direction: column; gap: 0; min-height: 0; }
+.report .head { flex: none; padding: 16px 16px 12px; }
+.report .body { display: grid; gap: 16px; min-height: 0; padding: 4px 16px 16px; overflow: auto; overscroll-behavior: contain; }
+.report .foot { flex: none; padding: 12px 16px; border-top: 1px solid var(--cl-border); }
 .steps { display: inline-flex; align-items: center; gap: 6px; color: var(--cl-text-muted); font: var(--cl-figure); letter-spacing: 0.02em; white-space: nowrap; }
 .steps i { width: 6px; height: 6px; border-radius: 50%; box-shadow: inset 0 0 0 1.5px var(--cl-text-muted); }
 .steps i.on { background: var(--cl-text); box-shadow: none; }

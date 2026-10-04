@@ -15,7 +15,8 @@ test('Why, Show, Not slop and Always allow', async ({ ext }) => {
 	await expect(page.getByRole('dialog', { name: 'Why this is hidden' })).toBeVisible();
 	await expect(rows(page)).toHaveText(['Source behavior: Most recent items are AI-made.', 'Content: Taggers found it hollow.', 'AI evidence: No AI label or credentials found yet.']);
 	await expect(rows(page).nth(2)).toHaveAttribute('data-agreed', 'false');
-	await expect(pop).toContainText('Core list, updated 1 Aug 2026, imported and not yet reviewed');
+	// The caption is the list and its date only; the import note lives in the side panel.
+	await expect(pop.locator('.cl-ev-list')).toHaveText('Core list, updated 1 Aug 2026');
 	await expect(pop.getByRole('link', { name: 'Source page' })).toHaveAttribute('href', 'http://localhost:8787/s/yt/@catrescuetales');
 	await expect(pop.getByRole('link', { name: 'Is this your channel? Appeal this verdict.' })).toHaveAttribute('href', 'http://localhost:8787/appeal/yt/@catrescuetales');
 
@@ -27,7 +28,7 @@ test('Why, Show, Not slop and Always allow', async ({ ext }) => {
 	// Not slop from the chip's Why files a source-level counter-tag once its toast ends.
 	await cards.nth(1).locator('colander-ui[data-kind="chip"] button').click();
 	await pop.getByRole('button', { name: 'Not slop' }).click();
-	await expect(page.locator('colander-ui[data-kind="layer"] .cl-toast')).toContainText('Tagged as not slop. Counted toward the shared list.');
+	await expect(page.locator('colander-ui[data-kind="layer"] .cl-toast')).toContainText('Tagged as not slop.');
 	await expect(cards.nth(1).locator('colander-ui[data-kind="chip"]')).toHaveCount(0);
 	await expect.poll(() => ext.api.posted('/v1/tags').length, { timeout: 8000 }).toBe(1);
 	const tag = (ext.api.posted('/v1/tags')[0]!.body as { tags: Record<string, unknown>[] }).tags[0]!;

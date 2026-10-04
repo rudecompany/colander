@@ -5,7 +5,7 @@ sticky bar holds Back and Continue; Done opens the first platform.
 -->
 <script lang="ts">
 	import { ColanderMark, DotField, FeedDemo, Lifecycle, StrictnessControl, type LifecycleStep } from '@colander/shared';
-	import { DEFINITION, PLATFORM_SURFACES, TAGLINE } from '@colander/shared/copy';
+	import { DEFINITION_PUBLIC, DEMO_THUMBS_NOTE, PLATFORM_SURFACES, TAGLINE } from '@colander/shared/copy';
 	import { TOOLBAR } from '@colander/shared/glyphs';
 	import Button from '@colander/shared/components/ui/button/button.svelte';
 	import { PLATFORMS, PLATFORM_NAME, type Platform, type Strictness } from '@colander/shared/verdicts';
@@ -79,7 +79,8 @@ sticky bar holds Back and Continue; Done opens the first platform.
 			<ColanderMark size={48} />
 			<p class="cl-eyebrow">{TAGLINE.first} {TAGLINE.second}</p>
 			<h1 class="cl-display-lg">Set up Colander in 3 steps.</h1>
-			<p class="cl-lead def">{DEFINITION}</p>
+			<!-- The definition leads the first step only, so later steps start higher. -->
+			{#if step === 0 && !done}<p class="cl-lead def">{DEFINITION_PUBLIC}</p>{/if}
 		</div>
 	</header>
 
@@ -100,13 +101,16 @@ sticky bar holds Back and Continue; Done opens the first platform.
 				{:else if step === 0}
 					<section aria-labelledby="s1">
 						<h2 id="s1" class="cl-title">How strict should it be?</h2>
-						<p class="muted lede">Change the level and watch the feed. Hidden items leave the page, Likely slop folds to one line, and AI-made items carry a label.</p>
-						<div class="wide"><FeedDemo variant="full" platform="yt" bind:level={strictness} popup={false} height={560} open={null} /></div>
+						<p class="muted lede">Change the level and watch the recreated feed below. You can change it any time from the toolbar.</p>
+						<!-- The one control on the step comes first, so nobody moves on without seeing it. -->
 						<div class="control">
 							<StrictnessControl bind:value={strictness} size="xl" label="How strict should it be?" />
 							<span class="rec" aria-hidden="true"><span class="uin-badge uin-badge-md">Recommended</span></span>
 						</div>
-						<p class="caption">Standard is recommended. You can change this any time from the toolbar.</p>
+						<figure class="wide demo">
+							<div class="crop"><FeedDemo variant="full" platform="yt" bind:level={strictness} popup={false} height={528} open={null} /></div>
+							<figcaption class="caption">{DEMO_THUMBS_NOTE}</figcaption>
+						</figure>
 					</section>
 				{:else if step === 1}
 					<section aria-labelledby="s2">
@@ -139,7 +143,7 @@ sticky bar holds Back and Continue; Done opens the first platform.
 							<li><Puzzle size={16} aria-hidden="true" />Choose the puzzle piece in Chrome's toolbar.</li>
 							<li><Pin size={16} aria-hidden="true" />Choose the pin beside Colander.</li>
 						</ol>
-						<ul class="states" aria-label="The toolbar icon">
+						<ul class="states" aria-label="The toolbar icon" style:--cl-paper={TOOLBAR.dot} style:--cl-ink={TOOLBAR.ring}>
 							<li><span class="ic" style:color={TOOLBAR.mark}><ColanderMark size={32} /></span>Active</li>
 							<li><span class="ic" style:color={TOOLBAR.paused}><ColanderMark size={32} outline /></span>Paused</li>
 							<li><span class="ic" style:color={TOOLBAR.mark}><ColanderMark size={32} attention /></span>Needs attention</li>
@@ -232,7 +236,6 @@ sticky bar holds Back and Continue; Done opens the first platform.
 		display: grid;
 		justify-items: center;
 		gap: 8px;
-		margin-top: 8px;
 	}
 	.control :global(.sc) {
 		justify-items: center;
@@ -252,7 +255,16 @@ sticky bar holds Back and Continue; Done opens the first platform.
 		grid-column: 2;
 		justify-self: center;
 	}
-	section > .caption {
+	.demo {
+		display: grid;
+		gap: 12px;
+		margin-top: 8px;
+	}
+	/* Two grid rows tall: a third row (at Label) stays below the frame, and a short fade softens any cut. */
+	.crop {
+		mask-image: linear-gradient(to bottom, black calc(100% - 24px), transparent);
+	}
+	.demo figcaption {
 		text-align: center;
 	}
 	.platforms {

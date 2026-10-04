@@ -1,7 +1,11 @@
 // The content script's controller: finds cards as they are inserted, decides what happens to
 // each with the matching engine, and applies the treatment before the page paints.
 import { INPAGE_COPY } from '@colander/shared/copy';
-import { hyper, Layer, bar, chip, cover, gridStub, inpageContext, makeHost, pageIsDark, reducedMotion, reportPill, setTheme, tagPill, type EvidenceActions } from '@colander/shared/inpage';
+// Deep imports, not the inpage barrel: the barrel also carries the demo feed and its bundled
+// thumbnail images, which belong to extension pages only (a build test checks).
+import { hyper, pageIsDark, reducedMotion } from '@colander/shared/inpage/dom.ts';
+import { inpageContext, makeHost, setTheme } from '@colander/shared/inpage/host.ts';
+import { Layer, bar, chip, cover, gridStub, reportPill, tagPill, type EvidenceActions } from '@colander/shared/inpage/ui.ts';
 import { SLOP_TYPE_HINT, SLOP_TYPE_WORD, TEST_WORD, type Action, type SlopType, type TagVerdict, type Test } from '@colander/shared/verdicts';
 import { Info, Undo2 } from 'lucide';
 import defaults from '../adapters/default-config.json';
@@ -705,6 +709,7 @@ export function start(): void {
 		ui().report({
 			handle,
 			items,
+			noun: platform === 'yt' || platform === 'tt' ? 'video' : 'post',
 			send: async (input) => {
 				const reason = reportReason(input.note, input.slopType, input.tests);
 				if (!reason) return { ok: false, error: 'Choose a type or a test, or add a note, so reviewers know what to look for.' };

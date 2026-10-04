@@ -4,6 +4,7 @@ of what each level does, and per-platform levels for Plus.
 -->
 <script lang="ts">
 	import { PageHeader, PlatformTag, PlusTag, StrictnessTable } from '@colander/shared';
+	import { DEMO_THUMBS_NOTE } from '@colander/shared/copy';
 	import Card from '@colander/shared/components/ui/card/card.svelte';
 	import SegmentedControl from '@colander/shared/components/ui/segmented-control/segmented-control.svelte';
 	import { PLATFORMS, PLATFORM_NAME, STRICTNESS, STRICTNESS_WORD, type Platform, type Strictness } from '@colander/shared/verdicts';
@@ -40,6 +41,7 @@ of what each level does, and per-platform levels for Plus.
 				<LevelCard {level} on={settings.strictness === level} onpick={pick} />
 			{/each}
 		</div>
+		<p class="caption note">{DEMO_THUMBS_NOTE}</p>
 	</section>
 
 	<StrictnessTable current={settings.strictness} />
@@ -98,6 +100,9 @@ of what each level does, and per-platform levels for Plus.
 	.rows :global(.uin-seg) {
 		width: 400px;
 		max-width: 100%;
+	}
+	.note {
+		margin-top: 12px;
 	}
 	.caption {
 		padding-top: 8px;

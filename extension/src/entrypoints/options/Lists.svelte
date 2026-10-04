@@ -14,7 +14,6 @@
 	import { itemFromUrl, parseTargetKey, sourceFromUrl, targetKey } from '../../lib/ids';
 	import { ORIGINS } from '../../lib/platforms';
 	import { DEFAULT_STATUS, K, withDefaults, type MyListEntry, type Settings, type Status } from '../../lib/settings';
-	import ListStatus from '../../ui/ListStatus.svelte';
 	import { send, stored } from '../../ui/store.svelte';
 
 	const status = stored<Status>(K.status, DEFAULT_STATUS);
@@ -99,8 +98,6 @@
 <PageHeader variant="app" eyebrow="Options" title="Lists" lede="Colander matches pages against lists on this device. Nothing about what you watch is sent to check them." />
 
 <div class="cards">
-	<ListStatus class="lead-status" />
-
 	<Card title="Core list" headingLevel={2}>
 		<p class="muted">The shared, signed list every install uses. It updates every hour, and blocking keeps working offline from the last copy.</p>
 		<dl class="facts">

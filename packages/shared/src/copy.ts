@@ -8,6 +8,10 @@ import type { Platform, Signal, TagVerdict, Verdict } from './verdicts';
 export const DEFINITION =
 	'For this product, AI slop is AI-generated content that is mass-produced with little human effort to capture attention or money, and that gives the viewer little in return. AI use alone never makes something slop.';
 
+/** The definition for first-run and marketing pages, said as what Colander does. The spec wording stays in the docs. */
+export const DEFINITION_PUBLIC =
+	'Colander treats AI-generated content as slop when it is mass-produced with little human effort to capture attention or money, and gives you little in return. AI use alone never makes something slop.';
+
 export const TAGLINE = { first: 'Drain the slop.', second: 'Keep the substance.' } as const;
 
 /* Privacy */
@@ -149,6 +153,9 @@ export const PLATFORM_DOMAIN: Record<Platform, string> = {
 
 export const SUPPORTED_SITES = 'Colander works on YouTube, TikTok, Instagram and Facebook.';
 
+/** When a source verdict is looked at again, as the source page and the side panel say it. */
+export const RESCORE_LINE = (next: string | null) => `Re-scored every 90 days.${next ? ` Next: ${next}` : ''}`;
+
 /* Tagging */
 
 /** The one-line meaning under each tag choice. */
@@ -185,10 +192,12 @@ export const INPAGE_COPY = {
 	coreList: (date: string) => `Core list, updated ${date}`,
 	appeal: (sourceNoun: string) => `Is this your ${sourceNoun}? Appeal this verdict.`,
 	tagTitle: (noun: string) => `Tag this ${noun}`,
+	/** Under the tag choices, so it is said before the choice: the toasts stay one line. */
+	tagCounts: 'Your tag counts toward the shared list.',
 	tagged: {
-		slop: 'Tagged. Hidden for you now, and counted toward the shared list.',
-		ai_fine: 'Tagged as AI-made but fine. Counted toward the shared list.',
-		not_slop: 'Tagged as not slop. Counted toward the shared list.'
+		slop: 'Tagged and hidden.',
+		ai_fine: 'Tagged as AI-made but fine.',
+		not_slop: 'Tagged as not slop.'
 	} satisfies Record<TagVerdict, string>,
 	skipped: (n: number, noun: string) => `Skipped ${n} slop ${n === 1 ? noun : `${noun}s`}.`,
 	chipName: (word: string, hidden: boolean) => `${word}, why this is ${hidden ? 'hidden' : 'labeled'}`,
@@ -297,3 +306,6 @@ export const DEMO_MINI_ITEMS = [2, 6, 3, 1];
 
 /** Demo popup values for the hero and the store art. Never live community counts. */
 export const DEMO_POPUP = { hiddenToday: 44 } as const;
+
+/** The disclosure shown with every picture of the demo feed, in caption style. */
+export const DEMO_THUMBS_NOTE = 'Thumbnails are AI-generated illustrations.';
