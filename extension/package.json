@@ -10,7 +10,7 @@
     "zip": "wxt zip",
     "check": "wxt prepare && svelte-check --tsconfig ./tsconfig.json --fail-on-warnings",
     "test": "vitest run",
-    "test:e2e": "pnpm build:e2e && playwright test --project=e2e",
+    "test:e2e": "pnpm build:e2e && playwright test --project=e2e --project=perf",
     "test:live": "pnpm build:e2e && playwright test --project=live",
     "screenshots": "pnpm build:e2e && SCREENSHOTS=1 playwright test --project=e2e shots sidepanel",
     "icons": "node scripts/make-icons.ts",
