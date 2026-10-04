@@ -1,7 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { PUBLIC_STORE_URL } from '$app/env/public';
-	import { PageHeader, PLAN_COPY, PriceCard } from '@colander/shared';
+	import { PageHeader, PLAN_COPY, PLAN_FEES, PriceCard } from '@colander/shared';
 	import Button from '@colander/shared/components/ui/button/button.svelte';
 	import SegmentedControl from '@colander/shared/components/ui/segmented-control/segmented-control.svelte';
 	import Check from '@lucide/svelte/icons/check';
@@ -11,6 +10,7 @@
 	import { api, ApiError, errorText } from '#lib/api.ts';
 	import { loadAccount, session } from '#lib/session.svelte.ts';
 	import EmailSignIn from '#lib/components/EmailSignIn.svelte';
+	import InstallButton from '#lib/components/InstallButton.svelte';
 	import Notice from '#lib/components/Notice.svelte';
 
 	type Interval = 'year' | 'month';
@@ -96,7 +96,7 @@
 
 <svelte:head>
 	<title>Plans · Colander</title>
-	<meta name="description" content="Blocking is free for good. Plus costs $3 a month or $30 a year, and paying never changes a verdict." />
+	<meta name="description" content="Blocking is free for good. Plus costs {PLAN_COPY.plus.short}, and paying never changes a verdict." />
 </svelte:head>
 
 <div class="cl-container page-top">
@@ -125,7 +125,9 @@
 	</div>
 
 	<div class="prices">
-		<PriceCard plan="free" headingLevel={2} cta={{ href: PUBLIC_STORE_URL }} />
+		<PriceCard plan="free" headingLevel={2}>
+			{#snippet action()}<InstallButton variant="secondary" size="xl" />{/snippet}
+		</PriceCard>
 		<div class="plus-col">
 			<!-- One CTA everywhere, "Start 14 days free"; buying outright is the secondary action under it. -->
 			<PriceCard
@@ -159,7 +161,7 @@
 			The trial starts in the extension, with no account and no card: open Options and choose any Plus feature. When it ends, Plus turns off
 			on its own and blocking carries on.
 		</p>
-		<Button variant="secondary" size="xl" href={PUBLIC_STORE_URL}>Add to Chrome</Button>
+		<span class="trial-btn"><InstallButton variant="secondary" size="xl" block={false} /></span>
 	</section>
 
 	<section class="supporter uin-card uin-card-lg uin-card-pad" aria-labelledby="supporter-title">
@@ -202,24 +204,18 @@
 	</section>
 
 	<section class="block" aria-labelledby="fees-title">
-		<h2 class="cl-title" id="fees-title">Where your $3 goes</h2>
+		<h2 class="cl-title" id="fees-title">{PLAN_FEES.title}</h2>
 		<details class="fees">
 			<summary>Card fees, and why yearly is preselected<ChevronDown size={16} aria-hidden="true" /></summary>
-			<p class="cl-muted">
-				Card payments carry a fixed fee per charge, so a fifth of a $3 monthly charge can go to fees. Checkout runs through a merchant of
-				record, which handles sales tax and VAT in every country.
-			</p>
+			<p class="cl-muted">{PLAN_FEES.lead}</p>
 			<table class="plain stack-sm">
 				<thead>
-					<tr>
-						<th scope="col">Charge</th>
-						<th scope="col">Card processor, about 2.9% + $0.30</th>
-						<th scope="col">Merchant of record, about 5% + $0.50</th>
-					</tr>
+					<tr>{#each PLAN_FEES.columns as c (c)}<th scope="col">{c}</th>{/each}</tr>
 				</thead>
 				<tbody>
-					<tr><th scope="row">$3 monthly</th><td data-label="Card processor">$0.39, or 13%</td><td data-label="Merchant of record">$0.65, or 22%</td></tr>
-					<tr><th scope="row">$30 yearly</th><td data-label="Card processor">$1.17, or 3.9%</td><td data-label="Merchant of record">$2.00, or 6.7%</td></tr>
+					{#each PLAN_FEES.rows as [charge, card, mor] (charge)}
+						<tr><th scope="row">{charge}</th><td data-label="Card processor">{card}</td><td data-label="Merchant of record">{mor}</td></tr>
+					{/each}
 				</tbody>
 			</table>
 			<p class="cl-caption cl-muted">Rates as quoted in a 2026 payments guide. Vendors may differ.</p>

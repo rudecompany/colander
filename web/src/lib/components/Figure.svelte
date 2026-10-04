@@ -15,7 +15,7 @@ get Fig. 4 redrawn on 300 units, as 440 units would set its labels below 12 px t
 	const uid = $props.id();
 	const LABEL = $derived({
 		1: 'Items with AI evidence pass through the rim into a bowl where the three tests apply. Items without AI evidence rest on the rim and are never slop.',
-		2: 'Four rings for the four evidence layers. Two of them overlap, and only that overlap, where two layers agree, can be hidden.',
+		2: 'Four rings for the four evidence layers, in a cluster. Two of them overlap at the center, and only that overlap, where two layers agree, can be hidden.',
 		3: 'A stack of tags stops at a dashed line. Past it, Slop also needs AI evidence and a mass-produced source.',
 		4: `The signed list travels to your device, which matches your feed against it there. Core list${version ? ` ${version}` : ''}.`
 	});
@@ -52,23 +52,25 @@ get Fig. 4 redrawn on 300 units, as 440 units would set its labels below 12 px t
 		<path class="line dash" d="M169 36V108M205 54V122" />
 		<text x="187" y="164" class="lbl" text-anchor="middle">Three tests</text>
 	{:else if n === 2}
+		<!-- A 2 by 2 cluster: the agreeing pair overlaps at the center, and every label sits outside
+		     its ring, on the cluster's outer side. -->
 		<defs>
-			<clipPath id="{uid}-b"><circle cx="154" cy="128" r="34" /></clipPath>
+			<clipPath id="{uid}-b"><circle cx="162" cy="124" r="30" /></clipPath>
 			<pattern id="{uid}-ink" width="6" height="6" patternUnits="userSpaceOnUse"><circle cx="3" cy="3" r="1.5" class="fill" /></pattern>
 		</defs>
 		<g class="ring">
-			<circle cx="68" cy="52" r="28" />
-			<circle cx="292" cy="52" r="28" />
-			<circle cx="154" cy="128" r="34" />
-			<circle cx="198" cy="128" r="34" />
+			<circle cx="132" cy="50" r="30" />
+			<circle cx="228" cy="50" r="30" />
+			<circle cx="162" cy="124" r="30" />
+			<circle cx="198" cy="124" r="30" />
 		</g>
-		<circle cx="198" cy="128" r="34" clip-path="url(#{uid}-b)" fill="url(#{uid}-ink)" />
-		<text x="68" y="100" class="lbl" text-anchor="middle">{LAYER_WORD.provenance}</text>
-		{#each LAYER_WORD.consensus.split(' ') as word, i (i)}<text x="292" y={100 + i * 17} class="lbl" text-anchor="middle">{word}</text>{/each}
-		{#each LAYER_WORD.behavior.split(' ') as word, i (i)}<text x="112" y={124 + i * 18} class="lbl" text-anchor="end">{word}</text>{/each}
-		<text x="240" y="150" class="lbl">{LAYER_WORD.rubric}</text>
-		<path class="main" d="M176 166V176" />
-		<text x="176" y="194" class="lbl strong" text-anchor="middle">Two agree: can be hidden</text>
+		<circle cx="198" cy="124" r="30" clip-path="url(#{uid}-b)" fill="url(#{uid}-ink)" />
+		{#each LAYER_WORD.provenance.split(' ') as word, i (i)}<text x="94" y={55 + i * 17} class="lbl" text-anchor="end">{word}</text>{/each}
+		{#each LAYER_WORD.consensus.split(' ') as word, i (i)}<text x="266" y={46 + i * 17} class="lbl">{word}</text>{/each}
+		{#each LAYER_WORD.behavior.split(' ') as word, i (i)}<text x="124" y={120 + i * 17} class="lbl" text-anchor="end">{word}</text>{/each}
+		{#each LAYER_WORD.rubric.split(' ') as word, i (i)}<text x="236" y={120 + i * 17} class="lbl">{word}</text>{/each}
+		<path class="main" d="M180 156V168" />
+		<text x="180" y="188" class="lbl strong" text-anchor="middle">Two agree: can be hidden</text>
 	{:else if n === 3}
 		<!-- A stack of tags that stops at the line. -->
 		<g class="line">
@@ -87,26 +89,25 @@ get Fig. 4 redrawn on 300 units, as 440 units would set its labels below 12 px t
 		<text x="280" y="26" class="lbl" text-anchor="middle">AI evidence</text>
 		<text x="264" y="186" class="lbl" text-anchor="middle">Mass-produced source</text>
 	{:else}
-		<!-- The signed list card. -->
-		<rect x="8" y="48" width="128" height="112" rx="10" class="line" />
-		<text x="22" y="74" class="lbl strong">Core list</text>
-		{#if version}<text x="22" y="94" class="lbl">{version}</text>{/if}
-		<path class="line" d="M22 114H118M22 130H104M22 146H112" />
-		<path class="main" d="M144 104H184" /><path class="line" d="M178 98L184 104L178 110" />
+		<!-- The signed list card, its name and version on one line. -->
+		<rect x="4" y="48" width="160" height="112" rx="10" class="line" />
+		<text x="18" y="74" class="lbl strong fit">Core list{#if version}{' '}<tspan class="ver">{version}</tspan>{/if}</text>
+		<path class="line" d="M18 98H146M18 114H124M18 130H136M18 146H112" />
+		<path class="main" d="M170 104H196" /><path class="line" d="M190 98L196 104L190 110" />
 		<!-- The device. -->
-		<rect x="194" y="62" width="64" height="84" rx="10" class="line" />
-		<path class="line" d="M214 136H238" />
-		<g class="node"><circle cx="214" cy="100" r="3" /><circle cx="226" cy="100" r="3" /><circle cx="238" cy="100" r="3" /></g>
-		<path class="main" d="M266 104H306" /><path class="line" d="M300 98L306 104L300 110" />
-		<!-- The feed of 3 cards. -->
-		<rect x="316" y="44" width="116" height="32" rx="6" class="line" />
-		<rect x="316" y="88" width="116" height="32" rx="6" class="line" />
-		<rect x="316" y="132" width="116" height="32" rx="6" class="line dash" />
-		<g class="node"><circle cx="332" cy="60" r="3" /><circle cx="332" cy="104" r="3" /></g>
-		<path class="line" d="M344 60H412M344 104H400M332 148H412" />
-		<text x="72" y="182" class="lbl" text-anchor="middle">Signed list</text>
-		<text x="226" y="182" class="lbl" text-anchor="middle">Your device</text>
-		<text x="374" y="194" class="lbl" text-anchor="middle">Your feed</text>
+		<rect x="202" y="62" width="56" height="84" rx="10" class="line" />
+		<path class="line" d="M218 136H242" />
+		<g class="node"><circle cx="218" cy="100" r="3" /><circle cx="230" cy="100" r="3" /><circle cx="242" cy="100" r="3" /></g>
+		<path class="main" d="M264 104H300" /><path class="line" d="M294 98L300 104L294 110" />
+		<!-- The feed: 3 cards, closed up, with nothing in place of what was hidden. -->
+		<rect x="308" y="44" width="128" height="32" rx="6" class="line" />
+		<rect x="308" y="88" width="128" height="32" rx="6" class="line" />
+		<rect x="308" y="132" width="128" height="32" rx="6" class="line" />
+		<g class="node"><circle cx="324" cy="60" r="3" /><circle cx="324" cy="104" r="3" /><circle cx="324" cy="148" r="3" /></g>
+		<path class="line" d="M336 60H416M336 104H404M336 148H420" />
+		<text x="84" y="190" class="lbl" text-anchor="middle">Signed list</text>
+		<text x="230" y="190" class="lbl" text-anchor="middle">Your device</text>
+		<text x="372" y="190" class="lbl" text-anchor="middle">Your feed</text>
 	{/if}
 </svg>
 {#if n === 4}
@@ -123,9 +124,9 @@ get Fig. 4 redrawn on 300 units, as 440 units would set its labels below 12 px t
 		<path class="main" d="M180 76H198" /><path class="line" d="M193 71L198 76L193 81" />
 		<rect x="204" y="28" width="92" height="26" rx="6" class="line" />
 		<rect x="204" y="63" width="92" height="26" rx="6" class="line" />
-		<rect x="204" y="98" width="92" height="26" rx="6" class="line dash" />
-		<g class="node"><circle cx="216" cy="41" r="3" /><circle cx="216" cy="76" r="3" /></g>
-		<path class="line" d="M226 41H284M226 76H274M216 111H284" />
+		<rect x="204" y="98" width="92" height="26" rx="6" class="line" />
+		<g class="node"><circle cx="216" cy="41" r="3" /><circle cx="216" cy="76" r="3" /><circle cx="216" cy="111" r="3" /></g>
+		<path class="line" d="M226 41H284M226 76H274M226 111H280" />
 		<text x="50" y="148" class="lbl" text-anchor="middle">Signed list</text>
 		<text x="150" y="148" class="lbl" text-anchor="middle">Your device</text>
 		<text x="250" y="148" class="lbl" text-anchor="middle">Your feed</text>
@@ -187,5 +188,12 @@ get Fig. 4 redrawn on 300 units, as 440 units would set its labels below 12 px t
 	}
 	.strong {
 		fill: currentColor;
+	}
+	/* "Core list v.412" on one line in its card: 14 units, still 12 px at the band's narrowest. */
+	.fit {
+		font-size: 14px;
+	}
+	.ver {
+		fill: var(--cl-text-muted);
 	}
 </style>

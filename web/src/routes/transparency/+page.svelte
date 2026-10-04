@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { LiveBadge, PageHeader, StatCell, VerdictTally, VERDICTS, fmtListVersion, fmtNum, fmtShortDate, fmtTime } from '@colander/shared';
+	import { LiveBadge, PageHeader, PLAN_COPY, StatCell, VerdictTally, VERDICTS, fmtListVersion, fmtNum, fmtShortDate, fmtTime } from '@colander/shared';
 	import Ban from '@lucide/svelte/icons/ban';
 	import CircleDashed from '@lucide/svelte/icons/circle-dashed';
 	import CircleDot from '@lucide/svelte/icons/circle-dot';
@@ -21,7 +21,7 @@
 		Never: Ban
 	} as const;
 	const funding: [string, string, keyof typeof STATUS][] = [
-		['Plus subscriptions', '$3 a month or $30 a year, from version 1.0', 'Planned'],
+		['Plus subscriptions', `${PLAN_COPY.plus.short}, from version 1.0`, 'Planned'],
 		['Gifts', 'Once or monthly, any amount, with optional credit', 'Open'],
 		['Grants', 'From foundations that fund work on the information ecosystem', 'Sought'],
 		['Advertising', 'Ads in the extension, on this site or in the lists', 'Never'],
@@ -59,7 +59,8 @@
 	<section class="block" aria-labelledby="live-title">
 		<div class="block-head">
 			<h2 class="cl-title" id="live-title">The list, right now</h2>
-			{#if live.asOf}<p class="cl-figure cl-muted">As of {fmtShortDate(live.asOf)}, {fmtTime(live.asOf)}</p>{/if}
+			<!-- The line keeps its height before the numbers arrive, so the body never moves. -->
+			<p class="cl-figure cl-muted as-of">{#if live.asOf}As of {fmtShortDate(live.asOf)}, {fmtTime(live.asOf)}{/if}</p>
 		</div>
 		{#if !stats && live.failed}
 			<Notice tone="error" title="Live numbers could not load"><p>Please try again in a moment.</p></Notice>
@@ -166,8 +167,13 @@
 </div>
 
 <style>
+	/* The badge's line is held before the list version is known, so the page below never moves. */
 	.badge {
+		min-height: 24px;
 		margin-top: 16px;
+	}
+	.as-of {
+		min-height: 16px;
 	}
 	.body {
 		display: grid;

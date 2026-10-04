@@ -8,7 +8,12 @@ becomes "Send to my computer". It opens the share sheet, or copies the address a
 	import Button from '@colander/shared/components/ui/button/button.svelte';
 	import { toast } from '@colander/shared/components/ui/toast/toast.svelte.ts';
 
-	let { onDone, caption = true }: { onDone?: () => void; caption?: boolean } = $props();
+	let {
+		onDone,
+		caption = true,
+		variant = 'primary',
+		size = 'xxl'
+	}: { onDone?: () => void; caption?: boolean; variant?: 'primary' | 'secondary'; size?: 'xl' | 'xxl' } = $props();
 
 	async function send() {
 		const url = location.origin + '/';
@@ -33,7 +38,7 @@ becomes "Send to my computer". It opens the share sheet, or copies the address a
 </script>
 
 <div class="send">
-	<Button variant="primary" size="xxl" block onclick={send}><Send size={16} aria-hidden="true" />Send to my computer</Button>
+	<Button {variant} {size} block onclick={send}><Send size={16} aria-hidden="true" />Send to my computer</Button>
 	{#if caption}<p class="cap">Colander runs in Chrome on desktop.</p>{/if}
 </div>
 

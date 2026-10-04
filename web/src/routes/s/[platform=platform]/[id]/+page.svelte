@@ -5,6 +5,7 @@
 		ACTION_TABLE,
 		CopyButton,
 		DotMeter,
+		EVIDENCE_TITLE,
 		EvidenceCard,
 		Lifecycle,
 		LiveBadge,
@@ -16,6 +17,7 @@
 		SLOP_TYPE_WORD,
 		SOURCE_NOUN,
 		STRICTNESS,
+		TagTally,
 		STRICTNESS_WORD,
 		TEST_HINT,
 		TEST_WORD,
@@ -88,7 +90,7 @@
 		source
 			? {
 					...evidence({ verdict: source.verdict, hidden: false, signals: source.signals, imported: source.imported }),
-					title: 'The evidence, layer by layer'
+					title: EVIDENCE_TITLE
 				}
 			: null
 	);
@@ -141,7 +143,7 @@
 		{#if history.length}
 			<section class="block" aria-labelledby="history-title">
 				<h2 class="cl-title" id="history-title">History</h2>
-				<div class="rows">{#each history as e (e.id)}<LogRow entry={e} time="date" />{/each}</div>
+				<div class="rows">{#each history as e (e.id)}<LogRow entry={e} time="date" full />{/each}</div>
 			</section>
 		{/if}
 	{:else if source && why}
@@ -220,11 +222,7 @@
 						<div class="num">
 							<h3>Community tags</h3>
 							{#if tags && tagTotal > 0}
-								<ul class="meters">
-									<li><span>Slop</span><DotMeter value={tags.slop} max={tagTotal} /><b>{fmtNum(tags.slop)}</b></li>
-									<li><span>AI-made but fine</span><DotMeter value={tags.ai_fine} max={tagTotal} /><b>{fmtNum(tags.ai_fine)}</b></li>
-									<li><span>Not slop</span><DotMeter value={tags.not_slop} max={tagTotal} /><b>{fmtNum(tags.not_slop)}</b></li>
-								</ul>
+								<TagTally {tags} />
 								<p class="cl-caption cl-muted">From {plural(source.evidence.taggers, 'tagger')}, each weighted by their track record.</p>
 							{:else}
 								<p class="cl-muted small">No community tags yet.</p>
@@ -257,7 +255,7 @@
 				<section class="block" aria-labelledby="history-title">
 					<h2 class="cl-title" id="history-title">History</h2>
 					{#if history.length}
-						<div class="rows">{#each history as e (e.id)}<LogRow entry={e} time="date" />{/each}</div>
+						<div class="rows">{#each history as e (e.id)}<LogRow entry={e} time="date" full />{/each}</div>
 					{:else}
 						<p class="cl-muted small">No decisions are logged for this {noun} yet.</p>
 					{/if}
@@ -423,28 +421,6 @@
 	}
 	.num h3 {
 		font: var(--cl-body-strong);
-	}
-	.meters {
-		display: grid;
-		gap: 6px;
-		list-style: none;
-		font: var(--cl-caption);
-	}
-	.meters li {
-		display: grid;
-		grid-template-columns: minmax(0, 1fr) auto;
-		align-items: center;
-		gap: 2px 8px;
-	}
-	.meters li :global(.meter) {
-		grid-column: 1;
-		grid-row: 2;
-	}
-	.meters b {
-		grid-column: 2;
-		grid-row: 1 / 3;
-		font: var(--cl-body-strong);
-		font-variant-numeric: tabular-nums;
 	}
 	.rows {
 		border-bottom: 1px solid var(--cl-border);

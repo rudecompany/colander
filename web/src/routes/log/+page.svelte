@@ -131,14 +131,13 @@
 			zero={live.stats ? 'None this week' : undefined}
 			reserve={5}
 		/>
-		<div class="sum-side">
-			<LiveBadge sequence={live.stats?.list_sequence} updatedAt={live.stats?.list_updated_at} now={live.now ?? undefined} />
-			{#if live.stats}
-				<div class="tally">
-					<p class="cl-caption cl-muted">Sources by verdict</p>
-					<VerdictTally counts={live.stats.sources} />
-				</div>
-			{/if}
+		<!-- Before the numbers arrive, the badge and the tally keep their space, so nothing moves. -->
+		<div class="sum-side" class:pending={!live.stats}>
+			<span class="live-slot"><LiveBadge sequence={live.stats?.list_sequence} updatedAt={live.stats?.list_updated_at} now={live.now ?? undefined} /></span>
+			<div class="tally" aria-hidden={live.stats ? undefined : 'true'}>
+				<p class="cl-caption cl-muted">Sources by verdict</p>
+				<VerdictTally counts={live.stats?.sources ?? {}} />
+			</div>
 		</div>
 	</section>
 
@@ -233,6 +232,13 @@
 		display: grid;
 		justify-items: end;
 		gap: 8px;
+	}
+	.live-slot {
+		display: block;
+		min-height: 24px;
+	}
+	.pending .tally {
+		visibility: hidden;
 	}
 	.filters {
 		display: flex;

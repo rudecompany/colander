@@ -13,7 +13,7 @@
 	import EmailSignIn from '#lib/components/EmailSignIn.svelte';
 	import Loading from '#lib/components/Loading.svelte';
 	import Notice from '#lib/components/Notice.svelte';
-	import { PageHeader, PriceCard } from '@colander/shared';
+	import { PageHeader, PLAN_COPY, PriceCard } from '@colander/shared';
 	import Button from '@colander/shared/components/ui/button/button.svelte';
 	import AuthCard from '#lib/components/AuthCard.svelte';
 
@@ -137,7 +137,7 @@
 				<PriceCard plan="plus" size="app" headingLevel={3} cta={{ label: 'See Plus', href: '/plans' }} />
 			{:else}
 				{@const plan = account.plan}
-				<p class="cl-body-lg"><strong>Plus</strong>, billed {plan.interval === 'year' ? 'yearly at $30' : 'monthly at $3'}.</p>
+				<p class="cl-body-lg"><strong>Plus.</strong> {PLAN_COPY.plus.billed[plan.interval]}.</p>
 				<p class="cl-body" aria-live="polite">
 					{#if plan.cancel_at_period_end}
 						Cancelled. Plus stays on until {fmtDate(plan.current_period_end)}, and you will not be charged again.

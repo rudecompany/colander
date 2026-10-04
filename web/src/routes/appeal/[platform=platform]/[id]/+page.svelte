@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { tick } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import { PLATFORM_NAME, SOURCE_NOUN, VerdictChip, canAppeal, sourcePath, type Platform } from '@colander/shared';
@@ -24,6 +25,15 @@
 	let statement = $state('');
 	let sending = $state(false);
 	let formError = $state('');
+	/** The field the error is about, marked invalid, described by the error and focused, as on /account. */
+	let badField = $state<'email' | 'statement' | null>(null);
+
+	async function fail(field: 'email' | 'statement', message: string) {
+		formError = message;
+		badField = field;
+		await tick();
+		document.getElementById(field === 'email' ? 'appeal-email' : 'appeal-statement')?.focus();
+	}
 
 	$effect(() => {
 		const p = platform;
@@ -41,9 +51,11 @@
 
 	async function submit(event: SubmitEvent) {
 		event.preventDefault();
+		if (sending) return;
 		formError = '';
-		if (!email.includes('@')) return (formError = 'Enter the email address where we should send the appeal link.');
-		if (statement.trim().length < 20) return (formError = 'Tell us a little more, in at least 20 characters.');
+		badField = null;
+		if (!email.includes('@')) return fail('email', 'Enter the email address where we should send the appeal link.');
+		if (statement.trim().length < 20) return fail('statement', 'Tell us a little more, in at least 20 characters.');
 		sending = true;
 		try {
 			const res = await api<{ appeal: Appeal; secret: string }>('/v1/appeals', {
@@ -99,20 +111,37 @@
 			<p class="current">Current verdict <VerdictChip verdict={s.verdict} /></p>
 			<div class="field">
 				<label class="field-label" for="appeal-email">Email</label>
-				<Input id="appeal-email" size="lg" type="email" autocomplete="email" required bind:value={email} aria-describedby="email-hint" />
+				<Input
+					id="appeal-email"
+					size="lg"
+					type="email"
+					autocomplete="email"
+					required
+					bind:value={email}
+					aria-invalid={badField === 'email' ? 'true' : undefined}
+					aria-describedby={badField === 'email' ? 'email-hint appeal-error' : 'email-hint'}
+				/>
 				<p class="field-hint" id="email-hint">We send the appeal link and the outcome here. It is never published.</p>
 			</div>
 			<div class="field">
 				<label class="field-label" for="appeal-statement">Your statement</label>
-				<Textarea id="appeal-statement" rows={7} maxlength={2000} required bind:value={statement} aria-describedby="statement-hint" />
+				<Textarea
+					id="appeal-statement"
+					rows={7}
+					maxlength={2000}
+					required
+					bind:value={statement}
+					aria-invalid={badField === 'statement' ? 'true' : undefined}
+					aria-describedby={badField === 'statement' ? 'statement-hint appeal-error' : 'statement-hint'}
+				/>
 				<p class="field-hint" id="statement-hint">
 					How is the {noun} made? Who films, writes and edits it, and what is AI used for, if anything. Your statement is shown to staff,
 					and their reasoning is published.
 				</p>
 			</div>
-			{#if formError}<p class="field-error" role="alert"><CircleAlert size={16} aria-hidden="true" />{formError}</p>{/if}
+			{#if formError}<p class="field-error" id="appeal-error" role="alert"><CircleAlert size={16} aria-hidden="true" />{formError}</p>{/if}
 			<div>
-				<Button type="submit" variant="primary" size="xl" disabled={sending}>
+				<Button type="submit" variant="primary" size="xl" aria-disabled={sending || undefined}>
 					<Scale size={16} aria-hidden="true" />{sending ? 'Starting the appeal' : 'Start the appeal'}
 				</Button>
 			</div>

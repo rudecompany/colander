@@ -76,6 +76,14 @@ test('an imported source with no verdict still names its seed list', async ({ pa
 
 test('an unknown platform is a 404', async ({ page }) => {
 	await mockApi(page);
-	await page.goto('/s/xx/whatever');
+	const res = await page.goto('/s/xx/whatever');
+	expect(res?.status()).toBe(404);
 	await expect(page.getByRole('heading', { level: 1 })).toHaveText('This page went through the holes');
+});
+
+test('an unknown page answers with a real 404, and source pages with 200', async ({ page }) => {
+	await mockApi(page);
+	expect((await page.goto('/no-such-page'))?.status()).toBe(404);
+	await expect(page.getByRole('heading', { level: 1 })).toHaveText('This page went through the holes');
+	expect((await page.goto('/s/yt/UCq3x9Vb2m4LkT7pQe8sW1aZ'))?.status()).toBe(200);
 });

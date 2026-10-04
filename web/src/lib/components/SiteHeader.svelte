@@ -176,11 +176,11 @@ Escape closes it and focus returns to Menu.
 		font: var(--cl-body-strong);
 		cursor: pointer;
 	}
-	/* The 44 px target reaches 12 px into the gutter, so the button draws no box there: it stays
-	   on the grid next to the wordmark, and the word underlines on hover. */
+	/* The 44 px target reaches 12 px into the gutter, so its word stays on the grid next to the
+	   wordmark; the hover tint is the quiet button's. */
+	/* Menu and Close are the same quiet button: icon and word, a tint on hover, never an underline. */
 	.menu-btn:hover {
-		text-decoration: underline;
-		text-underline-offset: 3px;
+		background: color-mix(in srgb, var(--cl-text) 6%, transparent);
 	}
 
 	.sheet {

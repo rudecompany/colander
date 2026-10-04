@@ -1,5 +1,6 @@
 <!--
 @component ArrowLink: a text link that ends in arrow-right at 16 px, for every "->" in the copy.
+Inline, so a long link wraps like text; a word joiner keeps the arrow on the last word's line.
 -->
 <script lang="ts">
 	import type { Snippet } from 'svelte';
@@ -8,13 +9,11 @@
 	let { href, children, class: className = '', size = 'md' }: { href: string; children: Snippet; class?: string; size?: 'sm' | 'md' | 'lg' } = $props();
 </script>
 
-<a {href} class="arrow arrow-{size} {className}">{@render children()}<ArrowRight size={16} aria-hidden="true" /></a>
+<a {href} class="arrow arrow-{size} {className}">{@render children()}&#8288;<ArrowRight size={16} aria-hidden="true" /></a>
 
 <style>
 	.arrow {
-		display: inline-flex;
-		align-items: center;
-		gap: 6px;
+		display: inline;
 		font-weight: 600;
 		text-decoration: none;
 	}
@@ -23,7 +22,9 @@
 		text-underline-offset: 3px;
 	}
 	.arrow :global(svg) {
-		flex: none;
+		display: inline-block;
+		margin-left: 6px;
+		vertical-align: -3px;
 		transition: transform var(--cl-fast) var(--cl-ease);
 	}
 	.arrow:hover :global(svg) {

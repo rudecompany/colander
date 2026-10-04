@@ -18,6 +18,12 @@ test('sign in by emailed link, then the account page shows the account', async (
 	await page.getByLabel('Email').fill('maya@example.com');
 	await page.getByRole('button', { name: 'Email me a sign-in link' }).click();
 	await expect(page.getByText('Check your inbox')).toBeVisible();
+	// Focus follows the form: to the notice once sent, back to the field for another address.
+	await expect(page.locator('.sent-note')).toBeFocused();
+	await page.getByRole('button', { name: 'Use a different address' }).click();
+	await expect(page.getByLabel('Email')).toBeFocused();
+	await page.getByRole('button', { name: 'Email me a sign-in link' }).click();
+	await expect(page.getByText('Check your inbox')).toBeVisible();
 	const send = calls.find((c) => c.path === '/v1/auth/email')!;
 	expect(send.body).toEqual({ email: 'maya@example.com', next: '/account' });
 	expect(send.headers['x-colander-csrf']).toBe('1');

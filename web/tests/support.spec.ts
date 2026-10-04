@@ -27,8 +27,10 @@ test('a custom one-time amount without credit, and the limits', async ({ page })
 	expect(calls.filter((c) => c.path === '/v1/billing/donate')).toHaveLength(0);
 
 	await page.getByLabel('Amount in US dollars').fill('12.50');
-	await page.getByRole('button', { name: 'Give $12.50' }).click();
+	// With the keyboard, the button keeps focus while checkout starts and after it fails.
+	await page.getByRole('button', { name: 'Give $12.50' }).press('Enter');
 	await expect(page.getByText('Donations are not open yet')).toBeVisible();
+	await expect(page.getByRole('button', { name: 'Give $12.50' })).toBeFocused();
 	expect(calls.find((c) => c.path === '/v1/billing/donate')!.body).toEqual({ amount_cents: 1250, recurring: false });
 });
 

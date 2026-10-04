@@ -8,10 +8,9 @@ while their case is open.
 	import { page } from '$app/state';
 	import { PUBLIC_STORE_URL } from '$app/env/public';
 	import { ColanderMark, LiveBadge, PerforationRow } from '@colander/shared';
-	import Button from '@colander/shared/components/ui/button/button.svelte';
 	import { live } from '#lib/live.svelte.ts';
 	import ArrowLink from './ArrowLink.svelte';
-	import SendToComputer from './SendToComputer.svelte';
+	import InstallButton from './InstallButton.svelte';
 
 	const path = $derived(page.url.pathname);
 	const creatorPage = $derived(/^\/(s|appeal)(\/|$)/.test(path));
@@ -59,10 +58,7 @@ while their case is open.
 			<PerforationRow />
 			<div class="cl-container cta-in">
 				<h2 class="cl-display-lg" id="footer-cta">Install once. <span class="cl-tone2">Change nothing.</span></h2>
-				<div class="cta-btn desktop">
-					<Button variant="primary" size="xxl" href={PUBLIC_STORE_URL}>Add to Chrome, free</Button>
-				</div>
-				<div class="cta-btn phone"><SendToComputer caption={false} /></div>
+				<div class="cta-btn"><InstallButton label="Add to Chrome, free" block={false} /></div>
 				<p class="cl-figure small">Chrome on desktop. Also works in Edge and Brave. No account needed.</p>
 			</div>
 		</section>
@@ -106,9 +102,11 @@ while their case is open.
 	.small {
 		color: var(--cl-text-muted);
 	}
-	.phone {
-		display: none;
-		width: 100%;
+	/* Below 1024 the button sends the link: 360 wide on tablets, full width on phones. */
+	@media (max-width: 1023px) {
+		.cta-btn {
+			width: min(100%, 360px);
+		}
 	}
 	.cols {
 		display: grid;
@@ -170,11 +168,8 @@ while their case is open.
 			justify-items: stretch;
 			padding-block: var(--cl-s7);
 		}
-		.desktop {
-			display: none;
-		}
-		.phone {
-			display: block;
+		.cta-btn {
+			width: 100%;
 		}
 		.cols {
 			grid-template-columns: repeat(2, minmax(0, 1fr));

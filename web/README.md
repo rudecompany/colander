@@ -30,10 +30,12 @@ Support and donation links never appear on `/s/*` or `/appeal/*` pages, includin
 
 ### What the server needs to do
 
-- Serve `build/` with this lookup order: the file itself, then `{path}.html`, then `{path}/index.html`, then `200.html`.
-  `tests/static-server.ts` implements exactly this and is what the tests run against.
-- `200.html` is the SPA fallback for source and appeal pages and for unknown paths (the client renders the 404 page).
-- `404.html` is the same shell, written by `pnpm build`, for a host that answers unknown paths with status 404.
+- Serve `build/` with this lookup order: the file itself, then `{path}.html`, then `{path}/index.html`.
+  The Go server (`server/internal/api/site.go`) and `tests/static-server.ts` both do exactly this, and the tests run against the second.
+- `200.html` is the SPA fallback for the client-rendered routes only: `/s/{platform}/{id}`, `/appeal/{platform}/{id}` and `/appeal/status/{id}`.
+- Any other path is a real 404: `404.html` with status 404.
+  It is the same shell, written by `pnpm build`, so the client renders the not-found page.
+  Static hosts need the same rule (see `docs/hosting-plan.md`).
 - Each page carries its Content Security Policy as a `<meta http-equiv>` tag with script hashes.
   The server may also send `frame-ancestors 'none'` as a header, which a meta tag cannot carry.
 
@@ -78,7 +80,7 @@ pnpm -C web build            # checks the generated in-page tokens, then writes 
 | JavaScript, every route | At most 110 KB gzip |
 | CSS on `/` | At most 24 KB gzip |
 | Transfer on `/` | At most 300 KB with brotli |
-| Landing length (`landing.spec.ts`) | At most 8,200 px at 1440 and 12,500 px at 390 |
+| Landing length (`landing.spec.ts`) | At most 8,550 px at 1440 and 13,800 px at 390 (the brief's 8,200 and 12,500, plus the one-column bento and strictness rows on phones, the popup rows in each strictness card, the one-column questions and the hero frame that ends inside a row) |
 
 The demo feed thumbnails are AI-generated illustrations (`packages/shared/src/assets/demo`), and every picture of the demo feed says so: "Thumbnails are AI-generated illustrations."
 They stay files and are never inlined into the JavaScript.
@@ -98,7 +100,7 @@ A shared fixture fails any test that logs a page error or a CSP violation.
 
 | Spec | Covers |
 | --- | --- |
-| `landing.spec.ts` | Hero, the demo following the strictness table and Pause, hidden items leaving no trace while the badge counts them and the docked popup lists them with Show, a recreated feed per platform tab with TikTok skipping hidden videos, the open popover drawn in its final state on load, popup rows, strictness cards, step rules, tile pictures and decision rows fitting at every width in both themes, the comparison without a sources link, keyboard focus through Why and Pause, the thumbnail disclosure, the length budget, the phone hero, the menu sheet, the live log preview |
+| `landing.spec.ts` | Hero, the demo following the strictness table and Pause, hidden items leaving no trace while the badge counts them and the docked popup lists them with Show, a recreated feed per platform tab with TikTok skipping hidden videos, the open popover drawn in its final state on load, Show putting an item back in its slot, off every count, with a "Shown again." notice and Undo, popup rows, strictness cards, step rules, tile pictures and decision rows fitting at every width in both themes, the comparison and its linked sources on /definition, keyboard focus through Why and Pause with no trap around the popover open on load, the phone popup's control staying put, the thumbnail disclosure, the length budget, the phone hero, the menu sheet, the live log preview |
 | `definition.spec.ts` | The strictness table fits the reading measure and stacks by level on phones |
 | `budget.spec.ts` | The performance budget above |
 | `source.spec.ts` | Source pages for all five verdicts, Not rated, unknown platforms, no support links |

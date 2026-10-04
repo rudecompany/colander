@@ -1,5 +1,10 @@
-<!-- @component Sign in by emailed link (POST /v1/auth/email). No passwords. -->
+<!--
+@component Sign in by emailed link (POST /v1/auth/email). No passwords. Focus follows the form:
+once the link is sent, focus moves to the "Check your inbox" notice, which is read out; "Use a
+different address" brings focus back to the email field. The button stays focusable while sending.
+-->
 <script lang="ts">
+	import { tick } from 'svelte';
 	import Mail from '@lucide/svelte/icons/mail';
 	import CircleAlert from '@lucide/svelte/icons/circle-alert';
 	import Button from '@colander/shared/components/ui/button/button.svelte';
@@ -18,8 +23,18 @@
 	let status = $state<'idle' | 'sending' | 'sent'>('idle');
 	let error = $state('');
 
+	let sentBox = $state<HTMLElement>();
+	let field = $state<HTMLElement>();
+
+	async function show(next: 'idle' | 'sent') {
+		status = next;
+		await tick();
+		(next === 'sent' ? sentBox : field?.querySelector('input'))?.focus();
+	}
+
 	async function submit(event: SubmitEvent) {
 		event.preventDefault();
+		if (status === 'sending') return;
 		error = '';
 		if (!/^\S+@\S+\.\S+$/.test(email.trim())) {
 			error = 'Enter an email address, like name@example.com.';
@@ -28,7 +43,7 @@
 		status = 'sending';
 		try {
 			await api('/v1/auth/email', { method: 'POST', body: { email: email.trim(), next } });
-			status = 'sent';
+			await show('sent');
 		} catch (e) {
 			error = errorText(e);
 			status = 'idle';
@@ -38,14 +53,16 @@
 
 {#if status === 'sent'}
 	<div class="sent">
-		<Notice tone="success" title="Check your inbox">
-			<p>We sent a sign-in link to {email.trim()}. It works once and expires after 20 minutes.</p>
-		</Notice>
-		<Button variant="quiet" size="xl" onclick={() => (status = 'idle')}>Use a different address</Button>
+		<div class="sent-note" tabindex="-1" bind:this={sentBox}>
+			<Notice tone="success" title="Check your inbox">
+				<p>We sent a sign-in link to {email.trim()}. It works once and expires after 20 minutes.</p>
+			</Notice>
+		</div>
+		<Button variant="quiet" size="xl" onclick={() => show('idle')}>Use a different address</Button>
 	</div>
 {:else}
 	<form class="signin" onsubmit={submit} novalidate>
-		<div class="field">
+		<div class="field" bind:this={field}>
 			<label class="field-label" for="signin-email">Email</label>
 			<Input
 				size="lg"
@@ -65,7 +82,7 @@
 			{/if}
 		</div>
 		<div>
-			<Button type="submit" variant="primary" size="xl" {block} disabled={status === 'sending'}>
+			<Button type="submit" variant="primary" size="xl" {block} aria-disabled={status === 'sending' || undefined}>
 				<Mail size={16} aria-hidden="true" />
 				<span>{status === 'sending' ? 'Sending' : submitLabel}</span>
 			</Button>
@@ -84,7 +101,12 @@
 	.sent {
 		justify-items: start;
 	}
+	.sent-note,
 	.sent :global(.notice) {
 		width: 100%;
+	}
+	.sent-note:focus {
+		outline: none;
+		box-shadow: none;
 	}
 </style>

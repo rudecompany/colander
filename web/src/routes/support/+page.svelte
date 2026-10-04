@@ -29,6 +29,8 @@
 
 	async function donate(event: SubmitEvent) {
 		event.preventDefault();
+		// aria-disabled, not disabled, while working: the button keeps keyboard focus.
+		if (working) return;
 		problem = null;
 		if (!valid) {
 			problem = { title: 'Choose an amount', body: 'Any amount from $1 to $1,000 works.' };
@@ -89,9 +91,9 @@
 				value={preset}
 				onChange={(v) => (preset = v)}
 				options={[
-					{ value: '300', label: '$3' },
-					{ value: '500', label: '$5' },
-					{ value: '1000', label: '$10' },
+					{ value: '300', label: fmtMoney(300) },
+					{ value: '500', label: fmtMoney(500) },
+					{ value: '1000', label: fmtMoney(1000) },
 					{ value: 'other', label: 'Other' }
 				]}
 			/>
@@ -116,7 +118,7 @@
 			<Notice title="Payment closed before it finished"><p>Nothing was charged. Thank you for thinking of us.</p></Notice>
 		{/if}
 
-		<Button type="submit" variant="primary" size="xxl" block disabled={working}>
+		<Button type="submit" variant="primary" size="xxl" block aria-disabled={working || undefined}>
 			<Heart size={16} aria-hidden="true" />
 			{working ? 'Opening checkout' : valid ? `Give ${fmtMoney(cents)}${recurring === 'monthly' ? ' a month' : ''}` : 'Continue to payment'}
 		</Button>

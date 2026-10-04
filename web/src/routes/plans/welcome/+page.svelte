@@ -2,8 +2,9 @@
 	import { onMount } from 'svelte';
 	import type { Account } from '@colander/shared/api';
 	import { detectExtension, type ExtensionState } from '#lib/extension.ts';
-	import { fmtDate } from '@colander/shared';
+	import { PLAN_COPY, fmtDate } from '@colander/shared';
 	import { loadAccount, session } from '#lib/session.svelte.ts';
+	import AuthCard from '#lib/components/AuthCard.svelte';
 	import ConnectBrowser from '#lib/components/ConnectBrowser.svelte';
 	import EmailSignIn from '#lib/components/EmailSignIn.svelte';
 	import Loading from '#lib/components/Loading.svelte';
@@ -58,6 +59,16 @@
 	<meta name="robots" content="noindex" />
 </svelte:head>
 
+<!-- Signed out, this is the same centered sign-in card as /account, /console and /auth. -->
+{#if phase === 'signed_out'}
+	<AuthCard
+		eyebrow="Plus"
+		title="Sign in to finish"
+		lede="Your payment went through. Sign in with the email you used at checkout to connect Plus to this browser."
+	>
+		<EmailSignIn next="/plans/welcome" />
+	</AuthCard>
+{:else}
 <div class="cl-container page-top">
 	<PageHeader
 		eyebrow="Plus"
@@ -69,11 +80,6 @@
 <div class="cl-container page-body col">
 	{#if phase === 'confirming'}
 		<Loading label="Confirming your payment" />
-	{:else if phase === 'signed_out'}
-		<Notice title="Sign in to finish">
-			<p>Your payment went through. Sign in with the email you used at checkout to connect Plus to this browser.</p>
-		</Notice>
-		<div class="uin-card uin-card-lg uin-card-pad signin-card"><EmailSignIn next="/plans/welcome" /></div>
 	{:else if phase === 'slow'}
 		<Notice title="Your payment is still being confirmed">
 			<p>This can take a minute. Nothing more is needed from you. Check your <a href="/account">account page</a> shortly to connect this browser.</p>
@@ -81,7 +87,7 @@
 	{:else if plan}
 		<section class="uin-card uin-card-lg uin-card-pad section-card" aria-labelledby="plan-title">
 			<h2 class="cl-title" id="plan-title">Your plan</h2>
-			<p class="cl-body-lg"><strong>Plus</strong>, billed {plan.interval === 'year' ? 'yearly at $30' : 'monthly at $3'}.</p>
+			<p class="cl-body-lg"><strong>Plus.</strong> {PLAN_COPY.plus.billed[plan.interval]}.</p>
 			<p class="cl-body">Renews on {fmtDate(plan.current_period_end)}. You can cancel any time in one click on your <a href="/account">account page</a>.</p>
 		</section>
 
@@ -96,6 +102,7 @@
 		</section>
 	{/if}
 </div>
+{/if}
 
 <style>
 	.col {
@@ -112,8 +119,5 @@
 	.section-card {
 		display: grid;
 		gap: var(--cl-s3);
-	}
-	.signin-card {
-		max-width: 520px;
 	}
 </style>

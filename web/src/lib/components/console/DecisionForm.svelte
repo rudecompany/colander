@@ -338,13 +338,18 @@ appeal in review (403 staff_required), and Slop or Likely slop needs AI evidence
 		opacity: 0;
 		pointer-events: none;
 	}
-	.verdict-option:has(input:focus-visible) {
-		outline: 2px solid var(--cl-brand);
-		outline-offset: 2px;
-	}
 	.verdict-option.on {
 		border-color: var(--cl-brand);
 		box-shadow: inset 0 0 0 1px var(--cl-brand);
+	}
+	/* The one focus ring, drawn on the tile for its hidden radio. */
+	.verdict-option:has(input:focus-visible) {
+		outline: 2px solid transparent;
+		outline-offset: 2px;
+		box-shadow: var(--uin-focus-ring);
+	}
+	.verdict-option.on:has(input:focus-visible) {
+		box-shadow: inset 0 0 0 1px var(--cl-brand), var(--uin-focus-ring);
 	}
 	.verdict-option.locked {
 		opacity: 0.55;

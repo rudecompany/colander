@@ -1,11 +1,10 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { PUBLIC_STORE_URL } from '$app/env/public';
 	import {
 		ACTION_DONE_WORD,
 		ACTION_TABLE,
 		ColanderMark,
-		DEFINITION,
+		DEFINITION_PUBLIC,
 		DEMO_FEED,
 		DEMO_THUMBS_NOTE,
 		DotField,
@@ -19,6 +18,7 @@
 		PLATFORM_SURFACES,
 		PLAN_COPY,
 		PlatformTag,
+		PopupRows,
 		PriceCard,
 		PrivacyFacts,
 		StatCell,
@@ -32,38 +32,45 @@
 		VerdictGlyph,
 		VERDICTS,
 		VERDICT_PLAIN,
+		VERDICT_WORD,
 		fmtAgo,
 		fmtDateTime,
 		fmtListVersion,
 		fmtNum,
 		fmtShortDate,
 		type Platform,
+		type PopupRow,
 		type Strictness
 	} from '@colander/shared';
-	import { demoCounts } from '@colander/shared/inpage';
+	import { demoAction, demoCounts } from '@colander/shared/inpage';
 	import { evidence } from '@colander/shared/inpage/evidence.ts';
 	import type { LogEntry } from '@colander/shared/api';
-	import Button from '@colander/shared/components/ui/button/button.svelte';
 	import NativeSelect from '@colander/shared/components/ui/native-select/native-select.svelte';
 	import Tabs from '@colander/shared/components/ui/tabs/tabs.svelte';
+	import Check from '@lucide/svelte/icons/check';
 	import ChevronDown from '@lucide/svelte/icons/chevron-down';
 	import Eye from '@lucide/svelte/icons/eye';
 	import EyeOff from '@lucide/svelte/icons/eye-off';
 	import InfinityIcon from '@lucide/svelte/icons/infinity';
 	import ArrowRight from '@lucide/svelte/icons/arrow-right';
 	import Lock from '@lucide/svelte/icons/lock';
+	import Minus from '@lucide/svelte/icons/minus';
 	import Scale from '@lucide/svelte/icons/scale';
 	import Tag from '@lucide/svelte/icons/tag';
 	import Undo2 from '@lucide/svelte/icons/undo-2';
 	import ArrowLink from '#lib/components/ArrowLink.svelte';
 	import Figure from '#lib/components/Figure.svelte';
 	import SectionHead from '#lib/components/SectionHead.svelte';
-	import SendToComputer from '#lib/components/SendToComputer.svelte';
+	import InstallButton from '#lib/components/InstallButton.svelte';
 	import { COMPARISON, COMPARISON_CHECKED, COMPARISON_SCOPE, FAQ, KAPWING, KAPWING_URL } from '#lib/content.ts';
 	import { live } from '#lib/live.svelte.ts';
 
-	/* Hero demo: one state drives the frame, the phone feed and the popup each of them carries. */
-	const PHONE = [6, 3, 1];
+	/* Hero demo: one state drives the frame, the phone feed and the popup each of them carries. The
+	   phone feed has a fixed height, like the desktop frame, so the popup's control under it stays
+	   put when a level hides items, and enough clear videos to fill it at every level. */
+	const PHONE = [6, 3, 1, 5, 7, 9, 10, 11];
+	// At Standard the page ends where the third card starts, so the fade covers a thumbnail, not words.
+	const PHONE_HEIGHT = 541;
 	let platform = $state<Platform>('yt');
 	let level = $state<Strictness>('standard');
 	let paused = $state(false);
@@ -80,13 +87,15 @@
 	/* Strictness cards, the specimen strip and the popup rows in tile 02. */
 	const MINI = [2, 6, 3, 1].map((id) => DEMO_FEED.find((i) => i.id === id)!);
 	const ACTION_ICON = { hide: EyeOff, label: Tag, allow: Eye };
-	const HIDDEN_ROWS = [2, 6].map((id) => DEMO_FEED.find((i) => i.id === id)!);
+	/** The popup's rows for what a level hides from the mini feed: each one stays listed, with Show. */
+	const popupRows = (level: Strictness): PopupRow[] =>
+		MINI.filter((i) => demoAction(i, level) === 'hide').map((i) => ({ id: i.id, verdict: i.verdict, title: i.title, action: 'hide' }));
+	const HIDDEN_ROWS = popupRows('standard');
 
 	/* Bento. */
 	const item6 = DEMO_FEED.find((i) => i.id === 6)!;
-	const bentoEvidence = $derived(
-		evidence({ verdict: 'likely_slop', hidden: true, rows: item6.evidence, listDate, platform: 'yt', sourceId: item6.handle, appealable: true, inertLinks: true })
-	);
+	// Tile 03 is the compact popover: the two layers that agreed and the list's date, whole.
+	const bentoEvidence = $derived(evidence({ verdict: 'likely_slop', hidden: true, rows: item6.evidence?.filter((r) => r.agreed), listDate }));
 	const bentoLog: LogEntry = {
 		id: 'demo',
 		at: '2026-10-02T14:02:00Z',
@@ -103,17 +112,6 @@
 		actor_name: null
 	};
 	const noop = () => {};
-
-	// On phones the six steps scroll sideways; only then is the list a keyboard stop.
-	let bento = $state<HTMLElement>();
-	let bentoScrolls = $state(false);
-	$effect(() => {
-		const el = bento;
-		if (!el) return;
-		const ro = new ResizeObserver(() => (bentoScrolls = el.scrollWidth > el.clientWidth + 1));
-		ro.observe(el);
-		return () => ro.disconnect();
-	});
 
 	// The phone feed is built in the browser, so the prerendered hero ships one feed (the 40 KB
 	// budget); its space is reserved until then. Without JavaScript, phones get the desktop feed.
@@ -146,8 +144,7 @@
 			every item.
 		</p>
 		<div class="ctas">
-			<span class="desk"><Button variant="primary" size="xxl" href={PUBLIC_STORE_URL}>Add to Chrome, free</Button></span>
-			<span class="phone"><SendToComputer /></span>
+			<span class="install"><InstallButton label="Add to Chrome, free" block={false} caption /></span>
 			<ArrowLink href="/definition" size="lg">See how it decides</ArrowLink>
 		</div>
 		<p class="cl-figure version">
@@ -182,12 +179,26 @@
 				<div class="popup-box">{@render popup()}</div>
 			</div>
 		{/snippet}
+		<!-- 742 tall: the docked popup fits, and the page ends 48 px into the fourth row's thumbnails, so
+		     the fade covers pictures, never words. -->
 		<div class="frame-desk">
-			<FeedDemo bind:platform bind:level bind:paused height={696} list={listInfo} {listDate} below={popupBelow} />
+			<FeedDemo bind:platform bind:level bind:paused height={742} list={listInfo} {listDate} below={popupBelow} />
 		</div>
 		<div class="frame-phone" class:reserved={!phoneFeed}>
 			{#if phoneFeed}
-				<FeedDemo bind:platform bind:level bind:paused layout="list" items={PHONE} bind:open={openPhone} popup={false} list={listInfo} {listDate} below={popupBelow} />
+				<FeedDemo
+					bind:platform
+					bind:level
+					bind:paused
+					layout="list"
+					items={PHONE}
+					bind:open={openPhone}
+					popup={false}
+					height={PHONE_HEIGHT}
+					list={listInfo}
+					{listDate}
+					below={popupBelow}
+				/>
 			{/if}
 		</div>
 		<noscript><style>.frame-desk{display:block!important}.frame-phone{display:none!important}</style></noscript>
@@ -279,7 +290,7 @@
 	<div class="cl-container">
 		<div class="slop-top">
 			<SectionHead id="def-title" eyebrow="What counts as slop" title="Slop is a production pattern," title2="not a tool." />
-			<p class="cl-title-lg statement">{DEFINITION}</p>
+			<p class="cl-title-lg statement">{DEFINITION_PUBLIC}</p>
 		</div>
 		<ul class="specimens" aria-label="The five verdicts">
 			{#each VERDICTS as v (v)}
@@ -309,10 +320,22 @@
 		<SectionHead id="strict-title" eyebrow="Your choice" title="You set the strictness." title2="Colander never decides what an adult may see." />
 		<ul class="levels">
 			{#each STRICTNESS as l (l)}
+				{@const rows = popupRows(l)}
 				<li class="level" class:std={l === 'standard'}>
 					<h3 class="level-name">{STRICTNESS_WORD[l]}{#if l === 'standard'}<span class="uin-badge uin-badge-lg">Default</span>{/if}</h3>
 					<p class="level-hint">{STRICTNESS_HINT[l]}</p>
-					<FeedDemo variant="mini" level={l} />
+					<div class="level-feed">
+						<FeedDemo variant="mini" level={l} />
+						<!-- What the level hides leaves the feed, and the popup lists it with Show. -->
+						{#if rows.length}
+							<div class="in-popup" role="img" aria-label="In the popup: {rows.map((r) => `${r.verdict ? VERDICT_WORD[r.verdict] : ''}, ${r.title}`).join('; ')}. Each with Show.">
+								<div inert>
+									<p class="in-popup-head">In the popup</p>
+									<PopupRows {rows} />
+								</div>
+							</div>
+						{/if}
+					</div>
 					<p class="cl-figure muted">{demoCounts(l, MINI)}</p>
 				</li>
 			{/each}
@@ -328,47 +351,42 @@
 <section class="cl-section cl-wash" aria-labelledby="fair-title">
 	<div class="cl-container">
 		<SectionHead id="fair-title" eyebrow="Fair by design" title="Nothing disappears silently." title2="Every action is explained and reversible." />
-		<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
-		<ol class="bento" bind:this={bento} tabindex={bentoScrolls ? 0 : undefined} aria-label={bentoScrolls ? 'Six steps, scroll sideways for more' : undefined}>
+		<ol class="bento">
 			<li class="tile">
 				<span class="cl-figure step">01</span>
-				<div class="vis" inert role="img" aria-label="A thumbnail with the ink chip AI-made in its corner.">
+				<div class="vis" role="img" aria-label="A thumbnail with the ink chip AI-made in its corner.">
 					<DotField class="vis-dots" />
-					<div class="vis-in thumb-demo"><Thumb scene="tide-pool" /><span class="on-thumb"><VerdictChip verdict="ai_made" tone="ink" /></span></div>
+					<div inert class="vis-in thumb-demo"><Thumb scene="tide-pool" /><span class="on-thumb"><VerdictChip verdict="ai_made" tone="ink" /></span></div>
 				</div>
 				<h3>Labeled where you see it</h3>
 				<p>AI-made items stay visible at Standard, with a label.</p>
 			</li>
 			<li class="tile">
 				<span class="cl-figure step">02</span>
-				<div class="vis" inert role="img" aria-label="The popup's On this page list: a Slop video and a Likely slop video, each with Show.">
+				<div class="vis" role="img" aria-label="The popup's On this page list: a Slop video and a Likely slop video, each with Show.">
 					<DotField class="vis-dots" />
-					<div class="vis-in rows-demo">
+					<div inert class="vis-in rows-demo">
 						<p class="rows-head">On this page</p>
-						{#each HIDDEN_ROWS as it (it.id)}
-							<p class="rows-row">
-								<VerdictChip verdict={it.verdict} size="sm" /><span class="rows-t">{it.title}</span><span class="rows-show"><Eye size={16} aria-hidden="true" />Show</span>
-							</p>
-						{/each}
+						<PopupRows rows={HIDDEN_ROWS} />
 					</div>
 				</div>
 				<h3>Hidden for you, not for everyone</h3>
-				<p>Slop leaves no gap, like a blocked ad. The popup lists it with Show.</p>
+				<p>Slop leaves no gap, the way an ad blocker hides an ad. The popup lists it with Show.</p>
 			</li>
 			<li class="tile">
 				<span class="cl-figure step">03</span>
-				<div class="vis vis-top" inert role="img" aria-label="The Why popover: two evidence layers agreed, the list it came from, Show, Always allow and Not slop, and links to the source page and its appeal.">
+				<div class="vis" role="img" aria-label="The Why popover: two evidence layers agreed, and the list and its date.">
 					<DotField class="vis-dots" />
-					<div class="vis-in pop-demo"><EvidenceCard evidence={bentoEvidence} headingLevel={4} show={noop} allow={noop} notSlop={noop} /></div>
+					<div inert class="vis-in pop-demo"><EvidenceCard evidence={bentoEvidence} headingLevel={4} /></div>
 				</div>
 				<h3>Every hide says why</h3>
 				<p>The signals that agreed, the list and the date.</p>
 			</li>
 			<li class="tile">
 				<span class="cl-figure step">04</span>
-				<div class="vis" inert role="img" aria-label="A notice that says Shown again, with Undo.">
+				<div class="vis" role="img" aria-label="A notice that says Shown again, with Undo.">
 					<DotField class="vis-dots" />
-					<div class="vis-in toast-demo">
+					<div inert class="vis-in toast-demo">
 						<Toast text="Shown again." paused actions={[{ label: 'Undo', icon: Undo2, onClick: noop }]} />
 					</div>
 				</div>
@@ -377,9 +395,9 @@
 			</li>
 			<li class="tile">
 				<span class="cl-figure step">05</span>
-				<div class="vis" inert role="img" aria-label="A source page banner: Disputed, unhidden while staff review.">
+				<div class="vis" role="img" aria-label="A source page banner: Disputed, unhidden while staff review.">
 					<DotField class="vis-dots" />
-					<div class="vis-in banner-demo">
+					<div inert class="vis-in banner-demo">
 						<span class="banner-top"><PlatformTag platform="yt" /><span class="banner-name">@coin.lectures</span></span>
 						<VerdictChip verdict="disputed" size="lg" />
 						<span class="banner-line">Unhidden while staff review</span>
@@ -390,9 +408,9 @@
 			</li>
 			<li class="tile">
 				<span class="cl-figure step">06</span>
-				<div class="vis" inert role="img" aria-label="A decision log entry from 2 Oct 2026: Likely slop changed to Clear.">
+				<div class="vis" role="img" aria-label="A decision log entry from 2 Oct 2026: Likely slop changed to Clear.">
 					<DotField class="vis-dots" />
-					<div class="vis-in log-demo"><LogRow entry={bentoLog} time="date" /></div>
+					<div inert class="vis-in log-demo"><LogRow entry={bentoLog} time="date" /></div>
 				</div>
 				<h3>Every change is public</h3>
 				<p>The outcome and the reason go in the decision log.</p>
@@ -406,24 +424,24 @@
 <section class="band cl-band" aria-labelledby="open-title">
 	<div class="cl-perf band-edge" aria-hidden="true"></div>
 	<div class="cl-container band-in">
-		<SectionHead id="open-title" eyebrow="Open by default" title="Matched on your device." title2="Every change in public." />
+		<SectionHead id="open-title" eyebrow="Open by default" title="Every change in public." title2="A signed list and a public log." />
 		<div class="band-grid">
 			<div class="band-left">
 				<figure class="fig4">
 					<Figure n={4} version={stats ? fmtListVersion(stats.list_sequence) : null} />
-					<figcaption class="cl-figure muted">Fig. 4</figcaption>
+					<figcaption class="fig-cap"><span class="cl-figure muted">Fig. 4</span> The signed list, your device, your feed.</figcaption>
 				</figure>
 				<div class="list-card">
 					<p class="list-title">Core list{#if stats}{' '}{fmtListVersion(stats.list_sequence)}{/if}</p>
 					{#if stats?.list_updated_at}<p class="cl-caption muted">Updated {fmtAgo(stats.list_updated_at, live.now ?? undefined)}</p>{/if}
-					<p class="list-line">Colander never asks a server about the page you are viewing.</p>
+					<p class="list-line">Colander checks the signature on every copy of the list before it uses it.</p>
 					<ArrowLink href="/definition#signing">How signing works</ArrowLink>
 				</div>
 			</div>
 			<div class="band-right">
 				<h3 class="cl-title">Latest decisions</h3>
 				<div class="rows">
-					{#each live.log as e (e.id)}<LogRow entry={e} />{:else}<p class="muted none">The decision log has no entries yet.</p>{/each}
+					{#each live.log as e (e.id)}<LogRow entry={e} time="stamp" />{:else}<p class="muted none">The decision log has no entries yet.</p>{/each}
 				</div>
 				<p><ArrowLink href="/log">Open the decision log</ArrowLink></p>
 			</div>
@@ -465,22 +483,25 @@
 				<thead>
 					<tr>
 						<th scope="col">What to check</th>
-						<th scope="col">Common in AI blockers</th>
-						<th scope="col" class="us"><span class="us-head"><ColanderMark size={16} />Colander</span></th>
+						<th scope="col"><span class="col-head"><Minus size={16} aria-hidden="true" />Common in AI blockers</span></th>
+						<th scope="col" class="us"><span class="col-head"><ColanderMark size={16} />Colander</span></th>
 					</tr>
 				</thead>
 				<tbody>
 					{#each COMPARISON as row (row.check)}
 						<tr>
 							<th scope="row">{row.check}</th>
-							<td><span class="k" aria-hidden="true">Common: </span>{row.common}</td>
-							<td class="us"><span class="k" aria-hidden="true">Colander: </span>{row.colander}</td>
+							<td><span class="cmp"><Minus size={16} aria-hidden="true" /><span><span class="k" aria-hidden="true">Common: </span>{row.common}</span></span></td>
+							<td class="us"><span class="cmp"><Check size={16} aria-hidden="true" /><span><span class="k" aria-hidden="true">Colander: </span>{row.colander}</span></span></td>
 						</tr>
 					{/each}
 				</tbody>
 			</table>
 		</div>
-		<p class="compare-cap">Based on {COMPARISON_SCOPE}, checked {fmtShortDate(COMPARISON_CHECKED)}.</p>
+		<p class="compare-cap">
+			<span>Based on {COMPARISON_SCOPE}, checked {fmtShortDate(COMPARISON_CHECKED)}. A dash marks what is common in AI blockers, a check what Colander does.</span>
+			<ArrowLink href="/definition#comparison">Sources</ArrowLink>
+		</p>
 	</div>
 </section>
 
@@ -497,7 +518,9 @@
 				</div>
 			</div>
 			<div class="prices">
-				<PriceCard plan="free" cta={{ href: PUBLIC_STORE_URL }} />
+				<PriceCard plan="free">
+					{#snippet action()}<InstallButton variant="secondary" size="xl" />{/snippet}
+				</PriceCard>
 				<PriceCard plan="plus" cta={{ href: '/plans#trial' }} />
 			</div>
 		</div>
@@ -507,18 +530,14 @@
 <!-- 11. FAQ -->
 <section class="cl-section faq-section" aria-labelledby="faq-title">
 	<div class="cl-container faq-wrap">
-		<h2 class="cl-display-lg faq-title" id="faq-title">Questions</h2>
-		<!-- Two columns on desktop, each its own stack, so opening one question never reflows the other. -->
+		<SectionHead id="faq-title" eyebrow="Questions" title="Good questions." title2="Plain answers." />
+		<!-- One column, so the hairlines line up and opening an answer moves only what is under it. -->
 		<div class="faq">
-			{#each [FAQ.slice(0, Math.ceil(FAQ.length / 2)), FAQ.slice(Math.ceil(FAQ.length / 2))] as col, i (i)}
-				<div class="faq-col">
-					{#each col as f (f.q)}
-						<details>
-							<summary>{f.q}<ChevronDown size={16} aria-hidden="true" /></summary>
-							<p>{f.a}</p>
-						</details>
-					{/each}
-				</div>
+			{#each FAQ as f (f.q)}
+				<details>
+					<summary>{f.q}<ChevronDown size={16} aria-hidden="true" /></summary>
+					<p>{f.a}</p>
+				</details>
 			{/each}
 		</div>
 	</div>
@@ -530,8 +549,10 @@
 	}
 
 	/* 1. Hero */
+	/* Tight enough that the frame starts near y 540 at 1440, so its first row of chips, the open
+	   popover and the popup's counts are in the first view. */
 	.hero {
-		padding-top: 72px;
+		padding-top: 48px;
 		padding-bottom: var(--cl-s8);
 	}
 	.hero-copy {
@@ -566,7 +587,7 @@
 	}
 	h1 {
 		max-width: 800px;
-		margin-top: 20px;
+		margin-top: 16px;
 	}
 	.lead {
 		max-width: 640px;
@@ -579,10 +600,15 @@
 		align-items: center;
 		justify-content: center;
 		gap: 16px 24px;
-		margin-top: 28px;
+		margin-top: 24px;
 	}
-	.phone {
-		display: none;
+	.install {
+		display: grid;
+	}
+	@media (max-width: 1023px) {
+		.install {
+			width: min(100%, 360px);
+		}
 	}
 	.version {
 		margin-top: 12px;
@@ -593,7 +619,7 @@
 		flex-wrap: wrap;
 		justify-content: center;
 		gap: 8px 24px;
-		margin-top: 12px;
+		margin-top: 8px;
 		list-style: none;
 		color: var(--cl-text-muted);
 		font: var(--cl-body);
@@ -611,13 +637,13 @@
 		display: grid;
 		grid-template-columns: minmax(0, 1fr);
 		justify-items: center;
-		margin-top: 32px;
+		margin-top: 20px;
 		container: demo / inline-size;
 	}
 	.tabs {
 		display: flex;
 		justify-content: center;
-		margin-bottom: 12px;
+		margin-bottom: 8px;
 	}
 	.tabs-select {
 		display: none;
@@ -630,8 +656,9 @@
 	.popup-phone {
 		display: none;
 	}
+	/* Until the phone feed mounts, its frame (541) and the popup under it keep their place. */
 	.reserved {
-		min-height: 565px;
+		min-height: 1167px;
 	}
 	.control {
 		display: flex;
@@ -691,15 +718,19 @@
 		.ctas :global(.arrow) {
 			align-self: flex-start;
 		}
-		.desk {
-			display: none;
+		.install {
+			width: 100%;
 		}
-		.phone {
-			display: block;
-		}
+		/* Stacked, each icon sits on its item's first line, so the icon column stays straight. */
 		.proof {
 			flex-direction: column;
 			align-items: flex-start;
+		}
+		.proof li {
+			align-items: flex-start;
+		}
+		.proof :global(svg) {
+			margin-top: 2px;
 		}
 		.demo {
 			justify-items: stretch;
@@ -1024,6 +1055,24 @@
 		color: var(--cl-text-muted);
 		font: var(--cl-body);
 	}
+	.level-feed {
+		display: grid;
+		align-content: start;
+		gap: 12px;
+	}
+	/* Under the rows a level keeps: the rows it hides, as the popup lists them, each with Show. */
+	.in-popup {
+		padding-top: 8px;
+		border-top: 1px solid var(--cl-border);
+	}
+	.in-popup-head {
+		color: var(--cl-text-muted);
+		font: var(--cl-chip);
+	}
+	/* The rows' own 8 px inset lines their chips up with the thumbnails above. */
+	.in-popup :global(.rows) {
+		margin: 0 -8px -4px;
+	}
 	.after {
 		display: flex;
 		flex-wrap: wrap;
@@ -1048,13 +1097,12 @@
 		.level-hint {
 			min-height: 0;
 		}
-		/* Phones: each level is a compact row, its name, what it does and its counts. */
+		/* Phones: each level is its name, what it does, its rows on one line each, and its counts. */
 		.level {
-			gap: 4px;
+			gap: 8px;
 			padding: 16px;
 		}
-		.level :global(.mini),
-		.thumbs-note {
+		.in-popup {
 			display: none;
 		}
 	}
@@ -1069,7 +1117,7 @@
 	.tile {
 		position: relative;
 		display: grid;
-		grid-template-rows: auto 152px auto 1fr;
+		grid-template-rows: auto minmax(160px, auto) auto 1fr;
 		align-content: start;
 		gap: 12px;
 		padding: 24px;
@@ -1092,7 +1140,7 @@
 		background: radial-gradient(circle at 1.5px 1.5px, var(--cl-dot-strong) 1.5px, transparent 1.6px) 0 0 / 8px 3px repeat-x;
 	}
 	/* Each picture spans the tile's full width, so the notice in 04 stays on one line, as it does on
-	   a host page. */
+	   a host page. Every picture is whole: none is cropped. */
 	.vis {
 		position: relative;
 		display: grid;
@@ -1106,13 +1154,6 @@
 		position: absolute;
 		inset: 0;
 	}
-	/* Tile 03 shows the whole popover from its top and crops it with a fade, rather than trimming it. */
-	.vis-top {
-		place-items: start center;
-		padding-top: 16px;
-		mask-image: linear-gradient(to bottom, black calc(100% - 40px), transparent);
-	}
-
 	.vis-in {
 		position: relative;
 	}
@@ -1127,47 +1168,28 @@
 		top: 8px;
 		left: 8px;
 	}
-	/* The popup's On this page rows, as PopupView draws them: one-line titles, Show at the end. */
+	/* The popup's On this page card, as PopupView draws it: a 36 header and its rows. */
 	.rows-demo {
-		width: calc(100% - 24px);
-		padding: 4px 4px 4px 12px;
+		width: calc(100% - 48px);
+		padding: 0 4px 4px;
 		border: 1px solid var(--cl-border);
 		border-radius: var(--cl-r-card);
 		background: var(--cl-surface);
 	}
 	.tile .rows-head {
-		padding: 8px 0 4px;
-		color: var(--cl-text);
-		font: var(--cl-body-strong);
-	}
-	.tile .rows-row {
 		display: flex;
 		align-items: center;
-		gap: 8px;
-		height: 44px;
+		height: 36px;
+		padding-left: 8px;
 		color: var(--cl-text);
-	}
-	.rows-row > :global(*) {
-		flex: none;
-	}
-	.rows-row > .rows-t {
-		flex: 1 1 0;
-		min-width: 0;
-		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: nowrap;
-	}
-	.rows-show {
-		display: inline-flex;
-		align-items: center;
-		gap: 6px;
-		padding: 0 8px;
-		color: var(--cl-brand);
 		font: var(--cl-body-strong);
 	}
 	.pop-demo :global(.cl-pop) {
 		width: 312px;
 		max-width: 100%;
+	}
+	.pop-demo {
+		max-width: calc(100% - 32px);
 	}
 	.toast-demo {
 		width: calc(100% - 16px);
@@ -1185,7 +1207,7 @@
 		display: grid;
 		justify-items: start;
 		gap: 10px;
-		width: calc(100% - 32px);
+		width: calc(100% - 48px);
 		padding: 16px;
 		border: 1px solid var(--cl-border);
 		border-radius: var(--cl-r-card);
@@ -1203,8 +1225,8 @@
 		font: var(--cl-body-strong);
 	}
 	.log-demo {
-		width: calc(100% - 24px);
-		padding: 0 12px;
+		width: calc(100% - 48px);
+		padding: 0 12px 4px;
 		border: 1px solid var(--cl-border);
 		border-radius: var(--cl-r-card);
 		background: var(--cl-surface);
@@ -1215,7 +1237,7 @@
 	/* The whole entry, its reason in 2 lines, fits the picture. */
 	.log-demo :global(.row) {
 		row-gap: 2px;
-		padding-block: 6px;
+		padding-block: 8px;
 	}
 	.tile h3 {
 		font: var(--cl-title);
@@ -1224,41 +1246,81 @@
 		color: var(--cl-text-muted);
 		font: var(--cl-body);
 	}
+	/* Too narrow for three: two to a row, so the popup rows in 02 keep their titles. */
+	@media (min-width: 1024px) and (max-width: 1279px) {
+		.bento {
+			grid-template-columns: repeat(2, minmax(0, 1fr));
+		}
+		.bento .tile:nth-child(odd)::after {
+			content: '';
+			position: absolute;
+			top: 30px;
+			right: 24px;
+			left: 56px;
+			height: 3px;
+			background: radial-gradient(circle at 1.5px 1.5px, var(--cl-dot-strong) 1.5px, transparent 1.6px) 0 0 / 8px 3px repeat-x;
+		}
+		.bento .tile:nth-child(even)::after {
+			content: none;
+		}
+	}
 	@media (max-width: 1023px) {
 		.bento {
 			grid-template-columns: 1fr;
 			max-width: 560px;
 		}
-		/* Stacked or scrolling, the steps read in order without a rule. */
 		.tile::after {
 			display: none;
 		}
 	}
-	/* Phones: the six steps are one row that scrolls sideways and snaps to each tile, the next one
-	   peeking in. */
+	/* Phones: one column. The step numbers sit in a rail on the left, joined from tile to tile by a
+	   vertical perforated rule, and each picture takes the height it needs. */
 	@media (max-width: 639px) {
 		.bento {
-			grid-template-columns: none;
-			grid-auto-columns: 86%;
-			grid-auto-flow: column;
-			gap: 12px;
+			gap: 16px;
 			max-width: none;
-			margin-inline: -16px;
-			padding: 0 16px 4px;
-			overflow-x: auto;
-			overscroll-behavior-x: contain;
-			scroll-snap-type: x mandatory;
-			scroll-padding-inline: 16px;
-			scrollbar-width: none;
 		}
 		.tile {
-			grid-template-rows: auto 152px auto 1fr;
-			gap: 8px;
+			grid-template-columns: 24px minmax(0, 1fr);
+			grid-template-rows: auto auto 1fr;
+			gap: 8px 12px;
 			padding: 16px;
-			scroll-snap-align: start;
+		}
+		.step {
+			grid-row: 1 / -1;
+			grid-column: 1;
+			line-height: 20px;
+		}
+		.tile > :not(.step) {
+			grid-column: 2;
+		}
+		.tile:not(:last-child)::after {
+			content: '';
+			position: absolute;
+			display: block;
+			top: 44px;
+			right: auto;
+			bottom: -28px;
+			left: 23px;
+			z-index: 1;
+			width: 3px;
+			height: auto;
+			background: radial-gradient(circle at 1.5px 1.5px, var(--cl-dot-strong) 1.5px, transparent 1.6px) 0 0 / 3px 8px repeat-y;
 		}
 		.vis {
-			margin-inline: -16px;
+			margin-inline: 0;
+			padding-block: 12px;
+			border-radius: var(--cl-r-chip);
+		}
+		.thumb-demo {
+			width: min(224px, calc(100% - 32px));
+		}
+		.rows-demo,
+		.pop-demo,
+		.banner-demo,
+		.log-demo {
+			width: calc(100% - 16px);
+			max-width: none;
 		}
 	}
 
@@ -1286,6 +1348,10 @@
 	.fig4 {
 		display: grid;
 		gap: 8px;
+	}
+	.fig-cap {
+		color: var(--cl-text-muted);
+		font: var(--cl-body);
 	}
 	.list-card {
 		display: grid;
@@ -1402,11 +1468,23 @@
 		background: var(--cl-wash);
 		color: var(--cl-text);
 	}
-	.us-head {
+	.col-head {
 		display: inline-flex;
 		align-items: center;
 		gap: 6px;
+	}
+	.us .col-head {
 		color: var(--cl-text);
+	}
+	/* A check beside what Colander does, a dash beside what is common: the icons sit on the first line. */
+	.cmp {
+		display: flex;
+		align-items: flex-start;
+		gap: 8px;
+	}
+	.cmp :global(svg) {
+		flex: none;
+		margin-top: 2px;
 	}
 	.k {
 		display: none;
@@ -1418,7 +1496,8 @@
 		display: flex;
 		flex-wrap: wrap;
 		align-items: center;
-		gap: 4px 12px;
+		justify-content: space-between;
+		gap: 4px 24px;
 		margin-top: 16px;
 		color: var(--cl-text-muted);
 		font: var(--cl-body);
@@ -1427,10 +1506,10 @@
 		.compare {
 			padding: 0 16px;
 		}
+		/* The check and the dash tell the two lines apart, so the Colander line needs no box. */
 		.compare .us {
-			margin-top: 4px;
-			padding: 4px 8px;
-			border-radius: var(--cl-r-chip);
+			padding: 2px 0;
+			background: none;
 		}
 		.compare thead {
 			position: absolute;
@@ -1446,7 +1525,7 @@
 			width: auto;
 		}
 		.compare tbody tr {
-			padding-block: 16px;
+			padding-block: 12px;
 		}
 		.compare tbody tr:first-child {
 			border-top: 0;
@@ -1516,42 +1595,36 @@
 		}
 	}
 
-	/* 11. FAQ */
+	/* 11. FAQ: the heading beside one column of questions, like the sections above it. */
 	.faq-section {
 		padding-top: 0;
 	}
-	/* The heading beside the questions on desktop. */
 	.faq-wrap {
 		display: grid;
 		grid-template-columns: 4fr 8fr;
 		gap: 48px;
 		align-items: start;
 	}
+	.faq-wrap :global(.head) {
+		margin-bottom: 0;
+	}
 	@media (max-width: 1023px) {
 		.faq-wrap {
 			grid-template-columns: minmax(0, 1fr);
-			gap: 24px;
+			gap: 0;
+		}
+		.faq-wrap :global(.head) {
+			margin-bottom: var(--cl-s6);
 		}
 	}
 	.faq {
-		display: grid;
-		grid-template-columns: repeat(2, minmax(0, 1fr));
-		gap: 0 24px;
-		align-items: start;
+		max-width: 720px;
 	}
 	details {
 		border-top: 1px solid var(--cl-border);
 	}
 	details:last-child {
 		border-bottom: 1px solid var(--cl-border);
-	}
-	@media (max-width: 1023px) {
-		.faq {
-			grid-template-columns: minmax(0, 1fr);
-		}
-		.faq-col + .faq-col details:first-child {
-			border-top: 0;
-		}
 	}
 	summary {
 		display: flex;

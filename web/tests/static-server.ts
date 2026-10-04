@@ -1,5 +1,7 @@
-// Serves build/ the way the Go server does: a file, then {path}.html, then {path}/index.html,
-// then the SPA fallback 200.html. The API is mocked per test with page.route.
+// Serves build/ the way the Go server does: a file, then {path}.html, then {path}/index.html. The
+// client-rendered routes (/s/{platform}/{id}, /appeal/{platform}/{id}, /appeal/status/{id}) get the
+// SPA fallback 200.html; any other path is a real 404, with 404.html or the same 200.html shell,
+// which renders the not-found page. The API is mocked per test with page.route.
 import { createReadStream, statSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { extname, join, normalize } from 'node:path';
@@ -31,7 +33,9 @@ createServer((req, res) => {
 		return;
 	}
 	const base = join(root, pathname);
-	const found = file(base) ?? file(base + '.html') ?? file(join(base, 'index.html')) ?? join(root, '200.html');
-	res.writeHead(200, { 'Content-Type': types[extname(found)] ?? 'application/octet-stream' });
+	const spa = /^\/(s\/(yt|tt|ig|fb)|appeal\/(yt|tt|ig|fb|status))\/[^/]+$/.test(pathname);
+	const page = file(base) ?? file(base + '.html') ?? file(join(base, 'index.html')) ?? (spa ? join(root, '200.html') : null);
+	const found = page ?? file(join(root, '404.html')) ?? join(root, '200.html');
+	res.writeHead(page ? 200 : 404, { 'Content-Type': types[extname(found)] ?? 'application/octet-stream' });
 	createReadStream(found).pipe(res);
 }).listen(port, () => console.log(`serving ${root} on http://localhost:${port}`));
