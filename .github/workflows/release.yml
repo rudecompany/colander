@@ -16,6 +16,8 @@ permissions:
 jobs:
   release-please:
     name: release-please
+    # Skips, and with it every release job, until the release App is set up (docs/deploy.md).
+    if: vars.RELEASE_APP_CLIENT_ID != ''
     runs-on: ubuntu-latest
     # release-please works through the GitHub App token, so the workflow token needs nothing.
     permissions: {}

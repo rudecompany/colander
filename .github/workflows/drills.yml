@@ -20,7 +20,7 @@ permissions:
 jobs:
   dump:
     name: dump-drill
-    if: github.event.schedule == '23 5 * * 1' || inputs.drill == 'dump'
+    if: vars.CLOUDFLARE_ACCOUNT_ID != '' && (github.event.schedule == '23 5 * * 1' || inputs.drill == 'dump')
     runs-on: ubuntu-latest
     timeout-minutes: 15
     environment:
@@ -49,7 +49,7 @@ jobs:
 
   pitr:
     name: pitr-drill
-    if: github.event.schedule == '47 5 1 * *' || inputs.drill == 'pitr'
+    if: vars.CLOUDFLARE_ACCOUNT_ID != '' && (github.event.schedule == '47 5 1 * *' || inputs.drill == 'pitr')
     runs-on: ubuntu-latest
     timeout-minutes: 15
     environment:

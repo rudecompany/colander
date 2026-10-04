@@ -315,6 +315,9 @@ The staging smoke test makes a staff decision and checks that it reaches the edg
 
 ### Secrets and variables
 
+Until `CLOUDFLARE_ACCOUNT_ID` is set, staging deploys, probes and drills skip instead of failing.
+Until `RELEASE_APP_CLIENT_ID` is set, release-please and every release job skip.
+
 | Name | Kind | Where | Value |
 | --- | --- | --- | --- |
 | `CLOUDFLARE_ACCOUNT_ID` | variable | repository | Cloudflare account ID |

@@ -18,6 +18,8 @@ concurrency:
 jobs:
   production:
     name: probe-production
+    # Skips until the Cloudflare account is set up (docs/deploy.md step 15).
+    if: vars.CLOUDFLARE_ACCOUNT_ID != ''
     runs-on: ubuntu-latest
     timeout-minutes: 10
     environment:

@@ -19,7 +19,9 @@ concurrency:
 jobs:
   deploy:
     name: deploy-staging
+    # Skips until the Cloudflare account is set up (docs/deploy.md step 15).
     if: >-
+      vars.CLOUDFLARE_ACCOUNT_ID != '' &&
       github.event.workflow_run.conclusion == 'success' &&
       github.event.workflow_run.head_repository.full_name == github.repository
     runs-on: ubuntu-latest
