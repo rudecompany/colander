@@ -65,7 +65,7 @@ carry the thumbnail disclosure.
 	// Frame 4: demo log entries for invented sources from the demo feed.
 	const LOG: LogEntry[] = [
 		{ id: 'l1', at: '2026-10-02T14:02:00Z', platform: 'yt', target_type: 'source', target_id: '@coin.lectures', source_id: '@coin.lectures', source_name: '@coin.lectures', from: 'likely_slop', to: 'disputed', reason: 'The creator appealed and verified the channel. Unhidden while staff review.', signals: ['open_appeal'], actor: 'appeal', actor_name: null },
-		{ id: 'l2', at: '2026-10-01T09:40:00Z', platform: 'yt', target_type: 'source', target_id: '@romefacts.minute', source_id: '@romefacts.minute', source_name: '@romefacts.minute', from: 'likely_slop', to: 'slop', reason: 'About 30 uploads a day on one title template, with AI evidence.', signals: ['high_volume', 'templated', 'platform_label'], actor: 'staff', actor_name: null },
+		{ id: 'l2', at: '2026-10-01T09:40:00Z', platform: 'yt', target_type: 'source', target_id: '@romefacts.minute', source_id: '@romefacts.minute', source_name: '@romefacts.minute', from: 'likely_slop', to: 'slop', reason: 'One title template, numbered part after part, with AI evidence.', signals: ['high_volume', 'templated', 'platform_label'], actor: 'staff', actor_name: null },
 		{ id: 'l3', at: '2026-09-30T16:15:00Z', platform: 'yt', target_type: 'source', target_id: '@workbench.notes', source_id: '@workbench.notes', source_name: '@workbench.notes', from: 'likely_slop', to: 'clear', reason: 'Made by hand. The early tags were mistaken.', signals: [], actor: 'community', actor_name: null }
 	];
 	const TILE_CHIPS: Verdict[] = ['slop', 'likely_slop', 'ai_made'];

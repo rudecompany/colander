@@ -89,7 +89,7 @@
 	const why = $derived(
 		source
 			? {
-					...evidence({ verdict: source.verdict, hidden: false, signals: source.signals, imported: source.imported }),
+					...evidence({ verdict: source.verdict, hidden: false, signals: source.signals }),
 					title: EVIDENCE_TITLE
 				}
 			: null
@@ -132,7 +132,6 @@
 					Nothing from it is hidden or labeled by the shared list. Verdicts need AI evidence first, and two layers of
 					evidence must agree before anything is hidden.
 				</p>
-				{#if source?.imported}<p class="cl-muted">Imported from {source.attribution ?? 'a seed list'}.</p>{/if}
 				<p class="links">
 					<a href={platformSourceUrl(platform, id)} rel="noreferrer" class="icon-line">View on {PLATFORM_NAME[platform]}<ExternalLink size={16} aria-hidden="true" /></a>
 					<ArrowLink href="/definition">How verdicts are made</ArrowLink>
@@ -242,11 +241,11 @@
 							{/if}
 						</div>
 						<div class="num">
-							<h3>Posting volume</h3>
-							{#if source.evidence.uploads_per_day !== null}
-								<p class="small"><strong>{source.evidence.uploads_per_day}</strong> uploads a day, from public channel data.</p>
+							<h3>Audience size</h3>
+							{#if source.large}
+								<p class="small"><strong>Large.</strong> A Slop verdict on it needs staff review.</p>
 							{:else}
-								<p class="cl-muted small">No upload data for this {noun}.</p>
+								<p class="cl-muted small">Not known. A large {noun} needs staff review before a Slop verdict.</p>
 							{/if}
 						</div>
 					</div>
@@ -269,15 +268,6 @@
 						<dt>Re-scoring</dt>
 						<dd>Re-scored every 90 days.{#if source.rescore_at}{' '}Next: {fmtShortDate(source.rescore_at)}{/if}</dd>
 					</div>
-					<div><dt>Large audience</dt><dd>{source.large ? 'Yes. A Slop verdict needs staff review.' : 'No'}</dd></div>
-					{#if source.imported}
-						<div>
-							<dt>Origin</dt>
-							<dd>
-								Imported from {source.attribution ?? 'a seed list'}. {source.signals.includes('staff_review') ? 'Reviewed since.' : 'Until reviewed, it can be Likely slop at most.'}
-							</dd>
-						</div>
-					{/if}
 					{#if source.aliases.length > 1}
 						<div><dt>Also known as</dt><dd>{#each source.aliases.filter((a) => a !== source.id) as a (a)}<span class="cl-figure alias">{a}</span>{/each}</dd></div>
 					{/if}

@@ -36,7 +36,7 @@ export const SOURCES: Record<string, Source> = {
 		signals: ['platform_label', 'high_volume', 'mostly_ai', 'templated', 'rubric_low_effort', 'rubric_hollow', 'community_consensus', 'staff_review'],
 		slop_type: 'filler',
 		tests: ['low_effort', 'mass_produced', 'hollow'],
-		evidence: { taggers: 41, tags: { slop: 35, ai_fine: 4, not_slop: 2 }, items_seen: 23, ai_item_share: 0.91, uploads_per_day: 14.2 }
+		evidence: { taggers: 41, tags: { slop: 35, ai_fine: 4, not_slop: 2 }, items_seen: 23, ai_item_share: 0.91, uploads_per_day: null }
 	}),
 	'tt:@historybites247': source({
 		platform: 'tt',
@@ -64,15 +64,13 @@ export const SOURCES: Record<string, Source> = {
 		verdict: 'disputed',
 		signals: ['platform_label', 'open_appeal'],
 		appeal_open: true,
-		evidence: { taggers: 17, tags: { slop: 8, ai_fine: 3, not_slop: 6 }, items_seen: 11, ai_item_share: 0.45, uploads_per_day: 0.6 }
+		evidence: { taggers: 17, tags: { slop: 8, ai_fine: 3, not_slop: 6 }, items_seen: 11, ai_item_share: 0.45, uploads_per_day: null }
 	}),
 	'yt:@everydaytrivia': source({
 		platform: 'yt',
 		id: '@everydaytrivia',
 		name: 'Everyday Trivia',
-		verdict: null,
-		imported: true,
-		attribution: 'AiSList (CC BY-NC 4.0), blocklist'
+		verdict: null
 	}),
 	'fb:104729388112': source({
 		platform: 'fb',
@@ -95,7 +93,7 @@ const entry = (e: Partial<LogEntry> & Pick<LogEntry, 'platform' | 'source_id' | 
 });
 
 export const LOG: LogEntry[] = [
-	entry({ at: '2026-10-03T08:42:00Z', platform: 'yt', source_id: 'UCq3x9Vb2m4LkT7pQe8sW1aZ', source_name: 'Ancient Facts Daily', from: 'likely_slop', to: 'slop', reason: 'Staff review confirmed mass-produced narration over stock and generated footage, about 14 uploads a day.', signals: ['mostly_ai', 'high_volume', 'staff_review'], actor: 'staff', actor_name: 'Sam' }),
+	entry({ at: '2026-10-03T08:42:00Z', platform: 'yt', source_id: 'UCq3x9Vb2m4LkT7pQe8sW1aZ', source_name: 'Ancient Facts Daily', from: 'likely_slop', to: 'slop', reason: 'Staff review confirmed mass-produced narration over stock and generated footage, on one title template.', signals: ['mostly_ai', 'high_volume', 'staff_review'], actor: 'staff', actor_name: 'Sam' }),
 	entry({ at: '2026-10-02T21:10:00Z', platform: 'yt', source_id: '@numisnotes', source_name: 'Numis Notes', from: 'likely_slop', to: 'disputed', reason: 'The creator verified the channel and opened an appeal. Shown to everyone while staff review.', signals: ['open_appeal'], actor: 'appeal' }),
 	entry({ at: '2026-10-02T16:05:00Z', platform: 'tt', source_id: '@historybites247', source_name: 'History Bites 24/7', from: 'ai_made', to: 'likely_slop', reason: 'AI labels on most recent videos, one template across captions, and taggers found the videos hollow.', signals: ['platform_label', 'templated', 'rubric_hollow'], actor: 'community' }),
 	entry({ at: '2026-10-01T13:30:00Z', platform: 'fb', source_id: '104729388112', source_name: 'Coastal Science Club', from: 'disputed', to: 'clear', reason: 'Appeal upheld. Original footage and on-camera presenters, with AI used only for captions.', signals: ['not_slop_consensus'], actor: 'appeal', actor_name: 'Ines' }),
@@ -107,7 +105,7 @@ export const LOG: LogEntry[] = [
 
 export const LOG_PAGE_2: LogEntry[] = [
 	entry({ at: '2026-09-25T15:00:00Z', platform: 'ig', source_id: 'dailyzenquotes.ai', source_name: 'Daily Zen Quotes', from: 'likely_slop', to: 'slop', reason: 'Near-identical image posts across 6 pages with the same captions. Confirmed by curator review.', signals: ['near_duplicates', 'cross_posting', 'community_consensus'], actor: 'curator', actor_name: 'Priya' }),
-	entry({ at: '2026-09-24T11:12:00Z', platform: 'fb', source_id: 'rescuestorieswow', source_name: 'Rescue Stories Wow', from: 'likely_slop', to: 'slop', reason: 'Synthetic rescue videos presented as real, posted 30 times a day with a link funnel.', signals: ['platform_label', 'high_volume', 'link_funnel', 'staff_review'], actor: 'staff', actor_name: 'Sam' })
+	entry({ at: '2026-09-24T11:12:00Z', platform: 'fb', source_id: 'rescuestorieswow', source_name: 'Rescue Stories Wow', from: 'likely_slop', to: 'slop', reason: 'Synthetic rescue videos presented as real, on one title template with a link funnel.', signals: ['platform_label', 'high_volume', 'link_funnel', 'staff_review'], actor: 'staff', actor_name: 'Sam' })
 ];
 
 export const STATS: Stats = {
@@ -162,10 +160,16 @@ export const QUEUE: QueueItem[] = [
 export function reviewSource(key: string): ReviewSourceResponse {
 	const base = SOURCES[key] ?? SOURCES['tt:@historybites247'];
 	return {
-		source: key === 'yt:UCq3x9Vb2m4LkT7pQe8sW1aZ' ? { ...base, large: true, verdict: 'likely_slop' } : base,
+		// Reviewers see seed provenance, which public pages never show (contracts 6.7).
+		source:
+			key === 'yt:UCq3x9Vb2m4LkT7pQe8sW1aZ'
+				? { ...base, large: true, verdict: 'likely_slop' }
+				: key === 'yt:@everydaytrivia'
+					? { ...base, imported: true, attribution: 'Example seed list (CC0-1.0), warnlist' }
+					: base,
 		layers: {
 			provenance: { met: true, signals: ['platform_label'], detail: '11 of 14 recent videos carry the platform AI label, reported by 6 installs.' },
-			behavior: { met: true, signals: ['templated', 'near_duplicates'], detail: 'One caption template across 9 of the last 14 videos. No upload data for TikTok.' },
+			behavior: { met: true, signals: ['templated', 'near_duplicates'], detail: 'One caption template across 9 of the last 14 videos.' },
 			rubric: { met: true, signals: ['rubric_hollow'], detail: 'Hollow selected by a weighted share of 0.72, mass-produced by 0.81.' },
 			consensus: { met: false, signals: [], detail: '6 slop tags from 9 installs, a share of 0.67. Consensus needs 0.7.' }
 		},

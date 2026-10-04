@@ -41,7 +41,7 @@ describe('in-page builders in Node', () => {
 		const ev = evidence({ verdict: item.verdict, hidden: true, rows: item.evidence, listDate: '2026-10-02T10:00:00Z' });
 		expect(popoverRows(ev).map((r) => `${r.label}: ${r.texts[0]}`)).toEqual([
 			'AI evidence: The platform labels it AI-generated.',
-			'Source behavior: About 30 uploads a day, one title template.',
+			'Source behavior: One title template, numbered part after part.',
 			'Community: Tags are still coming in.'
 		]);
 		const el = evidencePopover(ctx, ev, { show: noop, allow: noop, notSlop: noop });

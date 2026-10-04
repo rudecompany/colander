@@ -119,7 +119,6 @@
 			<div><dt>Taggers</dt><dd class="cl-num">{fmtNum(s.evidence.taggers)}</dd></div>
 			<div><dt>Slop / fine / not slop</dt><dd class="cl-num">{s.evidence.tags.slop} / {s.evidence.tags.ai_fine} / {s.evidence.tags.not_slop}</dd></div>
 			<div><dt>AI item share</dt><dd class="cl-num">{s.evidence.ai_item_share === null ? 'No data' : `${fmtPct(s.evidence.ai_item_share)} of ${s.evidence.items_seen}`}</dd></div>
-			<div><dt>Uploads a day</dt><dd class="cl-num">{s.evidence.uploads_per_day ?? 'No data'}</dd></div>
 		</dl>
 	</section>
 
@@ -384,7 +383,7 @@
 	}
 	.numbers {
 		display: grid;
-		grid-template-columns: repeat(4, minmax(0, 1fr));
+		grid-template-columns: repeat(3, minmax(0, 1fr));
 		gap: var(--cl-s3);
 	}
 	.numbers dt {

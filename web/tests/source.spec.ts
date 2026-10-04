@@ -67,11 +67,29 @@ test('source page for a source with no verdict', async ({ page }) => {
 	await expect(page.getByRole('link', { name: /View on TikTok/ })).toHaveAttribute('href', 'https://www.tiktok.com/@nobodyknows');
 });
 
-test('an imported source with no verdict still names its seed list', async ({ page }) => {
-	await mockApi(page);
+test('a source page never names a data source, even when an older server still sends one', async ({ page }) => {
+	// Old wire data on purpose: imported and attribution are deprecated and always false and null now.
+	await mockApi(page, {
+		'GET /v1/sources/*': () => ({
+			json: { source: { ...SOURCES['yt:@everydaytrivia'], imported: true, attribution: 'AiSList (CC BY-NC 4.0), blocklist' }, history: [] }
+		})
+	});
 	await page.goto('/s/yt/@everydaytrivia');
 	await expect(page.getByText('Not rated', { exact: true })).toBeVisible();
-	await expect(page.getByText('Imported from AiSList (CC BY-NC 4.0), blocklist.')).toBeVisible();
+	await expect(page.locator('main')).not.toContainText(/AiSList|seed list|imported/i);
+});
+
+test('audience size says when it is not known, and no upload figures appear', async ({ page }) => {
+	await mockApi(page);
+	await page.goto('/s/tt/@historybites247');
+	const numbers = page.getByRole('region', { name: 'The numbers behind it' });
+	await expect(numbers).toContainText('Audience size');
+	await expect(numbers).toContainText('Not known.');
+	await expect(page.locator('main')).not.toContainText(/Large audience|uploads? a day|upload data|Posting volume/i);
+
+	await mockApi(page, { 'GET /v1/sources/*': () => ({ json: { source: { ...SOURCES['tt:@historybites247'], large: true }, history: [] } }) });
+	await page.reload();
+	await expect(numbers).toContainText('Large. A Slop verdict on it needs staff review.');
 });
 
 test('an unknown platform is a 404', async ({ page }) => {

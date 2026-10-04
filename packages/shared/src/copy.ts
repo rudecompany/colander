@@ -218,7 +218,7 @@ export const INPAGE_COPY = {
 		examples: 'Pick up to 3 examples',
 		why: 'Why is this slop?',
 		note: 'Note, optional',
-		notePlaceholder: 'For example: posts 40 AI history videos a day with the same voice.',
+		notePlaceholder: 'For example: every video is AI history narration with the same voice and title template.',
 		next: 'Next',
 		back: 'Back',
 		send: 'Send report',
@@ -299,7 +299,7 @@ export const DEMO_FEED: DemoItem[] = [
 		age: '1 day ago',
 		evidence: [
 			{ layer: 'provenance', text: 'The platform labels it AI-generated.', agreed: true },
-			{ layer: 'behavior', text: 'About 30 uploads a day, one title template.', agreed: true },
+			{ layer: 'behavior', text: 'One title template, numbered part after part.', agreed: true },
 			{ layer: 'consensus', text: 'Tags are still coming in.', agreed: false }
 		]
 	},

@@ -189,7 +189,7 @@ export const REVIEW_SOURCE = {
 		platform: 'yt', id: '@catrescuetales', aliases: ['UCbbbbbbbbbbbbbbbbbbbbbb', '@catrescuetales'], name: 'Cat Rescue Tales', verdict: 'likely_slop',
 		signals: ['mostly_ai', 'rubric_hollow'], slop_type: 'deceptive', tests: ['mass_produced', 'hollow'], large: false, imported: true, appeal_open: false,
 		updated_at: '2026-08-01T00:00:00Z', rescore_at: '2026-10-30T00:00:00Z',
-		evidence: { taggers: 41, tags: { slop: 35, ai_fine: 4, not_slop: 2 }, items_seen: 23, ai_item_share: 0.91, uploads_per_day: 14.2 }
+		evidence: { taggers: 41, tags: { slop: 35, ai_fine: 4, not_slop: 2 }, items_seen: 23, ai_item_share: 0.91, uploads_per_day: null }
 	},
 	layers: {
 		provenance: { met: true, signals: ['platform_label'], detail: '6 installs saw the platform label on its items.' },
@@ -200,7 +200,7 @@ export const REVIEW_SOURCE = {
 	reports: [{ id: 'rpt_1', platform: 'yt', source_id: '@catrescuetales', source_name: 'Cat Rescue Tales', status: 'under_review', verdict: null, protects: 0, created_at: '2026-10-01T10:00:00Z', updated_at: '2026-10-01T10:00:00Z', reason: 'Staged rescue videos made with AI, posted every hour.', examples: ['dQw4w9WgXcQ'], slop_type: 'deceptive', tests: ['hollow'] }],
 	appeals: [],
 	items: [{ platform: 'yt', id: 'dQw4w9WgXcQ', verdict: null, signals: [], tags: { slop: 5, ai_fine: 0, not_slop: 0 }, platform_label_reports: 2 }],
-	history: [{ id: 'log_1', at: '2026-08-01T00:00:00Z', platform: 'yt', target_type: 'source', target_id: '@catrescuetales', source_id: '@catrescuetales', source_name: 'Cat Rescue Tales', from: null, to: 'likely_slop', reason: 'Imported from the seed list.', signals: ['mostly_ai'], actor: 'community', actor_name: null }]
+	history: [{ id: 'log_1', at: '2026-08-01T00:00:00Z', platform: 'yt', target_type: 'source', target_id: '@catrescuetales', source_id: '@catrescuetales', source_name: 'Cat Rescue Tales', from: null, to: 'likely_slop', reason: 'Most recent items carry AI evidence, and community tags agree.', signals: ['mostly_ai'], actor: 'community', actor_name: null }]
 };
 
 export { expect };
