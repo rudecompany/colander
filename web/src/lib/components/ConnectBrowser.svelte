@@ -6,7 +6,7 @@
 	import RefreshCw from '@lucide/svelte/icons/refresh-cw';
 	import Button from '@colander/shared/components/ui/button/button.svelte';
 	import { api, ApiError } from '#lib/api.ts';
-	import { sendToExtension, type ExtensionState } from '#lib/extension.ts';
+	import { ExtensionRefused, sendToExtension, type ExtensionState } from '#lib/extension.ts';
 	import Loading from './Loading.svelte';
 	import Notice from './Notice.svelte';
 
@@ -28,7 +28,9 @@
 						? e.code === 'no_plan'
 							? 'There is no active plan on this account to connect.'
 							: e.message
-						: 'Colander did not answer. Make sure it is installed and turned on in this browser, then try again.'
+						: e instanceof ExtensionRefused
+							? 'Colander could not verify this plan. Update Colander, then try again.'
+							: 'Colander did not answer. Make sure it is installed and turned on in this browser, then try again.'
 			};
 		}
 	}

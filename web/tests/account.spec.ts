@@ -111,6 +111,29 @@ test('one click cancels, keeps Plus until the period ends and still offers the r
 	await expect(page.getByText('more than 30 days old', { exact: false })).toBeVisible();
 });
 
+test('a token the extension refuses is an error, never Connected', async ({ page }) => {
+	await page.addInitScript(() => {
+		(window as unknown as { chrome: unknown }).chrome = {
+			runtime: {
+				sendMessage(_id: string, message: { type: string }, reply: (r: unknown) => void) {
+					setTimeout(() => reply(message.type === 'colander:ping' ? { ok: true, version: '1.0.0' } : { ok: false, error: 'invalid_token' }), 0);
+				}
+			}
+		};
+	});
+	await mockApi(page, {
+		'GET /v1/account': { json: { account: { ...PLUS_ACCOUNT, role: 'staff' } } },
+		'POST /v1/entitlement': { json: { token: 'plan.token' } },
+		'POST /v1/account/reviewer-token': { json: { token: 'reviewer.token' } }
+	});
+	await page.goto('/account');
+	await page.getByRole('button', { name: 'Connect this browser' }).click();
+	await expect(page.getByText('Colander could not verify this plan. Update Colander, then try again.')).toBeVisible();
+	await page.getByRole('button', { name: 'Connect side panel' }).click();
+	await expect(page.getByText('Colander could not accept the reviewer token. Update Colander, then try again.')).toBeVisible();
+	await expect(page.getByText('Connected.', { exact: false })).toHaveCount(0);
+});
+
 test('without the extension the account page says so plainly', async ({ page }) => {
 	await page.addInitScript(() => ((window as unknown as { chrome: unknown }).chrome = {}));
 	await mockApi(page, { 'GET /v1/account': { json: { account: PLUS_ACCOUNT } } });

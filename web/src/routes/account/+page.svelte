@@ -6,7 +6,7 @@
 	import Plug from '@lucide/svelte/icons/plug';
 	import ListChecks from '@lucide/svelte/icons/list-checks';
 	import { api, ApiError, errorText } from '#lib/api.ts';
-	import { detectExtension, sendToExtension, type ExtensionState } from '#lib/extension.ts';
+	import { detectExtension, ExtensionRefused, sendToExtension, type ExtensionState } from '#lib/extension.ts';
 	import { fmtDate } from '@colander/shared';
 	import { loadAccount, session } from '#lib/session.svelte.ts';
 	import ConnectBrowser from '#lib/components/ConnectBrowser.svelte';
@@ -83,7 +83,12 @@
 		} catch (e) {
 			reviewer = {
 				kind: 'error',
-				message: e instanceof ApiError ? e.message : 'Colander did not answer. Make sure it is installed in this browser, then try again.'
+				message:
+					e instanceof ApiError
+						? e.message
+						: e instanceof ExtensionRefused
+							? 'Colander could not accept the reviewer token. Update Colander, then try again.'
+							: 'Colander did not answer. Make sure it is installed in this browser, then try again.'
 			};
 		}
 	}

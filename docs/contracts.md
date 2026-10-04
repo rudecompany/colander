@@ -464,6 +464,8 @@ The website finds the extension by its ID (build env `PUBLIC_EXTENSION_ID`) and 
 | `{"type": "colander:plan-token", "token": "..."}` | `{"ok": true}` after the extension verifies and stores the token |
 | `{"type": "colander:reviewer-token", "token": "..."}` | `{"ok": true}`; the side panel can now use the review API |
 
+A message the extension refuses answers `{"ok": false, "error": "<code>"}`, such as `invalid_token`, and the website shows that as an error, never as connected.
+
 The dev build uses a fixed manifest `key` so the extension ID is stable across machines.
 
 ## 8. Privacy rules for the network
