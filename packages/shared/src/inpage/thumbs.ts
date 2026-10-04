@@ -53,6 +53,12 @@ export function thumbImageBox(crop?: ThumbCrop): { x: number; y: number; width: 
 	return { x: r(-(width - 160) * crop.x), y: r(-(height - 90) * crop.y), width: r(width), height: r(height) };
 }
 
+/**
+ * How the numeral layer fits its box. The picture fills any box and crops to fit, but the numeral
+ * stays whole, held to the side its picture keeps clear: a square post or a tall reel never cuts it.
+ */
+export const numeralAspect = (lines: NumeralLine[]) => `${lines[0]!.x > 80 ? 'xMax' : 'xMin'}YMid meet`;
+
 /** The text of a numeral line for a part number. */
 export const numeralText = (line: NumeralLine, part: number) => line.text.replace('{n}', String(part));
 

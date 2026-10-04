@@ -10,7 +10,7 @@ import { ACTION_TABLE, PLATFORM_NAME, type Action, type Platform, type Strictnes
 import { hyper, icon, trapFocus } from './dom';
 import { evidence } from './evidence';
 import type { InpageContext } from './host';
-import { THUMB_CSS, THUMB_SCENES, numeralText, thumbImageBox, toneVar } from './thumbs';
+import { THUMB_CSS, THUMB_SCENES, numeralAspect, numeralText, thumbImageBox, toneVar } from './thumbs';
 import { chip, evidencePopover, tagPill, type ItemView } from './ui';
 
 /** grid: YouTube Home. swipe: one TikTok For You video. square: Instagram feed. post: Facebook feed. */
@@ -95,11 +95,16 @@ export function thumbSvg(doc: Document, scene: ThumbScene, part?: number, crop?:
 		return n;
 	};
 	const s = THUMB_SCENES[scene];
-	const svg = el('svg', { viewBox: '0 0 160 90', class: 'cl-thumb', 'aria-hidden': 'true', focusable: 'false', preserveAspectRatio: 'xMidYMid slice' });
-	svg.append(el('rect', { width: 160, height: 90, style: `fill:${toneVar(s.bg)}` }));
-	svg.append(el('image', { href: s.image, ...thumbImageBox(crop), preserveAspectRatio: 'xMidYMid slice' }));
-	if (part != null) {
-		for (const line of s.numeral ?? []) {
+	// The picture and the numeral are 2 layers, so the picture can crop to the box and the numeral never does.
+	const svg = el('svg', { class: 'cl-thumb', 'aria-hidden': 'true', focusable: 'false' });
+	const pic = el('svg', { viewBox: '0 0 160 90', width: '100%', height: '100%', preserveAspectRatio: 'xMidYMid slice' });
+	pic.append(el('rect', { width: 160, height: 90, style: `fill:${toneVar(s.bg)}` }));
+	pic.append(el('image', { href: s.image, ...thumbImageBox(crop), preserveAspectRatio: 'xMidYMid slice' }));
+	svg.append(pic);
+	if (part != null && s.numeral) {
+		const layer = el('svg', { viewBox: '0 0 160 90', width: '100%', height: '100%', preserveAspectRatio: numeralAspect(s.numeral) });
+		svg.append(layer);
+		for (const line of s.numeral) {
 			const t = el('text', {
 				x: line.x,
 				y: line.y,
@@ -107,7 +112,7 @@ export function thumbSvg(doc: Document, scene: ThumbScene, part?: number, crop?:
 				style: `fill:${line.fill};stroke:${line.halo};stroke-width:${line.size / 9};paint-order:stroke;font:700 ${line.size}px var(--cl-font)`
 			});
 			t.textContent = numeralText(line, part);
-			svg.append(t);
+			layer.append(t);
 		}
 	}
 	return svg;

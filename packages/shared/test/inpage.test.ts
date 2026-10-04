@@ -1,7 +1,7 @@
 import { parseHTML } from 'linkedom';
 import { afterAll, describe, expect, it } from 'vitest';
 import { DEMO_FEED } from '../src/copy';
-import { chip, DEMO_ORDER, demoFeed, evidence, evidencePopover, inpageContext, keepTogether, popoverRows, prerender, setServerDocument, SHEET, toast } from '../src/inpage';
+import { chip, DEMO_ORDER, demoFeed, evidence, evidencePopover, inpageContext, keepTogether, popoverRows, prerender, setServerDocument, SHEET, thumbSvg, toast } from '../src/inpage';
 
 const doc = () => parseHTML('<!doctype html><html><body></body></html>').document as unknown as Document;
 const ctx = inpageContext(doc(), 'https://colander.app');
@@ -34,6 +34,17 @@ describe('in-page builders in Node', () => {
 		const swipe = (level: 'label' | 'standard' | 'no_ai') =>
 			demoFeed(ctx, { layout: 'swipe', level, items: DEMO_ORDER.swipe!.map((id) => DEMO_FEED.find((i) => i.id === id)!) }, handlers).querySelector('.card')!.getAttribute('data-k');
 		expect([swipe('label'), swipe('standard'), swipe('no_ai')]).toEqual(['card-6', 'card-3', 'card-1']);
+	});
+
+	it('keep a template numeral whole in square and tall boxes, held to its clear side', () => {
+		// Only the picture crops to the box; the numeral layer fits whole, so "Part 46" never reads "Pa 4".
+		const layers = (scene: 'template-a' | 'template-b') => [...thumbSvg(ctx.doc, scene, 46).children].map((l) => l.getAttribute('preserveAspectRatio'));
+		expect(layers('template-a')).toEqual(['xMidYMid slice', 'xMaxYMid meet']);
+		expect(layers('template-b')).toEqual(['xMidYMid slice', 'xMinYMid meet']);
+		const a = thumbSvg(ctx.doc, 'template-a', 46);
+		expect(a.getAttribute('viewBox')).toBeNull();
+		expect(a.lastElementChild!.textContent).toBe('Part46');
+		expect(thumbSvg(ctx.doc, 'tide-pool').children.length).toBe(1);
 	});
 
 	it('build the demo evidence card', () => {
