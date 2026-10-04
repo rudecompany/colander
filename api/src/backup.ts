@@ -28,6 +28,12 @@ const STAGE = '_restore_';
  */
 const INTERNAL = `name NOT GLOB 'sqlite_*' AND name NOT GLOB '_cf_*' AND name NOT GLOB '__cf_*' AND name NOT GLOB '${STAGE}*'`;
 
+/**
+ * Tables a dump creates but holds no rows of: YouTube Data API data may not be kept 30 days
+ * (Developer Policies III.E.4), and backups are kept 90. A restore leaves them empty.
+ */
+export const API_DATA_TABLES = new Set(['youtube_cache', 'youtube_channels']);
+
 /** The tables a dump holds, in creation order, with their CREATE statements. */
 export function dumpTables(db: Db): { name: string; sql: string }[] {
 	return db.all<{ name: string; sql: string }>(`SELECT name, sql FROM sqlite_master WHERE type = 'table' AND ${INTERNAL} ORDER BY rowid`);
@@ -48,6 +54,7 @@ export function* dumpLines(sql: SqlStorage, db: Db, now: number): Generator<stri
 	const tables = dumpTables(db);
 	for (const t of tables) yield `${t.sql};`;
 	for (const t of tables) {
+		if (API_DATA_TABLES.has(t.name)) continue;
 		const columns = sql.exec(`SELECT * FROM ${ident(t.name)} LIMIT 0`).columnNames;
 		const head = `INSERT INTO ${ident(t.name)}(${columns.map(ident).join(',')}) VALUES(`;
 		const values = columns.map((c) => `quote(${ident(c)})`).join(` || ',' || `);
@@ -251,7 +258,7 @@ const BATCH_CHARS = 1 << 20;
  * Replaces the rows of every table with the dump's SQL text (a stream of UTF-8 bytes) and returns
  * the rows loaded per table. It keeps the Store's schema and _migrations; a table or column this
  * Store does not know fails the whole restore, and so does a dump that does not end with its
- * COMMIT. The rows stream into staging tables in bounded batches, so a dump never sits in memory
+ * COMMIT. API_DATA_TABLES end up empty and are left out of the counts. The rows stream into staging tables in bounded batches, so a dump never sits in memory
  * whole; one transaction then swaps them in, so the live tables change all at once or not at all.
  * Requests keep being served from the live tables meanwhile, and what they write is replaced.
  */
@@ -279,7 +286,8 @@ export async function loadDump(db: Db, body: ReadableStream<Uint8Array>, now: nu
 			last = line;
 			if (!line.startsWith('INSERT INTO ')) continue;
 			const s = parseInsert(line);
-			if (s.table === '_migrations') continue;
+			// Dumps from before API_DATA_TABLES held their rows: those stay out.
+			if (s.table === '_migrations' || API_DATA_TABLES.has(s.table)) continue;
 			if (!(s.table in counts)) throw new Error(`the dump has a table this Store does not know: ${s.table}`);
 			const known = columns.get(s.table);
 			if (!known) columns.set(s.table, s.columns);
@@ -301,6 +309,7 @@ export async function loadDump(db: Db, body: ReadableStream<Uint8Array>, now: nu
 				db.run(`INSERT INTO ${ident(t)}(${list}) SELECT ${list} FROM ${ident(STAGE + t)}`);
 			}
 		});
+		for (const t of API_DATA_TABLES) delete counts[t];
 		return counts;
 	} finally {
 		dropStages();
@@ -318,7 +327,7 @@ export async function restoreDump(db: Db, bucket: R2Bucket, key: string, now: nu
 export function tableCounts(db: Db): Record<string, number> {
 	const counts: Record<string, number> = {};
 	for (const t of dumpTables(db)) {
-		if (t.name !== '_migrations') counts[t.name] = db.get<{ n: number }>(`SELECT count(*) AS n FROM ${ident(t.name)}`)!.n;
+		if (t.name !== '_migrations' && !API_DATA_TABLES.has(t.name)) counts[t.name] = db.get<{ n: number }>(`SELECT count(*) AS n FROM ${ident(t.name)}`)!.n;
 	}
 	return counts;
 }

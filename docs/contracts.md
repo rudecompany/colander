@@ -80,7 +80,7 @@ Entries, count x 16 bytes, sorted ascending by hash (bytewise), no duplicate has
   0   hash       8 bytes  see 2.3
   8   verdict    u8       0 = removed (delta only), 1 slop, 2 likely_slop, 3 ai_made, 4 disputed, 5 clear
   9   flags      u8       bits 0-2 platform code, bit 3 target type (0 source, 1 item),
-                          bit 4 large source, bit 5 imported and not yet reviewed, bit 6 staff reviewed, bit 7 reserved 0
+                          bit 4 large source, bit 5 reserved 0 (see below), bit 6 staff reviewed, bit 7 reserved 0
   10  signals    u16      bitmask, bit order in 3.1
   12  detail     u8       bits 0-1 slop type (0 none, 1 filler, 2 bait, 3 deceptive),
                           bit 2 low_effort, bit 3 mass_produced, bit 4 hollow, bits 5-7 reserved 0
@@ -90,6 +90,9 @@ Trailer, 72 bytes
   0   key_id     8 bytes  first 8 bytes of SHA-256 over the raw 32-byte Ed25519 public key
   8   signature  64 bytes Ed25519 over header and entries (every byte before the trailer)
 ```
+
+Flag bit 5 once meant "imported and not yet reviewed".
+Seed lists no longer put anything on the list (9.3), so servers always write it as 0; readers keep decoding it, because a list published before the change may still set it.
 
 A snapshot of 50,000 entries is 800,104 bytes, under the 2 MB limit with no compression.
 Clients must reject a file whose magic, version, length (`32 + 16*count + 72`), sort order or signature is wrong, and keep their last good copy.
@@ -291,7 +294,7 @@ A report's status follows its source: it stays `under_review` until a reviewer d
       "tags": { "slop": 35, "ai_fine": 4, "not_slop": 2 },
       "items_seen": 23,
       "ai_item_share": 0.91,
-      "uploads_per_day": 14.2
+      "uploads_per_day": null
     }
   },
   "history": [LogEntry, ...]
@@ -300,7 +303,14 @@ A report's status follows its source: it stays `under_review` until a reviewer d
 
 `verdict` is `null` when the source is known but not rated. Fields without data are `null`.
 A lookup by any alias returns the same source.
-`imported` is true when the source came from an imported seed list, reviewed or not; `attribution` then names the list and its license (for example `AiSList (CC BY-NC 4.0), blocklist`), and the source page must show it.
+
+Public pages never name a data source, and never show YouTube Data API data:
+- `imported` is always `false` and `attribution` always `null`. Both stay in the wire format for older clients and are deprecated. Seed lists are review leads only (9.3), so nothing public depends on them. The review API fills both in for reviewers (6.7).
+- `evidence.uploads_per_day` is always `null`.
+- `name` comes from viewers' reports, never from the YouTube Data API, so it is `null` until someone reports the source.
+
+The decision log never names a data source either: reasons the scoring service writes never mention seed lists, and reviewers cannot publish a reason or reasoning that names one (6.7).
+Log entries written before this rule had the list's name replaced with "an imported seed list"; staff keep the original text internally.
 
 `GET /v1/log?limit=&platform=&verdict=&cursor=` returns `{"entries": [LogEntry, ...], "next_cursor": "..." | null}`, newest first, default limit 50, max 200.
 
@@ -332,9 +342,9 @@ A lookup by any alias returns the same source.
 | --- | --- | --- |
 | `POST /v1/appeals` `{"platform","source_id","email","statement"}` | none, 5 per IP per day | Creates an appeal. `201` `{"appeal": Appeal, "secret": "..."}`. The secret lets the creator check status and verify. It is also emailed as a link. |
 | `GET /v1/appeals/{id}?secret=` | secret | `{"appeal": Appeal}` |
-| `POST /v1/appeals/{id}/verify` `{"secret"}` | secret | Checks for the code on the account. YouTube is checked through the Data API when a key is configured, at most 10 times per appeal and 30 times per IP an hour. Otherwise the appeal moves to `pending_manual` for staff. |
+| `POST /v1/appeals/{id}/verify` `{"secret"}` | secret | Checks for the code on the account. YouTube is checked through the Data API when a key is configured and the day's budget allows (9.7), at most 10 times per appeal and 30 times per IP an hour. Otherwise the appeal moves to `pending_manual` for staff. |
 | `POST /v1/review/appeals/{id}/verify` | staff | Staff confirm the code is on the account |
-| `POST /v1/review/appeals/{id}/resolve` `{"outcome": "upheld" \| "denied", "reasoning"}` | staff | Upheld sets Clear. Denied restores the scored verdict. Both write the decision log. |
+| `POST /v1/review/appeals/{id}/resolve` `{"outcome": "upheld" \| "denied", "reasoning"}` | staff | Upheld sets Clear. Denied restores the scored verdict. Both write the decision log, so `reasoning` that names an imported seed list gets `400 source_named`. |
 
 ```json
 {
@@ -383,8 +393,8 @@ Session cookie or Reviewer bearer token. Curators may decide sources that are no
 | Request | Returns |
 | --- | --- |
 | `GET /v1/review/queue?kind=all\|reports\|appeals\|escalations&cursor=` | `{"items": [QueueItem], "next_cursor"}` ordered by priority then age |
-| `GET /v1/review/sources/{platform}/{source_id}` | `{"source": Source, "layers": Layers, "reports": [ReportDetail], "appeals": [Appeal], "items": [ItemSummary], "history": [LogEntry]}` |
-| `POST /v1/review/sources/{platform}/{source_id}/decision` | Body `{"verdict": Verdict \| "none", "reason", "signals": [Signal], "slop_type", "tests", "large": bool?}`. Writes the log and publishes. Slop and Likely slop need AI evidence: `400 ai_evidence_required` unless the provenance layer is met or the body records a provenance signal. Curators get `403 staff_required` for large sources and for sources with an appeal in `pending_manual` or `under_review`. |
+| `GET /v1/review/sources/{platform}/{source_id}` | `{"source": Source, "layers": Layers, "reports": [ReportDetail], "appeals": [Appeal], "items": [ItemSummary], "history": [LogEntry]}`. Unlike the public page, `source.imported` is true when a seed list names the source, and `source.attribution` then names the list, its license and the list kind, for example `Example List (CC0-1.0), blocklist`. |
+| `POST /v1/review/sources/{platform}/{source_id}/decision` | Body `{"verdict": Verdict \| "none", "reason", "signals": [Signal], "slop_type", "tests", "large": bool?}`. Writes the log and publishes. Slop and Likely slop need AI evidence: `400 ai_evidence_required` unless the provenance layer is met or the body records a provenance signal. Curators get `403 staff_required` for large sources and for sources with an appeal in `pending_manual` or `under_review`. A reason that names an imported seed list gets `400 source_named`, as does appeal `reasoning` (6.5). |
 | `POST /v1/review/items/{platform}/{item_id}/decision` | Same body plus `"source_id"` |
 | `POST /v1/review/reports/{id}/dismiss` `{"reason"}` | Closes a report with no verdict change |
 
@@ -406,6 +416,7 @@ Session cookie or Reviewer bearer token. Curators may decide sources that are no
 ```
 
 `kind` is `report`, `appeal` or `escalation`. Escalations are raised by the scoring service (section 9).
+Priority 1 is an appeal, or an appeal escalation; 2 is any other escalation except a seed lead; 3 is a report; 4 is a seed lead (9.5). A large source moves up by one, never above 1.
 `Layers` is `{"provenance": Layer, "behavior": Layer, "rubric": Layer, "consensus": Layer}` with `Layer = {"met": bool, "signals": [Signal], "detail": "Plain sentence"}`.
 
 ### 6.8 Billing and entitlements
@@ -477,12 +488,16 @@ Plan, payment and donation state are never inputs.
 
 ### 9.3 Layers
 
-- Provenance (AI evidence) is met when any holds: at least 2 distinct installs reported `platform_label` on the target (for a source that is not mixed, on any of its items); staff recorded `platform_label`, `content_credentials`, `creator_statement` or `watermark`; the source is an imported seed entry; or community AI consensus: `S + A >= 3`, `n >= 3` and `(S + A) / T >= 0.7`.
-- Behavior (sources; items inherit their source's) is met when any holds: uploads per day of at least 10 from the YouTube Data API; `ai_item_share >= 0.8` over at least 5 items seen with evidence (Kagi's 80% rule, emitted as `mostly_ai`), where an item counts as AI-made only through independent evidence (platform label reports from 2 or more installs, or a reviewer decision), never through community AI consensus, so tags alone cannot make a source look mass-produced; or staff recorded `high_volume`, `templated`, `near_duplicates`, `link_funnel` or `cross_posting`. An imported blocklist seed entry also counts as `mostly_ai`.
+- Provenance (AI evidence) is met when any holds: at least 2 distinct installs reported `platform_label` on the target (for a source that is not mixed, on any of its items); staff recorded `platform_label`, `content_credentials`, `creator_statement` or `watermark`; or community AI consensus: `S + A >= 3`, `n >= 3` and `(S + A) / T >= 0.7`.
+- Behavior (sources; items inherit their source's) is met when any holds: `ai_item_share >= 0.8` over at least 5 items seen with evidence (Kagi's 80% rule, emitted as `mostly_ai`), where an item counts as AI-made only through independent evidence (platform label reports from 2 or more installs, or a reviewer decision), never through community AI consensus, so tags alone cannot make a source look mass-produced; staff recorded `high_volume`, `templated`, `near_duplicates`, `link_funnel` or `cross_posting`; or, only with `YOUTUBE_DERIVED_USE` (9.7), uploads per day of at least 10 from the YouTube Data API.
 - Rubric is met when, among slop tags with `S >= 1`, at least two of the three tests are each selected by a weighted share of 0.5 or more. `mass_produced` also counts as selected when Behavior is met. Emits `rubric_low_effort` and `rubric_hollow` where they pass.
 - Consensus for slop: `S >= 3`, `n >= 3`, `S / T >= 0.7`, and the source is not frozen by burst detection. Emits `community_consensus`.
 - Not-slop consensus: `N >= 3` and `N / T >= 0.7`. Emits `not_slop_consensus`.
 - Split: `S >= 2`, `N + A >= 2` and `0.3 <= S / T <= 0.7`.
+
+An entry on an imported seed list is a review lead, never evidence: it meets no layer, and on its own it never gives a verdict or a list entry.
+A source with community or staff evidence gets exactly the verdict that evidence gives without the seed list.
+The lead only puts the source in the review queue (9.5).
 
 ### 9.4 Verdict, first rule that matches wins
 
@@ -491,8 +506,8 @@ Plan, payment and donation state are never inputs.
 3. Not-slop consensus: Clear.
 4. No provenance: not rated (no list entry).
 5. Split: Disputed.
-6. Provenance, Behavior and Consensus all met: Slop, except that it is capped at Likely slop and raises an escalation when the source is large, when its audience size is unknown (no YouTube Data API figure and no staff `large` decision), or when it is an imported entry nobody has reviewed. Only a reviewer can then make it Slop.
-7. Provenance and (Behavior or Rubric), with `S >= 1` or an imported blocklist seed: Likely slop.
+6. Provenance, Behavior and Consensus all met: Slop, except that it is capped at Likely slop and raises an escalation when the source is large, or when its audience size is unknown (staff never recorded its size, and, with `YOUTUBE_DERIVED_USE` only, the YouTube Data API reported no subscriber count). Only a reviewer can then make it Slop. Without `YOUTUBE_DERIVED_USE`, every source whose size staff have not recorded stays at Likely slop until a reviewer decides.
+7. Provenance and (Behavior or Rubric), with `S >= 1`: Likely slop.
 8. Provenance only: AI-made.
 
 Sources become mixed when at least 5 items have been seen and `ai_item_share < 0.8`.
@@ -503,9 +518,9 @@ Signals on a list entry are the union of the signals that fired for the layers t
 ### 9.5 Expiry, escalations and brigading
 
 - Every list verdict carries `rescore_at = changed_at + 90 days`. At expiry, staff and curator decisions lapse and the target is scored again; if the result is Slop it becomes an escalation and stays Likely slop until reviewed.
-- An escalation is raised when: rule 6 is capped; 3 or more open reports exist on a source; a burst is detected; a verdict lapses into Slop.
+- An escalation is raised when: rule 6 is capped; 3 or more open reports exist on a source; a burst is detected; a verdict lapses into Slop; a seed list imported with `import-seed` names a source no reviewer has decided yet (a seed lead, the lowest priority in the queue). A reviewer's decision on the source closes the seed lead for good.
 - Burst: more than 20 slop tags in one hour on one source from installs younger than 7 days. The consensus layer of that source is frozen for 72 hours and an escalation is raised.
-- A source is large when the YouTube Data API reports 100,000 subscribers or more, or staff set `large`. A source whose audience is unknown is treated like a large one for rule 6 only, and is not shown as large.
+- A source is large when staff set `large`, or, only with `YOUTUBE_DERIVED_USE` (9.7), when the YouTube Data API reports 100,000 subscribers or more. A source whose audience is unknown is treated like a large one for rule 6 only, and is not shown as large.
 - The scoring pass runs every 5 minutes and, debounced by 5 seconds, after any review decision, appeal change or report.
 - Every verdict change writes a decision log entry. Changes made by the scoring pass use actor `community` and a reason generated from the signals.
 
@@ -515,6 +530,15 @@ List snapshot and delta requests are counted per UTC hour without any identifier
 The counts come from edge analytics: every hour the Worker reads the number of `/v1/list/*` requests to its host in each whole hour (`httpRequestsAdaptiveGroups`, cache hits included) into `list_requests`.
 `active_installs = round(requests in the last 24 counted hours / 24)`, because each install syncs hourly.
 Dev mode has no edge analytics, so there the Worker counts the requests itself.
+
+### 9.7 YouTube Data API
+
+The Worker follows the YouTube API Services Developer Policies:
+- Retention: data obtained with the API key alone is never kept 30 days. Cached responses and the per-channel figures are deleted by the hourly prune once they are 29 days old, and a source still needed is looked up again after 20 days. Dumps create those tables but hold none of their rows, so no backup keeps API data either.
+- Names: the API's channel title is never stored. Source names and the decision log's `source_name` come from viewers' reports.
+- Derived metrics: subscriber counts and uploads per day feed scoring (Behavior's `high_volume`, `large` and a known audience) only when `YOUTUBE_DERIVED_USE` is `1`, which needs YouTube's approval first. Off, uploads per day is never computed and no figure is stored; a lookup only links a channel ID and its handle.
+- Quota: every call is charged to a ledger of the Pacific date (YouTube resets quotas at midnight Pacific Time) with its unit cost before it is made, failed calls included, and no call is made once the day's charges would pass `YOUTUBE_DAILY_UNITS`. When YouTube answers `quotaExceeded`, the day counts as used up.
+- Rate: each scoring pass looks up at most 10 channels. A channel that fails is logged and waits for its next refresh while the others go on; a used-up budget ends the lookups until the next Pacific day. Appeal checks share the budget, and fall back to staff when it is used up.
 
 ## 10. Configuration of the Worker
 
@@ -532,7 +556,9 @@ The client address always comes from `CF-Connecting-IP`.
 | `COLANDER_TEST_NOW` | var, dev only | unset | An RFC 3339 time that freezes the clock when `COLANDER_DEV=1`; then no job runs on its own |
 | `COLANDER_MAIL_FROM` | var | `Colander <hello@getcolander.com>` | Sender of sign-in, appeal and billing mail |
 | `RESEND_API_KEY` | secret, optional | unset | Resend, the fallback when the Email Sending binding fails |
-| `YOUTUBE_API_KEY` | secret, optional | unset | YouTube enrichment and automatic appeal verification |
+| `YOUTUBE_API_KEY` | secret, optional | unset | YouTube lookups (channel ID and handle) and automatic appeal verification (9.7) |
+| `YOUTUBE_DAILY_UNITS` | var | `8000` | YouTube Data API units the Worker may spend per Pacific day, of the project's 10,000 (9.7) |
+| `YOUTUBE_DERIVED_USE` | var | empty, which is off | `1` lets subscriber counts and uploads per day feed scoring. Set it only after YouTube approves Colander's derived metrics (9.7). |
 | `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` | secret, optional | unset | Billing. Without them billing routes answer `503 billing_unavailable`. |
 | `STRIPE_PRICE_PLUS_MONTHLY`, `STRIPE_PRICE_PLUS_YEARLY` | var | empty | Price IDs of the Plus prices; checkout answers `503 billing_unavailable` until they are set |
 | `STRIPE_MANAGED_PAYMENTS` | var | empty, which is on | Plus checkout with Stripe Managed Payments as merchant of record. `0` turns it off. |
@@ -569,6 +595,7 @@ Key custody:
 
 `testdata/contract/` holds signed fixtures generated by `node testdata/contract/generate.mjs`, an independent Node implementation, with the development key.
 `list-snapshot.bin` and `list-delta.bin` follow section 3; `list-expected.json` lists their decoded entries (with the target key, hash hex and the ISO date the `updated` day number came from) and the 7 entries left after applying the delta.
+One entry, `yt:s:@catrescuetales`, sets flag bit 5 (`imported`), as lists published before bit 5 was reserved did: decoders must still read it, while the Worker's lists always write it as 0.
 `config-envelope.json` follows section 4 with payload `{"version":7,"note":"contract fixture"}`.
 `plan-token.txt` follows section 5.
 The TypeScript encoder in `packages/shared/src/list.ts`, which the Worker publishes with, is the byte-for-byte reference: it must reproduce `list-snapshot.bin` and `list-delta.bin` from `list-expected.json`.

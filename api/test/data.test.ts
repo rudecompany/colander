@@ -81,7 +81,7 @@ describe('sources.go', () => {
 			const channel = 'UCzzzzzzzzzzzzzzzzzzzzz1';
 			const byId = sources.ensureSource(db, 'yt', channel, '', 1);
 			tags.saveTags(db, 'h1', [tag({ targetId: channel, sourceId: channel })], 1);
-			const keep = sources.setYouTube(db, byId, { channelId: channel, handle: '@AncientWondersDaily', title: '', subscribers: null, uploadsPerDay: null }, 2);
+			const keep = sources.setYouTube(db, byId, { channelId: channel, handle: '@AncientWondersDaily', subscribers: null, uploadsPerDay: null }, 2);
 			expect(keep).toBe(byHandle);
 			const src = sources.getSource(db, keep)!;
 			expect(src.aliases).toEqual([channel, '@ancientwondersdaily']);
@@ -124,10 +124,26 @@ describe('sources.go', () => {
 
 	it('never weakens a blocklist import and lists stale YouTube sources oldest first', async () => {
 		await withDb((db) => {
-			const ref = sources.importSeed(db, 'yt', '@seeded', 'blocklist', 'AiSList', 'CC BY-NC 4.0', 5);
-			sources.importSeed(db, 'yt', '@seeded', 'warnlist', 'Other', 'MIT', 6);
+			const seed = (sourceName: string, list: string, license: string): sources.SeedImport => ({
+				sourceName,
+				list,
+				license,
+				attribution: 'Credit',
+				permissionDoc: '',
+				sha256: '0'.repeat(64),
+				entries: 1
+			});
+			const block = seed('AiSList', 'blocklist', 'CC0-1.0');
+			const ref = sources.importSeed(db, sources.recordSeedImport(db, block, 5), 'yt', '@seeded', block, 5);
+			const warn = seed('Other', 'warnlist', 'MIT');
+			const batch = sources.recordSeedImport(db, warn, 6);
+			sources.importSeed(db, batch, 'yt', '@seeded', warn, 6);
 			const src = sources.getSource(db, ref)!;
-			expect([src.importList, src.importSource, src.importLicense, src.importedAt]).toEqual(['blocklist', 'Other', 'MIT', 6]);
+			expect([src.importList, src.importSource, src.importLicense, src.importedAt, src.importBatch]).toEqual(['blocklist', 'Other', 'MIT', 6, batch]);
+			expect(db.all('SELECT source_name, license, attribution FROM seed_imports ORDER BY id')).toEqual([
+				{ source_name: 'AiSList', license: 'CC0-1.0', attribution: 'Credit' },
+				{ source_name: 'Other', license: 'MIT', attribution: 'Credit' }
+			]);
 			const other = sources.ensureSource(db, 'yt', '@other', '', 1);
 			sources.markYouTubeChecked(db, other, 50);
 			sources.ensureSource(db, 'yt', '', '', 1); // the unattributed holder is never looked up

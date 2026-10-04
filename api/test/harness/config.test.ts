@@ -26,6 +26,13 @@ describe.each([
 		expect(c.vars.COLANDER_DEV).toBe('');
 	});
 
+	it('keeps YouTube figures out of scoring and the spend under the daily quota', () => {
+		// Derived use needs YouTube's written approval first (Developer Policies III.E.4).
+		expect(c.vars.YOUTUBE_DERIVED_USE).toBe('');
+		expect(Number(c.vars.YOUTUBE_DAILY_UNITS)).toBeGreaterThan(0);
+		expect(Number(c.vars.YOUTUBE_DAILY_UNITS)).toBeLessThanOrEqual(10_000);
+	});
+
 	it('mails watchdog alerts to the one address the ALERTS binding may send to', () => {
 		const alerts = c.send_email.find((b: { name: string }) => b.name === 'ALERTS') as { destination_address?: string } | undefined;
 		expect(alerts?.destination_address).toMatch(/@/);

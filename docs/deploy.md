@@ -157,8 +157,12 @@ If a later change to `api/wrangler.jsonc` adds or changes routes or Custom Domai
 ### 12. YouTube Data API key
 
 1. In a Google Cloud project, enable the YouTube Data API v3.
+   Use one project for Colander: splitting one use case's quota across projects breaks the YouTube API Services Developer Policies.
 2. Create an API key restricted to that API.
 3. Put it in the `YOUTUBE_API_KEY` Worker secret of both environments (step 8).
+4. Leave `YOUTUBE_DAILY_UNITS` at `8000` in `api/wrangler.jsonc` unless the project's quota changes; the Worker never spends more per Pacific day.
+5. Leave `YOUTUBE_DERIVED_USE` empty.
+   Set it to `1` only after YouTube approves Colander's derived metrics in the Audit and Quota Extension Form; until then no subscriber count or uploads per day reaches a verdict (contracts 9.7).
 
 ### 13. Chrome Web Store developer account and item
 
@@ -344,7 +348,7 @@ The workflows talk to the Worker through one authenticated channel, and the Work
 | --- | --- | --- |
 | `status` | `{}` | `head_seq` (Store list head), `r2_seq` (sequence in R2's `list/snapshot.bin`), `pass_age_s` (seconds since the last completed scoring pass), `publish_lag_s` (seconds the oldest verdict change not yet in R2's list has waited, 0 when R2 holds the head), `dump_age_s` (seconds since the newest successful dump), `dump_ms`, `rows_read_last_pass` |
 | `grant-role` | `{"email", "role"}` with role `member`, `curator` or `staff` | The account |
-| `import-seed` | `{"file", "list", "source_name", "license", "accept_license": true}`, file being the list text | Counts imported |
+| `import-seed` | `{"file", "list", "source_name", "license", "attribution", "permission_doc"}`, file being the list text, list `blocklist` or `warnlist`, license `CC0-1.0`, `CC-BY-4.0`, `MIT` or `LicenseRef-written-grant`. `attribution` (the credit) is required for CC BY and MIT, `permission_doc` (where the written grant is kept) for a written grant. Non-commercial, no-derivatives, share-alike, GPL and unlicensed lists answer `400 license_refused`. | Counts imported and the batch ID; entries become review leads, never verdicts |
 | `sign-config` | `{"file"}`, file being the adapter configuration JSON, signed byte for byte | Version and key ID |
 | `drill` | `{}` | `{"ok": true, ...}` after the dump drill passed (hosting plan section 3) |
 | `purge-cache` | `{"confirm": "purge-cache"}` | Done |
@@ -384,7 +388,10 @@ The run log and its summary are the audit trail.
 Examples:
 - Make a curator: command `grant-role`, args `{"email": "sam@example.com", "role": "curator"}`.
 - Ship new adapter selectors: raise `version` in `extension/src/adapters/default-config.json`, merge it, then run command `sign-config` with that file.
-- Import a seed list: commit it, then command `import-seed` with file set to its path and args `{"list": "blocklist", "source_name": "AiSList", "license": "CC BY-NC 4.0", "accept_license": true}`.
+- Import a seed list: commit it, then command `import-seed` with file set to its path and args `{"list": "blocklist", "source_name": "Example List", "license": "CC0-1.0"}`.
+  Its entries only put sources in the review queue: they never give a verdict and are never named in public.
+  Warning: check the list's license file at the exact commit you import before every run.
+  A paid product may not use a list under a non-commercial, no-derivatives, share-alike or GPL license, or one with no license, and the command refuses them; such a list needs a written grant from its maintainer first, imported as `LicenseRef-written-grant` with `permission_doc`.
 - See the Store's health: command `status`.
 
 ### Restore

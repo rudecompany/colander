@@ -39,7 +39,11 @@ export function toLog(e: LogEntry): WireLogEntry {
 /** Go's round2: two decimals, halves up. */
 export const round2 = (f: number): number => Math.trunc(f * 100 + 0.5) / 100;
 
-/** A scored source on the wire, with its public evidence summary. */
+/**
+ * A scored source on the wire, with its public evidence summary. Public pages never name a data
+ * source and never show YouTube Data API figures: `imported` is false, `attribution` and
+ * `uploads_per_day` are null (contracts 6.4). The review API fills in the seed provenance.
+ */
 export function toSource(ev: Evaluation): WireSource {
 	const src = ev.data.source;
 	const st = src.state;
@@ -54,8 +58,8 @@ export function toSource(ev: Evaluation): WireSource {
 		slop_type: optString<SlopType>(SlopTypes[st.detail & 3]!),
 		tests: testNames(st.detail),
 		large: ev.input.large,
-		imported: src.importList !== '',
-		attribution: src.importList !== '' ? `${src.importSource} (${src.importLicense}), ${src.importList}` : null,
+		imported: false,
+		attribution: null,
 		appeal_open: ev.data.appealOpen,
 		updated_at: optTime(st.changedAt),
 		rescore_at: optTime(st.rescoreAt),
@@ -64,7 +68,7 @@ export function toSource(ev: Evaluation): WireSource {
 			tags: { slop: e.slop, ai_fine: e.aiFine, not_slop: e.notSlop },
 			items_seen: e.itemsSeen,
 			ai_item_share: e.itemsSeen > 0 ? round2(e.aiItemShare) : null,
-			uploads_per_day: e.uploadsPerDay >= 0 ? round2(e.uploadsPerDay) : null
+			uploads_per_day: null
 		}
 	};
 }

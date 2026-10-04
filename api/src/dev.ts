@@ -18,7 +18,7 @@ import { grantRole, setDisplayName, type Account } from './store/accounts';
 import { AppealAwaiting, AppealPendingManual, createAppeal, transitionAppeal, type Appeal } from './store/appeals';
 import { latestSequence } from './store/list';
 import { verdictCounts } from './store/misc';
-import { ensureSource, findItem, findSource, importSeed, setYouTube, sourceRefs } from './store/sources';
+import { ensureSource, findItem, findSource, importSeed, recordSeedImport, setYouTube, sourceRefs, type SeedImport } from './store/sources';
 import { createReport, dismissReport, saveTags, type TagInput } from './store/tags';
 import type { Store } from './store/store';
 
@@ -173,10 +173,22 @@ class Seeder {
 		return this.attempt(() => ensureSource(this.db, platform, alias, name, this.unix)) ?? 0;
 	}
 
-	/** What the YouTube Data API would report, through the same store call enrichment uses. */
-	youtube(alias: string, channelId: string, handle: string, title: string, subscribers: number, uploadsPerDay: number): void {
-		const ref = this.source('yt', alias, title);
-		this.attempt(() => setYouTube(this.db, ref, { channelId, handle, title, subscribers, uploadsPerDay }, this.unix));
+	/**
+	 * A channel with the name viewers report for it, and its channel ID and handle as a Data API
+	 * lookup without derived use links them, through the same store call enrichment uses.
+	 */
+	youtube(alias: string, channelId: string, handle: string, name: string): void {
+		const ref = this.source('yt', alias, name);
+		this.attempt(() => setYouTube(this.db, ref, { channelId, handle, subscribers: null, uploadsPerDay: null }, this.unix));
+	}
+
+	/** A seed list import, through the same store calls the import-seed command uses: review leads only. */
+	importSeed(list: string, ...aliases: string[]): void {
+		const seed: SeedImport = { sourceName: 'Demo list', list, license: 'CC0-1.0', attribution: '', permissionDoc: '', sha256: '0'.repeat(64), entries: aliases.length };
+		this.attempt(() => {
+			const batch = recordSeedImport(this.db, seed, this.unix);
+			for (const alias of aliases) importSeed(this.db, batch, 'yt', alias, seed, this.unix);
+		});
 	}
 
 	/** Scores until nothing changes, since reputation feeds on the verdicts of the pass before. */
@@ -286,33 +298,36 @@ class Seeder {
 		this.attempt(() => setDisplayName(db, this.curator.id, 'Sam'));
 		[this.staff.displayName, this.curator.displayName] = ['Rae', 'Sam'];
 
-		// An old staff decision that lapses: Quantum Recipes was confirmed as Slop 95 days ago.
+		// An old staff decision that lapses: Quantum Recipes was confirmed as Slop, and small, 95 days
+		// ago. Platform labels on its videos keep it mass-produced, so it scores as Slop again.
 		this.at(this.days(100));
-		this.youtube('@quantumrecipesai', 'UCdemo000000000000000014', '@quantumrecipesai', 'Quantum Recipes AI', 8_200, 16);
+		this.youtube('@quantumrecipesai', 'UCdemo000000000000000014', '@quantumrecipesai', 'Quantum Recipes AI');
 		this.tag(pick(m, 0, 8), 'yt', 'source', '@quantumrecipesai', '', { verdict: 'slop', slopType: 'filler', tests: low | mass, label: true });
-		this.at(this.days(95));
-		this.decide(this.staff, 'yt', '@quantumrecipesai', '', 'slop', 'Staff review confirmed a narration template over stock footage, posted many times a day.', Sig.templated, 'filler', low | mass);
-
-		// Seed lists, imported through the same call the import-seed command uses. The names are fictional.
-		this.at(this.days(45));
-		for (const alias of ['@catrescuetales', '@dailymotivationmachine']) {
-			this.attempt(() => importSeed(db, 'yt', alias, 'blocklist', 'Demo list', 'CC0 (fictional demo)', this.unix));
+		for (let i = 0; i < 5; i++) {
+			this.tag(pick(m, 8 + 2 * i, 2), 'yt', 'item', `demoQR${pad(i, 5)}`, '@quantumrecipesai', { verdict: 'slop', slopType: 'filler', tests: low | mass, label: true });
 		}
-		this.attempt(() => importSeed(db, 'yt', '@biblestoriesanimated', 'warnlist', 'Demo list', 'CC0 (fictional demo)', this.unix));
+		this.at(this.days(95));
+		this.decide(this.staff, 'yt', '@quantumrecipesai', '', 'slop', 'Staff review confirmed a narration template over stock footage, posted many times a day.', Sig.templated, 'filler', low | mass, false);
+
+		// Seed lists, imported through the calls the import-seed command uses. The names are
+		// fictional. Their entries are review leads only: they never give a verdict.
+		this.at(this.days(45));
+		this.importSeed('blocklist', '@catrescuetales', '@dailymotivationmachine');
+		this.importSeed('warnlist', '@biblestoriesanimated');
 
 		// The bulk of community tagging happens a month ago, by installs that are mature at the end.
 		this.at(this.days(40));
-		this.youtube('@aihistorydaily', 'UCaaaaaaaaaaaaaaaaaaaaaa', '@aihistorydaily', 'AI History Daily', 48_000, 22);
-		this.youtube('@ancientwondersdaily', 'UCdemo000000000000000001', '@ancientwondersdaily', 'Ancient Wonders Daily AI', 61_000, 31);
-		this.youtube('@lostcivsexplained', 'UCdemo000000000000000002', '@lostcivsexplained', 'Lost Civilizations Explained', 23_000, 2.5);
-		this.youtube('@gossipnarrated', 'UCdemo000000000000000003', '@gossipnarrated', 'Celebrity Gossip Narrated', 1_240_000, 19);
-		this.youtube('@galaxyfacts4k', 'UCdemo000000000000000004', '@galaxyfacts4k', 'Galaxy Facts 4K', 87_000, 3);
-		this.youtube('@grandpasworkshop', 'UCdemo000000000000000005', '@grandpasworkshop', "Grandpa's Workshop", 132_000, 0.3);
-		this.youtube('@priyaraohistory', 'UCdemo000000000000000006', '@priyaraohistory', 'Priya Rao History', 9_400, 0.4);
-		this.youtube('@oceanmysteriesunveiled', 'UCdemo000000000000000007', '@oceanmysteriesunveiled', 'Ocean Mysteries Unveiled', 15_000, 12);
-		this.youtube('@spacekidssongs', 'UCdemo000000000000000008', '@spacekidssongs', 'Space Kids Songs', 77_000, 25);
-		this.youtube('@forestsoundsrelax', 'UCdemo000000000000000009', '@forestsoundsrelax', 'Forest Sounds Relax', 4_100, 1);
-		this.youtube('@catrescuetales', 'UCdemo000000000000000010', '@catrescuetales', 'Kitty Rescue Stories', 39_000, 9);
+		this.youtube('@aihistorydaily', 'UCaaaaaaaaaaaaaaaaaaaaaa', '@aihistorydaily', 'AI History Daily');
+		this.youtube('@ancientwondersdaily', 'UCdemo000000000000000001', '@ancientwondersdaily', 'Ancient Wonders Daily AI');
+		this.youtube('@lostcivsexplained', 'UCdemo000000000000000002', '@lostcivsexplained', 'Lost Civilizations Explained');
+		this.youtube('@gossipnarrated', 'UCdemo000000000000000003', '@gossipnarrated', 'Celebrity Gossip Narrated');
+		this.youtube('@galaxyfacts4k', 'UCdemo000000000000000004', '@galaxyfacts4k', 'Galaxy Facts 4K');
+		this.youtube('@grandpasworkshop', 'UCdemo000000000000000005', '@grandpasworkshop', "Grandpa's Workshop");
+		this.youtube('@priyaraohistory', 'UCdemo000000000000000006', '@priyaraohistory', 'Priya Rao History');
+		this.youtube('@oceanmysteriesunveiled', 'UCdemo000000000000000007', '@oceanmysteriesunveiled', 'Ocean Mysteries Unveiled');
+		this.youtube('@spacekidssongs', 'UCdemo000000000000000008', '@spacekidssongs', 'Space Kids Songs');
+		this.youtube('@forestsoundsrelax', 'UCdemo000000000000000009', '@forestsoundsrelax', 'Forest Sounds Relax');
+		this.youtube('@catrescuetales', 'UCdemo000000000000000010', '@catrescuetales', 'Kitty Rescue Stories');
 
 		const slop = (tests: number, kind: string, label: boolean): TagOpt => ({ verdict: 'slop', slopType: kind, tests, label });
 		const notSlop: TagOpt = { verdict: 'not_slop' };
@@ -441,6 +456,8 @@ class Seeder {
 		this.decide(this.staff, 'yt', '@grandpasworkshop', '', 'clear', "Original footage and the creator's own narration.", 0, '', 0);
 		this.at(this.days(20));
 		this.decide(this.staff, 'tt', '@sloppyfacts', '', 'likely_slop', 'Generated facts videos with frequent errors; large audience, so held at Likely slop.', Sig.platform_label, 'filler', hollow, true);
+		// Staff record a channel's size themselves: no YouTube figure decides it without derived use.
+		this.decide(this.staff, 'yt', '@gossipnarrated', '', 'likely_slop', 'Synthetic narration over celebrity photos; a large channel, so held at Likely slop until a full review.', 0, 'deceptive', low | hollow | mass, true);
 		// TikTok reports no audience size, so community scoring holds Pet Pals at Likely slop until staff look.
 		this.decide(this.staff, 'tt', '@petpalsai', '', 'slop', 'Staff review confirmed generated pet clips posted around the clock to a small audience.', 0, 'filler', low | mass, false);
 		this.decide(this.staff, 'ig', 'luxury.life.ai', '', 'slop', 'Generated lifestyle images that funnel to a course sales page.', Sig.link_funnel, 'bait', hollow | low);
@@ -492,6 +509,7 @@ class Seeder {
 		// source whose verdict has since changed already show that verdict.
 		this.at(this.end - 3 * 3_600_000);
 		this.report(m[63]!, 'ig', 'fitness.tips.ai', 'Fitness Tips AI', 'Every post pushes the same supplement link.', 'bait', hollow);
+		this.report(m[64]!, 'yt', '@gossipnarrated', 'Celebrity Gossip Narrated', 'Now posts about nineteen generated gossip videos a day.', 'deceptive', mass);
 
 		// Two hours ago, a burst of slop tags from brand-new installs: consensus freezes and staff are asked to look.
 		this.at(this.end - 2 * 3_600_000);

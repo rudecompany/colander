@@ -3,11 +3,11 @@
 import { env } from 'cloudflare:workers';
 import { evictDurableObject, runDurableObjectAlarm, runInDurableObject } from 'cloudflare:test';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { countsAgree, dump, DUMP_PREFIX, dumpKey, dumpLines, dumpTables, loadDump, newestDump, parseInsert, restoreDump, tableCounts } from '../src/backup';
+import { API_DATA_TABLES, countsAgree, dump, DUMP_PREFIX, dumpKey, dumpLines, dumpTables, loadDump, newestDump, parseInsert, restoreDump, tableCounts } from '../src/backup';
 import { nextDump, STATUS } from '../src/jobs';
 import { grantRole, setDisplayName } from '../src/store/accounts';
 import type { Db } from '../src/store/db';
-import { putSync } from '../src/store/misc';
+import { cachePut, putSync } from '../src/store/misc';
 import { setYouTube } from '../src/store/sources';
 import { saveTags } from '../src/store/tags';
 import type { Store } from '../src/store/store';
@@ -20,7 +20,7 @@ const fresh = () => env.STORE.getByName(`backup-${++n}`);
 function contents(db: Db): Record<string, string[]> {
 	const out: Record<string, string[]> = {};
 	for (const t of dumpTables(db)) {
-		if (t.name === '_migrations') continue;
+		if (t.name === '_migrations' || API_DATA_TABLES.has(t.name)) continue;
 		const cols = db.all<{ name: string }>(`SELECT name FROM pragma_table_info('${t.name}')`).map((c) => `quote("${c.name}")`);
 		out[t.name] = db.all<{ v: string }>(`SELECT ${cols.join(` || ',' || `)} AS v FROM "${t.name}"`).map((r) => r.v).sort();
 	}
@@ -43,12 +43,13 @@ function fill(store: Store): void {
 		1_790_000_000
 	);
 	const ref = db.get<{ id: number }>("SELECT id FROM sources WHERE canonical_id = '@slopfarm'")!.id;
-	setYouTube(db, ref, { channelId: 'UCzzzzzzzzzzzzzzzzzzzzz1', handle: '@slopfarm', title: 'Slop Farm', subscribers: 12_345, uploadsPerDay: 3 }, 1_790_000_000);
+	setYouTube(db, ref, { channelId: 'UCzzzzzzzzzzzzzzzzzzzzz1', handle: '@slopfarm', subscribers: 12_345, uploadsPerDay: 3 }, 1_790_000_000);
 	db.run('UPDATE sources SET uploads_per_day = 0.1 + 0.2 WHERE id = ?', ref);
 	putSync(db, 'acc_1', 0, '{"a":"line\\nbreak","b":[1,2.5]}', 1_790_000_000);
 	db.run("INSERT INTO list_sequences (seq, created_at) VALUES (1790000000, 1790000000)");
 	db.run("INSERT INTO list_entries (hash, entry, target_key) VALUES (x'00ff10a0b0c0d0e0', x'00ff10a0b0c0d0e0010d040008000000', 'yt:s:@slopfarm')");
 	db.run("INSERT INTO list_changes (seq, hash, entry) VALUES (1790000000, x'00ff10a0b0c0d0e0', x'00ff10a0b0c0d0e0010d040008000000')");
+	db.run("INSERT INTO list_entries (hash, entry, target_key) VALUES (x'01', x'', 'empty'), (x'02', x'0001', 'nul')");
 	db.run("INSERT INTO youtube_cache (key, body, fetched_at) VALUES ('empty', x'', 1), ('nul', x'0001', 2)");
 	db.run("INSERT INTO jobs (name, due_at) VALUES ('publish', 9007199254740991)");
 	db.run("INSERT INTO limits (name, key, tokens, at) VALUES ('donate', 'k', 2.0, 1)");
@@ -81,9 +82,13 @@ describe('dump and restore', () => {
 		await runInDurableObject(fresh(), async (store: Store) => {
 			// Rows the restore replaces.
 			grantRole(store.db, 'someone@example.com', 'member', 1);
+			cachePut(store.db, 'live', new Uint8Array([1]), 1);
 			const rows = await restoreDump(store.db, env.BACKUPS, key, T);
-			expect(rows).toMatchObject({ accounts: 2, tags: 2, sources: 1, list_entries: 1, youtube_cache: 2, jobs: 1, limits: 1 });
+			expect(rows).toMatchObject({ accounts: 2, tags: 2, sources: 1, list_entries: 3, jobs: 1, limits: 1 });
 			expect(rows).not.toHaveProperty('_migrations');
+			// YouTube Data API data is never in a backup: a restore leaves it empty.
+			for (const t of API_DATA_TABLES) expect(rows).not.toHaveProperty(t);
+			expect(store.db.get('SELECT (SELECT count(*) FROM youtube_cache) + (SELECT count(*) FROM youtube_channels) AS n')).toEqual({ n: 0 });
 			expect(contents(store.db)).toEqual(before);
 			expect(store.db.get<{ t: string }>("SELECT typeof(uploads_per_day) AS t FROM sources")!.t).toBe('real');
 			expect(store.db.all('PRAGMA foreign_key_check')).toEqual([]);
@@ -96,7 +101,7 @@ describe('dump and restore', () => {
 			fill(store);
 			state.storage.kv.put('status:pass', { at: 1 });
 			const lines = dumpText(store, state).trimEnd().split('\n');
-			expect(lines.slice(0, 3)).toEqual([`-- Colander Store dump, schema version 4, taken ${new Date(T).toISOString()}`, 'PRAGMA foreign_keys=OFF;', 'BEGIN TRANSACTION;']);
+			expect(lines.slice(0, 3)).toEqual([`-- Colander Store dump, schema version 5, taken ${new Date(T).toISOString()}`, 'PRAGMA foreign_keys=OFF;', 'BEGIN TRANSACTION;']);
 			expect(lines.at(-1)).toBe('COMMIT;');
 			const text = lines.join('\n');
 			for (const t of dumpTables(store.db)) expect(text).toContain(`${t.sql};\n`);
@@ -106,7 +111,8 @@ describe('dump and restore', () => {
 			);
 			expect(text).toContain(`INSERT INTO "jobs"("name","due_at") VALUES('publish',9007199254740991);`);
 			expect(text).toContain(`INSERT INTO "limits"("name","key","tokens","at") VALUES('donate','k',2.0,1);`);
-			expect(text).toContain(`VALUES('empty',X'',1);`);
+			expect(text).toContain(`VALUES(X'01',X'','empty');`);
+			for (const t of API_DATA_TABLES) expect(text, t).not.toContain(`INSERT INTO "${t}"`);
 			const firstIndex = lines.findIndex((l) => l.startsWith('CREATE INDEX'));
 			expect(firstIndex).toBeGreaterThan(lines.findLastIndex((l) => l.startsWith('INSERT INTO')));
 		});
@@ -125,11 +131,11 @@ describe('dump and restore', () => {
 			}
 		} as unknown as R2Bucket;
 		const { key, before } = await runInDurableObject(fresh(), async (store: Store, state) => {
-			// Random bytes do not compress, so 8 x 700 KB of them make a dump of about 6 MiB.
+			// Random bytes do not compress, so 8 x 700 KB of them, written as hex, make a dump of about 6 MiB.
 			for (let i = 0; i < 8; i++) {
 				const body = new Uint8Array(700_000);
 				for (let at = 0; at < body.length; at += 65_536) crypto.getRandomValues(body.subarray(at, at + 65_536));
-				store.db.run('INSERT INTO youtube_cache (key, body, fetched_at) VALUES (?, ?, ?)', `k${i}`, body.buffer, i);
+				store.db.run('INSERT INTO list_entries (hash, entry, target_key) VALUES (?, ?, ?)', new Uint8Array([i]).buffer, body.buffer, `k${i}`);
 			}
 			const { key } = await dump(state, store.db, bucket, T);
 			return { key, before: contents(store.db) };
@@ -138,7 +144,7 @@ describe('dump and restore', () => {
 		expect(parts[0]).toBe(5 * 1024 * 1024);
 		expect(parts[1]).toBeLessThan(5 * 1024 * 1024);
 		await runInDurableObject(fresh(), async (store: Store) => {
-			expect((await restoreDump(store.db, env.BACKUPS, key, T))!.youtube_cache).toBe(8);
+			expect((await restoreDump(store.db, env.BACKUPS, key, T))!.list_entries).toBe(8);
 			expect(contents(store.db)).toEqual(before);
 		});
 	});
@@ -167,8 +173,11 @@ describe('dump and restore', () => {
 		expect(old).not.toContain('"mixed"');
 		await runInDurableObject(fresh(), async (store: Store) => {
 			store.db.run("INSERT INTO sources (platform, canonical_id, created_at, mixed) VALUES ('yt', '@gone', 1, 1)");
-			expect((await loadDump(store.db, bytes(old), T)).sources).toBe(1);
+			// Dumps from before the API data rule held YouTube responses: those rows stay out.
+			const withCache = old.replace('COMMIT;', `INSERT INTO "youtube_cache"("key","body","fetched_at") VALUES('old',X'00',1);\nCOMMIT;`);
+			expect((await loadDump(store.db, bytes(withCache), T)).sources).toBe(1);
 			expect(store.db.all('SELECT canonical_id, mixed FROM sources')).toEqual([{ canonical_id: 'UCzzzzzzzzzzzzzzzzzzzzz1', mixed: 0 }]);
+			expect(store.db.all('SELECT key FROM youtube_cache')).toEqual([]);
 		});
 	});
 });

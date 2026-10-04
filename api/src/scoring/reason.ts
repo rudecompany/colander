@@ -1,5 +1,5 @@
 // The plain-language reasons the decision log and the review queue show (Go's scoring/reason.go).
-import type { Input, Result } from './rules';
+import type { Result } from './rules';
 
 /** Plain-language signal clauses, worded after SIGNAL_TEXT in packages/shared/src/verdicts.ts. */
 const signalPhrase = [
@@ -41,24 +41,20 @@ function sentence(parts: string[]): string {
 }
 
 /** Explains a verdict the scoring pass set, in plain words built from the signals. */
-export function communityReason(r: Result, input: Input, importSource: string): string {
+export function communityReason(r: Result): string {
 	if (r.verdict === '') return 'Not rated any more. The remaining evidence does not meet any verdict rule.';
 	if (r.rule === 1) return 'An appeal is open, so this shows as Disputed while staff review it.';
 	if (r.rule === 3) return 'The community says it is not slop.';
 	if (r.rule === 5) return 'Tags are split between slop and not slop, so this shows as Disputed.';
+	// Seed lists never give a verdict, so a reason never mentions one (contracts 9.3).
 	const parts: string[] = [];
-	if (!input.item && input.imported !== '') {
-		parts.push(`listed on the ${importSource || 'an imported'} seed list`);
-	} else if (r.provenance.signals === 0) {
-		parts.push('taggers agree it is AI-made');
-	}
+	if (r.provenance.signals === 0) parts.push('taggers agree it is AI-made');
 	signalPhrase.forEach((p, i) => {
 		if ((r.signals & (1 << i)) !== 0) parts.push(p);
 	});
 	let out = `${verdictWord(r.verdict)}. ${sentence(parts)}`;
 	if (r.rule === 6) {
 		if (r.cappedBy === 'large') out += ' Held at Likely slop until staff review it, because it has a large audience.';
-		else if (r.cappedBy === 'imported') out += ' Held at Likely slop until staff review the imported entry.';
 		else if (r.cappedBy === 'audience') out += ' Held at Likely slop until staff review it, because its audience size is unknown.';
 		else if (r.cappedBy === 'lapsed') out += ' Held at Likely slop until staff review it again, because the earlier verdict expired.';
 	}
@@ -70,8 +66,6 @@ export function escalationSummary(cappedBy: string): string {
 	switch (cappedBy) {
 		case 'large':
 			return 'Scores as Slop, held at Likely slop: large source needs staff review';
-		case 'imported':
-			return 'Scores as Slop, held at Likely slop: imported entry not yet reviewed';
 		case 'audience':
 			return 'Scores as Slop, held at Likely slop: audience size unknown, needs staff review';
 		default:

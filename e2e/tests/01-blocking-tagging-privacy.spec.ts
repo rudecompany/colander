@@ -56,6 +56,12 @@ test('the real signed list hides, collapses and labels by strictness, and Strict
 	await expect(source).toHaveURL(`${ORIGIN}/s/yt/@catrescuetales`);
 	await expect(source.getByRole('heading', { level: 1, name: 'Kitty Rescue Stories' })).toBeVisible();
 	await expect(source.locator('.banner .chip-line')).toContainText('Likely slop');
+	// A seed list names this channel too, but public pages never name a data source, and the
+	// verdict rests on community evidence alone.
+	await expect(source.locator('body')).not.toContainText(/demo list|seed list|imported from/i);
+	const publicJSON = await (await fetch(`${ORIGIN}/v1/sources/yt/@catrescuetales`)).text();
+	expect(publicJSON).not.toMatch(/demo list|seed list|CC0/i);
+	expect(JSON.parse(publicJSON).source).toMatchObject({ verdict: 'likely_slop', imported: false, attribution: null });
 	await source.close();
 	await page.keyboard.press('Escape');
 	await expect(why).toHaveCount(0);

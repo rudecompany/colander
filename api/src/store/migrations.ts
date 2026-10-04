@@ -6,13 +6,15 @@ import init from './migrations/0001_init.sql';
 import billing from './migrations/0002_billing.sql';
 import scoringState from './migrations/0003_scoring_state.sql';
 import store from './migrations/0004_store.sql';
+import compliance from './migrations/0005_compliance.sql';
 import type { Db } from './db';
 
 export const MIGRATIONS = [
 	{ version: 1, name: '0001_init.sql', sql: init },
 	{ version: 2, name: '0002_billing.sql', sql: billing },
 	{ version: 3, name: '0003_scoring_state.sql', sql: scoringState },
-	{ version: 4, name: '0004_store.sql', sql: store }
+	{ version: 4, name: '0004_store.sql', sql: store },
+	{ version: 5, name: '0005_compliance.sql', sql: compliance }
 ];
 
 /** Applies pending migrations, each in its own transaction, and returns the schema version. */

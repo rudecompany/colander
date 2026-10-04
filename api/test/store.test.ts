@@ -40,6 +40,52 @@ describe('migrations', () => {
 		expect(await stub.health()).toBe(99);
 	});
 
+	// 0005 cleans what earlier code stored: seed list names in public log reasons, and YouTube Data
+	// API titles and figures, which may not be kept 30 days.
+	it('takes seed list names out of public reasons and drops stored YouTube API data (0005)', async () => {
+		await runInDurableObject(env.STORE.getByName('migration-0005'), async (store: Store, state) => {
+			const db = store.db;
+			await state.storage.deleteAll();
+			for (const m of MIGRATIONS.slice(0, 4)) db.run(m.sql);
+			db.run("INSERT INTO installs (hash, created_at) VALUES ('h', 1)");
+			db.run(`INSERT INTO sources (id, platform, canonical_id, name, import_list, import_source, import_license, subscribers, uploads_per_day, youtube_checked_at, created_at) VALUES
+				(1, 'yt', 'UCzzzzzzzzzzzzzzzzzzzzz1', 'API Title', 'blocklist', 'AiSList', 'CC BY-NC 4.0', 5000, 2.5, 10, 1),
+				(2, 'yt', 'UCzzzzzzzzzzzzzzzzzzzzz2', 'Reported Name', NULL, NULL, NULL, NULL, NULL, 10, 1),
+				(3, 'tt', '@viewer', 'Never Looked Up', NULL, NULL, NULL, NULL, NULL, NULL, 1)`);
+			db.run("INSERT INTO reports (id, install_hash, client_id, platform, source_id, reported_id, source_name, reason, created_at, updated_at) VALUES ('r', 'h', 'c', 'yt', 2, 'UCzzzzzzzzzzzzzzzzzzzzz2', 'Reported Name', 'x', 1, 1)");
+			const row = (id: number, sourceId: number, name: string, reason: string, actor: string) =>
+				db.run(
+					"INSERT INTO decision_log (id, at, platform, target_type, target_id, source_id, source_key, source_name, reason, actor) VALUES (?, 1, 'yt', 'source', 'x', ?, 'x', ?, ?, ?)",
+					id,
+					sourceId,
+					name,
+					reason,
+					actor
+				);
+			row(1, 1, 'API Title', 'Likely slop. Listed on the AiSList seed list, it posts at a volume no person could sustain, and it is tagged as slop by the community.', 'community');
+			row(2, 1, 'API Title', 'AI-made. Listed on the an imported seed list.', 'appeal');
+			row(3, 2, 'Reported Name', 'Staff found it listed on the AiSList seed list.', 'staff');
+
+			db.run(MIGRATIONS[4]!.sql);
+			expect(db.all('SELECT id, source_name, reason, reason_original FROM decision_log ORDER BY id')).toEqual([
+				{
+					id: 1,
+					source_name: null,
+					reason: 'Likely slop. Listed on an imported seed list, it posts at a volume no person could sustain, and it is tagged as slop by the community.',
+					reason_original: 'Likely slop. Listed on the AiSList seed list, it posts at a volume no person could sustain, and it is tagged as slop by the community.'
+				},
+				{ id: 2, source_name: null, reason: 'AI-made. Listed on an imported seed list.', reason_original: 'AI-made. Listed on the an imported seed list.' },
+				// A reviewer's own words are theirs; the name a report gave stays.
+				{ id: 3, source_name: 'Reported Name', reason: 'Staff found it listed on the AiSList seed list.', reason_original: null }
+			]);
+			expect(db.all('SELECT id, name, subscribers, uploads_per_day, youtube_checked_at, import_source FROM sources ORDER BY id')).toEqual([
+				{ id: 1, name: null, subscribers: null, uploads_per_day: null, youtube_checked_at: null, import_source: 'AiSList' },
+				{ id: 2, name: 'Reported Name', subscribers: null, uploads_per_day: null, youtube_checked_at: null, import_source: null },
+				{ id: 3, name: 'Never Looked Up', subscribers: null, uploads_per_day: null, youtube_checked_at: null, import_source: null }
+			]);
+		});
+	});
+
 	it('enforces foreign keys as the Go store did with PRAGMA foreign_keys', async () => {
 		await runInDurableObject(env.STORE.getByName('fk'), (store: Store) => {
 			expect(() => store.db.run("INSERT INTO tags (install_hash, platform, target_type, target_id, source_id, client_id, verdict, created_at, received_at) VALUES ('nobody', 'yt', 'source', '@x', 1, 'c', 'slop', 1, 1)")).toThrow(/FOREIGN KEY/);

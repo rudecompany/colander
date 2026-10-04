@@ -34,12 +34,16 @@ export interface Source {
 	importSource: string;
 	importLicense: string;
 	importedAt: number;
+	/** the checked import (seed_imports) that last listed it, 0 for none or an import from before the license check */
+	importBatch: number;
 	reviewedAt: number;
 	largeStaff: boolean;
 	/** when staff last recorded the source's size, 0 when never */
 	sizeReviewedAt: number;
+	/** YouTube Data API figures (youtube_channels), only kept while YOUTUBE_DERIVED_USE is on */
 	subscribers: number | null;
 	uploadsPerDay: number | null;
+	/** when Colander last looked the channel up, found or not */
 	youtubeCheckedAt: number;
 	frozenUntil: number;
 	state: State;
@@ -76,6 +80,7 @@ type SourceRow = StateRow & {
 	import_source: string;
 	import_license: string;
 	imported_at: number;
+	import_batch: number;
 	reviewed_at: number;
 	large_staff: number;
 	size_reviewed_at: number;
@@ -89,10 +94,11 @@ type SourceRow = StateRow & {
 
 type ItemRow = StateRow & { id: number; platform: string; item_id: string; source_id: number; created_at: number };
 
+// The YouTube figures come from youtube_channels (y), whose rows the hourly prune deletes at 30 days.
 const sourceCols = `id, platform, canonical_id, ifnull(name, '') AS name, ifnull(import_list, '') AS import_list,
 	ifnull(import_source, '') AS import_source, ifnull(import_license, '') AS import_license,
-	ifnull(imported_at, 0) AS imported_at, ifnull(reviewed_at, 0) AS reviewed_at, large_staff,
-	ifnull(size_reviewed_at, 0) AS size_reviewed_at, subscribers, uploads_per_day,
+	ifnull(imported_at, 0) AS imported_at, ifnull(import_batch, 0) AS import_batch, ifnull(reviewed_at, 0) AS reviewed_at, large_staff,
+	ifnull(size_reviewed_at, 0) AS size_reviewed_at, y.subscribers AS subscribers, y.uploads_per_day AS uploads_per_day,
 	ifnull(youtube_checked_at, 0) AS youtube_checked_at, ifnull(frozen_until, 0) AS frozen_until,
 	ifnull(verdict, '') AS verdict, signals, detail, flags, ifnull(changed_at, 0) AS changed_at,
 	ifnull(rescore_at, 0) AS rescore_at, lapse_hold, ifnull(computed, '') AS computed, mixed, created_at`;
@@ -126,6 +132,7 @@ function scanSource(r: SourceRow): Source {
 		importSource: r.import_source,
 		importLicense: r.import_license,
 		importedAt: r.imported_at,
+		importBatch: r.import_batch,
 		reviewedAt: r.reviewed_at,
 		largeStaff: r.large_staff !== 0,
 		sizeReviewedAt: r.size_reviewed_at,
@@ -169,7 +176,7 @@ export function ensureSource(db: Db, platform: string, alias: string, name: stri
 
 /** Loads a source with its aliases, the canonical ID first. */
 export function getSource(db: Db, ref: number): Source | undefined {
-	const row = db.get<SourceRow>(`SELECT ${sourceCols} FROM sources WHERE id = ?`, ref);
+	const row = db.get<SourceRow>(`SELECT ${sourceCols} FROM sources LEFT JOIN youtube_channels y ON y.source_id = sources.id WHERE id = ?`, ref);
 	if (!row) return undefined;
 	const src = scanSource(row);
 	src.aliases = db.all<{ alias: string }>('SELECT alias FROM source_aliases WHERE source_id = ? ORDER BY alias', ref).map((r) => r.alias);
@@ -257,6 +264,7 @@ function mergeSources(db: Db, keep: number, drop: number): void {
 		import_source = coalesce(sources.import_source, d.import_source),
 		import_license = coalesce(sources.import_license, d.import_license),
 		imported_at = coalesce(sources.imported_at, d.imported_at),
+		import_batch = coalesce(sources.import_batch, d.import_batch),
 		reviewed_at = max(ifnull(sources.reviewed_at, 0), ifnull(d.reviewed_at, 0)),
 		large_staff = max(sources.large_staff, d.large_staff),
 		size_reviewed_at = max(ifnull(sources.size_reviewed_at, 0), ifnull(d.size_reviewed_at, 0)),
@@ -268,19 +276,20 @@ function mergeSources(db: Db, keep: number, drop: number): void {
 	db.run('DELETE FROM sources WHERE id = ?', drop);
 }
 
-/** What the YouTube Data API told us about a channel. */
+/** What the YouTube Data API told us about a channel. The title is never kept: names come from reports. */
 export interface YouTubeInfo {
 	channelId: string;
 	/** with @, lowercased, or "" */
 	handle: string;
-	title: string;
+	/** only while YOUTUBE_DERIVED_USE is on, else null */
 	subscribers: number | null;
 	uploadsPerDay: number | null;
 }
 
 /**
  * Records channel data for ref, adds the channel ID and handle as aliases and merges any other
- * source that already owned one of them. Returns the ref that survives.
+ * source that already owned one of them. The figures go to youtube_channels, which the hourly
+ * prune empties at 30 days, and none is written when both are null. Returns the ref that survives.
  */
 export function setYouTube(db: Db, ref: number, info: YouTubeInfo, now: number): number {
 	return db.tx(() => {
@@ -297,16 +306,18 @@ export function setYouTube(db: Db, ref: number, info: YouTubeInfo, now: number):
 				keep = k;
 			}
 		}
-		db.run(
-			`UPDATE sources SET canonical_id = ?, name = coalesce(name, ?), subscribers = ?,
-			uploads_per_day = ?, youtube_checked_at = ? WHERE id = ?`,
-			info.channelId,
-			nullString(info.title),
-			info.subscribers,
-			info.uploadsPerDay,
-			now,
-			keep
-		);
+		db.run('UPDATE sources SET canonical_id = ?, youtube_checked_at = ? WHERE id = ?', info.channelId, now, keep);
+		if (info.subscribers === null && info.uploadsPerDay === null) db.run('DELETE FROM youtube_channels WHERE source_id = ?', keep);
+		else {
+			db.run(
+				`INSERT INTO youtube_channels (source_id, subscribers, uploads_per_day, fetched_at) VALUES (?, ?, ?, ?)
+				ON CONFLICT (source_id) DO UPDATE SET subscribers = excluded.subscribers, uploads_per_day = excluded.uploads_per_day, fetched_at = excluded.fetched_at`,
+				keep,
+				info.subscribers,
+				info.uploadsPerDay,
+				now
+			);
+		}
 		return keep;
 	});
 }
@@ -329,25 +340,64 @@ export function youTubeStale(db: Db, before: number, limit: number): Source[] {
 	return refs.map((r) => getSource(db, r)!);
 }
 
+/** One run of the import-seed ops command, as seed_imports records it. */
+export interface SeedImport {
+	sourceName: string;
+	/** blocklist | warnlist */
+	list: string;
+	license: string;
+	attribution: string;
+	permissionDoc: string;
+	sha256: string;
+	entries: number;
+}
+
+/** Records an import run for audits and returns its batch ID. */
+export function recordSeedImport(db: Db, s: SeedImport, now: number): number {
+	return db.get<{ id: number }>(
+		`INSERT INTO seed_imports (source_name, list, license, attribution, permission_doc, sha256, entries, imported_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`,
+		s.sourceName,
+		s.list,
+		s.license,
+		nullString(s.attribution),
+		nullString(s.permissionDoc),
+		s.sha256,
+		s.entries,
+		now
+	)!.id;
+}
+
 /**
- * Records alias as an imported seed entry with its attribution and license.
- * A blocklist import is never weakened by a later warnlist import.
+ * Records alias as an entry of the seed import batch. A seed entry is a review lead for staff,
+ * never evidence (contracts 9.3). A blocklist import is never weakened by a later warnlist import.
  */
-export function importSeed(db: Db, platform: string, alias: string, list: string, sourceName: string, license: string, now: number): number {
+export function importSeed(db: Db, batch: number, platform: string, alias: string, s: SeedImport, now: number): number {
 	return db.tx(() => {
 		const ref = ensureSource(db, platform, alias, '', now);
 		db.run(
 			`UPDATE sources SET
 			import_list = CASE WHEN import_list = 'blocklist' THEN 'blocklist' ELSE ? END,
-			import_source = ?, import_license = ?, imported_at = ? WHERE id = ?`,
-			list,
-			sourceName,
-			license,
+			import_source = ?, import_license = ?, imported_at = ?, import_batch = ? WHERE id = ?`,
+			s.list,
+			s.sourceName,
+			s.license,
 			now,
+			batch,
 			ref
 		);
 		return ref;
 	});
+}
+
+/** The seed list a text names, case-insensitively, or undefined: public text must never name one. */
+export function namedSeedList(db: Db, text: string): string | undefined {
+	// ponytail: scans sources on each reviewer decision; keep the names in seed_imports alone once
+	// imports from before the license check are gone.
+	return db.get<{ name: string }>(
+		`SELECT DISTINCT import_source AS name FROM sources WHERE import_source != '' AND instr(lower(?), lower(import_source)) > 0 LIMIT 1`,
+		text
+	)?.name;
 }
 
 /** Freezes a source's consensus layer until the given time. */

@@ -18,9 +18,9 @@ import { grantRole } from '../src/store/accounts';
 import { AppealExpired, AppealPendingManual, AppealAwaiting, AppealUnderReview, createAppeal, getAppeal, transitionAppeal } from '../src/store/appeals';
 import { SNAPSHOT_KEY } from '../src/store/list';
 import { putSync, startTrial } from '../src/store/misc';
-import { findItem, findSource, getSource, setYouTube, type Source } from '../src/store/sources';
+import { findItem, findSource, getSource, importSeed, recordSeedImport, setYouTube, type SeedImport, type Source } from '../src/store/sources';
 import { createReport, getReport, saveTags } from '../src/store/tags';
-import { loadSourceData, log, openEscalations, reputation } from '../src/store/verdicts';
+import { applyUpdate, loadSourceData, log, openEscalations, reputation } from '../src/store/verdicts';
 import type { Store } from '../src/store/store';
 
 const keys = await importKeys([inject('contract').devPublicKey]);
@@ -117,9 +117,13 @@ class Fixture {
 		return out;
 	}
 
-	/** Records YouTube data showing 20 uploads a day (the behavior layer) and 50,000 subscribers. */
+	/**
+	 * Records YouTube data showing 20 uploads a day (the behavior layer) and 50,000 subscribers, with
+	 * derived use on (YOUTUBE_DERIVED_USE), so the figures reach scoring.
+	 */
 	highVolume(alias: string, channelId = 'UCzzzzzzzzzzzzzzzzzzzzz1'): void {
-		setYouTube(this.db, this.source(alias).ref, { channelId, handle: alias, title: '', subscribers: 50_000, uploadsPerDay: 20 }, this.s);
+		this.eng.derived = true;
+		setYouTube(this.db, this.source(alias).ref, { channelId, handle: alias, subscribers: 50_000, uploadsPerDay: 20 }, this.s);
 	}
 
 	appeal(ref: number, code: string) {
@@ -458,9 +462,62 @@ describe('engine', () => {
 			const ref = f.source('@farm').ref;
 			const ev = f.eng.explain(ref)!;
 			expect(ev.result.provenance.met).toBe(true);
-			expect(evidence(ev)).toEqual({ taggers: 4, slop: 3, aiFine: 0, notSlop: 1, itemsSeen: 1, aiItemShare: 1, uploadsPerDay: -1 });
+			expect(evidence(ev)).toEqual({ taggers: 4, slop: 3, aiFine: 0, notSlop: 1, itemsSeen: 1, aiItemShare: 1 });
 			expect(f.source('@farm').state.computed).toBe('');
 			expect(f.eng.explain(9999)).toBeUndefined();
+		}));
+});
+
+describe('seed lists', () => {
+	const seed: SeedImport = { sourceName: 'Secret List', list: 'blocklist', license: 'CC0-1.0', attribution: '', permissionDoc: '', sha256: '0'.repeat(64), entries: 1 };
+	const importAll = (f: Fixture, ...aliases: string[]) => {
+		const batch = recordSeedImport(f.db, seed, f.s);
+		for (const alias of aliases) importSeed(f.db, batch, 'yt', alias, seed, f.s);
+	};
+
+	// A seed entry is a review lead and never evidence: alone it gives no list entry, and next to
+	// community evidence the verdict is exactly what that evidence gives without it.
+	it('never gives a verdict or counts as evidence, and only puts the source in the review queue', () =>
+		withFixture(async (f) => {
+			importAll(f, '@seedonly', '@seedtagged');
+			f.tagAs(installs(0, 6), 'yt', 'source', '@seedtagged', '', 'slop', false);
+			f.tagAs(installs(0, 6), 'yt', 'source', '@plaintagged', '', 'slop', false);
+			f.clock += 40 * DAY;
+			await f.pass();
+
+			const alone = f.source('@seedonly');
+			expect(alone.state).toMatchObject({ verdict: '', flags: 0, computed: '' });
+			expect(log(f.db, { sourceRef: alone.ref, limit: 10 })).toEqual([]);
+			expect(f.escalationsOf(alone.ref)).toEqual({ seed: 'Seed lead, not evidence: listed on Secret List (CC0-1.0) as a blocklist entry' });
+
+			const seeded = f.source('@seedtagged').state;
+			const plain = f.source('@plaintagged').state;
+			expect(seeded.verdict).toBe('likely_slop');
+			expect({ ...seeded, changedAt: 0, rescoreAt: 0 }).toEqual({ ...plain, changedAt: 0, rescoreAt: 0 });
+			expect(seeded.flags & (1 << 5), 'flag bit 5 stays 0').toBe(0);
+			const reason = log(f.db, { sourceRef: f.source('@seedtagged').ref, limit: 1 })[0]!.reason;
+			expect(reason).toBe(log(f.db, { sourceRef: f.source('@plaintagged').ref, limit: 1 })[0]!.reason);
+			expect(reason).not.toMatch(/seed|Secret List/i);
+
+			// A reviewer's decision uses up the lead.
+			decide(f.eng, { sourceRef: alone.ref, verdict: 'none', reason: 'Checked the channel: nothing to rate.', actor: 'staff' });
+			await f.pass();
+			expect(f.escalationsOf(alone.ref)).toEqual({});
+		}));
+
+	// Entries the old rules put on the list because of a seed alone come off at the next pass, and
+	// imports from before the license check raise no lead.
+	it('takes off the list what a seed alone put there', () =>
+		withFixture(async (f) => {
+			f.tags(1, '@legacy', 'slop', false);
+			const ref = f.source('@legacy').ref;
+			f.db.run("UPDATE sources SET import_list = 'blocklist', import_source = 'Secret List', import_license = 'CC BY-NC 4.0', imported_at = 1 WHERE id = ?", ref);
+			applyUpdate(f.db, { sourceRef: ref, itemRef: 0, expect: '', state: { ...f.source('@legacy').state, verdict: 'likely_slop', signals: Sig.mostly_ai, flags: 1 << 5, changedAt: 1, rescoreAt: f.s + 90 * 86_400, computed: 'likely_slop' } });
+			await f.pass();
+			expect(f.source('@legacy').state).toMatchObject({ verdict: '', flags: 0 });
+			const [entry] = log(f.db, { sourceRef: ref, limit: 1 });
+			expect(entry).toMatchObject({ from: 'likely_slop', to: '', actor: 'community', reason: 'Not rated any more. The remaining evidence does not meet any verdict rule.' });
+			expect(f.escalationsOf(ref)).toEqual({});
 		}));
 });
 
@@ -474,7 +531,10 @@ describe('curator limits', () => {
 				decide(f.eng, { sourceRef, verdict: 'slop', reason: 'Generated gossip narration.', signals: Sig.watermark, actor: 'curator', ...over });
 			f.tags(1, '@gossipnarrated', 'slop', false);
 			const big = f.source('@gossipnarrated').ref;
-			setYouTube(f.db, big, { channelId: 'UCzzzzzzzzzzzzzzzzzzzz43', handle: '@gossipnarrated', title: '', subscribers: 1_200_000, uploadsPerDay: null }, f.s);
+			setYouTube(f.db, big, { channelId: 'UCzzzzzzzzzzzzzzzzzzzz43', handle: '@gossipnarrated', subscribers: 1_200_000, uploadsPerDay: null }, f.s);
+			// Without derived use a subscriber count makes no source large; staff record the size.
+			expect(f.eng.audience(f.source('@gossipnarrated'))).toEqual({ large: false, known: false });
+			f.eng.derived = true;
 			expect(() => curator(big)).toThrow(new StaffRequiredError('Large sources'));
 			expect(() => curator(big)).toThrow('Large sources need staff review.');
 			// Items of a large source are open to curators.

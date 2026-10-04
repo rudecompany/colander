@@ -65,15 +65,12 @@ export interface Input {
 	/** burst detection froze the consensus layer */
 	frozen: boolean;
 
-	// Sources only.
-	/** blocklist | warnlist | "" */
-	imported: string;
-	/** a staff or curator decision was ever recorded */
-	reviewed: boolean;
+	// Sources only. A seed list entry is never an input: it is a review lead, not evidence (9.3).
+	/** staff set it large, or (with YOUTUBE_DERIVED_USE) the YouTube Data API reported 100,000 subscribers */
 	large: boolean;
-	/** the YouTube Data API reported subscribers, or staff recorded the source's size */
+	/** staff recorded the source's size, or (with YOUTUBE_DERIVED_USE) the YouTube Data API reported subscribers */
 	audienceKnown: boolean;
-	/** < 0 when unknown */
+	/** from the YouTube Data API with YOUTUBE_DERIVED_USE only; < 0 when unknown */
 	uploadsPerDay: number;
 	/** items with evidence either way */
 	itemsSeen: number;
@@ -103,8 +100,6 @@ export function newInput(fields: Partial<Input>): Input {
 		decision: undefined,
 		appealOpen: false,
 		frozen: false,
-		imported: '',
-		reviewed: false,
 		large: false,
 		audienceKnown: false,
 		uploadsPerDay: 0,
@@ -151,8 +146,8 @@ export interface Result {
 	mixed: boolean;
 	sums: Sums;
 	/**
-	 * Why rule 6 held Slop at Likely slop: "large", "imported", "audience" (size unknown) or
-	 * "lapsed". It raises an escalation only while rule 6 decides (rule === 6).
+	 * Why rule 6 held Slop at Likely slop: "large", "audience" (size unknown) or "lapsed". It raises
+	 * an escalation only while rule 6 decides (rule === 6).
 	 */
 	cappedBy: string;
 }
@@ -265,7 +260,6 @@ export class Thresholds {
 		if (input.decision && (input.decision.signals & ProvenanceSignals) !== 0) {
 			[l.met, l.signals] = [true, l.signals | (input.decision.signals & ProvenanceSignals)];
 		}
-		if (!input.item && input.imported !== '') l.met = true;
 		if (s.s + s.a >= this.aiConsensusSum && s.installs >= this.aiConsensusInstalls && s.t > 0 && (s.s + s.a) / s.t >= this.aiConsensusRatio) {
 			l.met = true;
 		}
@@ -279,7 +273,6 @@ export class Thresholds {
 		if (input.itemsSeen >= this.mostlyAIMinItems && input.aiItems / input.itemsSeen >= this.mostlyAIShare) {
 			[l.met, l.signals] = [true, l.signals | Sig.mostly_ai];
 		}
-		if (input.imported === 'blocklist') [l.met, l.signals] = [true, l.signals | Sig.mostly_ai];
 		if (input.decision && (input.decision.signals & BehaviorSignals) !== 0) {
 			[l.met, l.signals] = [true, l.signals | (input.decision.signals & BehaviorSignals)];
 		}
@@ -358,12 +351,11 @@ export class Thresholds {
 			[r.rule, r.computed, r.signals] = [5, 'disputed', evidence];
 		} else if (r.behavior.met && r.consensus.met && !r.mixed) {
 			[r.rule, r.computed, r.signals] = [6, 'slop', evidence];
-			// Only a reviewer makes a source Slop when it is large, imported and unreviewed, or of unknown size.
+			// Only a reviewer makes a source Slop when it is large or of unknown size.
 			if (!input.item && input.large) r.cappedBy = 'large';
-			else if (!input.item && input.imported !== '' && !input.reviewed) r.cappedBy = 'imported';
 			else if (!input.item && !input.audienceKnown) r.cappedBy = 'audience';
 			else if (input.lapseHold) r.cappedBy = 'lapsed';
-		} else if ((r.behavior.met || r.rubric.met) && (s.s >= 1 || input.imported === 'blocklist') && !r.mixed) {
+		} else if ((r.behavior.met || r.rubric.met) && s.s >= 1 && !r.mixed) {
 			[r.rule, r.computed, r.signals] = [7, 'likely_slop', evidence];
 		} else {
 			[r.rule, r.computed, r.signals] = [8, 'ai_made', evidence];

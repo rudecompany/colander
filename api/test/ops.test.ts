@@ -5,7 +5,8 @@
 import { env } from 'cloudflare:workers';
 import { runInDurableObject } from 'cloudflare:test';
 import { afterEach, beforeEach, describe, expect, inject, it, vi } from 'vitest';
-import { b64decode } from '@colander/shared/bytes';
+import { b64decode, hex, utf8 } from '@colander/shared/bytes';
+import { sha256 } from '@colander/shared/sha256';
 import { CONFIG_CONTEXT, importKeys, verifyEnvelope } from '@colander/shared/signing';
 import worker from '../src/index';
 import { dump, DUMP_PREFIX, dumpKey } from '../src/backup';
@@ -55,7 +56,7 @@ async function resetPrimary(): Promise<void> {
 	await runInDurableObject(primary(), async (store: Store, state) => {
 		store.db.tx(() => {
 			store.db.run('PRAGMA defer_foreign_keys = ON');
-			for (const t of ['tags', 'items', 'source_aliases', 'decision_log', 'decisions', 'escalations', 'reports', 'appeals', 'sources', 'installs', 'accounts', 'adapter_configs', 'list_sequences', 'jobs']) {
+			for (const t of ['tags', 'items', 'source_aliases', 'decision_log', 'decisions', 'escalations', 'reports', 'appeals', 'sources', 'seed_imports', 'installs', 'accounts', 'adapter_configs', 'list_sequences', 'jobs']) {
 				store.db.run(`DELETE FROM ${t}`);
 			}
 		});
@@ -151,36 +152,51 @@ describe('grant-role', () => {
 
 describe('import-seed', () => {
 	const seed = '! A tiny synthetic list\n@SlopFarmOne\r\n\nUCzzzzzzzzzzzzzzzzzzzzz9\nnot a channel\n';
-	const args = { file: seed, list: 'blocklist', source_name: 'AiSList', license: 'CC BY-NC 4.0' };
+	const args = { file: seed, list: 'blocklist', source_name: 'Open Seed List', license: 'CC0-1.0' };
+	const how = 'Ask its maintainer for written permission and import it as LicenseRef-written-grant with permission_doc.';
 
-	it('refuses without accepting the license, and touches nothing', async () => {
-		const res = await op('import-seed', args);
-		expect(res.status).toBe(400);
-		expect(res.body.error).toEqual({
-			code: 'license_not_accepted',
-			message: 'Refusing to import: AiSList is licensed CC BY-NC 4.0. Read its terms and set accept_license to true to confirm.'
-		});
-		expect(await runInDurableObject(primary(), (store: Store) => sourceRefs(store.db))).toEqual([]);
-		for (const [bad, message] of [
-			[{ ...args, file: '' }, 'file, source_name and license are required.'],
-			[{ ...args, license: '' }, 'file, source_name and license are required.'],
-			[{ ...args, list: 'greylist' }, 'list must be blocklist or warnlist.']
-		] as const) {
-			expect((await op('import-seed', { ...bad, accept_license: true })).body.error.message).toBe(message);
-		}
+	it.each([
+		['CC BY-NC 4.0', 'license_refused', `Refusing to import: CC BY-NC 4.0 does not allow use in a paid product. Non-commercial, no-derivatives, share-alike and GPL lists are refused. ${how}`],
+		['CC-BY-NC-SA-4.0', 'license_refused', `Refusing to import: CC-BY-NC-SA-4.0 does not allow use in a paid product. Non-commercial, no-derivatives, share-alike and GPL lists are refused. ${how}`],
+		['CC-BY-ND-4.0', 'license_refused', `Refusing to import: CC-BY-ND-4.0 does not allow use in a paid product. Non-commercial, no-derivatives, share-alike and GPL lists are refused. ${how}`],
+		['CC-BY-SA-4.0', 'license_refused', `Refusing to import: CC-BY-SA-4.0 does not allow use in a paid product. Non-commercial, no-derivatives, share-alike and GPL lists are refused. ${how}`],
+		['GPL-3.0-only', 'license_refused', `Refusing to import: GPL-3.0-only does not allow use in a paid product. Non-commercial, no-derivatives, share-alike and GPL lists are refused. ${how}`],
+		['', 'license_refused', `Refusing to import: the list has no license, and unlicensed lists may not be used. ${how}`],
+		['NOASSERTION', 'license_refused', `Refusing to import: the list has no license, and unlicensed lists may not be used. ${how}`],
+		['Apache-2.0', 'invalid_license', 'license must be one of CC0-1.0, CC-BY-4.0, MIT, LicenseRef-written-grant, not "Apache-2.0".']
+	])('refuses a list licensed %j, and touches nothing', async (license, code, message) => {
+		const res = await op('import-seed', { ...args, license, accept_license: true });
+		expect(res).toEqual({ status: 400, body: { error: { code, message } } });
+		expect(await runInDurableObject(primary(), (store: Store) => [sourceRefs(store.db), store.db.all('SELECT * FROM seed_imports')])).toEqual([[], []]);
 	});
 
-	// Go's TestImportSeed: imported blocklist entries are Likely slop at most until reviewed, with
-	// the attribution kept; a warnlist import is AI evidence only.
-	it('imports the whole file in one transaction, then the scoring pass rates it', async () => {
+	it('needs the credit CC BY and MIT ask for, the written grant, and its other arguments', async () => {
+		for (const [bad, message] of [
+			[{ ...args, file: '' }, 'file and source_name are required.'],
+			[{ ...args, source_name: ' ' }, 'file and source_name are required.'],
+			[{ ...args, list: 'greylist' }, 'list must be blocklist or warnlist.'],
+			[{ ...args, license: 'CC-BY-4.0' }, 'CC-BY-4.0 needs attribution: the credit or copyright notice the license asks for.'],
+			[{ ...args, license: 'mit' }, 'MIT needs attribution: the credit or copyright notice the license asks for.'],
+			[{ ...args, license: 'LicenseRef-written-grant' }, 'LicenseRef-written-grant needs permission_doc: where the written grant is kept.']
+		] as const) {
+			expect((await op('import-seed', bad)).body.error.message).toBe(message);
+		}
+		expect(await runInDurableObject(primary(), (store: Store) => sourceRefs(store.db))).toEqual([]);
+	});
+
+	// Seed entries are review leads: the scoring pass gives them no verdict and puts them in the
+	// review queue, and the run is recorded with its license, credit and file hash.
+	it('imports the whole file in one transaction as review leads, recorded for audits', async () => {
 		const stub = fresh();
-		const res = await inStore(stub, T, 'import-seed', { ...args, accept_license: true });
+		const res = await inStore(stub, T, 'import-seed', { ...args, license: 'cc-by-4.0', attribution: 'Open Seed List by Example Maintainer, CC BY 4.0' });
 		expect(res).toEqual({
 			status: 200,
 			body: {
 				imported: 2,
 				skipped: 1,
-				message: 'Imported 2 YouTube channels from AiSList (CC BY-NC 4.0) as blocklist entries, skipped 1 lines. The scoring pass starts now and publishes them.'
+				batch: 1,
+				message:
+					'Imported 2 YouTube channels from Open Seed List (CC-BY-4.0) as blocklist review leads, skipped 1 lines. They never give a verdict; the scoring pass now puts them in the review queue.'
 			}
 		});
 		await runInDurableObject(stub, async (store: Store) => {
@@ -190,25 +206,37 @@ describe('import-seed', () => {
 			expect(refs).toHaveLength(2);
 			for (const ref of refs) {
 				const src = getSource(store.db, ref)!;
-				expect(src).toMatchObject({ importSource: 'AiSList', importLicense: 'CC BY-NC 4.0', importList: 'blocklist' });
-				expect(src.state.verdict).toBe('likely_slop');
-				expect(src.state.flags & (1 << 5)).not.toBe(0);
+				expect(src).toMatchObject({ importSource: 'Open Seed List', importLicense: 'CC-BY-4.0', importList: 'blocklist', importBatch: 1 });
+				expect(src.state).toMatchObject({ verdict: '', flags: 0 });
 			}
 			expect(findSource(store.db, 'yt', '@slopfarmone'), 'the handle is lowercased to its canonical form').toBeDefined();
-			const entries = log(store.db, { limit: 1 });
-			expect(entries).toHaveLength(1);
-			expect(entries[0]!.reason).toContain('AiSList');
+			expect(log(store.db, { limit: 1 })).toEqual([]);
+			expect(store.db.all("SELECT kind FROM escalations WHERE resolved_at IS NULL")).toEqual([{ kind: 'seed' }, { kind: 'seed' }]);
+			const sha = hex(sha256(utf8(seed)));
+			expect(store.db.all('SELECT * FROM seed_imports')).toEqual([
+				{
+					id: 1,
+					source_name: 'Open Seed List',
+					list: 'blocklist',
+					license: 'CC-BY-4.0',
+					attribution: 'Open Seed List by Example Maintainer, CC BY 4.0',
+					permission_doc: null,
+					sha256: sha,
+					entries: 2,
+					imported_at: S
+				}
+			]);
 		});
-		await inStore(stub, T, 'import-seed', { file: '@aimadebutfine\n', list: 'warnlist', source_name: 'AiSList', license: 'CC BY-NC 4.0', accept_license: true });
-		await runInDurableObject(stub, async (store: Store) => {
-			await store.engine.fullPass(T);
-			expect(getSource(store.db, findSource(store.db, 'yt', '@aimadebutfine')!)!.state.verdict).toBe('ai_made');
+		const grant = await inStore(stub, T, 'import-seed', { file: '@aimadebutfine\n', list: 'warnlist', source_name: 'Partner List', license: 'LicenseRef-written-grant', permission_doc: 'contracts/partner-2026-10.pdf' });
+		expect(grant.body).toMatchObject({ imported: 1, batch: 2 });
+		await runInDurableObject(stub, (store: Store) => {
+			expect(store.db.get("SELECT license, permission_doc FROM seed_imports WHERE id = 2")).toEqual({ license: 'LicenseRef-written-grant', permission_doc: 'contracts/partner-2026-10.pdf' });
 		});
 	});
 
 	it("reads lines as Go's import-seed did: a byte order mark stays, so that line is skipped; U+0085 is trimmed", async () => {
 		const stub = fresh();
-		const res = await inStore(stub, T, 'import-seed', { ...args, file: '\ufeff@BomFirst\n@NelChannel\u0085\n\u2003@Spaced\u3000\n', accept_license: true });
+		const res = await inStore(stub, T, 'import-seed', { ...args, file: '\ufeff@BomFirst\n@NelChannel\u0085\n\u2003@Spaced\u3000\n' });
 		expect(res.body).toMatchObject({ imported: 2, skipped: 1 });
 		await runInDurableObject(stub, (store: Store) => {
 			expect(findSource(store.db, 'yt', '@nelchannel')).toBeDefined();
@@ -218,7 +246,7 @@ describe('import-seed', () => {
 	});
 
 	it('starts the scoring pass at once in the primary Store', async () => {
-		const res = await inStore(primary(), T, 'import-seed', { ...args, accept_license: true });
+		const res = await inStore(primary(), T, 'import-seed', args);
 		expect(res.status).toBe(200);
 		await runInDurableObject(primary(), async (store: Store, state) => {
 			expect(store.db.all('SELECT name, due_at FROM jobs')).toEqual([{ name: 'pass', due_at: T }]);

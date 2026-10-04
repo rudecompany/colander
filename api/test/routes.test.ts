@@ -22,7 +22,7 @@ import { createSession, grantRole, setDisplayName, setReviewerToken } from '../s
 import { saveSubscription } from '../src/store/billing';
 import { latestSequence, setListRequests, SNAPSHOT_KEY } from '../src/store/list';
 import { saveAdapterConfig } from '../src/store/misc';
-import { ensureSource, findItem, findSource, getSource, setYouTube } from '../src/store/sources';
+import { ensureSource, findItem, findSource, getSource, importSeed, recordSeedImport, setYouTube, type SeedImport } from '../src/store/sources';
 import { loadSourceData } from '../src/store/verdicts';
 import type { Store } from '../src/store/store';
 
@@ -376,7 +376,7 @@ describe('appeals', () => {
 		withHarness(async (h) => {
 			const channel = 'UCzzzzzzzzzzzzzzzzzzzz42';
 			const ref = ensureSource(h.db, 'yt', '@oceanmysteries', 'Ocean Mysteries', unix(h.clock));
-			setYouTube(h.db, ref, { channelId: channel, handle: '@oceanmysteries', title: '', subscribers: null, uploadsPerDay: null }, unix(h.clock));
+			setYouTube(h.db, ref, { channelId: channel, handle: '@oceanmysteries', subscribers: null, uploadsPerDay: null }, unix(h.clock));
 			const staff = h.reviewer('rae@colander.test', 'staff', 'Rae');
 			await expectStatus(
 				h.do(
@@ -531,7 +531,7 @@ describe('public pages', () => {
 	it('shows a source by any alias, with its evidence, and 404 not_rated for unknown ones', () =>
 		withHarness(async (h) => {
 			const ref = ensureSource(h.db, 'yt', '@farm', 'The Farm', unix(h.clock));
-			setYouTube(h.db, ref, { channelId: 'UCzzzzzzzzzzzzzzzzzzzz45', handle: '@farm', title: '', subscribers: 1000, uploadsPerDay: 14.237 }, unix(h.clock));
+			setYouTube(h.db, ref, { channelId: 'UCzzzzzzzzzzzzzzzzzzzz45', handle: '@farm', subscribers: 1000, uploadsPerDay: 14.237 }, unix(h.clock));
 			for (let i = 0; i < 3; i++) {
 				await expectStatus(h.do('POST', '/v1/tags', { tags: [tag(`ai-${i}`, 'source', '@farm', '', 'ai_fine')] }, installAuth(10 + i)), 200);
 			}
@@ -549,7 +549,8 @@ describe('public pages', () => {
 				imported: false,
 				attribution: null,
 				appeal_open: false,
-				evidence: { taggers: 3, tags: { slop: 0, ai_fine: 3, not_slop: 0 }, items_seen: 0, ai_item_share: null, uploads_per_day: 14.24 }
+				// YouTube Data API figures are never published, even when stored with derived use.
+				evidence: { taggers: 3, tags: { slop: 0, ai_fine: 3, not_slop: 0 }, items_seen: 0, ai_item_share: null, uploads_per_day: null }
 			});
 			expect(byHandle.source.updated_at).toBe('2026-10-01T12:00:00Z');
 			expect(byHandle.history[0]).toMatchObject({ actor: 'community', to: 'ai_made', source_id: 'UCzzzzzzzzzzzzzzzzzzzz45' });
@@ -560,6 +561,39 @@ describe('public pages', () => {
 			const named = ensureSource(h.db, 'yt', '@caféhistoire', '', unix(h.clock));
 			expect(findSource(h.db, 'yt', '@caféhistoire')).toBe(named);
 			await expectStatus(h.do('GET', '/v1/sources/yt/@Caf%C3%A9Histoire'), 200);
+		}));
+
+	// Public pages never name a data source (contracts 6.4): a seed list is a review lead that only
+	// reviewers see, with its full provenance.
+	it('never names a seed list in public JSON, while reviewers see where the entry came from', () =>
+		withHarness(async (h) => {
+			const seed: SeedImport = { sourceName: 'Secret Seed List', list: 'blocklist', license: 'CC0-1.0', attribution: '', permissionDoc: '', sha256: '0'.repeat(64), entries: 1 };
+			importSeed(h.db, recordSeedImport(h.db, seed, unix(h.clock)), 'yt', '@seeded', seed, unix(h.clock));
+			for (let i = 0; i < 3; i++) {
+				await expectStatus(h.do('POST', '/v1/tags', { tags: [tag(`seeded-${i}`, 'source', '@seeded', '', 'ai_fine')] }, installAuth(40 + i)), 200);
+			}
+			await h.store.engine.fullPass(h.clock);
+			const pages = await Promise.all(['/v1/sources/yt/@seeded', '/v1/log', '/v1/stats'].map(async (path) => (await expectStatus(h.do('GET', path), 200)).text()));
+			for (const page of pages) expect(page).not.toMatch(/secret seed list|seed list|CC0/i);
+			const { source } = JSON.parse(pages[0]!) as { source: Source };
+			expect(source).toMatchObject({ verdict: 'ai_made', imported: false, attribution: null });
+			expect(source.evidence.uploads_per_day).toBeNull();
+
+			const staff = h.reviewer('rae@colander.test', 'staff', 'Rae');
+			const review = (await (await expectStatus(h.do('GET', '/v1/review/sources/yt/@seeded', undefined, staff), 200)).json()) as ReviewSourceResponse;
+			expect(review.source).toMatchObject({ imported: true, attribution: 'Secret Seed List (CC0-1.0), blocklist' });
+			expect(review.layers.provenance.detail).toBe('3 installs saw a platform AI label; listed on Secret Seed List (CC0-1.0) as a blocklist entry, a review lead that is not evidence.');
+			const queue = ((await (await expectStatus(h.do('GET', '/v1/review/queue?kind=escalations', undefined, staff), 200)).json()) as { items: QueueItem[] }).items;
+			expect(queue).toEqual([expect.objectContaining({ kind: 'escalation', priority: 4, summary: 'Seed lead, not evidence: listed on Secret Seed List (CC0-1.0) as a blocklist entry' })]);
+
+			// Reviewers cannot name it in the public log by accident.
+			const named = await expectStatus(
+				h.do('POST', '/v1/review/sources/yt/@seeded/decision', { verdict: 'ai_made', reason: 'Also on the secret seed list.', signals: [] }, staff),
+				400
+			);
+			expect(await named.json()).toEqual({
+				error: { code: 'source_named', message: 'The text names the seed list Secret Seed List. The decision log is public and never names a data source.' }
+			});
 		}));
 
 	it('estimates active installs over the 24 whole hours the analytics pull counted', () =>
@@ -603,10 +637,12 @@ describe('review', () => {
 	it('enforces the curator limits, bearer tokens and AI evidence (TestCuratorLimitsAndReviewerToken)', () =>
 		withHarness(async (h) => {
 			const ref = ensureSource(h.db, 'yt', '@gossipnarrated', 'Celebrity Gossip Narrated', unix(h.clock));
+			// With derived use the subscriber count makes it large.
+			h.store.engine.derived = true;
 			setYouTube(
 				h.db,
 				ref,
-				{ channelId: 'UCzzzzzzzzzzzzzzzzzzzz43', handle: '@gossipnarrated', title: '', subscribers: 1_200_000, uploadsPerDay: null },
+				{ channelId: 'UCzzzzzzzzzzzzzzzzzzzz43', handle: '@gossipnarrated', subscribers: 1_200_000, uploadsPerDay: null },
 				unix(h.clock)
 			);
 			const member = h.signIn('maya@example.test');
@@ -693,9 +729,10 @@ describe('review', () => {
 				const t = { ...tag(`slop-${i}`, 'source', '@farm', '', 'slop'), tests: ['low_effort', 'mass_produced'] };
 				await expectStatus(h.do('POST', '/v1/tags', { tags: [t] }, installAuth(20 + i)), 200);
 			}
-			// Twenty uploads a day, but the channel hides its subscriber count.
+			// Twenty uploads a day with derived use, but the channel hides its subscriber count.
+			h.store.engine.derived = true;
 			const ref = findSource(h.db, 'yt', '@farm')!;
-			setYouTube(h.db, ref, { channelId: 'UCzzzzzzzzzzzzzzzzzzzz44', handle: '@farm', title: '', subscribers: null, uploadsPerDay: 20 }, unix(h.clock));
+			setYouTube(h.db, ref, { channelId: 'UCzzzzzzzzzzzzzzzzzzzz44', handle: '@farm', subscribers: null, uploadsPerDay: 20 }, unix(h.clock));
 			h.clock += 40 * DAY;
 			await h.store.engine.fullPass(h.clock);
 			const staff = h.reviewer('rae@colander.test', 'staff', 'Rae');
@@ -718,7 +755,7 @@ describe('review', () => {
 				detail: 'Weighted tags: slop 4.2, AI-made but fine 0.0, not slop 0.0 from 6 installs.'
 			});
 			expect(page.layers.rubric.signals).toEqual(['rubric_low_effort']);
-			expect(page.source.evidence).toEqual({ taggers: 6, tags: { slop: 6, ai_fine: 0, not_slop: 0 }, items_seen: 0, ai_item_share: null, uploads_per_day: 20 });
+			expect(page.source.evidence).toEqual({ taggers: 6, tags: { slop: 6, ai_fine: 0, not_slop: 0 }, items_seen: 0, ai_item_share: null, uploads_per_day: null });
 			expect(page.history[0]!.reason).toBe(
 				'Likely slop. The platform labels it AI-generated, it posts at a volume no person could sustain, taggers found little human effort, and it is tagged as slop by the community. Held at Likely slop until staff review it, because its audience size is unknown.'
 			);

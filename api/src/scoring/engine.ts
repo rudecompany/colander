@@ -3,11 +3,11 @@
 // publication. Go's Engine.Run loop became two jobs (src/jobs.ts): the full pass, in chunks of
 // sources across alarm turns, and the debounced rescore of touched sources. Each source is scored
 // in one transaction, so a crash never leaves half its targets written.
-import { FLAG_IMPORTED, FLAG_LARGE, FLAG_STAFF_REVIEWED } from '@colander/shared/list';
+import { FLAG_LARGE, FLAG_STAFF_REVIEWED } from '@colander/shared/list';
 import type { Jobs, PassScorer } from '../jobs';
 import { expireAppeals } from '../store/appeals';
 import type { Db } from '../store/db';
-import { setFrozen, sourceRefs, type Item, type State } from '../store/sources';
+import { setFrozen, sourceRefs, type Item, type Source, type State } from '../store/sources';
 import {
 	applyUpdate,
 	loadSourceData,
@@ -20,7 +20,7 @@ import {
 	type Update,
 	type Vote as StoreVote
 } from '../store/verdicts';
-import type { YouTube } from '../youtube';
+import { ENRICH_PER_PASS, type YouTube } from '../youtube';
 import { communityReason, escalationSummary } from './reason';
 import { Default, newInput, SlopTypes, slopTypeCode, sumVotes, type Decision, type Input, type Result, type Thresholds, type Vote } from './rules';
 
@@ -70,8 +70,6 @@ export interface Evidence {
 	itemsSeen: number;
 	/** valid when itemsSeen > 0 */
 	aiItemShare: number;
-	/** < 0 when unknown */
-	uploadsPerDay: number;
 }
 
 /** The source's public evidence summary (Go's Evaluation.Evidence). */
@@ -82,8 +80,7 @@ export function evidence(ev: Evaluation): Evidence {
 		aiFine: 0,
 		notSlop: 0,
 		itemsSeen: ev.input.itemsSeen,
-		aiItemShare: 0,
-		uploadsPerDay: ev.input.uploadsPerDay
+		aiItemShare: 0
 	};
 	for (const v of ev.input.votes) {
 		if (v.verdict === 'slop') out.slop++;
@@ -117,6 +114,12 @@ export class Engine implements PassScorer {
 	th: Thresholds = Default;
 	/** Set when YOUTUBE_API_KEY is: each pass starts by refreshing stale YouTube sources. */
 	youtube?: YouTube;
+	/**
+	 * YOUTUBE_DERIVED_USE: YouTube approved Colander's derived metrics, so subscriber counts and
+	 * uploads per day are fetched and feed scoring. Off, a source's size is known only when staff
+	 * recorded it, and nothing derived from YouTube Data API data reaches a verdict.
+	 */
+	derived = false;
 	/** The full pass's reputation, loaded at its start and kept across its chunks. A restart mid-pass reloads it. */
 	private passReps?: Map<string, Rep>;
 
@@ -129,15 +132,16 @@ export class Engine implements PassScorer {
 	) {}
 
 	/**
-	 * The start of a full pass (Go's FullPass before its loop): expires stale appeals, refreshes up
-	 * to 50 stale YouTube sources and loads the reputation every source of the pass is scored with.
+	 * The start of a full pass (Go's FullPass before its loop): expires stale appeals, looks up to
+	 * ENRICH_PER_PASS stale YouTube sources up again and loads the reputation every source of the
+	 * pass is scored with.
 	 */
 	async startPass(now: number): Promise<void> {
 		expireAppeals(this.db, unix(now - this.th.appealExpiry), unix(now));
 		if (this.youtube) {
 			// Network calls happen outside any transaction. A failure only delays enrichment.
 			try {
-				await this.youtube.enrichStale(this.db, now, 50);
+				await this.youtube.enrichStale(this.db, now, ENRICH_PER_PASS, this.derived);
 			} catch (err) {
 				console.warn(JSON.stringify({ message: 'youtube enrichment failed', error: String(err) }));
 			}
@@ -184,6 +188,18 @@ export class Engine implements PassScorer {
 		const reps = reputation(this.db, ref);
 		const d = loadSourceData(this.db, ref, unix(this.now()));
 		return d && this.evaluate(d, reps, this.now());
+	}
+
+	/**
+	 * A source's size for rule 6 and the curator limits: what staff recorded, and the YouTube
+	 * subscriber count only with derived use.
+	 */
+	audience(src: Source): { large: boolean; known: boolean } {
+		const subscribers = this.derived ? src.subscribers : null;
+		return {
+			large: src.largeStaff || (subscribers !== null && subscribers >= this.th.largeSubscribers),
+			known: src.sizeReviewedAt > 0 || subscribers !== null
+		};
 	}
 
 	private weights(reps: Map<string, Rep>, now: number): (install: string) => number {
@@ -277,15 +293,14 @@ export class Engine implements PassScorer {
 		}
 
 		if (unattributed) [aiItems, seen, rollupLabels] = [0, 0, new Set()];
+		const audience = this.audience(src);
 		const input = newInput({
 			decision: toDecision(d.decisions.get(0)),
 			appealOpen: d.appealOpen,
 			frozen,
-			imported: src.importList,
-			reviewed: src.reviewedAt > 0,
-			large: src.largeStaff || (src.subscribers !== null && src.subscribers >= th.largeSubscribers),
-			audienceKnown: src.subscribers !== null || src.sizeReviewedAt > 0,
-			uploadsPerDay: src.uploadsPerDay ?? -1,
+			large: audience.large,
+			audienceKnown: audience.known,
+			uploadsPerDay: this.derived ? (src.uploadsPerDay ?? -1) : -1,
 			itemsSeen: seen,
 			aiItems,
 			labelInstalls: labelInstalls.size,
@@ -326,8 +341,8 @@ export class Engine implements PassScorer {
 		};
 		if (!input.item) {
 			st.mixed = r.mixed;
+			// Flag bit 5 stays 0: seed lists put nothing on the list (contracts 3).
 			if (input.large) st.flags |= FLAG_LARGE;
-			if (input.imported !== '' && !input.reviewed) st.flags |= FLAG_IMPORTED;
 		}
 		if (r.rule === 2 && r.verdict !== '') st.flags |= FLAG_STAFF_REVIEWED;
 		const changed = old.verdict !== r.verdict;
@@ -387,8 +402,8 @@ export class Engine implements PassScorer {
 					};
 					if (caused) [log.actor, log.actorName, log.reason] = [cause.actor, cause.actorName ?? '', cause.reason];
 					else if (r.rule === 2 && dec) [log.actor, log.actorName, log.reason] = [dec.actor, dec.actorName, dec.reason];
-					else if (r.rule === 1) [log.actor, log.reason] = ['appeal', communityReason(r, input, src.importSource)];
-					else log.reason = communityReason(r, input, src.importSource);
+					else if (r.rule === 1) [log.actor, log.reason] = ['appeal', communityReason(r)];
+					else log.reason = communityReason(r);
 					u.log = log;
 				}
 				if (applyUpdate(db, u)) changed++;
@@ -416,7 +431,12 @@ export class Engine implements PassScorer {
 			if (d.pendingManualSince > 0 && nowS - d.pendingManualSince >= seconds(th.appealExpiry)) {
 				want.appeal = `Appeal filed more than ${Math.trunc(th.appealExpiry / DAY)} days ago still waits for staff to check its code`;
 			}
-			syncEscalations(db, ref, 0, ['capped', 'lapsed', 'reports', 'appeal'], want, nowS);
+			// A seed list entry is a review lead and never evidence (9.3): until a reviewer decides the
+			// source, it only puts the source in the queue. The summary is for reviewers, never public.
+			if (src.importBatch !== 0 && src.reviewedAt === 0) {
+				want.seed = `Seed lead, not evidence: listed on ${src.importSource} (${src.importLicense}) as a ${src.importList} entry`;
+			}
+			syncEscalations(db, ref, 0, ['capped', 'lapsed', 'reports', 'appeal', 'seed'], want, nowS);
 			return changed;
 		});
 	}

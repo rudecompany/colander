@@ -63,7 +63,7 @@ export class StaffRequiredError extends Error {
 function staffRequired(e: Engine, sourceRef: number, large: boolean | undefined): string {
 	const src = getSource(e.db, sourceRef);
 	if (!src) throw new NotFoundError();
-	const isLarge = src.largeStaff || (src.state.flags & FLAG_LARGE) !== 0 || (src.subscribers !== null && src.subscribers >= e.th.largeSubscribers);
+	const isLarge = (src.state.flags & FLAG_LARGE) !== 0 || e.audience(src).large;
 	if (isLarge || large !== undefined) return 'Large sources';
 	if (appealsBySource(e.db, sourceRef).some((a) => a.status === AppealPendingManual || a.status === AppealUnderReview)) {
 		return 'Sources with an open appeal';

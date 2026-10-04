@@ -6,7 +6,8 @@
 //
 // They replace the Go binary's operator commands: grant-role, import-seed and sign-config behave
 // as `colander <command>` did, with JSON arguments instead of flags.
-import { utf8 } from '@colander/shared/bytes';
+import { hex, utf8 } from '@colander/shared/bytes';
+import { sha256 } from '@colander/shared/sha256';
 import { CONFIG_CONTEXT, signEnvelope } from '@colander/shared/signing';
 import { normalizeEmail } from './auth';
 import { countsAgree, newestDump, restoreDump, tableCounts } from './backup';
@@ -19,7 +20,7 @@ import { unix } from './scoring/engine';
 import { grantRole, type Account } from './store/accounts';
 import { latestSequence, RETENTION_SECONDS, SNAPSHOT_KEY } from './store/list';
 import { saveAdapterConfig } from './store/misc';
-import { importSeed } from './store/sources';
+import { importSeed, recordSeedImport, type SeedImport } from './store/sources';
 import { primary, type Store } from './store/store';
 
 /** A JSON object argument as the workflow sends it. */
@@ -293,44 +294,80 @@ function grant(store: Store, a: OpsArgs): OpsAnswer {
 	return ok({ account: accountJSON(acct), message: `${acct.email} (${acct.id}) is now ${acct.role}.` });
 }
 
+/** The licenses a paid product may use a seed list under, by their SPDX identifiers. */
+export const SEED_LICENSES = ['CC0-1.0', 'CC-BY-4.0', 'MIT', 'LicenseRef-written-grant'];
+
+/**
+ * Checks a seed list's license and the records it needs: the credit for CC BY and MIT, and where
+ * the written grant is kept for LicenseRef-written-grant. Non-commercial, no-derivatives,
+ * share-alike, GPL and unlicensed lists are refused. Returns the SPDX spelling or the refusal.
+ */
+function seedLicense(license: string, attribution: string, permissionDoc: string): string | OpsAnswer {
+	const known = SEED_LICENSES.find((l) => l.toLowerCase() === license.toLowerCase());
+	if (known === undefined) {
+		const how = 'Ask its maintainer for written permission and import it as LicenseRef-written-grant with permission_doc.';
+		if (license === '' || /^(none|noassertion|unlicensed|unknown|proprietary)$/i.test(license)) {
+			return fail(400, 'license_refused', `Refusing to import: the list has no license, and unlicensed lists may not be used. ${how}`);
+		}
+		if (/(^|[^a-z])(nc|nd|sa)([^a-z]|$)|noncommercial|noderiv|sharealike|gpl/i.test(license)) {
+			return fail(
+				400,
+				'license_refused',
+				`Refusing to import: ${license} does not allow use in a paid product. Non-commercial, no-derivatives, share-alike and GPL lists are refused. ${how}`
+			);
+		}
+		return fail(400, 'invalid_license', `license must be one of ${SEED_LICENSES.join(', ')}, not ${JSON.stringify(license)}.`);
+	}
+	if ((known === 'CC-BY-4.0' || known === 'MIT') && attribution === '') {
+		return fail(400, 'attribution_required', `${known} needs attribution: the credit or copyright notice the license asks for.`);
+	}
+	if (known === 'LicenseRef-written-grant' && permissionDoc === '') {
+		return fail(400, 'permission_doc_required', 'LicenseRef-written-grant needs permission_doc: where the written grant is kept.');
+	}
+	return known;
+}
+
 /**
  * `colander import-seed`: one @handle or UC channel ID per line, `!` starts a comment, in one
- * transaction for the whole file. Nothing is downloaded or bundled: the operator supplies the list
- * and accepts its license, and the attribution is stored on each entry. Go scored inline after
- * the import; here the chunked scoring pass starts at once and the list publishes after it.
+ * transaction for the whole file. Nothing is downloaded or bundled: the operator supplies the list.
+ * Only lists a paid product may use are accepted (seedLicense), and the run is recorded with its
+ * license, attribution, grant and file hash for audits. Seed entries are review leads for staff:
+ * they never give a verdict and are never named in public (contracts 9.3). The scoring pass that
+ * puts them in the review queue starts at once.
  */
 function importSeedFile(store: Store, a: OpsArgs): OpsAnswer {
 	const file = text(a.file);
 	const list = text(a.list);
-	const sourceName = text(a.source_name);
-	const license = text(a.license);
-	if (file === '' || sourceName === '' || license === '') return fail(400, 'invalid_args', 'file, source_name and license are required.');
+	const sourceName = trimSpace(text(a.source_name));
+	const attribution = trimSpace(text(a.attribution));
+	const permissionDoc = trimSpace(text(a.permission_doc));
+	if (file === '' || sourceName === '') return fail(400, 'invalid_args', 'file and source_name are required.');
 	if (list !== 'blocklist' && list !== 'warnlist') return fail(400, 'invalid_args', 'list must be blocklist or warnlist.');
-	if (a.accept_license !== true) {
-		return fail(400, 'license_not_accepted', `Refusing to import: ${sourceName} is licensed ${license}. Read its terms and set accept_license to true to confirm.`);
-	}
+	const license = seedLicense(trimSpace(text(a.license)), attribution, permissionDoc);
+	if (typeof license !== 'string') return license;
 	const db = store.db;
 	const now = store.now();
-	let imported = 0;
+	const ids: string[] = [];
 	let skipped = 0;
-	db.tx(() => {
-		for (const raw of file.split('\n')) {
-			const line = trimSpace(raw);
-			if (line === '' || line.startsWith('!')) continue;
-			const id = canonicalSource('yt', line);
-			if (id === undefined) {
-				skipped++;
-				continue;
-			}
-			importSeed(db, 'yt', id, list, sourceName, license, unix(now));
-			imported++;
-		}
+	for (const raw of file.split('\n')) {
+		const line = trimSpace(raw);
+		if (line === '' || line.startsWith('!')) continue;
+		const id = canonicalSource('yt', line);
+		if (id === undefined) skipped++;
+		else ids.push(id);
+	}
+	const seed: SeedImport = { sourceName, list, license, attribution, permissionDoc, sha256: hex(sha256(utf8(file))), entries: ids.length };
+	const batch = db.tx(() => {
+		const id = recordSeedImport(db, seed, unix(now));
+		for (const alias of ids) importSeed(db, id, 'yt', alias, seed, unix(now));
+		return id;
 	});
 	store.jobs.schedule('pass', now);
 	return ok({
-		imported,
+		imported: ids.length,
 		skipped,
-		message: `Imported ${imported} YouTube channels from ${sourceName} (${license}) as ${list} entries, skipped ${skipped} lines. The scoring pass starts now and publishes them.`
+		batch,
+		message: `Imported ${ids.length} YouTube channels from ${sourceName} (${license}) as ${list} review leads, skipped ${skipped} lines. They never give a verdict; the scoring pass now puts them in the review queue.`
 	});
 }
 

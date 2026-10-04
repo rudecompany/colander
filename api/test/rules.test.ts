@@ -60,33 +60,6 @@ describe('rules', () => {
 			capped: 'large'
 		},
 		{
-			name: 'unreviewed import is capped at Likely slop and escalated',
-			in: { votes: slop5, imported: 'blocklist', uploadsPerDay: -1 },
-			verdict: 'likely_slop',
-			rule: 6,
-			capped: 'imported',
-			signals: Sig.mostly_ai | Sig.community_consensus
-		},
-		{
-			name: 'reviewed import can reach Slop',
-			in: { votes: slop5, imported: 'blocklist', reviewed: true, uploadsPerDay: -1, audienceKnown: true },
-			verdict: 'slop',
-			rule: 6
-		},
-		{
-			name: 'blocklist seed alone is Likely slop',
-			in: { imported: 'blocklist', uploadsPerDay: -1 },
-			verdict: 'likely_slop',
-			rule: 7,
-			signals: Sig.mostly_ai
-		},
-		{
-			name: 'warnlist seed alone is AI-made',
-			in: { imported: 'warnlist', uploadsPerDay: -1 },
-			verdict: 'ai_made',
-			rule: 8
-		},
-		{
 			name: 'mixed source with source-level AI evidence is AI-made, never slop',
 			in: { votes: slop5, labelInstalls: 2, uploadsPerDay: 14, itemsSeen: 10, aiItems: 3, audienceKnown: true },
 			verdict: 'ai_made',
@@ -235,8 +208,8 @@ describe('rules', () => {
 			rule: 1
 		},
 		{
-			name: 'large and imported caps never apply to items',
-			in: { item: true, votes: slop5, labelInstalls: 2, large: true, imported: 'blocklist', sourceBehavior: { met: true, signals: 0 } },
+			name: 'the large cap never applies to items',
+			in: { item: true, votes: slop5, labelInstalls: 2, large: true, sourceBehavior: { met: true, signals: 0 } },
 			verdict: 'slop',
 			rule: 6
 		},

@@ -80,6 +80,39 @@ export function cachePut(db: Db, key: string, body: Uint8Array, now: number): vo
 	);
 }
 
+/**
+ * Charges units to a day's YouTube quota ledger when they fit the budget and returns whether they
+ * did; nothing is charged when they do not.
+ */
+export function chargeYouTubeQuota(db: Db, day: string, units: number, budget: number): boolean {
+	return db.tx(() => {
+		const used = db.get<{ units: number }>('SELECT units FROM youtube_quota WHERE day = ?', day)?.units ?? 0;
+		if (used + units > budget) return false;
+		db.run('INSERT INTO youtube_quota (day, units) VALUES (?, ?) ON CONFLICT (day) DO UPDATE SET units = units + excluded.units', day, units);
+		return true;
+	});
+}
+
+/** Marks a day's budget as used up, after YouTube itself refused a call for quota. */
+export function exhaustYouTubeQuota(db: Db, day: string, budget: number): void {
+	db.run('INSERT INTO youtube_quota (day, units) VALUES (?, ?) ON CONFLICT (day) DO UPDATE SET units = max(units, excluded.units)', day, budget);
+}
+
+/** The units charged on a day. */
+export function youTubeQuotaUsed(db: Db, day: string): number {
+	return db.get<{ units: number }>('SELECT units FROM youtube_quota WHERE day = ?', day)?.units ?? 0;
+}
+
+/**
+ * Deletes YouTube Data API data fetched before `before` (unix seconds): cached responses and the
+ * per-channel figures. Ledger days before `beforeDay` go too.
+ */
+export function purgeYouTube(db: Db, before: number, beforeDay: string): void {
+	db.run('DELETE FROM youtube_cache WHERE fetched_at < ?', before);
+	db.run('DELETE FROM youtube_channels WHERE fetched_at < ?', before);
+	db.run('DELETE FROM youtube_quota WHERE day < ?', beforeDay);
+}
+
 /** Counts rated sources per verdict and rated items. */
 export function verdictCounts(db: Db): { counts: Record<string, number>; items: number } {
 	const counts: Record<string, number> = { slop: 0, likely_slop: 0, ai_made: 0, disputed: 0, clear: 0 };

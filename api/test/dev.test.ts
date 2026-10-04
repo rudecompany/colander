@@ -13,7 +13,7 @@ import worker from '../src/index';
 import { Sig } from '../src/scoring/rules';
 import { AppealAwaiting, AppealDenied, AppealExpired, AppealPendingManual, appealsWithStatus, AppealUnderReview, AppealUpheld } from '../src/store/appeals';
 import { SNAPSHOT_KEY } from '../src/store/list';
-import { findSource } from '../src/store/sources';
+import { findSource, getSource } from '../src/store/sources';
 import { openReports, reportsBySource } from '../src/store/tags';
 import { verdictCounts } from '../src/store/misc';
 import { openEscalations } from '../src/store/verdicts';
@@ -106,7 +106,16 @@ describe('/__dev/seed', () => {
 			const sloppy = entry('tt:s:@sloppyfacts')!;
 			expect(sloppy.flags & FLAG_LARGE, '@sloppyfacts is large').not.toBe(0);
 			expect(sloppy.signals & Sig.open_appeal, '@sloppyfacts has an open appeal').not.toBe(0);
-			expect(entry('yt:s:@catrescuetales')!.flags & FLAG_IMPORTED).not.toBe(0);
+			// Seed lists put nothing on the list: flag bit 5 stays 0, and a source only a seed list
+			// names has no entry, only a review lead.
+			for (let at = 0; at < snap.entries.length; at += ENTRY) expect(snap.entries[at + 9]! & FLAG_IMPORTED).toBe(0);
+			expect(entry('yt:s:@dailymotivationmachine')).toBeUndefined();
+			expect(escalations).toContain('seed: Seed lead, not evidence: listed on Demo list (CC0-1.0) as a blocklist entry');
+			// The journeys in e2e/: staff recorded @gossipnarrated as large, and a viewer reported it since.
+			const gossip = getSource(db, findSource(db, 'yt', '@gossipnarrated')!)!;
+			expect(gossip).toMatchObject({ largeStaff: true, name: 'Celebrity Gossip Narrated' });
+			expect(reportsBySource(db, gossip.ref).map((r) => r.status)).toEqual(['open']);
+			expect(entry('yt:s:@gossipnarrated')!.flags & FLAG_LARGE).not.toBe(0);
 		});
 	});
 });
@@ -117,7 +126,10 @@ describe('/__dev/settle', () => {
 		// A fresh deployment: the seed's publication above came from another Store.
 		await env.LISTS.delete(SNAPSHOT_KEY);
 		await runInDurableObject(other, (store: Store) => {
-			store.db.run("INSERT INTO sources (platform, canonical_id, created_at, import_list, import_source, import_license, imported_at) VALUES ('yt', '@imported', 1, 'blocklist', 'Demo', 'CC0', 1)");
+			// What the old rules left on the list for a seed alone, which this settle takes off.
+			store.db.run(
+				"INSERT INTO sources (platform, canonical_id, created_at, import_list, import_source, import_license, imported_at, verdict, signals, flags, changed_at) VALUES ('yt', '@imported', 1, 'blocklist', 'Demo', 'CC0', 1, 'likely_slop', 32, 32, 1)"
+			);
 			const id = store.db.get<{ id: number }>('SELECT id FROM sources')!.id;
 			store.db.run("INSERT INTO source_aliases (platform, alias, source_id) VALUES ('yt', '@imported', ?)", id);
 		});
@@ -172,6 +184,6 @@ describe('/__dev/dump', () => {
 		expect(res.status).toBe(200);
 		expect(res.headers.get('Content-Type')).toBe('application/sql; charset=utf-8');
 		// application/sql is not a type workerd reads as text, so decode the bytes.
-		expect(new TextDecoder().decode(await res.arrayBuffer())).toMatch(/^-- Colander Store dump, schema version 4, taken .*\nCOMMIT;\n$/s);
+		expect(new TextDecoder().decode(await res.arrayBuffer())).toMatch(/^-- Colander Store dump, schema version 5, taken .*\nCOMMIT;\n$/s);
 	});
 });

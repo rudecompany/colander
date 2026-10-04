@@ -19,7 +19,7 @@ import { BehaviorSignals, ProvenanceSignals, slopTypeCode } from '../scoring/rul
 import type { Account } from '../store/accounts';
 import { AppealPendingManual, AppealUnderReview, appealsBySource, appealsWithStatus, getAppeal, type Appeal } from '../store/appeals';
 import { ConflictError, NotFoundError } from '../store/db';
-import { ensureItem, ensureSource, findItem, getSource, type Source } from '../store/sources';
+import { ensureItem, ensureSource, findItem, getSource, namedSeedList, type Source } from '../store/sources';
 import { dismissReport, getReport, openReports, reportsBySource, type Report } from '../store/tags';
 import { log, openEscalations } from '../store/verdicts';
 import { toAppeal } from './appeals';
@@ -115,9 +115,12 @@ export function reviewQueue(api: Api, request: Request, url: URL): Response {
 		}
 	}
 	if (kind === 'all' || kind === 'escalations') {
+		// ponytail: loads every open escalation's source per request, seed leads included; page in SQL
+		// once imports put thousands of leads in the queue.
 		for (const e of openEscalations(db)) {
-			// An appeal staff have left waiting comes first.
-			add(e.sourceRef, { id: 'q_esc_' + e.id, kind: 'escalation', priority: e.kind === 'appeal' ? 1 : 2, summary: e.summary, created: e.createdAt });
+			// An appeal staff have left waiting comes first; a seed lead, which is not evidence, comes last.
+			const priority = e.kind === 'appeal' ? 1 : e.kind === 'seed' ? 4 : 2;
+			add(e.sourceRef, { id: 'q_esc_' + e.id, kind: 'escalation', priority, summary: e.summary, created: e.createdAt });
 		}
 	}
 	if (kind === 'all' || kind === 'reports') {
@@ -143,8 +146,8 @@ function layers(ev: Evaluation): Layers {
 	const labels = r.mixed ? inp.labelInstalls : inp.rollupLabelInstalls;
 	if (labels > 0) prov.push(`${labels} installs saw a platform AI label`);
 	if (r.mixed && inp.rollupLabelInstalls > inp.labelInstalls) prov.push('labels on its items do not count, because the source is mixed');
-	if (src.importList !== '') prov.push(`imported from ${src.importSource} (${src.importLicense}) as a ${src.importList} entry`);
-	if (r.provenance.met && r.provenance.signals === 0 && src.importList === '') prov.push('taggers agree it is AI-made');
+	if (r.provenance.met && r.provenance.signals === 0) prov.push('taggers agree it is AI-made');
+	if (src.importList !== '') prov.push(`listed on ${src.importSource} (${src.importLicense}) as a ${src.importList} entry, a review lead that is not evidence`);
 	const beh: string[] = [];
 	if (inp.uploadsPerDay >= 0) beh.push(`about ${goFixed(inp.uploadsPerDay, 1)} uploads a day over the last 14 days`);
 	if (inp.itemsSeen > 0) beh.push(`${inp.aiItems} of ${inp.itemsSeen} items with evidence carry AI evidence`);
@@ -194,16 +197,24 @@ function toItems(ev: Evaluation): ItemSummary[] {
 	});
 }
 
-/** The review console's view of a source: what the public sees, plus layers, reports, appeals and items. */
+/**
+ * The review console's view of a source: what the public sees plus the seed provenance, which only
+ * reviewers see, and layers, reports, appeals and items.
+ */
 function writeReviewSource(api: Api, ref: number): Response {
 	const { db } = api.store;
 	const ev = explain(api, ref);
+	const src = ev.data.source;
 	const reports = reportsBySource(db, ref);
 	const appeals = appealsBySource(db, ref);
 	const history = log(db, { sourceRef: ref, limit: 100 });
 	const active = activeInstalls(api.store);
 	return json(200, {
-		source: toSource(ev),
+		source: {
+			...toSource(ev),
+			imported: src.importList !== '',
+			attribution: src.importList !== '' ? `${src.importSource} (${src.importLicense}), ${src.importList}` : null
+		},
 		layers: layers(ev),
 		reports: reports.map((rp) => toReportDetail(rp, active)),
 		appeals: appeals.map(toAppeal),
@@ -233,11 +244,18 @@ const decisionSchema = {
 
 type DecisionBody = { verdict: string; reason: string; signals?: string[]; slop_type?: string; tests?: string[]; large?: boolean };
 
+/** Answers 400 source_named when text for the public decision log names a seed list, which it never may. */
+function namesSeedList(api: Api, text: string): Response | undefined {
+	const name = namedSeedList(api.store.db, text);
+	if (name === undefined) return undefined;
+	return jsonError(400, 'source_named', `The text names the seed list ${name}. The decision log is public and never names a data source.`);
+}
+
 /**
  * Validates a decision body. Only provenance and behavior signals are recorded; the other signals
  * are computed and never set by hand.
  */
-function decisionInput(b: DecisionBody, a: Account): Omit<DecisionInput, 'sourceRef'> | Response {
+function decisionInput(api: Api, b: DecisionBody, a: Account): Omit<DecisionInput, 'sourceRef'> | Response {
 	const reason = trimSpace(b.reason);
 	if (b.verdict !== 'none' && verdictCode(b.verdict) === 0) {
 		return jsonError(400, 'invalid_verdict', 'verdict must be one of the five verdicts or none.');
@@ -246,6 +264,8 @@ function decisionInput(b: DecisionBody, a: Account): Omit<DecisionInput, 'source
 	if (n < 1 || n > 500) {
 		return jsonError(400, 'invalid_reason', 'The reason must be 1 to 500 characters. It is published in the decision log.');
 	}
+	const named = namesSeedList(api, reason);
+	if (named) return named;
 	const signals = signalMask(b.signals ?? []);
 	if (signals instanceof Error) return jsonError(400, 'invalid_signals', signals.message);
 	let slopType = '';
@@ -295,7 +315,7 @@ export async function reviewSourceDecision(api: Api, request: Request, _url: URL
 	if (a instanceof Response) return a;
 	const body = await decode(request, 16 << 10, decisionSchema);
 	if (body instanceof Response) return body;
-	const input = decisionInput(body, a);
+	const input = decisionInput(api, body, a);
 	if (input instanceof Response) return input;
 	const platform = pathValue(params, 'platform');
 	const id = canonicalSource(platform, pathValue(params, 'source_id'));
@@ -313,7 +333,7 @@ export async function reviewItemDecision(api: Api, request: Request, _url: URL, 
 	if (a instanceof Response) return a;
 	const body = await decode(request, 16 << 10, decisionSchema);
 	if (body instanceof Response) return body;
-	const input = decisionInput(body, a);
+	const input = decisionInput(api, body, a);
 	if (input instanceof Response) return input;
 	if (body.large !== undefined) return jsonError(400, 'invalid_large', 'large applies to sources, not items.');
 	const platform = pathValue(params, 'platform');
@@ -405,5 +425,7 @@ export async function reviewResolveAppeal(api: Api, request: Request, _url: URL,
 	if (n < 1 || n > 1000) {
 		return jsonError(400, 'invalid_reasoning', 'The reasoning must be 1 to 1,000 characters. It is published in the decision log.');
 	}
+	const named = namesSeedList(api, reasoning);
+	if (named) return named;
 	return appealAction(api, ap.id, () => resolveAppeal(api.store.engine, ap, body.outcome, reasoning, a));
 }

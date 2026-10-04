@@ -11,7 +11,9 @@ import { pruneLimits } from './limits';
 import { Default } from './scoring/rules';
 import type { Db } from './store/db';
 import { RETENTION_SECONDS } from './store/list';
+import { purgeYouTube } from './store/misc';
 import { sourceRefsAfter } from './store/sources';
+import { pacificDay, RETENTION } from './youtube';
 
 /** One turn of a job: returns when to run it again (unix ms), or null when it is done. */
 export type Handler = (arg: string, now: number) => Promise<number | null> | number | null;
@@ -118,7 +120,8 @@ export function nextDump(now: number): number {
 /**
  * The hourly cleanup: expired magic links and sessions (Go pruned them while signing in), list
  * sequences past the delta window (their changes cascade; the head always stays), refilled rate
- * limit buckets, and the synced settings of ended install trials, which no token can read again.
+ * limit buckets, the synced settings of ended install trials, which no token can read again, and
+ * YouTube Data API data before it is 30 days old (with quota ledger days older than that).
  * The trial rows stay, so each install still gets one trial.
  */
 export function prune(db: Db, now: number): number {
@@ -132,6 +135,7 @@ export function prune(db: Db, now: number): number {
 			s - RETENTION_SECONDS
 		);
 		pruneLimits(db, now);
+		purgeYouTube(db, Math.floor((now - RETENTION) / 1000), pacificDay(now - RETENTION));
 	});
 	return now + PRUNE_INTERVAL;
 }
