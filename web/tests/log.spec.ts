@@ -24,6 +24,8 @@ test('the decision log filters by platform and verdict and loads more', async ({
 	await expect(first).toContainText('Decided by staff member Sam');
 	await first.locator('summary').click();
 	await expect(first.getByText('Confirmed by staff review.')).toBeVisible();
+	// The open row shows its reason once, in the summary, not again in the panel.
+	await expect(first.getByText('Staff review confirmed mass-produced narration', { exact: false })).toHaveCount(1);
 	await expect(first.getByRole('link', { name: 'Source page' })).toHaveAttribute('href', '/s/yt/UCq3x9Vb2m4LkT7pQe8sW1aZ');
 
 	await page.getByLabel('Platform').selectOption('');

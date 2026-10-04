@@ -13,8 +13,8 @@ reads in full rather than cut mid-sentence (the landing band, /s history). Below
 `time`: "14:02 UTC" under a day header (/log), `date` "2 Oct 2026" for rows from other days, and
 `stamp` "4 Oct, 03:52 UTC" where no day header sits above (the landing band). `full` lets the
 reason wrap whole (/s, the page that explains the verdict). With `children`, the row is a details
-element that opens to them (the EvidenceCard on /log), with a chevron that turns when it is open;
-the source name is then plain text, since a summary holds no links.
+element that opens to them (the EvidenceCard on /log), with a chevron that turns when it is open
+and the reason read whole; the source name is then plain text, since a summary holds no links.
 -->
 <script lang="ts">
 	import type { Snippet } from 'svelte';
@@ -168,7 +168,8 @@ the source name is then plain text, since a summary holds no links.
 		-webkit-line-clamp: 2;
 		line-clamp: 2;
 	}
-	.reason.full {
+	.reason.full,
+	details[open] .reason {
 		display: block;
 		overflow: visible;
 	}

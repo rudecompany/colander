@@ -193,7 +193,6 @@
 						<li>
 							<LogRow entry={e}>
 								<div class="more">
-									<p class="reason">{e.reason}</p>
 									<EvidenceCard evidence={why(e)} variant="inline" headingLevel={3} />
 								</div>
 							</LogRow>
@@ -282,9 +281,6 @@
 		gap: 12px;
 		max-width: 720px;
 		padding-left: 80px;
-	}
-	.reason {
-		font: var(--cl-body);
 	}
 	.load {
 		display: grid;
