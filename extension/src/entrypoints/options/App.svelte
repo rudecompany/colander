@@ -183,11 +183,15 @@ leaves it out there. Below 800 px the nav becomes a Section select.
 	.pick {
 		display: none;
 	}
+	/* Focus lands on the section after the nav moves it, for screen readers; it is not a control, so no ring. */
 	main {
 		width: 100%;
 		max-width: 784px;
 		padding: 48px 32px 96px;
 		outline: none;
+	}
+	main:focus-visible {
+		box-shadow: none;
 	}
 	.rail {
 		display: none;

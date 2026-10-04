@@ -103,7 +103,7 @@ website hero renders the same component, so the two cannot drift. 360 wide, neve
 		noun: platform ? ITEM_NOUN[platform] : undefined,
 		rows: page?.actions.map((a) => ({ id: a.id, verdict: a.verdict, title: title(a), action: a.action, shown: a.shown })) ?? [],
 		// One slot, by priority: a sync failure, a report verdict, the weekly card, else the footer.
-		slot: syncFailed ? { kind: 'sync' } : status.value.reportsUpdated ? { kind: 'report' } : showWeekly ? { kind: 'weekly', skipped: week } : null,
+		slot: syncFailed ? { kind: 'sync' } : status.value.reportsUpdated ? { kind: 'report' } : showWeekly ? { kind: 'weekly', hidden: week } : null,
 		list: { sequence: status.value.listSequence || null, updatedAt: status.value.lastSyncAt },
 		canPauseTab: !!page
 	});
@@ -177,6 +177,20 @@ website hero renders the same component, so the two cannot drift. 360 wide, neve
 		support: () => openSite('/support'),
 		log: () => openSite('/log')
 	};
+
+	// Chrome's popup is at most 600 px of screen, so at 125% zoom it is 480 CSS px and the document
+	// would scroll. Once the content outgrows the window, the popup is capped to the window and only
+	// the list scrolls. Chrome sizes the popup to its content during layout, before these callbacks,
+	// so the window is only ever smaller than the content when it has reached its limit. Below 440
+	// (past about 135% zoom) the fixed cards alone fill the window, so the whole popup scrolls instead.
+	const fit = () => {
+		const root = document.documentElement;
+		if (root.scrollHeight <= innerHeight + 1 || innerHeight < 440) return;
+		root.style.setProperty('--popup-cap', `${innerHeight}px`);
+		root.dataset.capped = '';
+	};
+	addEventListener('resize', fit);
+	new ResizeObserver(fit).observe(document.documentElement);
 </script>
 
 <PopupView state={popup} {actions} />
@@ -190,5 +204,23 @@ website hero renders the same component, so the two cannot drift. 360 wide, neve
 	/* Chrome's popup window is at most 600 tall; PopupView grows with its content elsewhere. */
 	:global(.popup) {
 		max-height: 600px;
+	}
+	/* Capped by zoom: the On this page card gives way and its rows scroll, fading at the foot. */
+	:global(html[data-capped] .popup) {
+		max-height: var(--popup-cap);
+	}
+	:global(html[data-capped] .popup .page) {
+		flex: 0 1 auto;
+		min-height: 0;
+	}
+	/* The tally repeats the chips in the list, which needs the room more. */
+	:global(html[data-capped] .popup .stats .tally) {
+		display: none;
+	}
+	:global(html[data-capped] .popup .rows) {
+		min-height: 0;
+		overflow-y: auto;
+		padding-bottom: 16px;
+		mask-image: linear-gradient(to bottom, black calc(100% - 16px), transparent);
 	}
 </style>

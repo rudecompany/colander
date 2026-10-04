@@ -4,7 +4,7 @@
 // chrome.* or the global document, so the website runs the same code at prerender.
 // Layer keeps one popover, one sheet and one toast at a time above the page.
 import type { IconNode } from 'lucide';
-import { ArrowRight, Check, CircleAlert, Eye, Flag, Tag, Undo2, X } from 'lucide';
+import { ArrowRight, Check, CircleAlert, Eye, Flag, Image as ImageIcon, Play, Tag, Undo2, X } from 'lucide';
 import { TAG_GLYPH, TAG_MEANING } from '../copy';
 import {
 	SLOP_TYPES,
@@ -272,12 +272,15 @@ export function reportSheet(ctx: InpageContext, r: ReportSheetInput, close: () =
 		});
 		return input;
 	});
+	// Pages load thumbnails lazily, so a tile often has none: a neutral square with the item's icon.
 	const tiles = r.items.slice(0, 6).map((it, i) =>
 		h(
 			'label',
 			{ class: 'tile' },
 			boxes[i],
-			it.thumb ? h('img', { src: it.thumb, alt: '', width: 48, height: 48, loading: 'lazy' }) : h('span', { class: 'ph', 'aria-hidden': 'true' }, r.noun),
+			it.thumb
+				? h('img', { src: it.thumb, alt: '', width: 48, height: 48, loading: 'lazy' })
+				: h('span', { class: 'ph', 'aria-hidden': 'true' }, icon(ctx.doc, r.noun === 'video' ? Play : ImageIcon)),
 			h('span', { title: it.title }, it.title || it.id)
 		)
 	);
@@ -371,6 +374,11 @@ export interface TagHandlers {
 	detail(type: SlopType | null, tests: Test[]): void;
 	/** The menu closed without a choice, or after one. */
 	close?(): void;
+	/**
+	 * Where keyboard focus goes when the toast ends after the tagged card left the page with its Tag
+	 * button: the card's own Tag button when Undo brought it back, else the next card.
+	 */
+	focusAfter?(): HTMLElement | null;
 }
 
 /** The full-page layer: one popover or sheet, one toast and one report at a time. */
@@ -381,6 +389,10 @@ export class Layer {
 	private pop: { el: HTMLElement; anchor: HTMLElement; onClose?: () => void } | null = null;
 	private toastEl: HTMLElement | null = null;
 	private dialog: { el: HTMLElement; restore: HTMLElement | null } | null = null;
+	/** Set while a toast holds focus that the page lost: where focus goes when the toast ends. */
+	private afterToast: (() => HTMLElement | null) | null = null;
+	/** The last input was a key, not a pointer. */
+	private keyed = false;
 	private raf = 0;
 	private off: (() => void)[] = [];
 
@@ -392,6 +404,7 @@ export class Layer {
 		root.append(this.box);
 		const win = ctx.doc.defaultView!;
 		const down = (e: PointerEvent) => {
+			this.keyed = false;
 			if (this.pop && !e.composedPath().some((n) => n === this.pop!.el || n === this.pop!.anchor)) this.closePop(false);
 		};
 		const follow = () => {
@@ -419,6 +432,7 @@ export class Layer {
 
 	/** Called by the page controller's early key guard for every keydown. */
 	onKey(e: KeyboardEvent) {
+		this.keyed = true;
 		if (this.dialog) {
 			if (e.key === 'Escape') {
 				e.stopPropagation();
@@ -493,10 +507,17 @@ export class Layer {
 			this.notice({
 				text: s.tagged[t],
 				actions: [
-					{ label: s.undo, icon: Undo2, onClick: () => (this.dismissNotice(), x.undo()) },
+					{ label: s.undo, icon: Undo2, onClick: () => (x.undo(), this.dismissNotice()) },
 					...(t === 'slop' ? [{ label: s.addDetail, onClick: () => this.detail(x) }] : [])
 				]
 			});
+			// A Slop tag hides the card and its Tag button with it. From the keyboard, focus moves to the
+			// toast, which holds while focused, so Undo and Add detail stay in reach; it goes on to the
+			// next card when the toast ends.
+			if (this.keyed && !(anchor.isConnected && anchor.getClientRects().length)) {
+				this.toastEl?.querySelector<HTMLElement>('button')?.focus();
+				this.afterToast = x.focusAfter ?? null;
+			}
 		});
 		this.openPop(anchor, menu, x.close);
 	}
@@ -524,15 +545,26 @@ export class Layer {
 
 	dismissNotice() {
 		if (this.pop && this.toastEl?.contains(this.pop.anchor)) this.closePop(false);
+		// Focus still in the toast, or lost with a sheet that closed, follows the tagged card on.
+		const doc = this.ctx.doc;
+		const a = doc.activeElement;
+		const inner = this.root.activeElement;
+		const lost = !a || a === doc.body || a === doc.documentElement || (a === this.host && (!inner || !!this.toastEl?.contains(inner)));
+		const after = this.afterToast;
+		this.afterToast = null;
 		this.toastEl?.remove();
 		this.toastEl = null;
+		if (after && lost) after()?.focus();
 	}
 
 	report(r: ReportSheetInput) {
 		this.closePop(false);
 		this.closeDialog();
 		this.mount();
-		const restore = (this.ctx.doc.activeElement as HTMLElement | null) ?? null;
+		// The Report source pill lives in a shadow root: the document only sees its host, which cannot
+		// take focus, so the pill itself is found through the shadow roots.
+		let restore = this.ctx.doc.activeElement as HTMLElement | null;
+		while (restore?.shadowRoot?.activeElement) restore = restore.shadowRoot.activeElement as HTMLElement;
 		const el = reportSheet(this.ctx, r, () => this.closeDialog());
 		this.box.append(el);
 		this.dialog = { el, restore };

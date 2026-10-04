@@ -8,7 +8,7 @@ taller than the canvas it is cropped at a card boundary with a fade. Pictures of
 carry the thumbnail disclosure.
 -->
 <script lang="ts">
-	import { BrowserFrame, ColanderMark, DotField, InPage, Lifecycle, LogRow, PlatformTag, PopupView, VerdictChip, type PopupState } from '@colander/shared';
+	import { BrowserFrame, ColanderMark, DotField, InPage, Lifecycle, LogRow, PlatformTag, PopupView, VerdictChip, type PopupActions, type PopupState } from '@colander/shared';
 	import type { LogEntry } from '@colander/shared/api';
 	import { DEMO_FEED, DEMO_POPUP, DEMO_THUMBS_NOTE, PRIVACY_HEADINGS, PRIVACY_NEVER, TAGLINE } from '@colander/shared/copy';
 	import { DEMO_CSS, demoAction, demoFeed, demoHiddenCount, type InpageContext } from '@colander/shared/inpage';
@@ -31,6 +31,10 @@ carry the thumbnail disclosure.
 	};
 	const copy = COPY[frame] ?? COPY['1']!;
 
+	// Inert handlers: the popup draws Show, Always allow, Not slop and Why only where they exist, and
+	// the pictures must show every hidden row with its Show, as the real popup does.
+	const none = () => {};
+	const actions: PopupActions = { show: none, allow: none, notSlop: none, why: none };
 	// The popup as it reads on youtube.com at Standard over the demo feed.
 	const popup: PopupState = {
 		status: 'active',
@@ -88,7 +92,7 @@ carry the thumbnail disclosure.
 			{#if frame === '1' || frame === 'marquee'}
 				<div class="f1">
 					<BrowserFrame count={demoHiddenCount('standard')}>
-						{#snippet docked()}<PopupView state={popup} />{/snippet}
+						{#snippet docked()}<PopupView state={popup} {actions} />{/snippet}
 						<InPage kind="demo" css={GRID_CSS} build={grid} />
 					</BrowserFrame>
 				</div>
@@ -124,7 +128,7 @@ carry the thumbnail disclosure.
 					</Card>
 				</div>
 			{:else if frame === '5'}
-				<div class="pop"><PopupView state={popup} /></div>
+				<div class="pop"><PopupView state={popup} {actions} /></div>
 			{/if}
 		</div>
 		{#if frame === '5'}

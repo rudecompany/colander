@@ -35,8 +35,11 @@ for (const scheme of ['light', 'dark'] as const) {
 
 			await expect(popup.getByText('Active on youtube.com')).toBeVisible();
 			await check('default');
-			// Rows are 32 px targets or larger.
+			// Rows are 32 px targets or larger, and every row's menu chevron sits at one x, Show or not.
 			for (const b of await popup.locator('.row button').all()) expect.soft((await b.boundingBox())!.height).toBeGreaterThanOrEqual(32);
+			const chevrons = await popup.locator('.row .more').evaluateAll((els) => els.map((e) => Math.round(e.getBoundingClientRect().right)));
+			expect(new Set(chevrons).size, `chevrons at ${chevrons.join(', ')}`).toBe(1);
+			expect(await popup.locator('.row').filter({ has: popup.getByRole('button', { name: 'Show' }) }).count()).toBeGreaterThan(0);
 			const all = popup.getByRole('button', { name: /^Show all/ });
 			if (await all.count()) {
 				await all.click();
@@ -46,6 +49,9 @@ for (const scheme of ['light', 'dark'] as const) {
 			await popup.getByRole('button', { name: 'Pause' }).click();
 			await popup.getByRole('menuitem', { name: 'Pause on this site' }).click();
 			await expect(popup.getByText('Paused on this site.')).toBeVisible();
+			// Paused, the list says so rather than that the page is clean, and the level says when it applies.
+			await expect(popup.locator('.empty')).toHaveText('Colander is paused on this site, so nothing is hidden.');
+			await expect(popup.getByText('This level applies again when you resume.')).toBeVisible();
 			await check('paused');
 			await popup.getByRole('button', { name: 'Resume' }).click();
 			await expect(popup.getByText('Active on youtube.com')).toBeVisible();
@@ -70,7 +76,7 @@ for (const scheme of ['light', 'dark'] as const) {
 			await ext.ctl.evaluate((day) => chrome.storage.local.set({ stats: { firstRunAt: Date.now() - 9 * 86_400_000, days: { [day]: { hidden: 12, labeled: 4 } } } }), today);
 			await popup.reload();
 			// The page's own activity can land in today's count too, so the number is not pinned.
-			await expect(popup.getByText(/^You skipped \d+ slop items this week\.$/)).toBeVisible();
+			await expect(popup.getByText(/^Colander hid \d+ items for you this week\.$/)).toBeVisible();
 			await check('weekly card');
 
 			// A supported site with nothing to do, and a site Colander does not run on.
@@ -85,6 +91,28 @@ for (const scheme of ['light', 'dark'] as const) {
 		});
 	});
 }
+
+test('at 125% zoom only the list scrolls', async ({ ext }) => {
+	await ext.setup();
+	const html = fixtureHtml('yt-search').replace(/(<a[^>]*id="video-title"[^>]*>)[^<]*/g, `$1${LONG}`);
+	const page = await ext.open(SEARCH, { html });
+	// Chrome's 600 px popup at 125% zoom is 480 CSS px tall.
+	const popup = await ext.ctx.newPage();
+	await popup.setViewportSize({ width: 360, height: 480 });
+	await popup.goto(`chrome-extension://${EXT_ID}/popup.html?tab=${await ext.tabId(page)}`);
+	await expect(popup.locator('.row').first()).toBeVisible();
+	await expect.poll(() => height(popup)).toBeLessThanOrEqual(480);
+	// The header, status, strictness and counts stay in view; the rows scroll inside their card.
+	for (const name of ['Options', 'Pause']) await expect(popup.getByRole('button', { name })).toBeInViewport({ ratio: 1 });
+	await expect(popup.getByRole('radiogroup', { name: 'Strictness' })).toBeInViewport({ ratio: 1 });
+	await expect(popup.getByText('Hidden for you today')).toBeInViewport({ ratio: 1 });
+	expect(await popup.locator('.rows').evaluate((e) => e.scrollHeight > e.clientHeight)).toBe(true);
+	// At 100% nothing is capped.
+	await popup.setViewportSize({ width: 360, height: 600 });
+	await popup.reload();
+	await expect(popup.locator('.row').first()).toBeVisible();
+	expect(await popup.evaluate(() => document.documentElement.hasAttribute('data-capped'))).toBe(false);
+});
 
 test('pause and resume from the popup, on this site and on this tab', async ({ ext }) => {
 	await ext.setup();

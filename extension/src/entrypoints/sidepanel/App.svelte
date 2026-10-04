@@ -8,7 +8,7 @@ Uses a reviewer token sent by the website's account page through externally_conn
 <script lang="ts">
 	import { ColanderMark, CopyButton, DotMeter, EvidenceCard, LiveBadge, LogRow, PerforatedDisc, PlatformTag, VerdictChip, VerdictGlyph } from '@colander/shared';
 	import type { DecisionInput, QueueItem, ReviewSourceResponse } from '@colander/shared/api';
-	import { RESCORE_LINE, TAG_GLYPH } from '@colander/shared/copy';
+	import { EVIDENCE_TITLE, RESCORE_LINE, TAG_GLYPH } from '@colander/shared/copy';
 	import { fmtAgo, fmtNum, fmtPct, fmtShortDate, middleTruncate, platformItemUrl, plural, sourcePath } from '@colander/shared/format';
 	import type { Evidence } from '@colander/shared/inpage';
 	import { LAYER_KEYS, LAYER_QUESTION, LAYER_SHORT, LAYER_WORD } from '@colander/shared/layers';
@@ -268,7 +268,7 @@ Uses a reviewer token sent by the website's account page through externally_conn
 		return {
 			verdict: d.source.verdict,
 			word: null,
-			title: 'Evidence by layer',
+			title: EVIDENCE_TITLE,
 			rows: LAYER_KEYS.map((k) => ({
 				key: k,
 				label: LAYER_SHORT[k],
@@ -848,8 +848,9 @@ Uses a reviewer token sent by the website's account page through externally_conn
 		gap: 12px;
 		margin-bottom: 16px;
 	}
+	/* The same card title as Signals, Items and History: 20/28 is for the source name only. */
 	.h {
-		font: var(--cl-title);
+		font: var(--cl-body-strong);
 	}
 	.tiles {
 		display: grid;

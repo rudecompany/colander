@@ -165,9 +165,10 @@
 	.muted {
 		color: var(--cl-text-muted);
 	}
+	/* 4 across, 2 or 3 on a narrow screen, so Sync now stays inside the card. */
 	.facts {
 		display: grid;
-		grid-template-columns: repeat(4, minmax(0, 1fr));
+		grid-template-columns: repeat(auto-fit, minmax(112px, 1fr));
 		gap: 16px;
 		margin-top: 16px;
 		padding-top: 16px;

@@ -44,7 +44,7 @@ their size and alignment.
 		noun?: string;
 		rows?: PopupRow[];
 		/** The one 64 px slot: a sync failure, a report update, or the weekly card. Default: the footer. */
-		slot?: { kind: 'sync' } | { kind: 'report' } | { kind: 'weekly'; skipped: number } | null;
+		slot?: { kind: 'sync' } | { kind: 'report' } | { kind: 'weekly'; hidden: number } | null;
 		list?: { sequence: number | null; updatedAt?: DateInput | null };
 		/** False when the page has no content script to pause. */
 		canPauseTab?: boolean;
@@ -91,7 +91,7 @@ their size and alignment.
 	import StrictnessControl from './StrictnessControl.svelte';
 	import VerdictChip from './VerdictChip.svelte';
 	import VerdictTally from './VerdictTally.svelte';
-	import { SUPPORTED_SITES } from '../../copy';
+	import { SUPPORTED_SITES, WEEKLY_HIDDEN } from '../../copy';
 	import { fmtNum } from '../../utils/format';
 	import { VERDICT_WORD } from '../../verdicts';
 
@@ -126,6 +126,10 @@ their size and alignment.
 		return `On this page Colander ${parts.length ? `${parts.join(', ')} and ${last}` : last}.`;
 	});
 	const visible = $derived(all ? rows : rows.slice(0, 3));
+	const paused = $derived(s.status === 'paused');
+	const where = $derived(s.pausedScope === 'tab' ? 'tab' : 'site');
+	// While paused the level still saves, but nothing on the page follows it until Resume.
+	const note = $derived(paused ? 'This level applies again when you resume.' : s.strictnessNote);
 
 	/** A numbered title keeps its last words (up to 9 characters) when cut: "Ancient Rome facts… Part 46". */
 	function ends(t: string): [string, string] {
@@ -193,8 +197,8 @@ their size and alignment.
 
 		<section class="card strict" aria-label="Strictness">
 			<!-- A per-platform note takes the hint's line, so the card stays 80 tall. -->
-			<StrictnessControl value={s.strictness} onChange={(l) => a.strictness?.(l)} label="Strictness" hint={!s.strictnessNote} />
-			{#if s.strictnessNote}<p class="note">{s.strictnessNote}</p>{/if}
+			<StrictnessControl value={s.strictness} onChange={(l) => a.strictness?.(l)} label="Strictness" hint={!note} />
+			{#if note}<p class="note">{note}</p>{/if}
 		</section>
 
 		{#if all}
@@ -227,7 +231,7 @@ their size and alignment.
 				{#if s.status === 'loading'}
 					<p class="empty"><span class="three" aria-hidden="true"><i></i><i></i><i></i></span>Loading</p>
 				{:else if !rows.length}
-					<p class="empty"><span class="three" aria-hidden="true"><i></i><i></i><i></i></span>Nothing hidden on this page.</p>
+					<p class="empty"><span class="three" aria-hidden="true"><i></i><i></i><i></i></span>{paused ? `Colander is paused on this ${where}, so nothing is hidden.` : 'Nothing hidden on this page.'}</p>
 				{:else}
 					<ul class="rows">
 						{#each visible as r (r.id)}
@@ -266,7 +270,7 @@ their size and alignment.
 				</div>
 			{:else if s.slot?.kind === 'weekly'}
 				<div class="card weekly">
-					<p>You skipped {fmtNum(s.slot.skipped)} slop items this week.</p>
+					<p>{WEEKLY_HIDDEN(s.slot.hidden, fmtNum(s.slot.hidden))}</p>
 					<Button variant="quiet" icon size="sm" aria-label="Dismiss" onclick={() => a.dismissWeekly?.()}><X size={16} aria-hidden="true" /></Button>
 					{#if s.plus}
 						<Button variant="quiet" size="sm" onclick={() => a.support?.()}><Heart size={16} aria-hidden="true" />Support our work</Button>
@@ -441,7 +445,12 @@ their size and alignment.
 	h2 {
 		font: var(--cl-body-strong);
 	}
+	/* Every row shares one trailing column: Show where the item is hidden, empty space elsewhere, so
+	   the menu chevrons line up down the list. */
 	.rows {
+		display: grid;
+		grid-template-columns: minmax(0, 1fr) auto;
+		column-gap: 4px;
 		margin: 0;
 		padding: 0;
 		list-style: none;
@@ -453,14 +462,15 @@ their size and alignment.
 		mask-image: linear-gradient(to bottom, black calc(100% - 16px), transparent);
 	}
 	.row {
-		display: flex;
+		display: grid;
+		grid-column: 1 / -1;
+		grid-template-columns: subgrid;
 		align-items: center;
-		gap: 4px;
 		height: 44px;
 	}
 	.row-btn {
 		display: flex;
-		flex: 1;
+		grid-column: 1;
 		align-items: center;
 		gap: 8px;
 		min-width: 0;

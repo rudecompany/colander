@@ -51,7 +51,7 @@ test('the popup shows the week once: every 30 days with Get Plus, weekly with Pl
 	const days = { [day(0)]: { hidden: 4, labeled: 2 }, [day(3)]: { hidden: 10, labeled: 5 }, [day(9)]: { hidden: 99, labeled: 0 } };
 	await ext.ctl.evaluate((days) => chrome.storage.local.set({ stats: { firstRunAt: Date.now() - 10 * 86_400_000, days } }), days);
 	const popup = await ext.ctx.newPage();
-	const card = popup.getByText('You skipped 14 slop items this week.');
+	const card = popup.getByText('Colander hid 14 items for you this week.');
 
 	// Free: the person's own numbers with Get Plus, at most once in 30 days.
 	await popup.goto(`chrome-extension://${EXT_ID}/popup.html`);

@@ -14,6 +14,7 @@ sticky bar holds Back and Continue; Done opens the first platform.
 	import CircleAlert from '@lucide/svelte/icons/circle-alert';
 	import Pin from '@lucide/svelte/icons/pin';
 	import Puzzle from '@lucide/svelte/icons/puzzle';
+	import { MediaQuery } from 'svelte/reactivity';
 	import { fade } from 'svelte/transition';
 	import type { AdapterConfig } from '../../adapters/schema';
 	import { HOME, offered } from '../../lib/platforms';
@@ -34,6 +35,8 @@ sticky bar holds Back and Continue; Done opens the first platform.
 	let busy = $state(false);
 	let done = $state(false);
 	const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+	// On a phone-width window (or at high zoom) the recreated feed is a list, as the website shows it there.
+	const phone = new MediaQuery('max-width: 639px');
 	const lifecycle = $derived<LifecycleStep[]>(STEPS.map((label, i) => ({ label, state: done || i < step ? 'done' : i === step ? 'current' : 'later' })));
 
 	function togglePlatform(p: Platform) {
@@ -79,8 +82,8 @@ sticky bar holds Back and Continue; Done opens the first platform.
 			<ColanderMark size={48} />
 			<p class="cl-eyebrow">{TAGLINE.first} {TAGLINE.second}</p>
 			<h1 class="cl-display-lg">Set up Colander in 3 steps.</h1>
-			<!-- The definition leads the first step only, so later steps start higher. -->
-			{#if step === 0 && !done}<p class="cl-lead def">{DEFINITION_PUBLIC}</p>{/if}
+			<!-- The same header on every step, so the progress strip and the step heading never move. -->
+			<p class="cl-lead def">{DEFINITION_PUBLIC}</p>
 		</div>
 	</header>
 
@@ -109,7 +112,7 @@ sticky bar holds Back and Continue; Done opens the first platform.
 						</div>
 						<figure class="wide demo">
 							<!-- Two grid rows; the frame fades out below them, so a third row never reads as cut. -->
-							<FeedDemo variant="full" platform="yt" bind:level={strictness} popup={false} height={560} open={null} />
+							<FeedDemo variant="full" platform="yt" layout={phone.current ? 'list' : undefined} bind:level={strictness} popup={false} height={560} open={null} />
 							<figcaption class="caption">{DEMO_THUMBS_NOTE}</figcaption>
 						</figure>
 					</section>
@@ -233,24 +236,25 @@ sticky bar holds Back and Continue; Done opens the first platform.
 	.caption {
 		font: var(--cl-caption);
 	}
+	/* One column as wide as the page, so the 560 px control and its badge row shrink with a narrow
+	   window instead of widening the page; centered inside it. */
 	.control {
 		display: grid;
-		justify-items: center;
+		grid-template-columns: minmax(0, 1fr);
 		gap: 8px;
 	}
 	.control :global(.sc) {
 		justify-items: center;
 	}
 	.control :global(.uin-seg) {
-		width: 560px;
-		max-width: 100%;
+		width: min(560px, 100%);
 	}
 	.rec {
 		display: grid;
 		grid-template-columns: repeat(3, minmax(0, 1fr));
+		justify-self: center;
 		order: -1;
-		width: 560px;
-		max-width: 100%;
+		width: min(560px, 100%);
 	}
 	.rec .uin-badge {
 		grid-column: 2;

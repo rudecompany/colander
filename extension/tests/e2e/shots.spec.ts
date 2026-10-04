@@ -73,6 +73,10 @@ for (const scheme of ['light', 'dark'] as const) {
 			await shot(popup, `popup-weekly-${scheme}`);
 			await open(null);
 			await shot(popup, `popup-unsupported-${scheme}`);
+			// 125% zoom: Chrome's 600 px popup is 480 CSS px, and only the list scrolls.
+			await popup.setViewportSize({ width: 360, height: 480 });
+			await open(tab);
+			await shot(popup, `popup-zoom-125-${scheme}`);
 		});
 
 		test(`options ${scheme}`, async ({ ext }) => {
@@ -104,6 +108,12 @@ for (const scheme of ['light', 'dark'] as const) {
 			await opts.goto(`chrome-extension://${EXT_ID}/options.html#strictness`);
 			await opts.waitForTimeout(300);
 			await shot(opts, `options-strictness-390-${scheme}`, true);
+			await opts.setViewportSize({ width: 320, height: 800 });
+			for (const s of ['plus', 'lists']) {
+				await opts.goto(`chrome-extension://${EXT_ID}/options.html#${s}`);
+				await opts.waitForTimeout(300);
+				await shot(opts, `options-${s}-320-${scheme}`, true);
+			}
 		});
 
 		test(`welcome ${scheme}`, async ({ ext }) => {
@@ -122,6 +132,10 @@ for (const scheme of ['light', 'dark'] as const) {
 			await expect(welcome.getByRole('heading', { name: 'Pin Colander' })).toBeVisible();
 			await welcome.waitForTimeout(300);
 			await shot(welcome, `welcome-3-${scheme}`);
+			await welcome.setViewportSize({ width: 390, height: 844 });
+			await welcome.goto(`chrome-extension://${EXT_ID}/welcome.html`);
+			await welcome.waitForTimeout(400);
+			await shot(welcome, `welcome-1-390-${scheme}`, true);
 		});
 
 		test(`side panel ${scheme}`, async ({ ext }) => {
@@ -218,6 +232,10 @@ for (const scheme of ['light', 'dark'] as const) {
 			await layer(channel).getByRole('button', { name: 'Next' }).click();
 			await channel.waitForTimeout(150);
 			await shot(channel, `inpage-report-2-${scheme}`);
+			// A narrow window, or 400% zoom: the sheet keeps 16 px from both edges.
+			await channel.setViewportSize({ width: 390, height: 844 });
+			await channel.waitForTimeout(150);
+			await shot(channel, `inpage-report-390-${scheme}`);
 
 			// Shorts: the skip notice, with it switched on in Appearance (off by default, skips are silent).
 			await ext.send({ type: 'settings', patch: { skipNotice: true } });
@@ -228,11 +246,41 @@ for (const scheme of ['light', 'dark'] as const) {
 			await shot(shorts, `inpage-skip-notice-${scheme}`, false, 'allow');
 			await ext.send({ type: 'settings', patch: { skipNotice: false } });
 
+			// Shorts, swiped back up to the skipped first Short: skipped again, never a blank slot.
+			const back = await ext.open('https://www.youtube.com/shorts/_k2w1cC69qY', { dark });
+			const scroller = back.locator('#shorts-container');
+			await expect.poll(() => scroller.evaluate((e) => e.scrollTop)).toBeGreaterThan(100);
+			await back.waitForTimeout(600);
+			await back.locator('#shorts-inner-container > .reel-video-in-sequence-new').first().evaluate((e) => e.scrollIntoView({ block: 'start' }));
+			await back.waitForTimeout(900);
+			await shot(back, `inpage-shorts-back-${scheme}`);
+
 			// TikTok For You: the chip beside the creator name, and the Tag button.
 			await ext.send({ type: 'set-platform', platform: 'tt', on: true });
-			const tt = await ext.open('https://www.tiktok.com/foryou');
+			const tt = await ext.open('https://www.tiktok.com/foryou', { dark });
 			await tt.locator('article').nth(1).scrollIntoViewIfNeeded();
 			await shot(tt, `inpage-tiktok-${scheme}`);
+		});
+
+		test(`the other platforms and surfaces ${scheme}`, async ({ ext }) => {
+			await ext.setup({ platforms: ['yt', 'tt', 'ig', 'fb'] });
+			const dark = scheme === 'dark';
+			const at = async (url: string, name: string, hover?: string) => {
+				const page = await ext.open(url, { dark });
+				if (hover) await page.locator(hover).hover();
+				await page.waitForTimeout(250);
+				await shot(page, `inpage-${name}-${scheme}`);
+				await page.close();
+			};
+			// YouTube Up next, pointing at one item: the Tag button rides on its thumbnail, under the chip.
+			await at('https://www.youtube.com/watch?v=xxxxxxxxxxx', 'yt-watch', 'ytd-watch-next-secondary-results-renderer yt-lockup-view-model:not([data-colander]) >> nth=3');
+			await at('https://www.tiktok.com/@tiktok', 'tt-profile', '[data-e2e="user-post-item"]:not([data-colander]) >> nth=1');
+			await at('https://www.tiktok.com/search?q=history', 'tt-search', 'div:has(> [data-e2e="search_video-item"]):not([data-colander]) >> nth=1');
+			await at('https://www.instagram.com/', 'ig-feed', 'main article:not([data-colander]) >> nth=1');
+			await at('https://www.instagram.com/explore/', 'ig-explore', 'main a[href*="/p/"]:not([data-colander]) >> nth=1');
+			await at('https://www.instagram.com/reels/DAbC_12-xYz/', 'ig-reels');
+			await at('https://www.facebook.com/', 'fb-feed', '[role="feed"] [aria-posinset="3"]');
+			await at('https://www.facebook.com/reel/987654321098765', 'fb-reels');
 		});
 	});
 }

@@ -72,7 +72,7 @@ for (const scheme of ['light', 'dark'] as const) {
 			const yt = await ext.open('https://www.youtube.com/results?search_query=history');
 			await page.setViewportSize({ width: 360, height: 760 });
 			await page.goto(`chrome-extension://${EXT_ID}/popup.html?tab=${await ext.tabId(yt)}`);
-			await expect(page.getByText(/slop items this week/)).toBeVisible();
+			await expect(page.getByText(/items for you this week/)).toBeVisible();
 			expect.soft(await audit(page), 'popup').toEqual([]);
 			await page.getByRole('button', { name: 'Pause' }).click();
 			await expect(page.getByRole('menuitem', { name: 'Pause on this site' })).toBeVisible();
@@ -175,9 +175,34 @@ for (const scheme of ['light', 'dark'] as const) {
 			await ext.ctl.evaluate(async ([tabId, id]) => chrome.tabs.sendMessage(tabId, { type: 'show', id }), [await ext.tabId(page), shown.id] as const);
 			await expect(cards.nth(1).locator('colander-ui[data-kind="chip"]')).toContainText('Probably low-effort AI content');
 			expect.soft(await audit(page, UI), 'plain-language chips').toEqual([]);
+
+			// TikTok, Instagram and Facebook, on their own light or dark pages, a Tag button showing.
+			await ext.send({ type: 'settings', patch: { plainChips: false } });
+			for (const p of ['tt', 'ig', 'fb']) await ext.send({ type: 'set-platform', platform: p, on: true });
+			for (const url of ['https://www.tiktok.com/foryou', 'https://www.tiktok.com/search?q=history', 'https://www.instagram.com/', 'https://www.facebook.com/']) {
+				const other = await ext.open(url, { dark });
+				await expect(other.locator('colander-ui[data-kind="chip"]').first()).toBeAttached();
+				await other.locator('[data-colander-card]:not([data-colander])').nth(1).hover();
+				expect.soft(await audit(other, UI), url).toEqual([]);
+				await other.close();
+			}
 		});
 	});
 }
+
+test('reflow: nothing scrolls sideways at 390 or 320 px (WCAG 1.4.10)', async ({ ext }) => {
+	await richState(ext);
+	const page = await ext.ctx.newPage();
+	const pages = ['welcome.html', 'options.html#plus', 'options.html#lists', 'options.html#strictness', 'options.html#appearance'];
+	for (const width of [390, 320]) {
+		await page.setViewportSize({ width, height: 844 });
+		for (const path of pages) {
+			await page.goto(`chrome-extension://${EXT_ID}/${path}`);
+			await page.waitForTimeout(300);
+			expect.soft(await page.evaluate(() => document.documentElement.scrollWidth), `${path} at ${width}`).toBeLessThanOrEqual(width);
+		}
+	}
+});
 
 test('radio groups: one tab stop, arrow keys, Home and End (WAI-ARIA)', async ({ ext }) => {
 	await ext.setup();

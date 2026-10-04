@@ -60,6 +60,18 @@ test('choose strictness and platforms, then Chrome asks for those sites only', a
 		.toEqual(['cl-tt', 'cl-tt-bridge', 'cl-yt', 'cl-yt-bridge']);
 });
 
+test('the header is the same on every step, so the progress and the step heading never move', async ({ ext }) => {
+	const page = await ext.ctx.newPage();
+	await page.goto(`chrome-extension://${EXT_ID}/welcome.html`);
+	const heading = page.locator('main section h2');
+	await expect(heading).toHaveText('How strict should it be?');
+	const y = async () => Math.round((await heading.boundingBox())!.y);
+	const first = await y();
+	await page.getByRole('button', { name: 'Continue' }).click();
+	await expect(heading).toHaveText('Where should it work?');
+	expect(await y()).toBe(first);
+});
+
 test('if site access is refused, nothing is switched on', async ({ ext }) => {
 	const page = await ext.ctx.newPage();
 	await page.goto(`chrome-extension://${EXT_ID}/welcome.html`);

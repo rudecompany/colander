@@ -153,6 +153,9 @@ export const PLATFORM_DOMAIN: Record<Platform, string> = {
 
 export const SUPPORTED_SITES = 'Colander works on YouTube, TikTok, Instagram and Facebook.';
 
+/** The popup's weekly card, with the verb the stats and Options use: Colander hid them. `shown` is the formatted count. */
+export const WEEKLY_HIDDEN = (n: number, shown: string) => `Colander hid ${shown} ${n === 1 ? 'item' : 'items'} for you this week.`;
+
 /** When a source verdict is looked at again, as the source page and the side panel say it. */
 export const RESCORE_LINE = (next: string | null) => `Re-scored every 90 days.${next ? ` Next: ${next}` : ''}`;
 
@@ -203,7 +206,7 @@ export const INPAGE_COPY = {
 		title: (handle: string) => `Report ${handle}`,
 		step: (n: number) => `Step ${n} of 2`,
 		examples: 'Pick up to 3 examples',
-		why: 'Why is this slop',
+		why: 'Why is this slop?',
 		note: 'Note, optional',
 		notePlaceholder: 'For example: posts 40 AI history videos a day with the same voice.',
 		next: 'Next',
@@ -299,6 +302,9 @@ export const DEMO_OPEN_ITEM = 3;
 
 /** The rows of a strictness card: Slop, Likely slop, AI-made and a clear item, before any is hidden. */
 export const DEMO_MINI_ITEMS = [2, 6, 3, 1];
+
+/** The title of the evidence card on full surfaces: the source page and the side panel. */
+export const EVIDENCE_TITLE = 'Evidence by layer';
 
 /** Demo popup values for the hero and the store art. Never live community counts. */
 export const DEMO_POPUP = { hiddenToday: 44 } as const;

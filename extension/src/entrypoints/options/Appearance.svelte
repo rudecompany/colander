@@ -19,17 +19,18 @@
 		.th{position:relative;aspect-ratio:16/9;overflow:hidden;border-radius:10px}
 		.th>svg{width:100%;height:100%}
 		.on{position:absolute;top:8px;left:8px}
-		figcaption{color:var(--cl-text-muted)}
-		figure[data-current] figcaption{color:var(--cl-text);font:var(--cl-body-strong)}`;
+		figcaption{display:flex;align-items:center;gap:8px;min-height:24px;color:var(--cl-text);font:var(--cl-body-strong)}
+		.cur{display:inline-flex;align-items:center;height:20px;padding:0 8px;border:1px solid var(--cl-border-strong);border-radius:var(--cl-r-full);font:var(--cl-chip)}`;
 
 	const preview = (plain: boolean) => (ctx: InpageContext) => {
 		const h = hyper(ctx.doc);
 		const fig = (isPlain: boolean, label: string) =>
 			h(
 				'figure',
-				{ 'data-current': isPlain === plain || undefined },
+				{},
 				h('div', { class: 'th' }, thumbSvg(ctx.doc, 'tide-pool'), h('div', { class: 'on' }, chip(ctx, { verdict: 'ai_made', plain: isPlain }, { tone: 'ink' }))),
-				h('figcaption', {}, label)
+				// Both captions in one style; the setting in use says so in words.
+				h('figcaption', {}, label, isPlain === plain ? h('span', { class: 'cur' }, 'Current') : null)
 			);
 		return h('div', { class: 'pv' }, fig(false, 'Default'), fig(true, 'Larger, plain-language'));
 	};
@@ -45,7 +46,7 @@
 			{/snippet}
 		</SettingRow>
 		<div class="preview">
-			<div role="img" aria-label="Preview: an AI-made chip on a thumbnail, in the default size and in the larger, plain-language size">
+			<div role="img" aria-label="Preview: an AI-made chip on a thumbnail, in the default size and in the larger, plain-language size. {settings.plainChips ? 'The larger size' : 'The default size'} is in use.">
 				<InPage kind="preview" css={PREVIEW_CSS} build={preview(settings.plainChips)} />
 			</div>
 			<p class="caption">{DEMO_THUMBS_NOTE}</p>

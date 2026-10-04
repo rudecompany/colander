@@ -2,9 +2,10 @@
 // Usage: node scripts/make-icons.ts   (writes public/icons/*.png and screenshots/toolbar-icons.png)
 //
 // Active is the filled mark in the mark color with its holes knocked out, no tile and no halo.
-// Paused is the outlined mark in the paused gray, with pause bars in place of the holes from 32 px;
-// at 16 px it is drawn on whole pixels so no edge is a faint half-alpha pixel.
-// Attention adds a paper dot with an ink ring at the top right, set off by a 1 px knockout.
+// Paused is the outlined mark in the paused gray, with its foot and pause bars in place of the
+// holes; at 16 px it is drawn on whole pixels so no edge is a faint half-alpha pixel.
+// Attention adds a paper dot with an ink ring at the top right, set off by a 1 px knockout; at 16 px
+// it is a 4 by 4 paper square in a 1 px ink ring on whole pixels, with no knockout.
 // 16 and 32 px are drawn on the pixel grid from MARK_SMALL's proportions: a rim, the bowl and
 // 3 holes of 2 by 2 px at 16, two rows of holes at 32. 48 and 128 use the full MARK, and 128 is the
 // store icon: 96 px of artwork inside 16 px of transparent padding.
@@ -39,7 +40,8 @@ function small(size: 16 | 32, paused: boolean): string {
 		return `<path d="${rim}" fill="${c}"/><path d="${bowl}${holes.join('')}" fill="${c}" fill-rule="evenodd"/>`;
 	}
 	// Paused at 16: whole pixels only, so every outline pixel is the full paused gray (anti-aliased
-	// 1.5 px walls fall below 3:1 on light toolbars): the 2 px rim over a hollow bowl of 1 px walls.
+	// 1.5 px walls fall below 3:1 on light toolbars): the 2 px rim over a hollow bowl of 1 px walls,
+	// its foot, and two pause bars, so it reads as the colander, paused, not as a funnel.
 	if (size === 16) {
 		const px = [
 			[1, 3, 14, 2], // rim
@@ -47,7 +49,9 @@ function small(size: 16 | 32, paused: boolean): string {
 			[3, 7, 1, 2], [12, 7, 1, 2],
 			[4, 9, 1, 1], [11, 9, 1, 1],
 			[5, 10, 1, 1], [10, 10, 1, 1],
-			[6, 11, 4, 1] // floor
+			[6, 11, 4, 1], // floor
+			[5, 13, 6, 1], // foot
+			[6, 6, 1, 3], [9, 6, 1, 3] // pause bars
 		];
 		return `<path d="${px.map(([x, y, w, h]) => `M${x} ${y}h${w}v${h}h${-w!}Z`).join('')}" fill="${c}" shape-rendering="crispEdges"/>`;
 	}
@@ -81,6 +85,16 @@ function svg(size: (typeof SIZES)[number], state: State): string {
 		viewBox = `0 0 ${size} ${size}`;
 	} else ({ body, viewBox } = large(size, paused));
 	if (!state.endsWith('dot')) return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="${viewBox}">${body}</svg>`;
+	// At 16 a round dot and a knockout ring blur into a checkered cluster: a 4 by 4 paper square in a
+	// 1 px ink ring with its corners left open, on whole pixels, over the top right of the mark.
+	if (size === 16) {
+		const ring = 'M11 0h4v1h-4ZM10 1h1v4h-1ZM15 1h1v4h-1ZM11 5h4v1h-4Z';
+		return (
+			`<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">${body}` +
+			`<path d="${ring}" fill="${TOOLBAR.ring}" shape-rendering="crispEdges"/>` +
+			`<path d="M11 1h4v4h-4Z" fill="${TOOLBAR.dot}" shape-rendering="crispEdges"/></svg>`
+		);
+	}
 	// The dot sits at the top right in pixel space, over the artwork, with a 1 px transparent ring around it.
 	const d = DOT[size]!;
 	const inset = size === 128 ? 16 : 0;

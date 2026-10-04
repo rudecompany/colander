@@ -8,7 +8,8 @@ test('report a channel with examples, a type, tests and a note', async ({ ext })
 	await expect(button).toHaveText('Report source');
 	await button.click();
 	const sheet = page.locator('colander-ui[data-kind="layer"] .report');
-	await expect(sheet.getByRole('heading', { name: 'Report @nasa' })).toBeVisible();
+	// The handle as the page writes it.
+	await expect(sheet.getByRole('heading', { name: 'Report @NASA' })).toBeVisible();
 	await expect(sheet).toContainText('Step 1 of 2');
 	const examples = sheet.locator('.tiles input[type="checkbox"]');
 	expect(await examples.count()).toBe(6);
@@ -48,6 +49,34 @@ test('report a channel with examples, a type, tests and a note', async ({ ext })
 	await expect(reports.locator('summary').getByText('Under review')).toBeVisible();
 	await reports.locator('summary', { hasText: 'NASA' }).click();
 	await expect(reports.getByRole('link', { name: 'Source page' })).toHaveAttribute('href', 'http://localhost:8787/s/yt/@nasa');
+});
+
+test('keyboard: the sheet hands focus back to Report source, and fits a narrow window', async ({ ext }) => {
+	await ext.setup();
+	const page = await ext.open('https://www.youtube.com/@NASA/videos');
+	const button = page.locator('colander-ui[data-kind="report"] button');
+	const sheet = page.locator('colander-ui[data-kind="layer"] .report');
+	await button.focus();
+	await page.keyboard.press('Enter');
+	await expect(sheet).toBeVisible();
+	await page.keyboard.press('Escape');
+	await expect(sheet).toHaveCount(0);
+	await expect(button).toBeFocused();
+	await page.keyboard.press('Enter');
+	await sheet.getByRole('button', { name: 'Close' }).focus();
+	await page.keyboard.press('Enter');
+	await expect(sheet).toHaveCount(0);
+	await expect(button).toBeFocused();
+
+	// In a 390 px window (or at 400% zoom) it keeps 16 px from both edges, on both steps.
+	await page.setViewportSize({ width: 390, height: 844 });
+	await page.keyboard.press('Enter');
+	for (const step of [1, 2]) {
+		const box = (await sheet.boundingBox())!;
+		expect(box.x, `step ${step}`).toBeGreaterThanOrEqual(16);
+		expect(box.x + box.width, `step ${step}`).toBeLessThanOrEqual(390 - 16);
+		if (step === 1) await sheet.getByRole('button', { name: 'Next' }).click();
+	}
 });
 
 test('without a note, the type and tests become the reason', async ({ ext }) => {

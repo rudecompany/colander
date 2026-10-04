@@ -149,11 +149,12 @@ test('keyboard only: the tag menu', async ({ ext }) => {
 			const a = document.activeElement;
 			return a?.tagName === 'COLANDER-UI' && a.getAttribute('data-kind') === 'tag' && a.shadowRoot?.activeElement?.tagName === 'BUTTON';
 		});
-	// From the card's title link, Tab reaches its Tag button.
-	await page.locator('ytd-search ytd-video-renderer').nth(3).locator('a#video-title').focus();
-	for (let i = 0; i < 12 && !(await isTagFocused()); i++) await page.keyboard.press('Tab');
+	// The Tag button rides on the thumbnail, so it comes just before the card's title link.
+	const cards = page.locator('ytd-search ytd-video-renderer');
+	await cards.nth(3).locator('a#video-title').focus();
+	await page.keyboard.press('Shift+Tab');
 	expect(await isTagFocused()).toBe(true);
-	const tagHost = page.locator('ytd-search ytd-video-renderer').nth(3).locator('colander-ui[data-kind="tag"]');
+	const tagHost = cards.nth(3).locator('colander-ui[data-kind="tag"]');
 	await expect(tagHost).toHaveCSS('opacity', '1');
 
 	await page.keyboard.press('Enter');
@@ -166,8 +167,56 @@ test('keyboard only: the tag menu', async ({ ext }) => {
 	await expect(menu).toHaveCount(0);
 	expect(await isTagFocused()).toBe(true);
 
+	// Slop hides the card and its Tag button: focus moves to the toast, which holds while focused.
 	await page.keyboard.press('Enter');
 	await page.keyboard.press('Enter');
-	await expect(page.locator('ytd-search ytd-video-renderer').nth(3)).toHaveAttribute('data-colander', 'hide');
-	await expect(layer(page).locator('.cl-toast')).toContainText('Tagged and hidden.');
+	await expect(cards.nth(3)).toHaveAttribute('data-colander', 'hide');
+	const toast = layer(page).locator('.cl-toast');
+	await expect(toast).toContainText('Tagged and hidden.');
+	await expect(toast.getByRole('button', { name: 'Undo' })).toBeFocused();
+	await page.waitForTimeout(4500);
+	await expect(toast).toBeVisible();
+	// Undo brings the card back, with focus on its Tag button.
+	await page.keyboard.press('Enter');
+	await expect(cards.nth(3)).not.toHaveAttribute('data-colander', /./);
+	await expect(toast).toHaveCount(0);
+	expect(await isTagFocused()).toBe(true);
+	await expect(tagHost).toHaveCSS('opacity', '1');
+	// Tag again, then close the toast: focus goes on to the next card still shown.
+	await page.keyboard.press('Enter');
+	await page.keyboard.press('Enter');
+	await expect(toast.getByRole('button', { name: 'Undo' })).toBeFocused();
+	await page.keyboard.press('Tab');
+	await expect(toast.getByRole('button', { name: 'Add detail' })).toBeFocused();
+	await page.keyboard.press('Tab');
+	await expect(toast.getByRole('button', { name: 'Close' })).toBeFocused();
+	await page.keyboard.press('Enter');
+	await expect(toast).toHaveCount(0);
+	expect(await isTagFocused()).toBe(true);
+	// A card after the tagged one, still shown.
+	const after = await cards.nth(3).evaluate((tagged) => {
+		const card = document.activeElement!.closest('[data-colander-card]')!;
+		return !!(tagged.compareDocumentPosition(card) & Node.DOCUMENT_POSITION_FOLLOWING) && !card.hasAttribute('data-colander');
+	});
+	expect(after).toBe(true);
+});
+
+test('the Tag button waiting for hover adds nothing to a card', async ({ ext }) => {
+	await ext.setup({ platforms: ['yt', 'tt', 'ig', 'fb'] });
+	const urls = [SEARCH, 'https://www.youtube.com/', 'https://www.youtube.com/watch?v=xxxxxxxxxxx', 'https://www.tiktok.com/search?q=history', 'https://www.instagram.com/', 'https://www.facebook.com/'];
+	for (const url of urls) {
+		const page = await ext.open(url);
+		await expect(page.locator('colander-ui[data-kind="tag"]').first()).toBeAttached();
+		// Card heights with the Tag buttons, then without them, before the page puts them back.
+		const [withTag, without] = await page.evaluate(() => {
+			const cards = [...document.querySelectorAll('[data-colander-card]:not([data-colander])')];
+			const heights = () => cards.map((c) => Math.round(c.getBoundingClientRect().height * 10) / 10);
+			const a = heights();
+			for (const t of document.querySelectorAll('colander-ui[data-kind="tag"]')) t.remove();
+			return [a, heights()];
+		});
+		expect(withTag.length, url).toBeGreaterThan(0);
+		expect(withTag, url).toEqual(without);
+		await page.close();
+	}
 });

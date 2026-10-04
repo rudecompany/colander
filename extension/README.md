@@ -110,7 +110,7 @@ Settings stored or synced with the retired Strict level, globally, per platform 
 | Action | Grid or list | Swipe feed |
 | --- | --- | --- |
 | Label | A verdict chip on the thumbnail (ink background, media color glyph and word). | The chip beside the creator name. |
-| Hide | The card leaves the layout like an ad under an ad blocker: no gap, no placeholder. Grids reflow so their rows stay full (below). | The video is skipped the moment it becomes active, its slot showing nothing and its video paused. Silent by default; with Appearance's skip notice on, "Skipped 1 slop video." plus Undo and Why for 4 seconds (a 4-dot countdown that pauses on hover and focus), announced politely, never stacked. |
+| Hide | The card leaves the layout like an ad under an ad blocker: no gap, no placeholder. Grids reflow so their rows stay full (below). | The video is skipped every time it comes into view, the way the person is going: swiped back onto it, to the one before it; otherwise the platform's next control or the next video; the other way when there is none. Its slot shows nothing and its video stays paused. Silent by default; with Appearance's skip notice on, the first skip of each video says "Skipped 1 slop video." plus Undo and Why for 4 seconds (a 4-dot countdown that pauses on hover and focus), announced politely, never stacked, 16 px below the top of the player it moved to and at least 12 px inside its sides, clear of the platform's channel row and title. |
 
 Every hidden item is still counted on the toolbar badge and listed in the popup, hidden items first, with Show, Always allow, Not slop and Why.
 Why from the popup shows the card for this page view and opens its evidence on it.
@@ -123,6 +123,8 @@ The page's own left margins for its first and other columns, read once before an
 The container is marked `data-colander-reflow`; a resize, a new card or a card shown again runs the pass again, and when nothing in it is hidden any more every override is removed.
 
 Every card with an item or a source gets a 28 px Tag button: shown on hover or keyboard focus in grids and lists, always in swipe feeds, and always when Appearance says so.
+Waiting for hover it never adds to a card's height: on YouTube it sits on the thumbnail under the chip (YouTube's own hover controls take the top right), on TikTok and Instagram grids at the thumbnail's top right, and beside the name on the Instagram and Facebook feeds in a box of no height (a test compares card heights with and without it).
+From the keyboard, a Slop tag that hides the card moves focus to its toast, which holds while focused, so Undo and Add detail stay in reach; when the toast ends focus goes to the next card shown, or back to the card's own Tag button after Undo.
 Where a card shows no source (the Instagram Explore grid), the item tag goes out without `source_id` (contract 6.2).
 Tag, then Slop, applies the tag at once (two clicks, P0-5); the menu closes and a toast confirms it with Undo and, for Slop, Add detail (type and tests).
 One tag goes out per choice: it is queued at once but held while its toast is up, Add detail changes it on the device, Undo drops it, and the final state replaces the queued tag when the toast ends (a held tag goes out after 5 minutes at the latest).
@@ -227,7 +229,7 @@ Canonicalization is code, not configuration, and follows contract 2.2 exactly (`
 | Field | Type | Rule |
 | --- | --- | --- |
 | `sel` | selector? | Relative to the card. Default: the card. |
-| `place` | string | `overlay` pins to the top-left corner of the anchor and `overlay-end` to the top-right (the anchor gets `position: relative` if it had none); `append`, `prepend`, `before` and `after` insert in the flow. |
+| `place` | string | `overlay` pins to the top-left corner of the anchor and `overlay-end` to the top-right (the anchor gets `position: relative` if it had none); a Tag button overlaid on the same anchor as a chip sits under it. `append`, `prepend`, `before` and `after` insert inline in the flow, the chip before the Tag button. |
 
 ### Page rule
 
@@ -271,8 +273,8 @@ There is no remote code, no `eval` and no inline script.
 
 - `tests/unit`: the list decoder and verifier against `testdata/contract` (snapshot, delta, tampering, length, sort order, unknown keys, delta on the wrong base), the config envelope and plan token, the synchronous SHA-256 against Node's, canonical IDs per platform from real-looking URLs, matching precedence and the strictness table, the tag queue's offline retry planning, and adapter extraction against a saved fixture of every surface.
 - `tests/e2e`: the built extension in Chromium with fixtures served on the real hostnames and the API mocked by route handlers serving the contract fixtures.
-  It covers hiding without a trace and labeling per strictness, the YouTube Home and Subscriptions grids reflowing so every row before the Shorts shelf stays full, re-applying within 1 second without a reload (P0-3), pause by site and tab, the badge, delta sync, a tampered list, a signed config fixing a renamed selector, no layout jump during infinite scroll, Tag in two clicks and the exact tag body (one POST per tag menu, item tags without a source on the Instagram Explore grid), the offline queue, keyboard-only use of the tag menu, Why (every signal that fired, Appeal only for list verdicts), Show, Always allow, Not slop and Why for hidden items from the popup, silent swipe skips and the optional skip notice with Undo, the welcome flow's permission request, Report source, website messaging, the trial and Plus sync, Plus early access, the weekly summary and the daily plan check, no install ID on a fresh install's sync, a dismissed report closed calmly, the side panel, and the performance budgets.
-- Performance on a 200-card page: slop cards are hidden within about 6 ms of insertion at the 95th percentile (budget 150 ms), and the content script adds about 30 ms in total (budget 50 ms), including the one batched layout read per frame that reflows grids with a hidden card.
+  It covers hiding without a trace and labeling per strictness, the YouTube Home and Subscriptions grids reflowing so every row before the Shorts shelf stays full, re-applying within 1 second without a reload (P0-3), pause by site and tab, the badge, delta sync, a tampered list, a signed config fixing a renamed selector, no layout jump during infinite scroll, Tag in two clicks, a Tag button that adds nothing to a card's height, and the exact tag body (one POST per tag menu, item tags without a source on the Instagram Explore grid), the offline queue, keyboard-only use of the tag menu and its toast, focus back on Report source when its sheet closes, Why (every signal that fired, Appeal only for list verdicts), Show, Always allow, Not slop and Why for hidden items from the popup, silent swipe skips (again, the way the person is going, when they swipe back) and the optional skip notice with Undo, on the player, the welcome flow's permission request, Report source, website messaging, the trial and Plus sync, Plus early access, the weekly summary and the daily plan check, no install ID on a fresh install's sync, a dismissed report closed calmly, the side panel, and the performance budgets.
+- Performance on a 200-card page: slop cards are hidden within about 6 ms of insertion at the 95th percentile (budget 150 ms), and the content script adds about 40 ms in total (budget 50 ms), including the one batched layout read per frame that reflows grids with a hidden card.
   On live YouTube pages it adds 7 to 23 ms per page.
 - `tests/live`: the real YouTube and TikTok pages, no login.
   Signed-in surfaces run only with a Playwright storage state in `COLANDER_LIVE_STATE_YT`, `_TT`, `_IG` or `_FB`.
@@ -280,8 +282,8 @@ There is no remote code, no `eval` and no inline script.
   A surface that finds no cards fails the run, and so does a surface whose platform has a storage state when the site refuses the automated browser.
   Without credentials, such surfaces are skipped as unverified: `tests/live/summary-reporter.ts` lists every surface in the job summary and adds a warning annotation for each unverified one.
 - `tests/e2e/shots.spec.ts` writes the screenshots in `screenshots/`, light and dark, only under `pnpm screenshots` (`SCREENSHOTS=1`).
-- `tests/e2e/a11y.spec.ts` runs axe-core (WCAG 2.2 A and AA) over the popup and its menu, every Options section and the delete dialog, each welcome step, the side panel and its shortcuts, and every in-page element (chip, Tag button, tag menu, tag toast and Add detail, Why, both report steps, skip notice), light and dark, and checks the radio group keys.
-- `tests/e2e/popup.spec.ts` keeps the popup at most 600 px tall in every state (default, show all, paused, each slot item, an empty page, an unsupported site), in both themes, with long titles.
+- `tests/e2e/a11y.spec.ts` runs axe-core (WCAG 2.2 A and AA) over the popup and its menu, every Options section and the delete dialog, each welcome step, the side panel and its shortcuts, and every in-page element (chip, Tag button, tag menu, tag toast and Add detail, Why, both report steps, skip notice), light and dark, checks the radio group keys, and checks that welcome and Options never scroll sideways at 390 and 320 px.
+- `tests/e2e/popup.spec.ts` keeps the popup at most 600 px tall in every state (default, show all, paused, each slot item, an empty page, an unsupported site), in both themes, with long titles, lines up the row menus, and at 125% zoom (480 CSS px) scrolls only the list.
 
 ## Fixtures
 

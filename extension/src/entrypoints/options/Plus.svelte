@@ -270,11 +270,16 @@ strictness, and the week in data dots. Gated parts stay in view, inert, at 60% o
 		align-items: baseline;
 		gap: 8px;
 	}
+	/* 7 columns of 48 px, shrinking together on a narrow screen so the days stay under their dots. */
 	.chart {
 		display: grid;
-		justify-content: start;
 		gap: 8px;
+		max-width: 336px;
 		margin: 16px 0 12px;
+	}
+	.chart svg {
+		width: 100%;
+		height: auto;
 	}
 	circle {
 		fill: var(--cl-dot-strong);
@@ -284,7 +289,7 @@ strictness, and the week in data dots. Gated parts stay in view, inert, at 60% o
 	}
 	.days {
 		display: grid;
-		grid-template-columns: repeat(7, 48px);
+		grid-template-columns: repeat(7, minmax(0, 1fr));
 		text-align: center;
 	}
 	.days li {

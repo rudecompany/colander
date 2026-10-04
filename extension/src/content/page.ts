@@ -34,8 +34,6 @@ interface CardState {
 	shown: boolean;
 	/** Reported to the activity log for this page view. */
 	counted: boolean;
-	/** Swipe feeds: already skipped once automatically. */
-	skipped: boolean;
 	ui: Partial<Record<'chip' | 'tag', HTMLElement>>;
 }
 
@@ -78,11 +76,23 @@ function adoptLocal(root: ShadowRoot) {
 class PageLayer extends Layer {
 	private next: (() => void) | null = null;
 	private ended: (() => void) | null = null;
+	private shadow: ShadowRoot;
+	/** The swipe card a skip notice belongs to: the notice sits on its player. */
+	private over: Element | null = null;
+	private overFrame = 0;
 
 	constructor(ctx: ConstructorParameters<typeof Layer>[0]) {
 		super(ctx);
 		// The shared Layer keeps its shadow root to itself; the local additions go on it too.
-		adoptLocal((this as unknown as { root: ShadowRoot }).root);
+		this.shadow = (this as unknown as { root: ShadowRoot }).root;
+		adoptLocal(this.shadow);
+		const follow = () => {
+			if (!this.over) return;
+			cancelAnimationFrame(this.overFrame);
+			this.overFrame = requestAnimationFrame(() => this.placeOver());
+		};
+		addEventListener('scroll', follow, { capture: true, passive: true });
+		addEventListener('resize', follow, { passive: true });
 	}
 
 	/** The next notice calls `onEnd` once it is gone. */
@@ -92,12 +102,40 @@ class PageLayer extends Layer {
 
 	override notice(t: Parameters<Layer['notice']>[0]) {
 		super.notice(t);
+		this.over = null;
 		this.ended = this.next;
 		this.next = null;
 	}
 
+	/**
+	 * A skip notice on a swipe feed: 16 px below the top of the player in view, centered on it and at
+	 * most 12 px in from its sides, so it reads as part of the player and leaves the platform's
+	 * channel row and title at the bottom clear. It follows the player while the feed scrolls.
+	 */
+	noticeOver(t: Parameters<Layer['notice']>[0], card: Element) {
+		this.notice(t);
+		this.over = card;
+		this.placeOver();
+	}
+
+	private placeOver() {
+		const at = this.shadow.querySelector<HTMLElement>('.toast-at');
+		const toast = at?.firstElementChild as HTMLElement | null;
+		const card = this.over;
+		if (!at || !toast || !card?.isConnected) return;
+		// The playing video's box when the card has one, which leaves out a side column of actions.
+		const video = [...card.querySelectorAll('video')].find((v) => v.getBoundingClientRect().width > 0);
+		const r = (video ?? card).getBoundingClientRect();
+		if (!r.width) return;
+		toast.style.maxWidth = `${Math.min(420, r.width - 24)}px`;
+		at.style.left = `${Math.round(r.left + r.width / 2)}px`;
+		at.style.bottom = 'auto';
+		at.style.top = `${Math.round(Math.min(Math.max(r.top, 0), innerHeight - toast.offsetHeight - 32) + 16)}px`;
+	}
+
 	override dismissNotice() {
 		super.dismissNotice();
+		this.over = null;
 		const f = this.ended;
 		this.ended = null;
 		if (f) setTimeout(f, 0);
@@ -228,7 +266,7 @@ export function start(): void {
 		let st = prev;
 		if (!st || st.sig !== sig || st.surface !== surface) {
 			if (st) clearUi(card, st);
-			st = { id: nextId++, surface, facts, sig, decision: decide(facts, ctx), version, shown: false, counted: false, skipped: false, ui: {} };
+			st = { id: nextId++, surface, facts, sig, decision: decide(facts, ctx), version, shown: false, counted: false, ui: {} };
 			states.set(card, st);
 		} else {
 			st.facts = facts;
@@ -262,7 +300,8 @@ export function start(): void {
 		return { el, place: spec.place };
 	}
 
-	function insert(host: HTMLElement, at: { el: Element; place: Anchor['place'] }, inline: 'inline' | 'block') {
+	/** Overlays pin to a corner of their anchor; every other place sits inline in the flow. */
+	function insert(host: HTMLElement, at: { el: Element; place: Anchor['place'] }) {
 		const { el, place } = at;
 		if (place === 'overlay' || place === 'overlay-end') {
 			if (getComputedStyle(el).position === 'static') el.setAttribute('data-colander-anchor', '');
@@ -270,11 +309,16 @@ export function start(): void {
 			el.append(host);
 			return;
 		}
-		host.setAttribute('data-place', inline);
+		host.setAttribute('data-place', 'inline');
 		if (place === 'append') el.append(host);
 		else if (place === 'prepend') el.prepend(host);
 		else if (place === 'before') el.before(host);
-		else el.after(host);
+		else {
+			// After the anchor and after what Colander already put there, so the chip stays before the Tag button.
+			let ref = el;
+			while (ref.nextElementSibling?.nodeName === 'COLANDER-UI') ref = ref.nextElementSibling;
+			ref.after(host);
+		}
 	}
 
 	/** Makes sure one UI element exists where it belongs, creating or moving it as needed. */
@@ -342,7 +386,7 @@ export function start(): void {
 			(host) => {
 				const at = resolve(card, st.surface.chip, { place: 'overlay' });
 				if (!at) return false;
-				insert(host, at, 'inline');
+				insert(host, at);
 				return true;
 			}
 		);
@@ -366,7 +410,7 @@ export function start(): void {
 			(host) => {
 				const at = resolve(card, st.surface.tag, null);
 				if (!at) return false;
-				insert(host, at, swipe ? 'inline' : 'block');
+				insert(host, at);
 				return true;
 			}
 		);
@@ -396,12 +440,20 @@ export function start(): void {
 		guarded.delete(card);
 	}
 
+	/** The swipe card in view: the last one to become at least 60% visible. */
+	let active: Element | null = null;
 	const io = new IntersectionObserver(
 		(entries) => {
 			for (const e of entries) {
 				if (!e.isIntersecting || e.intersectionRatio < 0.6) continue;
 				const st = states.get(e.target);
-				if (st && effective(st) === 'hide' && !st.skipped) skip(e.target, st);
+				if (!st) continue;
+				// Arrived from below when the card in view before it comes later in the feed.
+				const cards = [...document.querySelectorAll(st.surface.card)];
+				const up = !!active && cards.indexOf(active) > cards.indexOf(e.target);
+				active = e.target;
+				if (waiting !== e.target) waiting = null;
+				if (effective(st) === 'hide') skip(e.target, st, up);
 			}
 		},
 		{ threshold: [0, 0.6] }
@@ -409,17 +461,23 @@ export function start(): void {
 	const watched = new WeakSet<Element>();
 
 	let skipRun = { n: 0, at: 0 };
+	/** Swipe cards skipped once already: skips past them again say nothing, also after the page's URL moved on. */
+	const noticed = new WeakSet<Element>();
 	let lastSkipped: { card: Element; st: CardState } | null = null;
-	/** A hidden card that became active before the feed had a next one: skipped once one arrives. */
+	/** A hidden card in view with nowhere to go yet: skipped as soon as the feed adds a card. */
 	let waiting: Element | null = null;
 	/**
-	 * Moves past a hidden card the moment it becomes active: the platform's own next control, or the
-	 * next card. Silent, unless Appearance turns on the skip notice (Undo and Why). Either way the
-	 * popup lists the card with Show.
+	 * Moves past a hidden card every time it comes into view, in the direction of travel: back to the
+	 * card before it when the person swiped back, else the platform's own next control or the next
+	 * card; the other way when there is none. Silent, unless Appearance turns on the skip notice (Undo
+	 * and Why), and then only the first time. Either way the popup lists the card with Show.
 	 */
-	function skip(card: Element, st: CardState) {
+	function skip(card: Element, st: CardState, up = false) {
 		const cards = [...document.querySelectorAll(st.surface.card)];
-		const next = cards[cards.indexOf(card) + 1];
+		const i = cards.indexOf(card);
+		const prev = cards[i - 1];
+		const next = cards[i + 1];
+		const go = (el: Element) => (el.scrollIntoView({ block: 'start', behavior: reducedMotion(document) ? 'auto' : 'smooth' }), el);
 		let button: HTMLElement | null = null;
 		if (st.surface.next) {
 			try {
@@ -428,15 +486,21 @@ export function start(): void {
 				button = null;
 			}
 		}
-		if (button && button.getClientRects().length) button.click();
-		else if (next) next.scrollIntoView({ block: 'start', behavior: reducedMotion(document) ? 'auto' : 'smooth' });
+		let to: Element;
+		if (up && prev) to = go(prev);
+		else if (button && button.getClientRects().length) {
+			button.click();
+			to = next ?? card;
+		} else if (next) to = go(next);
+		else if (prev) to = go(prev);
 		else {
 			waiting = card;
 			return;
 		}
-		st.skipped = true;
 		if (waiting === card) waiting = null;
-		if (!settings.skipNotice) return;
+		const first = !noticed.has(card);
+		noticed.add(card);
+		if (!settings.skipNotice || !first) return;
 		const now = Date.now();
 		skipRun = now - skipRun.at < 4000 ? { n: skipRun.n + 1, at: now } : { n: 1, at: now };
 		lastSkipped = { card, st };
@@ -451,23 +515,26 @@ export function start(): void {
 			last.card.scrollIntoView({ block: 'start', behavior: reducedMotion(document) ? 'auto' : 'smooth' });
 		};
 		const l = ui();
-		// One notice, never stacked: a new skip replaces it. In swipe feeds it sits above the player's controls.
-		l.notice({
-			text: st.decision.verdict ? copy.skipped(n, word) : `Skipped ${n} ${n === 1 ? word : `${word}s`}.`,
-			verdict: st.decision.verdict ?? undefined,
-			bottom: 96,
-			actions: [
-				{ label: copy.undo, icon: Undo2, onClick: () => (l.dismissNotice(), back()) },
-				{
-					label: copy.why,
-					icon: Info,
-					onClick: () => {
-						const anchor = l.toastButton(copy.why);
-						if (anchor) l.why(anchor, evidenceFor(st, true), actionsFor(card, st, back));
+		// One notice, never stacked: a new skip replaces it. It sits at the top of the player it skipped
+		// to, clear of the platform's channel row and title at the bottom.
+		l.noticeOver(
+			{
+				text: st.decision.verdict ? copy.skipped(n, word) : `Skipped ${n} ${n === 1 ? word : `${word}s`}.`,
+				verdict: st.decision.verdict ?? undefined,
+				actions: [
+					{ label: copy.undo, icon: Undo2, onClick: () => (l.dismissNotice(), back()) },
+					{
+						label: copy.why,
+						icon: Info,
+						onClick: () => {
+							const anchor = l.toastButton(copy.why);
+							if (anchor) l.why(anchor, evidenceFor(st, true), actionsFor(card, st, back));
+						}
 					}
-				}
-			]
-		});
+				]
+			},
+			to
+		);
 	}
 
 	// ---- Grid reflow -------------------------------------------------------------------
@@ -707,6 +774,7 @@ export function start(): void {
 		const base = tagTarget(st, false);
 		if (!base) return;
 		let session: TagSession | null = null;
+		const card = (anchor.getRootNode() as ShadowRoot).host?.closest('[data-colander-card]');
 		const l = ui();
 		l.tagMenu(anchor, noun(st.surface), {
 			tag: (verdict) => {
@@ -715,6 +783,16 @@ export function start(): void {
 			undo: () => session && undoTag(session),
 			detail: (slopType: SlopType | null, tests: Test[]) => {
 				if (session) session.req = { ...session.req, slopType, tests };
+			},
+			focusAfter: () => {
+				// The card's own Tag button when Undo brought it back, else the next card still shown.
+				const all = [...document.querySelectorAll('[data-colander-card]')];
+				const from = card ? all.indexOf(card) : -1;
+				for (const c of [...(card ? [card] : []), ...all.slice(from + 1)]) {
+					if (c.hasAttribute('data-colander') || !c.getClientRects().length) continue;
+					return c.querySelector('colander-ui[data-kind="tag"]')?.shadowRoot?.querySelector('button') ?? c.querySelector<HTMLElement>('a[href]');
+				}
+				return null;
 			}
 		});
 		// Scams and deepfakes are beyond slop: a shortcut to the platform's own reporting.
@@ -748,8 +826,15 @@ export function start(): void {
 			items.push({ id: st.facts.itemId, title: st.facts.title, thumb: img?.src });
 		}
 		const sourceId = page.sourceIds.find((x) => x.startsWith('UC')) ?? page.sourceIds[0]!;
+		// The handle as the page writes it ("@NASA"): source IDs are lowercased to compare.
+		let shown = /^\/(@[^/]+)/.exec(location.pathname)?.[1];
+		try {
+			shown &&= decodeURIComponent(shown);
+		} catch {
+			shown = undefined;
+		}
 		const at = page.sourceIds.find((x) => x.startsWith('@'));
-		const handle = at ?? (platform === 'ig' ? `@${page.sourceIds[0]}` : page.name || sourceId);
+		const handle = (at && shown?.toLowerCase() === at ? shown : at) ?? (platform === 'ig' ? `@${page.sourceIds[0]}` : page.name || sourceId);
 		ui().report({
 			handle,
 			items,
@@ -790,8 +875,8 @@ export function start(): void {
 		if (s.mode !== 'swipe' || watched.has(card)) return;
 		watched.add(card);
 		io.observe(card);
-		// A new card gives a hidden card that is still active somewhere to skip to.
-		const w = waiting && states.get(waiting);
+		// A new card gives a hidden card that is still in view somewhere to skip to.
+		const w = waiting && waiting === active && states.get(waiting);
 		if (w && waiting!.isConnected && effective(w) === 'hide') skip(waiting!, w);
 	}
 

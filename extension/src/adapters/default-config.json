@@ -41,7 +41,7 @@
 					"title": [{ "sel": "h3[title]", "attr": "title" }, { "sel": "#video-title", "attr": "text" }, { "sel": "h3", "attr": "text" }],
 					"aiLabel": { "sel": "badge-shape", "text": "^\\s*(altered or synthetic content|ai-generated)\\s*$" },
 					"chip": { "sel": "yt-thumbnail-view-model, ytd-thumbnail", "place": "overlay" },
-					"tag": { "sel": ".ytLockupMetadataViewModelTextContainer, #details, .shortsLockupViewModelHostOutsideMetadata", "place": "append" }
+					"tag": { "sel": "yt-thumbnail-view-model, ytd-thumbnail", "place": "overlay" }
 				},
 				{
 					"id": "yt.subscriptions",
@@ -57,7 +57,7 @@
 					"title": [{ "sel": "h3[title]", "attr": "title" }, { "sel": "#video-title", "attr": "text" }, { "sel": "h3", "attr": "text" }],
 					"aiLabel": { "sel": "badge-shape", "text": "^\\s*(altered or synthetic content|ai-generated)\\s*$" },
 					"chip": { "sel": "yt-thumbnail-view-model, ytd-thumbnail", "place": "overlay" },
-					"tag": { "sel": ".ytLockupMetadataViewModelTextContainer, #details, .shortsLockupViewModelHostOutsideMetadata", "place": "append" }
+					"tag": { "sel": "yt-thumbnail-view-model, ytd-thumbnail", "place": "overlay" }
 				},
 				{
 					"id": "yt.channel",
@@ -70,7 +70,7 @@
 					"title": [{ "sel": "h3[title]", "attr": "title" }, { "sel": "h3", "attr": "text" }],
 					"aiLabel": { "sel": "badge-shape", "text": "^\\s*(altered or synthetic content|ai-generated)\\s*$" },
 					"chip": { "sel": "yt-thumbnail-view-model, ytd-thumbnail", "place": "overlay" },
-					"tag": { "sel": ".ytLockupMetadataViewModelTextContainer, #details, .shortsLockupViewModelHostOutsideMetadata", "place": "append" }
+					"tag": { "sel": "yt-thumbnail-view-model, ytd-thumbnail", "place": "overlay" }
 				},
 				{
 					"id": "yt.search",
@@ -86,7 +86,7 @@
 					"title": [{ "sel": "#video-title", "attr": "text" }, { "sel": "h3[title]", "attr": "title" }],
 					"aiLabel": { "sel": "badge-shape, .badge", "text": "^\\s*(altered or synthetic content|ai-generated)\\s*$" },
 					"chip": { "sel": "ytd-thumbnail, yt-thumbnail-view-model", "place": "overlay" },
-					"tag": { "sel": ".text-wrapper, .ytLockupMetadataViewModelTextContainer", "place": "append" }
+					"tag": { "sel": "ytd-thumbnail, yt-thumbnail-view-model", "place": "overlay" }
 				},
 				{
 					"id": "yt.watch",
@@ -103,7 +103,7 @@
 					"title": [{ "sel": "h3[title]", "attr": "title" }, { "sel": "#video-title", "attr": "text" }],
 					"aiLabel": { "sel": "badge-shape", "text": "^\\s*(altered or synthetic content|ai-generated)\\s*$" },
 					"chip": { "sel": "yt-thumbnail-view-model, ytd-thumbnail", "place": "overlay" },
-					"tag": { "sel": ".ytLockupMetadataViewModelTextContainer, #metadata", "place": "append" }
+					"tag": { "sel": "yt-thumbnail-view-model, ytd-thumbnail", "place": "overlay" }
 				},
 				{
 					"id": "yt.shelf",
@@ -114,7 +114,7 @@
 					"source": [{ "sel": "a[href^=\"/@\"]" }],
 					"title": [{ "sel": "h3 a[title]", "attr": "title" }, { "sel": "h3", "attr": "text" }],
 					"chip": { "sel": "yt-thumbnail-view-model", "place": "overlay" },
-					"tag": { "sel": ".shortsLockupViewModelHostOutsideMetadata", "place": "append" }
+					"tag": { "sel": "yt-thumbnail-view-model", "place": "overlay" }
 				}
 			],
 			"pages": [
@@ -184,7 +184,7 @@
 					"title": [{ "sel": "[data-e2e=\"search-card-video-caption\"]", "attr": "text" }],
 					"aiLabel": { "sel": "[class*=\"Aigc\"], [class*=\"AIGC\"], [data-e2e*=\"aigc\"]", "text": "ai-generated" },
 					"chip": { "sel": "[data-e2e=\"search_top-item\"], [data-e2e=\"search_video-item\"]", "place": "overlay" },
-					"tag": { "sel": "[data-e2e=\"search-card-desc\"]", "place": "append" }
+					"tag": { "sel": "[data-e2e=\"search_top-item\"], [data-e2e=\"search_video-item\"]", "place": "overlay-end" }
 				},
 				{
 					"id": "tt.profile",
@@ -222,7 +222,7 @@
 					"name": [{ "sel": "header a[href^=\"/\"]:not([href*=\"/explore/\"]):not([href*=\"/reels/audio\"]) span", "attr": "text" }],
 					"title": [{ "sel": "h1", "attr": "text" }, { "sel": "img[alt]", "attr": "alt" }],
 					"aiLabel": { "sel": "header a, header span, header div[role=\"button\"]", "text": "^\\s*AI info\\s*$" },
-					"chip": { "sel": "header", "place": "append" },
+					"chip": { "sel": "header :has(> a time)", "place": "append" },
 					"tag": { "sel": "header", "place": "append" }
 				},
 				{
@@ -284,8 +284,8 @@
 					"name": [{ "sel": "h2 a, h3 a, h4 a", "attr": "text" }, { "sel": "h2, h3, h4", "attr": "text" }],
 					"title": [{ "sel": "[data-ad-preview=\"message\"], [data-ad-comet-preview=\"message\"]", "attr": "text" }],
 					"aiLabel": { "sel": "a[role=\"link\"], span[dir=\"auto\"], div[role=\"button\"]", "text": "^\\s*AI info\\s*$" },
-					"chip": { "sel": "h2, h3, h4", "place": "after" },
-					"tag": { "sel": "h2, h3, h4", "place": "after" }
+					"chip": { "sel": "h2, h3, h4", "place": "append" },
+					"tag": { "sel": "h2, h3, h4", "place": "append" }
 				},
 				{
 					"id": "fb.reels",
