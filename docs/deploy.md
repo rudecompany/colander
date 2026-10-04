@@ -19,7 +19,7 @@ GitHub Actions is the only pipeline, and Workers Builds stays off.
 
 | Workflow | When | What |
 | --- | --- | --- |
-| `ci.yml` | every pull request and push to main | The required checks: `secrets`, `workflows`, `api`, `server`, `contract`, `web-and-extension`, `full-stack` |
+| `ci.yml` | every pull request and push to main | The required checks: `secrets`, `workflows`, `api`, `contract`, `web-and-extension`, `full-stack` |
 | `deploy-staging.yml` | CI succeeded on main | Builds, deploys staging, runs the mutating smoke test, records a GitHub deployment for the commit |
 | `release.yml` | push to main | release-please; on a platform release, production deploy after staging passed the same commit, smoke test, automatic rollback; on an extension release, the store package with provenance and a staged Chrome Web Store submission |
 | `rollback.yml` | by hand | Puts an earlier Worker version back live |
@@ -227,8 +227,7 @@ gh api -X PATCH repos/rudecompany/colander -F allow_squash_merge=true -F allow_m
 ```
 
 **Required checks on main.**
-These are the exact check names, one per CI job: `secrets`, `workflows`, `api`, `server`, `contract`, `web-and-extension`, `full-stack`.
-Drop `server` from the list when server/ is deleted.
+These are the exact check names, one per CI job: `secrets`, `workflows`, `api`, `contract`, `web-and-extension`, `full-stack`.
 
 ```sh
 gh api -X POST repos/rudecompany/colander/rulesets --input - <<'JSON'
@@ -250,7 +249,6 @@ gh api -X POST repos/rudecompany/colander/rulesets --input - <<'JSON'
           { "context": "secrets", "integration_id": 15368 },
           { "context": "workflows", "integration_id": 15368 },
           { "context": "api", "integration_id": 15368 },
-          { "context": "server", "integration_id": 15368 },
           { "context": "contract", "integration_id": 15368 },
           { "context": "web-and-extension", "integration_id": 15368 },
           { "context": "full-stack", "integration_id": 15368 } ] } }

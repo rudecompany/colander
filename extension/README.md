@@ -39,7 +39,7 @@ Build configuration (contract section 11) comes from the environment at build ti
 | --- | --- | --- |
 | `WXT_COLANDER_API` | `http://localhost:8787` | Server origin for every API call. |
 | `WXT_COLANDER_SITE` | the API origin | Website origin for links and `externally_connectable`. |
-| `WXT_COLANDER_PUBLIC_KEYS` | the key in `server/testdata/dev-signing.pub` | Trusted Ed25519 public keys, comma-separated base64. |
+| `WXT_COLANDER_PUBLIC_KEYS` | the key in `testdata/dev-signing.pub` | Trusted Ed25519 public keys, comma-separated base64. |
 
 `pnpm build:e2e` (`wxt build --mode e2e`) differs from the release build in one way only: it lists the platform hosts in `host_permissions`, so Chrome grants them at install.
 Automation cannot click Chrome's site access prompt, and asking for a permission that is already granted answers at once, so the welcome and Platforms flows run unchanged in tests.

@@ -1,7 +1,7 @@
 # Colander: engineering contracts
 
 This document is the single source of truth for every interface that crosses a component boundary.
-The extension, the Go server and the website are built against it in parallel.
+The extension, the Worker in `api/` and the website are built against it.
 If code and this document disagree, the code is wrong.
 Behavior described in `docs/product-requirements.md` (the spec) is not repeated here unless a precise rule is needed.
 
@@ -11,11 +11,10 @@ Behavior described in `docs/product-requirements.md` (the spec) is not repeated 
 | --- | --- | --- |
 | `packages/shared` | `@colander/shared`: verdict enums and words, signals, glyphs, the Colander theme (`colander.css`), Mittsu components, API types, and the list format, Ed25519 signing and canonical IDs (client and server halves, WebCrypto only) | TypeScript, Svelte 5 |
 | `extension` | The Chrome MV3 extension | WXT, Svelte 5, TypeScript |
-| `server` | Every backend service in one Go binary: list, tag, scoring, review, appeals, public API, accounts, billing | Go, SQLite |
-| `web` | Public website, account pages and the review console, built static and served by the Go binary | SvelteKit (adapter-static), Svelte 5, Mittsu |
+| `api` | `@colander/api`: every backend service in one Cloudflare Worker (list, tag, scoring, review, appeals, public API, accounts, billing), with one SQLite Durable Object, `Store`, as the database and R2 for the signed list and the backups | TypeScript, Cloudflare Workers |
+| `web` | Public website, account pages and the review console, built static and served by the Worker as its static assets | SvelteKit (adapter-static), Svelte 5, Mittsu |
 
-The JavaScript side is a pnpm workspace (`pnpm-workspace.yaml` at the root).
-The Go module is `github.com/rudecompany/colander/server`.
+The repository is one pnpm workspace (`pnpm-workspace.yaml` at the root).
 UI components come from Mittsu (`packages/shared/src/components/ui`, add more with `npx @a3tai/mittsu add <name> --registry ~/prj/a3tai/mittsu/packages/svelte5/registry.json` run inside `packages/shared`).
 Icons come from `@lucide/svelte` (deep imports, size 14 to 16, strokeWidth 1.75), except the brand mark and the five verdict glyphs which live in `packages/shared/src/glyphs.ts`.
 
@@ -123,11 +122,18 @@ Human-readable text for each signal is in `packages/shared/src/verdicts.ts` (`SI
 | Request | Response |
 | --- | --- |
 | `GET /v1/list/snapshot` | `200`, `application/octet-stream`, the latest snapshot. Header `X-Colander-Sequence`. `Cache-Control: public, max-age=60`. |
-| `GET /v1/list/delta?since=N` | `200` with a delta from N to latest, `204` when N is the latest sequence, `410` when N is unknown or older than 30 days (client then fetches the snapshot). |
+| `GET /v1/list/delta?since=N` | `200` with a delta from N to latest, `204` when N is the latest sequence, both with the snapshot's `Cache-Control`; `410` when N is unknown or older than 30 days (client then fetches the snapshot), with `Cache-Control: no-store`. |
 
 A delta carries the final state of every hash that changed after `base`, coalesced, with verdict 0 for entries that left the list.
 The client applies it only when `base` equals its own sequence.
 The server publishes a new sequence whenever any entry changes, at most once per 10 seconds, so a verified appeal reaches the list within a minute.
+
+Sequences are monotonic but not contiguous.
+Each publication takes the largest of the previous sequence plus one, the current unix time in seconds, and the sequence in R2 plus one, so no restore or clock can reissue or lower a sequence an install already holds.
+Clients compare sequences and never assume that N + 1 follows N.
+
+Clients may keep a snapshot, a delta or a `204` for 60 seconds (`Cache-Control: public, max-age=60`), while the edge keeps every list answer for 15 seconds (`Cloudflare-CDN-Cache-Control: public, max-age=15, stale-if-error=86400` on 200 and 204, `public, max-age=15` on 410), which Workers Cache obeys and strips.
+With the 10-second publication floor and two cache tiers, a verified appeal reaches the edge within about 41 seconds.
 
 ## 4. Signed JSON envelope
 
@@ -147,7 +153,7 @@ The extension ships the trusted public keys at build time (`WXT_COLANDER_PUBLIC_
 `GET /v1/config/adapters` returns the envelope above, or `404` when the server has none (the extension then keeps its bundled copy).
 The payload schema is owned by the extension and documented in `extension/README.md`.
 It must contain a top-level integer `version`; the extension applies a remote config only when it is signed and its version is higher than the bundled or cached one.
-The server treats the payload as opaque bytes: `colander sign-config <file.json>` signs and stores it.
+The server treats the payload as opaque bytes: the ops command `sign-config` (`POST /ops/sign-config`, see `docs/deploy.md`) signs it with the Worker's key and stores it.
 The payload is declarative data only: selectors, attribute names and regular expressions. Never code.
 
 ## 5. Plan tokens
@@ -366,8 +372,9 @@ Appeal pages never show a support or donation link.
 { "id": "acc_...", "email": "...", "display_name": "Sam", "role": "member", "plan": Plan | null, "created_at": "..." }
 ```
 
-`role` is `member`, `curator` or `staff`. Roles are granted with `colander grant-role <email> <role>`.
-In dev mode (`COLANDER_DEV=1`) sign-in links are logged to stdout instead of emailed.
+`role` is `member`, `curator` or `staff`.
+Roles are granted with the ops command `grant-role` (`POST /ops/grant-role`).
+In dev mode (`COLANDER_DEV=1`) sign-in links are printed in the `wrangler dev` output instead of emailed.
 
 ### 6.7 Review (curators and staff)
 
@@ -453,7 +460,8 @@ Server logs never record request paths that contain item or source IDs together 
 
 ## 9. Scoring (normative for the server)
 
-Thresholds here are the starting values the spec asks to calibrate. Keep them in one Go struct.
+Thresholds here are the starting values the spec asks to calibrate.
+Keep them in one place: `Thresholds` in `api/src/scoring/rules.ts`.
 
 ### 9.1 Reputation
 
@@ -503,45 +511,66 @@ Signals on a list entry are the union of the signals that fired for the layers t
 
 ### 9.6 Active install estimate
 
-The server counts list snapshot and delta requests per UTC hour without any identifier; the Worker reads the counts of whole hours from edge analytics, cache hits included.
+List snapshot and delta requests are counted per UTC hour without any identifier.
+The counts come from edge analytics: every hour the Worker reads the number of `/v1/list/*` requests to its host in each whole hour (`httpRequestsAdaptiveGroups`, cache hits included) into `list_requests`.
 `active_installs = round(requests in the last 24 counted hours / 24)`, because each install syncs hourly.
+Dev mode has no edge analytics, so there the Worker counts the requests itself.
 
-## 10. Configuration of the server
+## 10. Configuration of the Worker
 
-| Env | Default | Purpose |
-| --- | --- | --- |
-| `COLANDER_ADDR` | `:8787` | Listen address |
-| `COLANDER_DB` | `data/colander.db` | SQLite file (WAL) |
-| `COLANDER_SIGNING_KEY` | `data/signing.key` | Ed25519 private key, created by `colander keygen` |
-| `COLANDER_PUBLIC_URL` | `http://localhost:8787` | Origin used in emails and redirects |
-| `COLANDER_SITE_DIR` | `../web/build` | Built website to serve, with SPA fallback to `200.html` |
-| `COLANDER_DEV` | unset | Dev mode: links logged, cookies not Secure |
-| `YOUTUBE_API_KEY` | unset | YouTube enrichment and appeal verification |
-| `RESEND_API_KEY`, `COLANDER_MAIL_FROM` | unset | Email delivery |
-| `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_PLUS_MONTHLY`, `STRIPE_PRICE_PLUS_YEARLY` | unset | Billing. Without them billing routes answer `503 billing_unavailable`. |
-| `STRIPE_MANAGED_PAYMENTS` | on | Plus checkout with Stripe Managed Payments as merchant of record. `0` turns it off. |
-| `STRIPE_API_BASE` | `https://api.stripe.com` | Stripe API origin, for tests against a fake |
-| `COLANDER_CLIENT_IP_HEADER` | unset | Header a trusted reverse proxy sets to the client address, such as `CF-Connecting-IP` or `X-Forwarded-For`, for per-IP rate limits |
+Vars are set per environment in `api/wrangler.jsonc`.
+Secrets are set per environment with `wrangler secret put`, and for `wrangler dev` in `api/.dev.vars`, which git ignores.
+The client address always comes from `CF-Connecting-IP`.
+
+| Name | Kind | Default | Purpose |
+| --- | --- | --- | --- |
+| `COLANDER_SIGNING_KEY` | secret, required | - | Base64 of the 32-byte Ed25519 seed (section 12) |
+| `IP_SALT` | secret, required | - | Salt of the HMAC that hashes client addresses before any rate limit or storage |
+| `OPS_TOKEN` | secret, required | - | Bearer token of the `/ops/*` channel (`docs/deploy.md`) |
+| `PUBLIC_URL` | var | `https://getcolander.com` | Origin used in emails and redirects |
+| `COLANDER_DEV` | var | empty | `1` is dev mode: mail printed instead of sent, cookies not Secure, no miss rate limiter, list requests counted by the Worker, and the `/__dev/*` routes |
+| `COLANDER_TEST_NOW` | var, dev only | unset | An RFC 3339 time that freezes the clock when `COLANDER_DEV=1`; then no job runs on its own |
+| `COLANDER_MAIL_FROM` | var | `Colander <hello@getcolander.com>` | Sender of sign-in, appeal and billing mail |
+| `RESEND_API_KEY` | secret, optional | unset | Resend, the fallback when the Email Sending binding fails |
+| `YOUTUBE_API_KEY` | secret, optional | unset | YouTube enrichment and automatic appeal verification |
+| `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` | secret, optional | unset | Billing. Without them billing routes answer `503 billing_unavailable`. |
+| `STRIPE_PRICE_PLUS_MONTHLY`, `STRIPE_PRICE_PLUS_YEARLY` | var | empty | Price IDs of the Plus prices; checkout answers `503 billing_unavailable` until they are set |
+| `STRIPE_MANAGED_PAYMENTS` | var | empty, which is on | Plus checkout with Stripe Managed Payments as merchant of record. `0` turns it off. |
+| `STRIPE_API_BASE` | var, optional | `https://api.stripe.com` | Stripe API origin, for tests against a fake |
+| `CF_ANALYTICS_TOKEN` | secret, optional | unset | Zone Analytics read token for the hourly list request count (section 9.6) |
+| `CF_ZONE_ID` | var | empty | Zone of that count; empty skips the hourly pull |
+| `ALERT_ADDRESS` | var | the ops address | Recipient of watchdog alerts; must equal `destination_address` of the `ALERTS` binding |
+
+The bindings are `STORE` (the `Store` Durable Object), `LISTS` and `BACKUPS` (R2), `EMAIL` and `ALERTS` (Email Sending), `MISSES` (Rate Limiting) and `ASSETS` (the website).
 
 ## 11. Extension build configuration
 
 | Env | Default | Purpose |
 | --- | --- | --- |
 | `WXT_COLANDER_API` | `http://localhost:8787` | Server origin |
-| `WXT_COLANDER_PUBLIC_KEYS` | the dev key from `server/testdata/dev-signing.pub` | Trusted Ed25519 public keys |
+| `WXT_COLANDER_PUBLIC_KEYS` | the dev key from `testdata/dev-signing.pub` | Trusted Ed25519 public keys |
 | `WXT_COLANDER_SITE` | same as the API | Website origin for links and `externally_connectable` |
 
 ## 12. Keys
 
-`COLANDER_SIGNING_KEY` is a text file holding the base64 of the 32-byte Ed25519 seed.
-Public keys are the base64 of the raw 32-byte key.
-`server/testdata/dev-signing.key` and `.pub` are a published development pair for local runs and tests only; production keys are made with `colander keygen` and never committed.
+`COLANDER_SIGNING_KEY` is the base64 of the 32-byte Ed25519 seed.
+Public keys are the base64 of the raw 32-byte key, and lists and envelopes carry the key ID (sections 3 and 4), so clients pick the right trusted key.
+
+Key custody:
+- Production and staging keys are made on a trusted offline machine with `make keygen` (`scripts/keygen.ts`), which never overwrites a file and prints the public key and key ID.
+- The seed lives only in the Worker secret of its environment (`wrangler secret put COLANDER_SIGNING_KEY`) and in two offline copies of each production key; Worker secrets cannot be read back, so those copies are the only way to recover it.
+- A key is never committed, never stored in GitHub and never sent over the ops channel: `sign-config` signs with the Worker's own key.
+- Staging has its own key, which no release build trusts.
+- Release builds of the extension trust the current and the next production public key (`WXT_COLANDER_PUBLIC_KEYS`), so the key rotates without breaking an updated install (`docs/deploy.md`, "Rotate the signing key").
+
+`testdata/dev-signing.key` and `.pub` are a published development pair for local runs and tests only.
 
 ## 13. Contract fixtures
 
-`testdata/contract/` holds signed fixtures generated by `node testdata/contract/generate.mjs` with the development key.
+`testdata/contract/` holds signed fixtures generated by `node testdata/contract/generate.mjs`, an independent Node implementation, with the development key.
 `list-snapshot.bin` and `list-delta.bin` follow section 3; `list-expected.json` lists their decoded entries (with the target key, hash hex and the ISO date the `updated` day number came from) and the 7 entries left after applying the delta.
 `config-envelope.json` follows section 4 with payload `{"version":7,"note":"contract fixture"}`.
 `plan-token.txt` follows section 5.
-The Go and TypeScript encoders (`packages/shared/src/list.ts`) must reproduce `list-snapshot.bin` and `list-delta.bin` byte for byte from `list-expected.json`, the Go and TypeScript signers must reproduce `config-envelope.json` and `plan-token.txt`, and both the Go and TypeScript decoders must verify and decode all fixtures.
+The TypeScript encoder in `packages/shared/src/list.ts`, which the Worker publishes with, is the byte-for-byte reference: it must reproduce `list-snapshot.bin` and `list-delta.bin` from `list-expected.json`.
+The signers in `packages/shared/src/signing.ts` must reproduce `config-envelope.json` and `plan-token.txt`, and the decoders the Worker and the extension use must verify and decode all fixtures.
 Never edit the fixtures by hand; change the generator and rerun it.

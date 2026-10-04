@@ -59,27 +59,3 @@ Use `launch()` and `onboard()` from `tests/harness.ts` for a fresh install, and 
 `ext.seen` records every request the browser makes, with who made it.
 `stack.ts` has Node-side helpers: `api` and `http` (with the Access headers), `asStaff` for review checks, `mailsSince` for dev-mode emails, `serverLog` for what the Worker logged, and `publishedAfter` to wait for the next list publication, which the Worker makes at most once per 10 seconds.
 A spec that needs the local stack starts with `test.skip(!!BASE_URL, LOCAL_ONLY)`.
-
-## Parity with the Go server
-
-`pnpm -C e2e parity` (`parity/run.ts`) proves the Worker in `api/` behaves as the Go server does, before `server/` is deleted (hosting plan section 4).
-It builds the Go binary, starts it on 127.0.0.1:8845 and `wrangler dev` on 8846 (inspector 8946; `PARITY_GO_PORT` and `PARITY_WORKER_PORT` move them) from fresh state, both with `COLANDER_DEV=1` and the clock frozen by `COLANDER_TEST_NOW`, and drives them through the same story:
-
-1. The demo data: `colander seed-dev` on one side, `POST /__dev/seed` on the other.
-2. The operator commands: the Go binary's `grant-role`, `sign-config` and `import-seed` against `/ops/<command>`, including the ones that must fail.
-3. A day later, the HTTP API (`parity/api.ts`): a burst of tags, every kind of tag the contract accepts and rejects, tag and report quotas, reports, a trial and settings sync, appeals with their per-address quota, staff and curator sign-in through the dev mail, the curator limits, decisions on sources and items, the appeal verified and denied, a report dismissed, and the public reads.
-   Every answer is compared, once the values each side draws at random (IDs, appeal codes, secrets, trial subjects) are replaced and JSON keys are sorted.
-4. The clock moves on 15, 40, 66, 80, 95 and 200 days, so appeals expire, the burst freeze thaws, list versions leave the 30-day window, and reviewer and community verdicts lapse and are scored again.
-
-Each step ends the way the Go server starts (publish, full pass, publish): the harness restarts Go and calls `POST /__dev/settle` on the Worker, which runs no job on its own while the clock is frozen.
-Then it compares:
-
-- Every table both keep, row for row (`parity/compare.ts`), with install hashes, token hashes and random IDs replaced by what they point at: verdicts, signals, decision log reasons, escalations, report and appeal statuses and the rest.
-  The Worker's state comes from `GET /__dev/dump`, loaded into stock SQLite, which must also pass `integrity_check`.
-- The signed snapshot, and the delta from the step before and from the seed's first sequence, byte for byte once Go's sequence numbers are mapped onto the Worker's and the file is signed again (Ed25519 is deterministic).
-  The Worker floors sequences to unix seconds where Go counted from 1, so the numbers differ by design; `list_sequences`, `list_changes` and `list_requests` (Go counts list requests in process, the Worker reads edge analytics) are not compared row by row.
-- The list endpoints' edge cases: 204 at the head, 410 after it and for a sequence past the 30-day window, 400 for a malformed `since`.
-
-A run takes about a minute.
-It needs Go, Node 24 and `web/build` (built when missing); a developer's `api/.dev.vars` never applies, because the Worker gets its secrets from `e2e/.run/parity/worker.vars` (`--env-file`).
-`e2e/.run/parity/report.json` lists every difference, next to `go.log` and `worker.log`; the exit code is 1 when anything differs.

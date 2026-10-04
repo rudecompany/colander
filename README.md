@@ -15,21 +15,21 @@ Every interface between the parts is defined in [docs/contracts.md](docs/contrac
 | Path | What it is | Stack |
 | --- | --- | --- |
 | [extension/](extension/README.md) | The Manifest V3 extension: platform adapters, matching, in-page chips, collapsed bars, Tag and Why, popup, options, welcome page and the curator side panel | WXT, Svelte 5, TypeScript |
-| [api/](api/README.md) | The Cloudflare Worker replacing server/ (in progress): edge routing, the `Store` Durable Object on SQLite, R2 list delivery, and the website through Workers Static Assets | TypeScript, Cloudflare Workers |
-| [server/](server/README.md) | Every backend service in one binary: signed list snapshots and deltas, tags and reports, scoring, review, appeals, accounts, billing, settings sync, and the website itself | Go, SQLite |
+| [api/](api/README.md) | The whole backend in one Cloudflare Worker: edge routing and caching, the `Store` Durable Object on SQLite (tags and reports, scoring, review, appeals, accounts, billing, settings sync), signed list snapshots and deltas through R2, and the website through Workers Static Assets | TypeScript, Cloudflare Workers |
 | [web/](web/README.md) | The public website: landing page, definition, source pages, appeals, decision log, plans, support, transparency, account and the review console | SvelteKit (static), Svelte 5 |
-| [packages/shared](packages/shared) | Verdict vocabulary, signal names, verdict glyphs and the brand mark, the Colander theme on top of Mittsu components, API types, and the list format, Ed25519 signing and canonical IDs used by the extension and the server | TypeScript, Svelte 5, Mittsu |
-| [e2e/](e2e/README.md) | Full-stack tests: the real server, website and extension together in Chromium | Playwright |
-| [testdata/contract](testdata/contract) | Signed fixtures that the Go and TypeScript code must both read byte for byte | Node |
+| [packages/shared](packages/shared) | Verdict vocabulary, signal names, verdict glyphs and the brand mark, the Colander theme on top of Mittsu components, API types, and the list format, Ed25519 signing and canonical IDs used by the extension and the Worker | TypeScript, Svelte 5, Mittsu |
+| [e2e/](e2e/README.md) | Full-stack tests: the Worker under `wrangler dev`, the website and the extension together in Chromium | Playwright |
+| [testdata/](testdata) | The signed contract fixtures, which the TypeScript encoder must reproduce byte for byte, and the published development signing key | Node |
 | [scripts/](docs/deploy.md) | Deploy tooling: the contract smoke test, offline signing key generation, the Cloudflare bootstrap, the restore drill and the Wrangler config guard | Node 24, Bash |
 
 ## Quick start
 
-You need Go 1.25 or newer, Node 24 with pnpm 10, and Chrome 137 or newer.
+You need Node 24 with pnpm 10, and Chrome 137 or newer.
 
 ```sh
-make setup      # install the workspace and Go modules
-make dev        # build the website, seed demo data, serve everything on http://localhost:8787
+make setup      # install the workspace
+make dev        # build the website and serve everything with wrangler dev on http://localhost:8787
+make seed       # once, in a second terminal: fictional demo data and its first scoring pass
 make extension  # build the extension into extension/dist/chrome-mv3
 ```
 
@@ -37,7 +37,8 @@ Load the extension from `chrome://extensions` with Developer mode on, Load unpac
 Its development ID is `nninnogmbhfebflkcgghlmjmplmpodlc` on every machine.
 The welcome tab asks which platforms to switch on, and Chrome asks for site access for those only.
 
-`make dev` runs the server in dev mode, so sign-in links print to its output instead of being emailed.
+`make dev` runs the Worker in dev mode with the development signing key, so sign-in links print to its output instead of being emailed.
+Its local Durable Object and R2 state live in `api/.wrangler`; delete that folder to start over.
 The demo data includes a staff reviewer, `rae@colander.test`, and a curator, `sam@colander.test`; sign in as either on `/account` and open `/console`.
 
 ## How it fits together
@@ -52,10 +53,10 @@ Platform page selectors ship as signed declarative configuration, so a site rede
 
 | Command | What it covers |
 | --- | --- |
-| `make test-server` | `gofmt`, `go vet` and the Go tests with the race detector: the list format against the contract fixtures, every scoring rule, the HTTP API, billing against a fake Stripe |
+| `make test-api` | The Wrangler config guard, type checks, the Worker's tests inside workerd (the store, every scoring rule, the HTTP API, billing against a fake Stripe, backups, ops and the list format against the contract fixtures), a dump that loads into stock SQLite, and dry-run deploys of both environments |
 | `make test-web` | Type checks, then the website's Playwright tests with axe accessibility checks in light and dark |
 | `make test-extension` | Type checks, unit tests and the extension's Playwright tests on saved platform fixtures, including the speed budgets |
-| `make e2e` | The real server, website and extension together: blocking from the real list, tag, report, review, appeal, side panel, trial and a privacy audit |
+| `make e2e` | The Worker under `wrangler dev`, the website and the extension together: blocking from the real list, tag, report, review, appeal, side panel, trial and a privacy audit |
 | `make test` | The first three together |
 | `pnpm -C extension test:live` | The adapters against the real YouTube and TikTok pages, which also runs daily in CI |
 
@@ -65,7 +66,7 @@ Colander runs on Cloudflare as one TypeScript Worker on getcolander.com (`api/`)
 Staging runs the same Worker on staging.getcolander.com behind Cloudflare Access.
 GitHub Actions is the whole pipeline:
 
-- Every pull request runs CI; the required checks are `secrets`, `workflows`, `api`, `server`, `contract`, `web-and-extension` and `full-stack`.
+- Every pull request runs CI; the required checks are `secrets`, `workflows`, `api`, `contract`, `web-and-extension` and `full-stack`.
 - Every green commit on main deploys to staging and passes a smoke test there.
 - Merging the release PR that release-please keeps open deploys that commit to production, smoke-tests it and rolls it back on failure.
 - Extension releases are built with provenance, attached to their GitHub release and submitted to the Chrome Web Store as a staged publish.
@@ -80,7 +81,7 @@ make smoke SMOKE_URL=https://getcolander.com SMOKE_KEYS=<production public key>
 node scripts/keygen.ts signing.key    # a new signing key, offline
 ```
 
-The Go server and `make docker` keep working until the TypeScript port passes the parity harness and server/ is deleted.
+The backend was a Go server until the TypeScript Worker matched it table for table and byte for byte in a parity harness; both live on in git history.
 
 ## Status
 
@@ -93,7 +94,7 @@ Because TikTok, Instagram and Facebook give no audience figures, a Slop verdict 
 Some things need people or accounts rather than code.
 
 - Instagram and Facebook selectors are tested on hand-built fixtures only; run `pnpm -C extension test:live` with signed-in storage states before those platforms ship.
-- AiSList is licensed CC BY-NC 4.0, not MIT as the spec assumed, so its data is not bundled; `colander import-seed` imports a list file only with an explicit license acknowledgement.
+- AiSList is licensed CC BY-NC 4.0, not MIT as the spec assumed, so its data is not bundled; the `import-seed` ops command imports a list file only with an explicit license acknowledgement.
 - Stripe Managed Payments needs Stripe's eligibility approval and its terms accepted in the dashboard.
 - The extension asks for the `scripting` permission in addition to the spec's minimal list, because per-platform site access needs runtime content script registration; the spec's permission list should add it.
 - The open questions in the spec still stand: legal review of labels and platform terms, the calibration set behind the thresholds, the code and data licenses, and trademark clearance for the name.

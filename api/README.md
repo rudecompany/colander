@@ -1,9 +1,12 @@
 # Colander API on Cloudflare Workers
 
-`@colander/api` is the TypeScript Worker that replaces the Go server in `server/`, following `docs/hosting-plan.md`.
+`@colander/api` is Colander's whole backend: one TypeScript Worker, following `docs/hosting-plan.md`.
 `docs/contracts.md` stays the source of truth for every wire format.
 It holds the edge Worker, the `Store` Durable Object with the full schema and every API route of contract section 6, and the config for production and staging.
-`make e2e` runs the full-stack suite against it through `wrangler dev`; the Go server stays in `server/` as the parity reference until it is deleted.
+`make e2e` runs the full-stack suite against it through `wrangler dev`.
+It was ported from the Go server file for file and test for test.
+Before the Go code was deleted, a parity harness drove both through the same story from fresh state with a frozen clock, and they agreed on every step: stored tables, API answers and signed list bytes, apart from the sequence numbering and list request counting that differ by design.
+The Go server stays in git history: the parent of the commit that `git log -1 --diff-filter=D -- server/go.mod` shows still has it, and references below to Go's files and names point there.
 
 ## What exists
 
@@ -31,10 +34,10 @@ It holds the edge Worker, the `Store` Durable Object with the full schema and ev
   - Every response gets the security headers and `Cache-Control: no-store` unless a cache policy in `src/http.ts` applies, and logs carry the route pattern, status and duration only.
 - `src/store/`, the `Store` Durable Object:
   - The constructor runs the migrations under `blockConcurrencyWhile`.
-    `0001` to `0003` are byte-identical copies of `server/internal/store/migrations`, so the schema and data dumps match the Go server.
+    `0001` to `0003` are the Go server's migrations, byte for byte, so its schema and data carry over.
     `0004_store.sql` adds `limits` (token buckets) and `jobs` (alarm scheduling); the runner records versions in `_migrations` and ignores versions it does not know.
   - `db.ts` is the typed SQL layer: `run`, `all`, `get` and `tx`, which wraps `ctx.storage.transactionSync`, plus Go's store.go helpers (`newId`, `nullString`, `nullInt`, `placeholders`) and errors.
-  - `accounts.ts`, `sources.ts`, `tags.ts`, `verdicts.ts`, `appeals.ts`, `list.ts` and `misc.ts` port `server/internal/store/*.go` one to one, with Go's names in camelCase and the same SQL.
+  - `accounts.ts`, `sources.ts`, `tags.ts`, `verdicts.ts`, `appeals.ts`, `list.ts` and `misc.ts` port Go's `internal/store/*.go` one to one, with Go's names in camelCase and the same SQL.
     `billing.ts` holds the SQL that Go kept inside `internal/billing` (subscriptions, donations, Stripe events); the Stripe calls stay with the billing port.
     Every function takes the `Db` first and runs inside the caller's `tx` when there is one; each `s.Tx` became `db.tx(() => ...)`.
   - Lookups return `undefined` where Go returned `ErrNotFound`.
@@ -63,7 +66,7 @@ It holds the edge Worker, the `Store` Durable Object with the full schema and ev
   - The pass interval and the debounce come from the scoring `Thresholds`.
   - `dump`: `defineDump(dump)` runs it at 03:17, 09:17, 15:17 and 21:17 UTC and records how long it blocked and its SQL and gzip sizes.
     A failed try is retried after 2, 4, 8 ... minutes, at most an hour apart, instead of after 30 seconds, since each try blocks the Store; a try is counted before it starts, so one the platform cut short backs off too.
-- `src/scoring/` ports `server/internal/scoring` file for file, with Go's names in camelCase:
+- `src/scoring/` ports Go's `internal/scoring` file for file, with Go's names in camelCase:
   - `rules.ts`: every number of contracts section 9 in one `Thresholds` class (durations in milliseconds; `Default` holds the contract's values), the four layers and the verdict rules in order, and Go's signal and test masks as `Sig`, `TestBit`, `ProvenanceSignals` and `BehaviorSignals`, derived from the wire tables in `packages/shared`.
   - `reason.ts`: the plain-language decision log reasons and escalation summaries, word for word.
   - `engine.ts`: `Engine` with an injected clock (the Store's `now`).
@@ -83,7 +86,7 @@ It holds the edge Worker, the `Store` Durable Object with the full schema and ev
 - `src/billing.ts` ports `internal/billing` over `fetch` with `Stripe-Version: 2026-04-22.dahlia`: Managed Payments checkout, donations, cancel and refund, entitlements and the webhook, whose signature is checked with WebCrypto HMAC.
   The webhook reads the objects from Stripe first, then applies every write and records the event id in one transaction.
   Paying never reaches scoring, tags, reports or review: `test/harness/independence.test.ts` walks their imports.
-- `src/routes/` ports `server/internal/api` file for file, with Go's names in camelCase:
+- `src/routes/` ports Go's `internal/api` file for file, with Go's names in camelCase:
   - `server.ts` is Go's route table for the extension, public, appeal, review, sync and adapter config routes; `account.ts` and `billing.ts` hold the routes of contracts 6.6 and 6.8; the Store registers all three.
   - `respond.ts` holds bounded body reads, Go's request JSON decoding (unknown fields, trailing data, size limits, first error wins), and Go's string, time, URL and listfmt helpers; `ids.ts` the canonical ID checks.
   - The public GETs (`/v1/sources/*`, `/v1/log`, `/v1/stats`, `/v1/supporters`) are `public, max-age=60` and never read the session; `test/cache.test.ts` checks the policy of every route.
@@ -104,9 +107,9 @@ It holds the edge Worker, the `Store` Durable Object with the full schema and ev
 - `src/backup.ts`, the 6-hourly dump job (`jobs.defineDump`): plain SQL that stock `sqlite3` loads (the CREATE statements as created, one INSERT per row with its column names, indexes last), gzipped into equal 5 MiB parts inside `blockConcurrencyWhile` and uploaded as an R2 multipart object under `dumps/<ISO time>.sql.gz` after it.
   The blocking part never throws (a throw there would reset the object) and does no network I/O, so a slow or failing R2 never holds or resets the Store.
   A restore streams the dump through gzip and a line splitter into staging tables in batches of about 1 MB of SQL, then swaps every table's rows in one transaction; it keeps the Store's own schema and `_migrations`, so a dump from older code loads into newer code, and it refuses a dump without its final `COMMIT` and tables or columns it does not know.
-- `src/dev.ts`, dev-only routes and the parity clock:
-  - `POST /__dev/seed` ports `colander seed-dev` through the same store, engine and publisher calls, without a YouTube client as in Go; `POST /__dev/settle` does what the Go server does when it starts (publish, full pass, publish); `GET /__dev/dump` answers the backup's SQL uncompressed.
-  - `COLANDER_TEST_NOW` (RFC 3339, honored only with `COLANDER_DEV=1`, as in the Go server) freezes the Store's clock and the edge's `since` check, and then no job runs on its own: the harness settles explicitly.
+- `src/dev.ts`, dev-only routes and the frozen test clock:
+  - `POST /__dev/seed` ports `colander seed-dev` through the same store, engine and publisher calls, without a YouTube client as in Go; `POST /__dev/settle` does what the Go server did when it started (publish, full pass, publish); `GET /__dev/dump` answers the backup's SQL uncompressed.
+  - `COLANDER_TEST_NOW` (RFC 3339, honored only with `COLANDER_DEV=1`) freezes the Store's clock and the edge's `since` check, and then no job runs on its own: tests settle explicitly.
 - `packages/shared` holds the list format, signing and canonical IDs used here and by the extension.
 
 ## Scripts
@@ -121,12 +124,13 @@ pnpm -C api types        # regenerate worker-configuration.d.ts after changing w
 
 ## Run it locally
 
+From the repository root, `make dev` builds the website, writes `api/.dev.vars` when it is missing, and starts `wrangler dev` on port 8787; `make seed` then loads the demo data into it.
 `wrangler dev` reads local secrets from `api/.dev.vars`, which git ignores.
-Create it with the published development key from `server/testdata/dev-signing.key`, the same key the extension trusts by default:
+To create it by hand, use the published development key in `testdata/dev-signing.key`, the same key the extension trusts by default:
 
 ```sh
 cd api
-printf 'COLANDER_DEV=1\nPUBLIC_URL=http://localhost:8787\nIP_SALT=dev-ip-salt\nOPS_TOKEN=dev-ops-token\nCOLANDER_SIGNING_KEY=%s\n' "$(cat ../server/testdata/dev-signing.key)" > .dev.vars
+printf 'COLANDER_DEV=1\nPUBLIC_URL=http://localhost:8787\nIP_SALT=dev-ip-salt\nOPS_TOKEN=dev-ops-token\nCOLANDER_SIGNING_KEY=%s\n' "$(cat ../testdata/dev-signing.key)" > .dev.vars
 pnpm -C ../web build
 pnpm dev
 ```
@@ -139,12 +143,11 @@ Never put a production key in `.dev.vars`; production secrets are set with `wran
 
 ## Tests
 
-- `test/*.test.ts` run inside workerd with `@cloudflare/vitest-plugin`: the schema against the Go migrations, migration restarts, `tx` rollback, the router, CORS, `since`, the miss limiter, `/ops/*`, `/__dev/*`, header hygiene, logging, and cache headers on snapshot 200 and delta 200, 204 and 410.
+- `test/*.test.ts` run inside workerd with `@cloudflare/vitest-plugin`: the schema against the one stock SQLite builds from the migration files, migration restarts, `tx` rollback, the router, CORS, `since`, the miss limiter, `/ops/*`, `/__dev/*`, header hygiene, logging, and cache headers on snapshot 200 and delta 200, 204 and 410.
   - `backup.test.ts` covers the dump round trip through gzip and R2 (equal multipart parts included), the SQL it writes, restores that refuse what they cannot load, a restore of over 40 MB in batches, and a failing upload that leaves the Store running; `ops.test.ts` every ops command through the edge (Go's `TestImportSeed` among them, and `sign-config` against the contract fixture); `dev.test.ts` the seed (Go's `TestSeedDev`), settle and `COLANDER_TEST_NOW`.
   - `data.test.ts` covers the store ports (Go's `store_test.go` and the behavior of each file), `limits.test.ts` the token buckets, `publisher.test.ts` publication, R2 reconciliation and sequence monotonicity across a simulated restore, `jobs.test.ts` the alarm through `runDurableObjectAlarm`, `rules.test.ts` and `engine.test.ts` the scoring engine (Go's `rules_test.go` and `engine_test.go`, the curator limits, the debounced rescore and a reviewer decision between two chunks of a pass), and `scheduled.test.ts` the watchdog, its alerts and the analytics pull.
   - `routes.test.ts` ports Go's `api_test.go` and `ids_test.go` for the extension, public, appeal and review routes, `cache.test.ts` checks Cache-Control and CORS on every route of the Store's router (a route missing from its table fails it), and `youtube.test.ts` ports Go's `youtube_test.go` with enrichment and automatic appeal checks.
   - `account.test.ts` ports Go's sign-in, CSRF and reviewer token tests with the email checks against vectors from Go's `net/mail`, `mail.test.ts` the mailer and its fallback order, and `billing.test.ts` Go's `webhook_test.go` and `billing_test.go` against the in-memory Stripe in `stripe-fake.ts` (Go's `billingtest`).
 - `../packages/shared/test/*.test.ts` run inside workerd too, so the list encoder, signing and canonical IDs are proven in the runtime that serves them, not only in Node.
-- `test/harness/*.test.ts` run in Node: `site.test.ts` drives the whole Worker with its static assets through `createTestHarness` from Wrangler, `config.test.ts` guards `wrangler.jsonc` for both environments, `independence.test.ts` is Go's billing independence test, and `dev.test.ts` seeds with a frozen clock and loads the dump into stock SQLite with the Go schema.
-- `pnpm -C e2e parity` (`e2e/parity/`) runs the Go server and the Worker through the same story and diffs them; see `e2e/README.md`.
+- `test/harness/*.test.ts` run in Node: `site.test.ts` drives the whole Worker with its static assets through `createTestHarness` from Wrangler, `config.test.ts` guards `wrangler.jsonc` for both environments, `independence.test.ts` is Go's billing independence test, and `dev.test.ts` is the dump-compat check: it seeds with a frozen clock, loads the dump into stock SQLite with every table and index of the migration files, and runs `integrity_check` and `foreign_key_check`.
 - A developer's `.dev.vars` never changes test results: the tests pass their own secrets.
