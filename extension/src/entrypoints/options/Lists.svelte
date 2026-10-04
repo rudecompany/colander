@@ -98,7 +98,7 @@
 		{/snippet}
 		<p class="muted">The shared, signed list every install uses. It updates every hour, and blocking keeps working offline from the last copy.</p>
 		<dl class="facts">
-			<div><dt>Version</dt><dd class="cl-num">{status.value.listSequence ? fmtNum(status.value.listSequence) : 'Not downloaded yet'}</dd></div>
+			<div><dt>Version</dt><dd class="cl-num">{status.value.listSequence ? String(status.value.listSequence) : 'Not downloaded yet'}</dd></div>
 			<div><dt>Entries</dt><dd class="cl-num">{fmtNum(status.value.listCount)}</dd></div>
 			<div><dt>Published</dt><dd>{status.value.listCreated ? fmtDate(status.value.listCreated * 1000) : 'Not yet'}</dd></div>
 			<div><dt>Last sync</dt><dd>{ago(status.value.lastSyncAt)}</dd></div>
