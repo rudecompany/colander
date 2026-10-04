@@ -64,9 +64,9 @@ get Fig. 4 redrawn on 300 units, as 440 units would set its labels below 12 px t
 		</g>
 		<circle cx="198" cy="128" r="34" clip-path="url(#{uid}-b)" fill="url(#{uid}-ink)" />
 		<text x="68" y="100" class="lbl" text-anchor="middle">{LAYER_WORD.provenance}</text>
-		<text x="268" y="100" class="lbl" text-anchor="middle">{LAYER_WORD.consensus}</text>
+		{#each LAYER_WORD.consensus.split(' ') as word, i (i)}<text x="292" y={100 + i * 17} class="lbl" text-anchor="middle">{word}</text>{/each}
 		{#each LAYER_WORD.behavior.split(' ') as word, i (i)}<text x="112" y={124 + i * 18} class="lbl" text-anchor="end">{word}</text>{/each}
-		<text x="240" y="132" class="lbl">{LAYER_WORD.rubric}</text>
+		<text x="240" y="150" class="lbl">{LAYER_WORD.rubric}</text>
 		<path class="main" d="M176 166V176" />
 		<text x="176" y="194" class="lbl strong" text-anchor="middle">Two agree: can be hidden</text>
 	{:else if n === 3}
