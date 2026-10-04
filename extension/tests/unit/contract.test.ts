@@ -10,8 +10,8 @@ const root = new URL('../../../', import.meta.url);
 const read = (p: string) => readFileSync(new URL(p, root));
 
 describe('trusted keys', () => {
-	it('bundles the dev key from server/testdata', () => {
-		expect(read('server/testdata/dev-signing.pub').toString('utf8').trim()).toBe(DEV_PUBLIC_KEY);
+	it('bundles the dev key from testdata', () => {
+		expect(read('testdata/dev-signing.pub').toString('utf8').trim()).toBe(DEV_PUBLIC_KEY);
 	});
 
 	it('verifies every signed fixture with the default build keys', async () => {

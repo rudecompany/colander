@@ -5,7 +5,6 @@ import { describe, expect, inject, it } from 'vitest';
 import { MIGRATIONS } from '../src/store/migrations';
 import type { Store } from '../src/store/store';
 
-const NEW_TABLES = ['_migrations', 'jobs', 'limits'];
 const schema = (store: Store) =>
 	store.db.all<{ type: string; name: string; tbl_name: string; sql: string | null }>(
 		// _cf_* and __cf_* are the platform's own tables.
@@ -13,12 +12,13 @@ const schema = (store: Store) =>
 	);
 
 describe('migrations', () => {
-	it('builds exactly the Go schema plus _migrations, limits and jobs', async () => {
+	it('builds exactly the schema stock SQLite builds from the migration files, plus _migrations', async () => {
 		const rows = await runInDurableObject(env.STORE.getByName('migrations'), (store: Store) => schema(store));
-		const go = inject('goSchema');
-		expect(rows.filter((r) => !NEW_TABLES.includes(r.tbl_name))).toEqual(go);
-		expect([...new Set(rows.filter((r) => NEW_TABLES.includes(r.tbl_name)).map((r) => r.tbl_name))].sort()).toEqual(NEW_TABLES);
-		expect(go.length).toBeGreaterThan(50);
+		const files = inject('migrationSchema');
+		expect(rows.filter((r) => r.tbl_name !== '_migrations')).toEqual(files);
+		expect(rows.filter((r) => r.tbl_name === '_migrations').map((r) => r.name)).toEqual(['_migrations']);
+		expect(files.length).toBeGreaterThan(50);
+		expect(files.map((r) => r.name)).toEqual(expect.arrayContaining(['jobs', 'limits']));
 	});
 
 	it('records each migration once and starts again without reapplying', async () => {

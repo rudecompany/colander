@@ -205,7 +205,7 @@ jobs:
             exit 1
           fi
           # Never ship a build that trusts the published development key or talks to localhost.
-          if unzip -p "$zip" | grep -a -q -e "$(cat server/testdata/dev-signing.pub)" -e 'localhost:8787'; then
+          if unzip -p "$zip" | grep -a -q -e "$(cat testdata/dev-signing.pub)" -e 'localhost:8787'; then
             echo "::error::The store package contains the development signing key or a localhost origin."
             exit 1
           fi

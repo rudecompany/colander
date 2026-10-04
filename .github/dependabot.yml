@@ -15,11 +15,3 @@ updates:
     groups:
       actions-minor-and-patch:
         update-types: [minor, patch]
-  # Until server/ is deleted (hosting plan section 4).
-  - package-ecosystem: gomod
-    directory: /server
-    schedule:
-      interval: weekly
-    groups:
-      go-minor-and-patch:
-        update-types: [minor, patch]

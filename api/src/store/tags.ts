@@ -81,7 +81,7 @@ export interface ReportInput {
 	/** canonical, as reported */
 	sourceId: string;
 	sourceName: string;
-	/** null is Go's nil slice, stored as JSON null like the Go server does */
+	/** null is Go's nil slice, stored as JSON null as the Go server did */
 	examples: string[] | null;
 	reason: string;
 	slopType: string;

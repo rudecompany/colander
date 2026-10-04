@@ -4,7 +4,7 @@ export {};
 
 declare module 'vitest' {
 	export interface ProvidedContext {
-		/** sqlite_master of a database built from server/internal/store/migrations. */
-		goSchema: { type: string; name: string; tbl_name: string; sql: string | null }[];
+		/** sqlite_master of a database stock SQLite built from src/store/migrations. */
+		migrationSchema: { type: string; name: string; tbl_name: string; sql: string | null }[];
 	}
 }

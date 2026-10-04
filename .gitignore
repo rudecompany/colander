@@ -1,7 +1,5 @@
 node_modules/
 .DS_Store
-/data/
-server/data/
 *.db
 *.db-wal
 *.db-shm
@@ -23,4 +21,4 @@ coverage/
 
 # Signing keys made with scripts/keygen.ts never belong in git.
 *.key
-!server/testdata/dev-signing.key
+!/testdata/dev-signing.key

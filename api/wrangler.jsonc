@@ -15,7 +15,7 @@
 	"assets": {
 		"directory": "../web/build",
 		"binding": "ASSETS",
-		// /definition serves definition.html, matching the Go server's lookup.
+		// /definition serves definition.html, as the Go server's lookup did.
 		"html_handling": "auto-trailing-slash",
 		// Unknown paths get build/404.html (a copy of the SPA shell) with status 404.
 		"not_found_handling": "404-page",

@@ -1,5 +1,5 @@
-// Dev routes (src/dev.ts): the demo seed, a port of Go's TestSeedDev, the settle that the parity
-// harness runs instead of the Go server's start, the dump route, and COLANDER_TEST_NOW.
+// Dev routes (src/dev.ts): the demo seed, a port of Go's TestSeedDev, the settle that replaces
+// the Go server's start, the dump route, and COLANDER_TEST_NOW.
 import { env } from 'cloudflare:workers';
 import { createExecutionContext, runInDurableObject } from 'cloudflare:test';
 import { describe, expect, inject, it, vi } from 'vitest';
@@ -112,7 +112,7 @@ describe('/__dev/seed', () => {
 });
 
 describe('/__dev/settle', () => {
-	it('publishes, scores everything and publishes again, as the Go server does when it starts', async () => {
+	it('publishes, scores everything and publishes again, as the Go server did when it started', async () => {
 		const other = env.STORE.getByName('settle');
 		// A fresh deployment: the seed's publication above came from another Store.
 		await env.LISTS.delete(SNAPSHOT_KEY);

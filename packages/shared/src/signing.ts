@@ -135,7 +135,7 @@ export async function signEnvelope(key: SigningKey, context: string, payload: Ui
 
 /**
  * JSON exactly as Go's encoding/json writes it: JSON.stringify plus Go's escapes for <, >, & and
- * U+2028/U+2029, so tokens signed here and by the Go server are byte-identical.
+ * U+2028/U+2029, so tokens stay byte-identical to the ones the Go server signed.
  */
 function goJSON(value: unknown): string {
 	return JSON.stringify(value).replace(/[<>&\u2028\u2029]/g, (c) => '\\u' + c.charCodeAt(0).toString(16).padStart(4, '0'));

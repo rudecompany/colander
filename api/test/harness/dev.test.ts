@@ -1,6 +1,6 @@
-// The Worker in dev mode with the parity harness's frozen clock, as `wrangler dev` runs it: the
-// seed lands at COLANDER_TEST_NOW, no job runs on its own, and the dump loads into stock SQLite
-// with the Go server's schema (the escape hatch of hosting plan section 3).
+// The Worker in dev mode with a frozen clock, as `wrangler dev` runs it: the seed lands at
+// COLANDER_TEST_NOW, no job runs on its own, and the dump loads into stock SQLite with the schema
+// of the migration files (the dump-compat check, the escape hatch of hosting plan section 3).
 import { readdirSync, readFileSync } from 'node:fs';
 import { afterAll, beforeAll, expect, it } from 'vitest';
 import { createTestHarness } from 'wrangler';
@@ -46,13 +46,13 @@ it('seeds at the frozen time, runs no job on its own, and dumps SQL that stock S
 	expect(db.prepare('PRAGMA integrity_check').all()).toEqual([{ integrity_check: 'ok' }]);
 	expect(db.prepare('PRAGMA foreign_key_check').all()).toEqual([]);
 
-	// Every table and index of the Go migrations, statement for statement.
-	const go = new DatabaseSync(':memory:');
-	const dir = new URL('../../../server/internal/store/migrations/', import.meta.url);
-	for (const f of readdirSync(dir).sort()) go.exec(readFileSync(new URL(f, dir), 'utf8'));
+	// Every table and index of the migration files, statement for statement.
+	const files = new DatabaseSync(':memory:');
+	const dir = new URL('../../src/store/migrations/', import.meta.url);
+	for (const f of readdirSync(dir).sort()) files.exec(readFileSync(new URL(f, dir), 'utf8'));
 	const schema = (d: DatabaseSync) => d.prepare("SELECT type, name, sql FROM sqlite_master WHERE sql IS NOT NULL ORDER BY name").all();
 	const ours = new Map(schema(db).map((r) => [r.name, r]));
-	for (const r of schema(go)) expect(ours.get(r.name as string), String(r.name)).toEqual(r);
+	for (const r of schema(files)) expect(ours.get(r.name as string), String(r.name)).toEqual(r);
 
 	// The clock: the seed's last pass and publication happened at NOW, the one before a day earlier.
 	expect(db.prepare('SELECT seq, created_at FROM list_sequences ORDER BY seq').all()).toEqual([

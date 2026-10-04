@@ -337,7 +337,7 @@ function importSeedFile(store: Store, a: OpsArgs): OpsAnswer {
 /**
  * The text of the object a file starts with, as Go's json.Decoder read it: whatever follows that
  * object is ignored. That lets sign-config sign a file the extension cannot parse; Go did the same,
- * and parity keeps it until it is fixed on both sides.
+ * and the port keeps it until it is fixed on purpose.
  */
 function firstObject(file: string): string {
 	const start = file.search(/\S/);

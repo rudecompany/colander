@@ -10,5 +10,5 @@
 		"lib": ["es2023", "dom"],
 		"types": ["node", "chrome"]
 	},
-	"include": ["*.ts", "tests", "parity"]
+	"include": ["*.ts", "tests"]
 }

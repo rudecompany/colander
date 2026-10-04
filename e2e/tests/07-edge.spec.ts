@@ -106,7 +106,7 @@ test('a verified appeal reaches installs as a signed delta within 60 s', async (
 	const token = process.env.COLANDER_REVIEWER_TOKEN;
 	test.skip(!LOCAL && !(token && process.env.COLANDER_PUBLIC_KEYS), 'needs COLANDER_REVIEWER_TOKEN and COLANDER_PUBLIC_KEYS against a deployed origin');
 	const staff = LOCAL ? { cookie: process.env.COLANDER_E2E_STAFF_COOKIE } : { auth: `Bearer ${token}` };
-	const keys = trustedKeys(process.env.COLANDER_PUBLIC_KEYS ?? readFileSync(resolve(REPO, 'server/testdata/dev-signing.pub'), 'utf8'));
+	const keys = trustedKeys(process.env.COLANDER_PUBLIC_KEYS ?? readFileSync(resolve(REPO, 'testdata/dev-signing.pub'), 'utf8'));
 	// A fictional channel only this test uses, rated Slop by staff so it can be appealed.
 	const handle = '@colander-e2e-appeal';
 	const hash = targetHash(`yt:s:${handle}`);

@@ -47,7 +47,7 @@ export default async function globalSetup() {
 	const vars: Record<string, string> = {
 		COLANDER_DEV: '1',
 		PUBLIC_URL: origin,
-		COLANDER_SIGNING_KEY: readFileSync(resolve(REPO, 'server/testdata/dev-signing.key'), 'utf8').trim(),
+		COLANDER_SIGNING_KEY: readFileSync(resolve(REPO, 'testdata/dev-signing.key'), 'utf8').trim(),
 		IP_SALT: 'e2e-ip-salt',
 		OPS_TOKEN: 'e2e-ops-token'
 	};

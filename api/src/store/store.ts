@@ -75,7 +75,7 @@ export class Store extends DurableObject<Env> {
 	constructor(ctx: DurableObjectState, env: Env) {
 		super(ctx, env);
 		this.db = new Db(ctx.storage);
-		// The parity harness freezes the clock and settles the jobs itself (src/dev.ts).
+		// A test that freezes the clock settles the jobs itself (src/dev.ts).
 		const frozen = testNow(env);
 		if (frozen !== undefined) this.now = () => frozen;
 		this.jobs = new Jobs(this.db, ctx.storage, ctx.id.name === 'primary' && frozen === undefined);

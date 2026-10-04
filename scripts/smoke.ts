@@ -9,8 +9,6 @@
 //                    (needs COLANDER_REVIEWER_TOKEN, the reviewer token of a staff account)
 //   --expect-cache   requires `cf-cache-status: HIT` on a repeated snapshot and delta request
 //   --since <seq>    a sequence clients held before a deploy; its delta must still be served
-//   --spa-fallback   the Go server answers unknown pages with the SPA shell (200) instead of 404;
-//                    remove this flag with server/
 //
 // CF_ACCESS_CLIENT_ID and CF_ACCESS_CLIENT_SECRET, when set, are sent on every request so the
 // test passes Cloudflare Access on staging.
@@ -163,8 +161,7 @@ async function main(): Promise<void> {
 		options: {
 			mutating: { type: 'boolean', default: false },
 			'expect-cache': { type: 'boolean', default: false },
-			since: { type: 'string' },
-			'spa-fallback': { type: 'boolean', default: false }
+			since: { type: 'string' }
 		}
 	});
 	const keys = trustedKeys(env('COLANDER_PUBLIC_KEYS'));
@@ -185,8 +182,7 @@ async function main(): Promise<void> {
 	await check('unknown page', async () => {
 		const res = await http(`/smoke-missing-${nonce}`);
 		await res.text();
-		const want = opts['spa-fallback'] ? 200 : 404;
-		expect(res.status === want && isHTML(res), `answered ${res.status} ${header(res, 'content-type')}, want ${want} HTML`);
+		expect(res.status === 404 && isHTML(res), `answered ${res.status} ${header(res, 'content-type')}, want 404 HTML`);
 	});
 	await check('unknown API route', async () => {
 		const res = await http(`/v1/smoke-missing-${nonce}`);

@@ -1,13 +1,13 @@
-// Dev-only routes and the parity harness's clock. The edge forwards /__dev/* to the Store only
-// when COLANDER_DEV=1, and the routes check it again here.
+// Dev-only routes and the frozen test clock. The edge forwards /__dev/* to the Store only when
+// COLANDER_DEV=1, and the routes check it again here.
 //
 // - POST /__dev/seed fills an empty Store with fictional demo data (Go's `colander seed-dev`).
-// - POST /__dev/settle does what the Go server does when it starts: publish, run a full scoring
-//   pass, publish again. With a frozen clock no job runs on its own, so the harness settles here.
+// - POST /__dev/settle does what the Go server did when it started: publish, run a full scoring
+//   pass, publish again. With a frozen clock no job runs on its own, so tests settle here.
 // - GET /__dev/dump answers the SQL dump the backups write, uncompressed.
 //
-// COLANDER_TEST_NOW (RFC 3339, honored only with COLANDER_DEV=1) freezes the Store's clock, as
-// the same variable freezes the Go server's, so e2e/parity can diff both byte for byte.
+// COLANDER_TEST_NOW (RFC 3339, honored only with COLANDER_DEV=1) freezes the Store's clock, so a
+// run's sequences, times and signed lists come out the same every time.
 import { b64url, hex, utf8 } from '@colander/shared/bytes';
 import { sha256 } from '@colander/shared/sha256';
 import { dumpLines } from './backup';
@@ -24,7 +24,7 @@ import type { Store } from './store/store';
 
 type Handler = (request: Request, url: URL) => Response | Promise<Response>;
 
-/** The frozen clock in unix ms, or undefined outside the parity harness. A malformed value fails the start. */
+/** The frozen clock in unix ms, or undefined when no test froze it. A malformed value fails the start. */
 export function testNow(env: Env): number | undefined {
 	const v = (env as Env & { COLANDER_TEST_NOW?: string }).COLANDER_TEST_NOW;
 	if (env.COLANDER_DEV !== '1' || !v) return undefined;
@@ -60,7 +60,7 @@ export function devRoutes(store: Store, ctx: DurableObjectState, env: Env): [str
 	];
 }
 
-/** The Go server's start: publish what changed, score everything, publish again. */
+/** What the Go server did when it started: publish what changed, score everything, publish again. */
 async function settle(store: Store): Promise<{ changed: number; head_seq: number }> {
 	const now = store.now();
 	await store.publisher.publish(now);

@@ -310,7 +310,7 @@ describe('plan token', () => {
 	});
 });
 
-describe('canonical source IDs (testdata/contract/canonical-ids.json, shared with the Go server)', () => {
+describe('canonical source IDs (testdata/contract/canonical-ids.json, shared with the extension)', () => {
 	const vectors = JSON.parse(files.canonicalIds) as { sources: { platform: Platform; raw: string; source: string | null }[] };
 	it.each(vectors.sources.map((v) => [v.platform, v.raw, v.source] as const))('%s %j becomes %j', (platform, raw, source) => {
 		expect(canonicalSource(platform, raw)).toBe(source);

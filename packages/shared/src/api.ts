@@ -1,4 +1,4 @@
-// Wire types for the HTTP API in docs/contracts.md section 6. Keep in step with the Go server.
+// Wire types for the HTTP API in docs/contracts.md section 6. Keep in step with api/src/routes.
 import type { Platform, Signal, SlopType, TagVerdict, Test, Verdict } from './verdicts';
 
 export type ISODate = string;

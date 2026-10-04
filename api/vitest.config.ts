@@ -12,12 +12,12 @@ const { DatabaseSync } = await import('node:sqlite');
 process.emitWarning = emitWarning;
 
 const repo = new URL('../', import.meta.url);
-const goMigrations = new URL('server/internal/store/migrations/', repo);
+const migrations = new URL('src/store/migrations/', import.meta.url);
 
-/** The schema the Go server creates, from its own migration files, as sqlite_master rows. */
-function goSchema() {
+/** The schema stock SQLite builds from the Store's migration files, as sqlite_master rows. */
+function migrationSchema() {
 	const db = new DatabaseSync(':memory:');
-	for (const f of readdirSync(goMigrations).sort()) db.exec(readFileSync(new URL(f, goMigrations), 'utf8'));
+	for (const f of readdirSync(migrations).sort()) db.exec(readFileSync(new URL(f, migrations), 'utf8'));
 	return db.prepare('SELECT type, name, tbl_name, sql FROM sqlite_master ORDER BY name').all() as { type: string; name: string; tbl_name: string; sql: string | null }[];
 }
 
@@ -25,7 +25,7 @@ function goSchema() {
 // so a developer's api/.dev.vars never changes test results; also set in process.env so Wrangler
 // does not warn about missing secrets when there is no .dev.vars.
 const secrets = {
-	COLANDER_SIGNING_KEY: readFileSync(new URL('server/testdata/dev-signing.key', repo), 'utf8').trim(),
+	COLANDER_SIGNING_KEY: readFileSync(new URL('testdata/dev-signing.key', repo), 'utf8').trim(),
 	IP_SALT: 'test-ip-salt',
 	OPS_TOKEN: 'test-ops-token'
 };
@@ -45,7 +45,7 @@ export default defineConfig({
 				test: {
 					name: 'workerd',
 					include: ['test/*.test.ts', '../packages/shared/test/*.test.ts'],
-					provide: { contract: contractFiles(), goSchema: goSchema() }
+					provide: { contract: contractFiles(), migrationSchema: migrationSchema() }
 				}
 			},
 			{

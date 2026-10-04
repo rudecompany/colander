@@ -9,7 +9,7 @@ export interface ContractFiles {
 	configEnvelope: string;
 	planToken: string;
 	canonicalIds: string;
-	/** base64 of the dev Ed25519 seed (server/testdata/dev-signing.key) */
+	/** base64 of the dev Ed25519 seed (testdata/dev-signing.key) */
 	devSeed: string;
 	devPublicKey: string;
 }

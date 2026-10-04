@@ -16,7 +16,7 @@ export function contractFiles(): ContractFiles {
 		configEnvelope: text('testdata/contract/config-envelope.json'),
 		planToken: text('testdata/contract/plan-token.txt').trim(),
 		canonicalIds: text('testdata/contract/canonical-ids.json'),
-		devSeed: text('server/testdata/dev-signing.key').trim(),
-		devPublicKey: text('server/testdata/dev-signing.pub').trim()
+		devSeed: text('testdata/dev-signing.key').trim(),
+		devPublicKey: text('testdata/dev-signing.pub').trim()
 	};
 }
