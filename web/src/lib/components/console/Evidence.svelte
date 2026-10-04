@@ -358,8 +358,10 @@
 	.layer-name {
 		font: 600 14px/20px var(--cl-font);
 	}
+	/* The status keeps its width and its icon; a long layer name wraps instead. */
 	.status {
 		display: inline-flex;
+		flex: none;
 		align-items: center;
 		gap: 4px;
 		font: 600 12px/20px var(--cl-font);

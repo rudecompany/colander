@@ -28,6 +28,8 @@ test('staff move through the queue by keyboard, read the evidence and write a de
 	await expect(page.getByRole('heading', { level: 2, name: 'History Bites 24/7' })).toBeVisible();
 	await expect(page.getByText('6 slop tags from 9 installs, a share of 0.67. Consensus needs 0.7.')).toBeVisible();
 	await expect(page.getByText('Not met')).toBeVisible();
+	// The status keeps its 14 px icon when the layer name wraps beside it.
+	expect(await page.locator('.status').filter({ hasText: 'Not met' }).locator('svg').evaluate((s) => s.getBoundingClientRect().width)).toBe(14);
 	await expect(page.getByRole('link', { name: /7421983300112233445/ }).first()).toHaveAttribute('href', 'https://www.tiktok.com/@historybites247/video/7421983300112233445');
 
 	await page.locator('label.verdict-option').filter({ has: page.getByRole('radio', { name: 'Slop', exact: true }) }).click();
