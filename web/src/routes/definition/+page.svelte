@@ -15,14 +15,12 @@
 		TAG_WORD,
 		VerdictChip,
 		VERDICTS,
-		fmtShortDate,
 		type Verdict
 	} from '@colander/shared';
 	import Eye from '@lucide/svelte/icons/eye';
 	import EyeOff from '@lucide/svelte/icons/eye-off';
 	import Tag from '@lucide/svelte/icons/tag';
 	import Figure from '#lib/components/Figure.svelte';
-	import { COMPARISON_CHECKED, COMPARISON_SCOPE, COMPARISON_SOURCES } from '#lib/content.ts';
 
 	const toc = [
 		['definition', 'The definition'],
@@ -38,7 +36,6 @@
 		['rubric', 'The tagging rubric'],
 		['appeals', 'Appeals'],
 		['detectors', 'Why not an AI detector'],
-		['comparison', 'Comparison sources'],
 		['sources', 'Research']
 	] as const;
 
@@ -325,28 +322,6 @@
 			</p>
 		</section>
 
-		<section id="comparison" class="prose">
-			<h2>Comparison sources</h2>
-			<p>
-				The landing page compares Colander with what is common in AI blockers. Each claim in that column rests on the tools below, from
-				{COMPARISON_SCOPE}, checked {fmtShortDate(COMPARISON_CHECKED)}. The check is repeated for every release.
-			</p>
-			<dl class="claims">
-				{#each COMPARISON_SOURCES as c (c.check)}
-					<div class="claim">
-						<dt><span class="claim-check">{c.check}</span><span class="muted">{c.claim}</span></dt>
-						<dd>
-							<ul class="research">
-								{#each c.sources as src (src.name + src.note)}
-									<li><a href={src.href} rel="noreferrer">{src.name}</a><span class="muted">{src.note}</span></li>
-								{/each}
-							</ul>
-						</dd>
-					</div>
-				{/each}
-			</dl>
-		</section>
-
 		<section id="sources" class="prose">
 			<h2>Research</h2>
 			<ul class="research">
@@ -450,32 +425,6 @@
 		background: var(--cl-surface);
 		font: var(--cl-body);
 	}
-	.claims {
-		display: grid;
-		margin: 16px 0 0;
-	}
-	.claim {
-		display: grid;
-		grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);
-		gap: 8px 24px;
-		padding-block: 16px;
-		border-top: 1px solid var(--cl-border);
-	}
-	.claim:last-child {
-		border-bottom: 1px solid var(--cl-border);
-	}
-	.claim dt {
-		display: grid;
-		align-content: start;
-		gap: 2px;
-		font: var(--cl-body);
-	}
-	.claim-check {
-		font: var(--cl-body-strong);
-	}
-	.claim dd {
-		margin: 0;
-	}
 	.research {
 		display: grid;
 		gap: 12px;
@@ -490,8 +439,7 @@
 	}
 	@media (max-width: 639px) {
 		.fig-pair,
-		.layers,
-		.claim {
+		.layers {
 			grid-template-columns: 1fr;
 		}
 	}

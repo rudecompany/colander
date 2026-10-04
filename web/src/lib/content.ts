@@ -1,4 +1,4 @@
-// Website-only copy: the Kapwing figures, the comparison and its sources, and the FAQ. Copy shared
+// Website-only copy: the Kapwing figures, the comparison and the FAQ. Copy shared
 // with the extension lives in @colander/shared (copy.ts), prices included.
 import { PLAN_COPY } from '@colander/shared';
 
@@ -84,72 +84,6 @@ export const COMPARISON: { check: string; common: string; colander: string }[] =
 		check: 'Price of blocking',
 		common: 'Usually free, with paid extras',
 		colander: `Free, forever. Plus is ${PLAN_COPY.plus.short}, for extra control.`
-	}
-];
-
-/**
- * The source for each "Common in AI blockers" cell, listed on /definition#comparison. From the
- * survey of existing tools in docs/product-requirements.md; checked on COMPARISON_CHECKED.
- */
-export const COMPARISON_SOURCES: { check: string; claim: string; sources: { name: string; href: string; note: string }[] }[] = [
-	{
-		check: 'What gets hidden',
-		claim: 'All AI content, or anything about AI',
-		sources: [
-			{ name: 'AI Content Shield', href: 'https://addons.mozilla.org/en-US/firefox/addon/ai-content-shield/', note: 'Blocks AI content and AI features broadly.' },
-			{ name: 'AI Slop Blocker', href: 'https://vladeeno.com/ai-slop-blocker', note: "Hides AI-disclosed videos and Google's AI Overview." }
-		]
-	},
-	{
-		check: 'Platforms',
-		claim: 'One platform, for most',
-		sources: [
-			{ name: 'AiBlock and AiSList', href: 'https://aisloplist.com/', note: 'YouTube.' },
-			{ name: 'SlopBlock', href: 'https://slopblock.cc/', note: 'YouTube.' },
-			{ name: 'DeSlop', href: 'https://chromewebstore.google.com/detail/deslop-ai-slop-filter-for/ceeofbgdnlfkbmejalfggfkigjmkdkib', note: 'LinkedIn.' },
-			{ name: 'FeedShield', href: 'https://chromewebstore.google.com/detail/feedshield/ngpbogmnapokeceaaaegjgmaabgppifd', note: 'X.' }
-		]
-	},
-	{
-		check: 'Why an item is hidden',
-		claim: 'Rarely shown',
-		sources: [
-			{ name: 'AI Block for YouTube', href: 'https://addons.mozilla.org/en-US/firefox/addon/ai-block-for-youtube/', note: 'A plain-text channel blocklist.' },
-			{ name: 'DeSlop', href: 'https://chromewebstore.google.com/detail/deslop-ai-slop-filter-for/ceeofbgdnlfkbmejalfggfkigjmkdkib', note: 'The exception: every hide is explained.' }
-		]
-	},
-	{
-		check: 'Undo',
-		claim: 'Varies',
-		sources: [
-			{ name: 'DeSlop', href: 'https://chromewebstore.google.com/detail/deslop-ai-slop-filter-for/ceeofbgdnlfkbmejalfggfkigjmkdkib', note: 'Every hide is reversible.' },
-			{ name: 'AI Slop Blocker', href: 'https://vladeeno.com/ai-slop-blocker', note: 'A one-click personal blocklist.' }
-		]
-	},
-	{
-		check: 'Creator appeals',
-		claim: 'Rare',
-		sources: [
-			{ name: 'AiBlock and AiSList', href: 'https://aisloplist.com/', note: 'Reports arrive through an in-player flag, Discord or GitHub issues.' },
-			{ name: 'Kagi SlopStop', href: 'https://help.kagi.com/kagi/features/slopstop.html', note: 'Anyone can file a "not AI slop" report.' }
-		]
-	},
-	{
-		check: 'Public record of decisions',
-		claim: 'Issue trackers at most',
-		sources: [
-			{ name: 'AI Block for YouTube', href: 'https://addons.mozilla.org/en-US/firefox/addon/ai-block-for-youtube/', note: 'A report opens a GitHub issue for manual checking.' },
-			{ name: 'AiBlock and AiSList', href: 'https://aisloplist.com/', note: 'Reports can be filed as GitHub issues.' }
-		]
-	},
-	{
-		check: 'Price of blocking',
-		claim: 'Usually free, with paid extras',
-		sources: [
-			{ name: 'AiBlock and AiSList', href: 'https://aisloplist.com/', note: 'Free and MIT licensed.' },
-			{ name: 'AI Content Shield', href: 'https://www.aicontentshield.app/faq', note: 'Free, with a Pro subscription for extra features.' },
-			{ name: 'Kagi SlopStop', href: 'https://help.kagi.com/kagi/features/slopstop.html', note: 'Part of a paid search engine.' }
-		]
 	}
 ];
 

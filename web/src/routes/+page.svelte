@@ -500,7 +500,6 @@
 		</div>
 		<p class="compare-cap">
 			<span>Based on {COMPARISON_SCOPE}, checked {fmtShortDate(COMPARISON_CHECKED)}. A dash marks what is common in AI blockers, a check what Colander does.</span>
-			<ArrowLink href="/definition#comparison">Sources</ArrowLink>
 		</p>
 	</div>
 </section>

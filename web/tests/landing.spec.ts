@@ -291,17 +291,16 @@ test('popup rows, strictness cards, step rules and decision rows fit at every wi
 	}
 });
 
-test('the comparison keeps its table and checked date, and links every claim to its sources', async ({ page }) => {
+test('the comparison keeps its table and checked date, and names no competitor or source', async ({ page }) => {
 	await mockApi(page);
 	await page.goto('/');
 	const compare = page.locator('section', { has: page.getByRole('heading', { name: /Built to hide slop/ }) });
 	await expect(compare.getByRole('table')).toBeVisible();
 	await expect(compare.getByText(/^Based on AI content blockers on the Chrome Web Store and Firefox Add-ons, checked \d+ \w+ \d{4}\./)).toBeVisible();
-	await expect(compare.getByRole('link', { name: 'Sources' })).toHaveAttribute('href', '/definition#comparison');
-	await page.goto('/definition#comparison');
-	const sources = page.locator('#comparison');
-	await expect(sources.getByRole('heading', { name: 'Comparison sources' })).toBeVisible();
-	// One entry per row of the table, each with at least one linked, named source.
-	await expect(sources.locator('.claim')).toHaveCount(7);
-	for (const claim of await sources.locator('.claim').all()) expect(await claim.getByRole('link').count()).toBeGreaterThan(0);
+	// Competitors stay unnamed: no source link next to the table, and no source list on /definition.
+	await expect(compare.getByRole('link')).toHaveCount(0);
+	await page.goto('/definition');
+	await expect(page.locator('#comparison')).toHaveCount(0);
+	await expect(page.getByText('Comparison sources')).toHaveCount(0);
+	await expect(page.locator('a[href="#comparison"]')).toHaveCount(0);
 });
