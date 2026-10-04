@@ -127,6 +127,23 @@ describe('/__dev/settle', () => {
 		expect(body.head_seq).toBeGreaterThan(0);
 		expect(((await (await other.fetch('https://store/__dev/settle', { method: 'POST' })).json()) as typeof body)).toEqual({ changed: 0, head_seq: body.head_seq });
 	});
+
+	it.each(['seed', 'settle'])('%s answers while another publication still waits on R2, as one from the publish job', async (route) => {
+		const busy = env.STORE.getByName(`${route}-busy`);
+		// R2 answers that publication only after the request below has started; inside
+		// blockConcurrencyWhile it would never get the answer, and the Store would reset.
+		const publishing = runInDurableObject(busy, (store: Store) => {
+			const publisher = store.publisher as unknown as { bucket: R2Bucket };
+			const head = publisher.bucket.head.bind(publisher.bucket);
+			publisher.bucket = Object.assign(Object.create(publisher.bucket) as R2Bucket, {
+				head: async (key: string) => (await scheduler.wait(200), head(key))
+			});
+			return store.publisher.publish(store.now());
+		});
+		const res = await busy.fetch(`https://store/__dev/${route}`, { method: 'POST' });
+		expect(res.status).toBe(200);
+		await expect(publishing).resolves.toMatchObject({ seq: expect.any(Number) });
+	});
 });
 
 describe('COLANDER_TEST_NOW', () => {

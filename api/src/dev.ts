@@ -45,10 +45,14 @@ export function devRoutes(store: Store, ctx: DurableObjectState, env: Env): [str
 			'/__dev/seed',
 			dev(async () => {
 				if (sourceRefs(store.db).length > 0) return jsonError(409, 'already_seeded', 'The Store already has data; seed a fresh one.');
+				await store.publisher.idle();
 				return json(200, await ctx.blockConcurrencyWhile(() => seedDev(store)));
 			})
 		],
-		['POST', '/__dev/settle', dev(() => ctx.blockConcurrencyWhile(() => settle(store)).then((body) => json(200, body)))],
+		// Not inside blockConcurrencyWhile, which would hold back R2's answer to a publication the
+		// publish job started, so settle would wait for it until the block timed out and reset the
+		// Store; and a full pass of a large Store can outlast the block's 30 seconds.
+		['POST', '/__dev/settle', dev(async () => json(200, await settle(store)))],
 		[
 			'GET',
 			'/__dev/dump',

@@ -88,6 +88,17 @@ export class Publisher {
 		return run;
 	}
 
+	/**
+	 * Settles once no publication is in progress. Call it before blockConcurrencyWhile around
+	 * publications: one already waiting on R2 would never get its answer inside the block.
+	 */
+	async idle(): Promise<void> {
+		for (let run = this.running; ; run = this.running) {
+			await run;
+			if (run === this.running) return;
+		}
+	}
+
 	private async publishOnce(nowMs: number): Promise<Sequence> {
 		const now = Math.floor(nowMs / 1000);
 		const r2Seq = r2Sequence(await this.bucket.head(SNAPSHOT_KEY));
