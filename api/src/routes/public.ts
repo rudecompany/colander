@@ -58,6 +58,7 @@ export function toSource(ev: Evaluation): WireSource {
 		slop_type: optString<SlopType>(SlopTypes[st.detail & 3]!),
 		tests: testNames(st.detail),
 		large: ev.input.large,
+		audience_known: ev.input.audienceKnown,
 		imported: false,
 		attribution: null,
 		appeal_open: ev.data.appealOpen,

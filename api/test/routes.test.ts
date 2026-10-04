@@ -546,6 +546,8 @@ describe('public pages', () => {
 				name: 'The Farm',
 				verdict: 'ai_made',
 				large: false,
+				// The stored subscriber count feeds nothing without derived use, so the size is unknown.
+				audience_known: false,
 				imported: false,
 				attribution: null,
 				appeal_open: false,
@@ -554,6 +556,13 @@ describe('public pages', () => {
 			});
 			expect(byHandle.source.updated_at).toBe('2026-10-01T12:00:00Z');
 			expect(byHandle.history[0]).toMatchObject({ actor: 'community', to: 'ai_made', source_id: 'UCzzzzzzzzzzzzzzzzzzzz45' });
+			// Once staff record the size, it is known, large or not.
+			const staff = h.reviewer('rae@colander.test', 'staff', 'Rae');
+			for (const large of [false, true]) {
+				await expectStatus(h.do('POST', '/v1/review/sources/yt/@farm/decision', { verdict: 'ai_made', reason: 'Size checked.', large }, staff), 200);
+				const { source } = (await (await expectStatus(h.do('GET', '/v1/sources/yt/@farm'), 200)).json()) as { source: Source };
+				expect(source, `large ${large}`).toMatchObject({ large, audience_known: true });
+			}
 			for (const path of ['/v1/sources/yt/@nobody', '/v1/sources/yt/not%20a%20handle', '/v1/sources/xx/@farm']) {
 				expect(await code(await expectStatus(h.do('GET', path), 404)), path).toBe('not_rated');
 			}

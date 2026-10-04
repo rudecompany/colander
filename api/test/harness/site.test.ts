@@ -61,7 +61,8 @@ describe('pages', () => {
 	// Only the client-rendered routes get the shell: an unknown platform or a wrong segment count is a
 	// real 404, not a soft one. Static Assets first answers an unmatched path holding "@" with a 307 to
 	// its percent-encoded form, which is then the 404.
-	it.each(['/no-such-page', '/s/xx/@x', '/s/xx/x', '/s/yt', '/s/yt/@x/extra', '/appeal/yt/@x/extra', '/appeal/status', '/appeal/xx/@x'])('answers %s with the 404 page and status 404', async (path) => {
+	// The shells themselves are files, not pages: /200 and /404 are not found either.
+	it.each(['/no-such-page', '/s/xx/@x', '/s/xx/x', '/s/yt', '/s/yt/@x/extra', '/appeal/yt/@x/extra', '/appeal/status', '/appeal/xx/@x', '/200', '/404'])('answers %s with the 404 page and status 404', async (path) => {
 		const res = await server.fetch(path);
 		expect(res.status).toBe(404);
 		expect(await res.text()).toBe(page('404.html'));

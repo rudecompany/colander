@@ -196,6 +196,7 @@ Cache headers set by the Store:
 11. **Website.**
     Prerendered pages are free asset requests.
     `/s/{platform}/{id}`, `/appeal/{platform}/{id}` and `/appeal/status/{id}` are rewritten to the 200.html shell, and every other unknown path gets 404.html with status 404.
+    The shell's own paths `/200` and `/404` run the Worker first (`run_worker_first`), which answers them with the 404 page too, so they are not soft 404s.
     The SPA calls same-origin /v1 routes, which are cached for 60 s where that is safe.
 12. **Publication.**
     The publish job runs one `transactionSync`.

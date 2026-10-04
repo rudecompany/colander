@@ -37,18 +37,19 @@ function expectSecurityHeaders(res: Response, what: string): void {
 }
 
 test('source and appeal pages are the app shell with 200, and unknown paths are a real 404', async () => {
-	const shell = await get('/200');
+	const shell = await get('/s/yt/@aihistorydaily');
 	expect(shell.res.status).toBe(200);
 	expect(shell.res.headers.get('content-type')).toMatch(/^text\/html/);
 	expect(shell.body.toString()).toMatch(/<html/i);
-	for (const path of ['/s/yt/@aihistorydaily', '/s/tt/@petpalsai', '/appeal/yt/@aihistorydaily', '/appeal/status/apl_e2e?secret=x']) {
+	for (const path of ['/s/tt/@petpalsai', '/appeal/yt/@aihistorydaily', '/appeal/status/apl_e2e?secret=x']) {
 		const page = await get(path);
 		expect(page.res.status, path).toBe(200);
 		expect(page.res.headers.get('content-type'), path).toMatch(/^text\/html/);
 		expect(page.body.equals(shell.body), `${path} is the app shell`).toBe(true);
 	}
-	// Only the client-rendered routes get the shell: an unknown platform or a wrong segment count is a 404.
-	for (const path of [`/no-such-page-${nonce}`, `/s-${nonce}`, `/appealing/${nonce}`, `/s/xx/${nonce}`, '/s/yt', `/appeal/yt/${nonce}/extra`]) {
+	// Only the client-rendered routes get the shell: an unknown platform, a wrong segment count or the
+	// shell's own paths are a 404.
+	for (const path of [`/no-such-page-${nonce}`, `/s-${nonce}`, `/appealing/${nonce}`, `/s/xx/${nonce}`, '/s/yt', `/appeal/yt/${nonce}/extra`, '/200', '/404']) {
 		const page = await get(path);
 		expect(page.res.status, path).toBe(404);
 		expect(page.res.headers.get('content-type'), path).toMatch(/^text\/html/);
