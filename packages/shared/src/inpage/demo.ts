@@ -252,13 +252,13 @@ function rail(ctx: InpageContext): HTMLElement {
 /**
  * Host-page look for the recreated feeds: the system font, each platform's own page and card
  * colors (illustration only, not theme tokens), and no Colander chrome. `--demo-end` reserves the
- * right edge where the website docks the popup, so the page runs on under it. A host with the
- * `crop` class has a fixed height: the page fades out over its last 48 px instead of being cut
- * through a row, under any open popover.
+ * right edge where the website docks the popup, so the page runs on under it; `--demo-start`
+ * centers the feed when the popup is not docked. A host with the `crop` class has a fixed height:
+ * the page fades out over its last 48 px instead of being cut through a row, under any open popover.
  */
 export const DEMO_CSS =
 	THUMB_CSS +
-	`.feed{--hb:#ffffff;--hm:#606060;--hs:#ffffff;--hl:#e4e6eb;--hf:#f1f1f2;display:grid;gap:16px;box-sizing:border-box;min-height:100%;padding:16px var(--demo-end,16px) 16px 16px;background:var(--hb);color:var(--cl-text);font:400 14px/20px var(--cl-font-system)}
+	`.feed{--hb:#ffffff;--hm:#606060;--hs:#ffffff;--hl:#e4e6eb;--hf:#f1f1f2;display:grid;gap:16px;box-sizing:border-box;min-height:100%;padding:16px var(--demo-end,16px) 16px var(--demo-start,16px);background:var(--hb);color:var(--cl-text);font:400 14px/20px var(--cl-font-system)}
 .feed-post{--hb:#f0f2f5;--hm:#65676b}
 :host([theme='dark']) .feed{--hb:#0f0f0f;--hm:#aaaaaa;--hs:#242526;--hl:#3e4042;--hf:#2f2f2f}
 :host([theme='dark']) .feed-post{--hb:#18191a;--hm:#b0b3b8}
@@ -280,7 +280,7 @@ export const DEMO_CSS =
 .feed-grid .card>.cl-pop{position:absolute;top:36px;left:8px;z-index:2}
 .feed-grid .card:nth-child(3n)>.cl-pop{left:auto;right:8px}
 .feed-grid .stubbed .thumb>.cl-pop{position:absolute;top:calc(100% + 8px);left:0;z-index:2}
-.feed-grid .stubbed:nth-child(3n) .thumb>.cl-pop{left:auto;right:-48px}
+.feed-grid .stubbed:nth-child(3n) .thumb>.cl-pop{left:auto;right:var(--demo-pop-out,0px)}
 .feed-list .card{display:grid;grid-template-columns:160px minmax(0,1fr);gap:12px;align-items:start}
 .feed-list .title{margin:0}
 .feed-list .text{min-width:0;padding-right:4px}

@@ -7,8 +7,9 @@ one TikTok For You video, an Instagram feed or a Facebook feed. `level`, `platfo
 are bindable, so a StrictnessControl or tabs outside drive it, and the docked popup drives them
 back. Paused is the feed without Colander: the before and after, with no slider. The evidence
 card of item 6 is open on first render, drawn in its final state: motion is only for changes the
-visitor makes. Below 900 px of width the docked popup hides; the page shows PopupView under the
-frame instead. With a fixed `height`, the page fades out over its last 48 px.
+visitor makes. The popup docks while the frame is at least 1200 wide, so it never covers the feed
+or an open popover; narrower, it hides and the page shows PopupView under the frame instead. With
+a fixed `height`, the page fades out over its last 48 px.
 
 Keyboard: Why moves focus into the popover, Tab stays inside it, and Escape or any of its actions
 closes it and returns focus to Why (or to the card when Why went away).
@@ -198,20 +199,30 @@ it from demoCounts().
 	.host :global(colander-ui) {
 		height: 100%;
 	}
-	/* The host page runs under the docked popup; its feed keeps to the left 780 px. */
+	/* The host page runs under the docked popup; its feed keeps to the left 780 px, and a popover at
+	   the grid's right edge may reach 48 px into the gap before the popup. */
 	.beside {
 		--demo-end: max(16px, calc(100% - 764px));
+		--demo-pop-out: -48px;
 	}
 	.mini {
 		overflow: hidden;
 		border-radius: var(--cl-r-chip);
 	}
-	@container (max-width: 899px) {
+	@container (max-width: 1199px) {
 		.full :global(.docked) {
 			display: none;
 		}
+		/* Undocked, the same 780 px feed sits in the middle, so its rows and popover keep their size. */
 		.beside {
-			--demo-end: 16px;
+			--demo-start: max(16px, calc((100% - 748px) / 2));
+			--demo-end: max(16px, calc((100% - 748px) / 2));
+		}
+	}
+	/* Too narrow for the popover to reach past the grid's edge. */
+	@container (max-width: 859px) {
+		.beside {
+			--demo-pop-out: 0px;
 		}
 	}
 </style>

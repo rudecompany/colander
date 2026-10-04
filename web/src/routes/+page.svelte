@@ -638,6 +638,7 @@ import Lock from '@lucide/svelte/icons/lock';
 		grid-template-columns: minmax(0, 1fr);
 		justify-items: center;
 		margin-top: 32px;
+		container: demo / inline-size;
 	}
 	.tabs {
 		display: flex;
@@ -688,9 +689,9 @@ import Lock from '@lucide/svelte/icons/lock';
 		border-radius: var(--cl-r-card);
 		box-shadow: var(--cl-shadow-pop);
 	}
-	/* The docked popup shows while the frame is at least 900 wide (a 948 window); below that the
-	   page shows the popup under the frame, and its control drives the feed. */
-	@media (max-width: 947px) {
+	/* The popup docks in the frame while the frame is at least 1200 wide; narrower, the page shows the
+	   popup under the frame, and its control drives the feed. */
+	@container demo (max-width: 1199px) {
 		.control {
 			display: none;
 		}
