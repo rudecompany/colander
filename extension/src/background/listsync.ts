@@ -31,6 +31,27 @@ export async function setStatus(patch: Partial<Status>): Promise<Status> {
 	return next;
 }
 
+/** A failure whose message is already the plain words Options shows after "The last update failed:". */
+class SyncFailure extends Error {}
+const SERVER_TROUBLE = 'the list server had a problem';
+
+async function verified(bytes: Uint8Array, keys: TrustedKey[]): Promise<ListFile> {
+	try {
+		return await verifyList(bytes, keys);
+	} catch (e) {
+		console.warn('Colander: list failed verification', e);
+		throw new SyncFailure('the downloaded list did not pass its signature check');
+	}
+}
+
+/** Plain words for Options; the technical detail goes to the console. */
+export function syncErrorText(e: unknown): string {
+	if (e instanceof SyncFailure) return e.message;
+	// fetch rejects with a TypeError ("Failed to fetch") when the server cannot be reached.
+	if (e instanceof TypeError) return 'the list server could not be reached';
+	return 'the list could not be saved on this device';
+}
+
 async function save(state: ListState) {
 	await db.put('kv', state, 'list');
 	const index: StoredIndex = { sequence: state.sequence, count: state.entries.length / ENTRY, entries: b64encode(state.entries), syncedAt: state.syncedAt };
@@ -56,28 +77,29 @@ export async function syncList(keys: TrustedKey[]): Promise<boolean> {
 				return false;
 			}
 			if (d.status === 200) {
-				const delta = await verifyList(d.bytes, keys);
+				const delta = await verified(d.bytes, keys);
 				if (delta.kind === 'delta' && delta.base === cur.sequence) {
 					next = { sequence: delta.sequence, created: delta.created, entries: applyDelta(cur.entries, delta), syncedAt: now };
 				}
 				// A delta built on another base is ignored; the snapshot below settles it.
 			} else if (d.status !== 410) {
-				throw new Error(`delta: HTTP ${d.status}`);
+				throw new SyncFailure(SERVER_TROUBLE);
 			}
 		}
 		if (!next) {
 			const s = await fetchBytes('/v1/list/snapshot');
-			if (s.status !== 200) throw new Error(`snapshot: HTTP ${s.status}`);
-			const snap: ListFile = await verifyList(s.bytes, keys);
-			if (snap.kind !== 'snapshot') throw new Error('snapshot: not a snapshot');
-			if (cur && snap.sequence < cur.sequence) throw new Error('snapshot: older than the local list');
+			if (s.status !== 200) throw new SyncFailure(SERVER_TROUBLE);
+			const snap = await verified(s.bytes, keys);
+			if (snap.kind !== 'snapshot') throw new SyncFailure(SERVER_TROUBLE);
+			if (cur && snap.sequence < cur.sequence) throw new SyncFailure('the list server offered an older list than this device has');
 			next = { sequence: snap.sequence, created: snap.created, entries: snap.entries.slice(), syncedAt: now };
 		}
 		await save(next);
 		await setStatus({ lastSyncAt: now, lastError: null, listSequence: next.sequence, listCount: next.entries.length / ENTRY, listCreated: next.created });
 		return !cur || cur.sequence !== next.sequence;
 	} catch (e) {
-		await setStatus({ lastError: e instanceof Error ? e.message : String(e) });
+		if (!(e instanceof SyncFailure)) console.warn('Colander: list sync failed', e);
+		await setStatus({ lastError: syncErrorText(e) });
 		return false;
 	}
 }
