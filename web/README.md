@@ -8,8 +8,8 @@ The Go server serves that folder and the API from the same origin, so every page
 
 | Route | What it is | Rendering |
 | --- | --- | --- |
-| `/` | Landing page with a live demo of the strictness table | Prerendered, live log and stats fetched in the browser |
-| `/definition` | The published definition, rubric, verdicts, strictness and safeguards | Prerendered |
+| `/` | Landing page: the hero demo, live strip, Kapwing figures, verdicts, strictness, fair by design, open by default, privacy, comparison, plans and questions | Prerendered, live numbers refreshed in the browser |
+| `/definition` | How Colander decides: the definition, tests, layers, verdicts, safeguards, strictness, signing, consensus, appeals and comparison sources | Prerendered |
 | `/s/{platform}/{id}` | Public source page, with a Not rated state | SPA fallback |
 | `/appeal/{platform}/{id}` | Start an appeal | SPA fallback |
 | `/appeal/status/{id}?secret=` | Appeal code, instructions, Verify and status | SPA fallback |
@@ -33,6 +33,7 @@ Support and donation links never appear on `/s/*` or `/appeal/*` pages, includin
 - Serve `build/` with this lookup order: the file itself, then `{path}.html`, then `{path}/index.html`, then `200.html`.
   `tests/static-server.ts` implements exactly this and is what the tests run against.
 - `200.html` is the SPA fallback for source and appeal pages and for unknown paths (the client renders the 404 page).
+- `404.html` is the same shell, written by `pnpm build`, for a host that answers unknown paths with status 404.
 - Each page carries its Content Security Policy as a `<meta http-equiv>` tag with script hashes.
   The server may also send `frame-ancestors 'none'` as a header, which a meta tag cannot carry.
 
@@ -45,6 +46,7 @@ Variables are declared in `src/env.ts` and inlined at build time.
 | `PUBLIC_EXTENSION_ID` | empty | Chrome extension ID that receives `colander:plan-token` and `colander:reviewer-token` messages. When empty, the account page reports the extension as not installed. |
 | `PUBLIC_STORE_URL` | `https://chromewebstore.google.com/search/Colander` | Where every Add to Chrome button points. |
 | `COLANDER_API` | `http://localhost:8787` | Dev only: where `vite dev` proxies `/v1`. |
+| `COLANDER_BUILD_API` | empty | Build only: an API origin, such as `http://127.0.0.1:8787`, to read `/v1/stats` and the latest decisions from at build. Pages prerender with those numbers and their time, then refresh them in place. Without it, live numbers appear once the page loads. |
 
 ## Develop
 
@@ -59,9 +61,11 @@ Set `COLANDER_PUBLIC_URL=http://localhost:5173` on the server so those links ope
 ## Build and check
 
 ```sh
-pnpm -C web check            # svelte-kit sync and svelte-check
-pnpm -C web build            # writes web/build
+pnpm -C web check            # svelte-kit sync, svelte-check, and the token and date-format lint
+pnpm -C web build            # checks the generated in-page tokens, then writes web/build
 ```
+
+`scripts/lint-tokens.ts` fails on a hex color, `Intl.DateTimeFormat` or a locale date string anywhere in `src/`: colors are tokens and dates are formats from `@colander/shared`.
 
 ## Tests
 
@@ -75,7 +79,7 @@ A shared fixture fails any test that logs a page error or a CSP violation.
 
 | Spec | Covers |
 | --- | --- |
-| `landing.spec.ts` | Hero, the demo following the strictness table, the live log preview |
+| `landing.spec.ts` | Hero, the demo following the strictness table and Pause, the phone hero, the menu sheet, the live log preview |
 | `source.spec.ts` | Source pages for all five verdicts, Not rated, unknown platforms, no support links |
 | `appeal.spec.ts` | Start an appeal, copy the code, Verify, every status, missing secret |
 | `log.spec.ts` | Platform and verdict filters, address sync, load more with the cursor |
@@ -84,15 +88,23 @@ A shared fixture fails any test that logs a page error or a CSP violation.
 | `support.spec.ts` | Donation body and redirect, custom amounts and limits, `503 billing_unavailable`, closed payment |
 | `console.spec.ts` | Keyboard queue, evidence, decision body and CSRF header, curator limits (large sources, appeals in review) and `403 staff_required`, AI evidence before Slop and `400 ai_evidence_required` |
 | `a11y.spec.ts` | axe WCAG 2.2 A and AA rules on every page, light and dark |
-| `brand.spec.ts` | The vocabulary table's "Not" words and exclamation marks never appear on any page |
+| `brand.spec.ts` | The vocabulary table's "Not" words and exclamation marks never appear, nothing is below 12 px, controls are at least 32 px, nothing spills out of a card |
+| `reflow.spec.ts` | No page scrolls sideways or spills out of a card at 390 and 320 px |
 
-The committed screenshots in `screenshots/` are reduced to 256 colors to keep the repository small.
+The committed screenshots in `screenshots/` are 1440 and 390 px wide, light and dark, reduced to 256 colors to keep the repository small.
 `pnpm -C web screenshots` writes full-color ones.
 
 ## Structure
 
-- `src/app.css` is the web layer over the shared theme (`@colander/shared/styles/tokens.css` and `colander.css`): layout, the type ramp plus a hero size, controls sized for the web, and stacked tables on phones.
-- `src/lib/api.ts` is the fetch wrapper. Every non-GET request sends `X-Colander-CSRF: 1`.
+- Every color, type step, space, radius, component and string comes from `@colander/shared` (tokens.css, colander.css, the Mittsu set, the Colander components, copy.ts, verdicts.ts and format.ts).
+  No page defines its own button, card, chip, badge, stat, date format, price or verdict copy.
+- `src/app.css` only resets the page and styles the long-form pieces: prose, the table of contents, hairline tables, key-value lists and form fields.
+- `src/hooks.server.ts` registers a linkedom document so the shared in-page builders prerender as Declarative Shadow DOM (`src/lib/server/inpage.ts`), and preloads the latin Atkinson font file.
+- `src/lib/live.svelte.ts` holds the live numbers: the build values from `COLANDER_BUILD_API`, refreshed once per page load.
+  A failed refresh keeps the build values.
+- `src/lib/content.ts` holds website-only copy: the Kapwing figures, the comparison and its sources, and the questions.
+- `src/lib/components/` holds the site chrome (header with the phone menu sheet, footer with the install call to action), the landing section head, the four figures, the arrow link, the appeal frame, the sign-in card and the console's evidence view and decision form.
+- `src/lib/api.ts` is the fetch wrapper.
+  Every non-GET request sends `X-Colander-CSRF: 1`.
 - `src/lib/extension.ts` detects the extension with `colander:ping` and sends tokens with `chrome.runtime.sendMessage`.
-- `src/lib/components/` holds the site pieces; `console/` holds the evidence view and the decision form.
-- Icons come from `@lucide/svelte` deep imports at 14 to 16 px, stroke 1.75, always beside a word.
+- Icons come from `@lucide/svelte` deep imports at 16 px and stroke 2, always beside a word.

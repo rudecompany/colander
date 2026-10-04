@@ -1109,9 +1109,11 @@
 	.toast-demo {
 		width: calc(100% - 16px);
 	}
+	/* Only tile 03's popover floats; the notice sits flat in its picture. */
 	.toast-demo :global(.cl-toast) {
 		max-width: 100%;
 		margin-inline: auto;
+		box-shadow: none;
 	}
 	.banner-demo {
 		display: grid;

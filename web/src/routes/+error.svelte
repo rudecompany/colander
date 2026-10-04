@@ -53,12 +53,6 @@
 		gap: 12px;
 		margin-top: 8px;
 	}
-	/* A paper disc keeps the holes clear of the mark's rim. */
-	.lost :global(.disc .mark) {
-		padding: 12px;
-		border-radius: 50%;
-		background: var(--cl-paper);
-	}
 	@media (max-width: 1023px) {
 		.lost {
 			grid-template-columns: 1fr;

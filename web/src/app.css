@@ -400,3 +400,13 @@ table.plain tr:last-child > * {
 .perms .k {
 	margin-right: 0.3em;
 }
+
+/* The shared perforated disc: a plain disc behind the mark keeps the holes clear of its rim. */
+.disc .mark {
+	padding: 10%;
+	border-radius: 50%;
+	background: var(--disc-bg, var(--cl-paper));
+}
+.uin-card {
+	--disc-bg: var(--cl-surface);
+}

@@ -16,7 +16,7 @@
 	import { api, errorText } from '#lib/api.ts';
 	import { fmtDateTime, fmtNum, fmtPct, platformItemUrl, platformSourceUrl, sourcePath } from '@colander/shared';
 	import { LAYER_KEYS, LAYER_QUESTION, LAYER_WORD } from '@colander/shared';
-	import { LogRow } from '@colander/shared';
+	import { LogRow, middleTruncate } from '@colander/shared';
 	import Notice from '../Notice.svelte';
 	import { VerdictChip } from '@colander/shared';
 
@@ -212,22 +212,21 @@
 		{#if data.items.length === 0}
 			<p class="cl-body cl-muted">No items recorded.</p>
 		{:else}
-			<div class="table-scroll">
-				<table class="plain items stack-sm">
-					<thead><tr><th scope="col">Item</th><th scope="col">Verdict</th><th scope="col">Slop / fine / not slop</th><th scope="col">AI label seen</th><th scope="col"><span class="sr-only">Action</span></th></tr></thead>
-					<tbody>
-						{#each data.items as it (it.id)}
-							<tr>
-								<th scope="row"><a class="cl-figure icon-line id" href={platformItemUrl(it.platform, it.id, s.id)} rel="noreferrer" target="_blank">{it.id} <ExternalLink size={16} aria-hidden="true" /></a></th>
-								<td data-label="Verdict"><VerdictChip verdict={it.verdict} /></td>
-								<td class="cl-num" data-label="Slop / fine / not slop">{it.tags.slop} / {it.tags.ai_fine} / {it.tags.not_slop}</td>
-								<td class="cl-num" data-label="AI label seen">{it.platform_label_reports} {it.platform_label_reports === 1 ? 'report' : 'reports'}</td>
-								<td><button type="button" class="uin-btn uin-btn-ghost uin-btn-lg" onclick={() => onDecideItem(it)}>Decide item</button></td>
-							</tr>
-						{/each}
-					</tbody>
-				</table>
-			</div>
+			<ul class="items">
+				{#each data.items as it (it.id)}
+					<li>
+						<a class="cl-figure icon-line" href={platformItemUrl(it.platform, it.id, s.id)} rel="noreferrer" target="_blank" aria-label="Item {it.id}">
+							{middleTruncate(it.id, 18)}<ExternalLink size={16} aria-hidden="true" />
+						</a>
+						<VerdictChip verdict={it.verdict} size="sm" />
+						<span class="item-meta">
+							Tags {it.tags.slop} slop, {it.tags.ai_fine} fine, {it.tags.not_slop} not slop.
+							AI label seen by {it.platform_label_reports} {it.platform_label_reports === 1 ? 'install' : 'installs'}.
+						</span>
+						<button type="button" class="uin-btn uin-btn-ghost uin-btn-md" onclick={() => onDecideItem(it)}>Decide item</button>
+					</li>
+				{/each}
+			</ul>
 		{/if}
 	</section>
 
@@ -244,6 +243,31 @@
 </article>
 
 <style>
+	.items {
+		display: grid;
+		list-style: none;
+		border-top: 1px solid var(--cl-border);
+	}
+	.items li {
+		display: grid;
+		grid-template-columns: minmax(0, 1fr) auto;
+		align-items: center;
+		gap: 4px 8px;
+		padding: 10px 0;
+		border-bottom: 1px solid var(--cl-border);
+	}
+	.items a {
+		min-width: 0;
+		overflow: hidden;
+		white-space: nowrap;
+	}
+	.item-meta {
+		color: var(--cl-text-muted);
+		font: var(--cl-caption);
+	}
+	.items button {
+		justify-self: end;
+	}
 	.id {
 		overflow-wrap: anywhere;
 	}
@@ -424,16 +448,6 @@
 		accent-color: var(--cl-brand);
 		width: 16px;
 		height: 16px;
-	}
-	.items th[scope='row'] {
-		color: var(--cl-text);
-		font-weight: 400;
-	}
-	.items td,
-	.items th {
-		vertical-align: middle;
-		padding-top: 8px;
-		padding-bottom: 8px;
 	}
 	.history {
 		list-style: none;
