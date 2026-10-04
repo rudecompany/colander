@@ -10,7 +10,7 @@ This spec defines a Chrome extension that hides AI slop on YouTube, Facebook, In
 | --- | --- |
 | Definition | Slop is AI-made content that also meets two of three tests: low effort, mass-produced, hollow. AI use alone never counts. |
 | Detection | Four evidence layers: provenance labels, source behavior, a content rubric and community consensus. No AI detector acts as judge, and two layers must agree before anything is hidden. |
-| Unit | Verdicts attach to sources first: channels, profiles and pages. There are five verdicts and four strictness levels. |
+| Unit | Verdicts attach to sources first: channels, profiles and pages. There are five verdicts and three strictness levels. |
 | Fairness | Every action is explained and reversible. Creators can appeal and are unhidden while the appeal is reviewed. |
 | Scope | Version 1.0 covers YouTube, TikTok, Instagram and Facebook in desktop Chrome. Articles and search results follow in 1.1. Native mobile apps are out of reach. |
 | Money | Blocking is free. Plus costs $3 a month or $30 a year, Family $6 or $60, and donations are open to all. Paying never changes a verdict. |
@@ -123,14 +123,15 @@ Detector models are therefore optional, run on the device, and can only add weig
 | Verdict | Evidence required | Default action |
 | --- | --- | --- |
 | Slop | AI evidence, plus a mass-produced source, plus community consensus or staff review | Hide |
-| Likely slop | AI evidence, plus behavior or rubric signals, with consensus still forming | Collapse, with the reason shown |
+| Likely slop | AI evidence, plus behavior or rubric signals, with consensus still forming | Hide |
 | AI-made | AI evidence only | Label |
 | Disputed | Tags and counter-tags split, or an appeal is open | Show, with a disputed mark |
 | Clear | "Not slop" consensus or a successful appeal | Allow |
 
 ![Verdict flow: three checks, four outcomes, two overrides](img/verdict-flow.svg)
 
-The actions shown are those of the Standard level. Strict also hides Likely slop, and No AI hides everything that carries AI evidence.
+The actions shown are those of the Standard level.
+Label labels everything that carries AI evidence, and No AI also hides AI-made items.
 
 ### Safeguards against wrong calls
 
@@ -212,22 +213,28 @@ Researchers and journalists are a secondary audience. They need the public list 
 
 ### Strictness levels
 
-| Level | Slop | Likely slop | AI-made |
-| --- | --- | --- | --- |
-| Label | Label | Label | Label |
-| Standard (default) | Hide | Collapse | Label |
-| Strict | Hide | Hide | Collapse |
-| No AI | Hide | Hide | Hide |
+| Level | Slop | Likely slop | AI-made | Disputed | Clear |
+| --- | --- | --- | --- | --- | --- |
+| Label | Label | Label | Label | Label | Allow |
+| Standard (default) | Hide | Hide | Label | Label | Allow |
+| No AI | Hide | Hide | Hide | Label | Allow |
+
+Owner decision, 3 October 2026: there are three levels only, and the collapse treatment is gone.
+Strict and collapse are gone from every surface, with no grid stubs, collapsed bars or swipe-feed covers.
+Settings stored or synced with Strict, globally, per platform or per topic, read as Standard.
+Disputed always stays visible with its mark, and Clear is never touched.
 
 ### What each action looks like
 
 | Action | In a grid or list | In a swipe feed such as Shorts, Reels or the For You page |
 | --- | --- | --- |
 | Label | A small chip on the thumbnail with the verdict | The same chip beside the creator name |
-| Collapse | The card shrinks to one line: verdict, reason, Show | The video is covered and paused until the viewer chooses Show or Skip |
-| Hide | The card is removed and the grid closes up. The toolbar count goes up. | The video is skipped. A brief notice offers Undo. |
+| Hide | The card is not shown, and the page closes up with no gap, blank box or placeholder, the way an ad blocker removes an ad. Grids reflow so their rows stay full, also before a shelf. The toolbar count goes up. | The video is skipped silently. An Appearance setting, off by default, adds a brief notice with Undo and Why. |
 
-![Mock-up: label, collapse, hide and tag in a results list](img/feed-mockup.svg)
+Removal is seamless, but nothing is lost.
+Every hidden item is counted on the toolbar badge and listed in the popup with Show, Always allow, Not slop and Why, so every call can be checked and fixed.
+
+![Mock-up: label, hide and tag in a results list](img/feed-mockup.svg)
 
 This is a sketch of a results list, not final art. Chips are outlined here and carry the verdict colors in the product.
 
@@ -236,15 +243,15 @@ This is a sketch of a results list, not final art. Chips are outlined here and c
 **First run**
 
 1. Maya installs from the Chrome Web Store. A welcome tab opens.
-2. She sees the definition of slop in two sentences and the four strictness levels. Standard is preselected.
+2. She sees the definition of slop in two sentences and the three strictness levels. Standard is preselected.
 3. She picks which platforms to switch on. Chrome asks for site access only for those.
 4. She opens YouTube. The toolbar icon shows a count as items are hidden.
 
 **Passive blocking**
 
 1. The page loads and the extension checks each card against the lists on the device.
-2. Matched items are labeled, collapsed or hidden before they are seen where possible.
-3. Clicking the toolbar icon lists what was acted on, with Show and Always allow beside each item.
+2. Matched items are labeled or hidden before they are seen where possible. Hidden items leave no gap.
+3. Clicking the toolbar icon lists what was acted on, with Show, Always allow, Not slop and Why for each item.
 
 **Tagging an item**
 
@@ -262,7 +269,7 @@ This is a sketch of a results list, not final art. Chips are outlined here and c
 
 **Fixing a wrong call**
 
-1. A collapsed or labeled item shows a Why link listing the signals that fired.
+1. A labeled item shows a Why link listing the signals that fired. A hidden item has the same Why in the popup.
 2. Show reveals it once. Always allow adds the source to the viewer's own allowlist.
 3. Not slop files a counter-tag, which can move the verdict to Disputed.
 
@@ -275,7 +282,7 @@ This is a sketch of a results list, not final art. Chips are outlined here and c
 
 **Guardian setup, with the Family plan from 1.1**
 
-1. Daniel creates a child profile, sets it to Strict, and adds No AI for children's categories.
+1. Daniel creates a child profile, sets it to Standard, and adds No AI for children's categories.
 2. He locks settings with a PIN.
 3. For his mother, he picks Label so nothing vanishes, with larger plain-language chips.
 
@@ -284,7 +291,7 @@ This is a sketch of a results list, not final art. Chips are outlined here and c
 | Surface | Purpose |
 | --- | --- |
 | Toolbar popup | Pause on this site, strictness, today's counts, recent actions |
-| In-page elements | Chips, collapsed bars, Tag button, Why popover |
+| In-page elements | Chips, Tag button, Why popover, notices |
 | Side panel | Review queue and evidence view for curators |
 | Options page | Lists, platforms, profiles, appearance, plan, data export |
 | Website | Public source pages, appeals, decision log, plans, donations |
@@ -329,7 +336,7 @@ These targets are hypotheses to test in beta, not benchmarks from comparable pro
 
 **Guardian**
 
-- As a parent, I want a locked strict profile for my children, so that the setting survives curious hands.
+- As a parent, I want a locked profile at the strictest level for my children, so that the setting survives curious hands.
 - As a caregiver, I want labels in plain words for an older relative, so that nothing vanishes without explanation.
 
 **Creator**
@@ -355,9 +362,9 @@ These targets are hypotheses to test in beta, not benchmarks from comparable pro
 
 | ID | Requirement | Acceptance criteria |
 | --- | --- | --- |
-| P0-1 | Block from lists. Items from listed sources are labeled, collapsed or hidden according to the strictness level. | Given Standard, when a card from a Slop source renders, then it is hidden within 150 ms at the 95th percentile with no layout jump. Works through infinite scroll and in-page navigation. |
+| P0-1 | Block from lists. Items from listed sources are labeled or hidden according to the strictness level. A hidden item leaves no gap, and grids reflow so their rows stay full. | Given Standard, when a card from a Slop source renders, then it is hidden within 150 ms at the 95th percentile with no layout jump. Works through infinite scroll and in-page navigation. |
 | P0-2 | Four platform adapters. YouTube: home, search, watch sidebar, Shorts, subscriptions, channel pages. TikTok: For You, search, profiles. Instagram: feed, Reels, Explore. Facebook: feed, Reels, suggested posts. | Each surface passes an automated test daily. A broken selector is fixed through a signed configuration update within 24 hours, with no code change. |
-| P0-3 | Strictness levels and pause. Four levels, plus pause for this site or this tab. | Changing the level re-applies to the open page within 1 second without a reload. |
+| P0-3 | Strictness levels and pause. Three levels, plus pause for this site or this tab. | Changing the level re-applies to the open page within 1 second without a reload. |
 | P0-4 | Read platform AI labels. The platform's own AI disclosure on an item counts as provenance evidence. | Given a labeled item with no list entry, then it shows the AI-made chip. |
 | P0-5 | Tag an item as Slop, AI-made but fine, or Not slop, with optional type and tests. | Two clicks from any card. The tag applies locally at once and queues when offline. |
 | P0-6 | Report a source with up to three example items and a reason. | The report appears in My reports with a status that updates when a verdict is set. |
@@ -455,7 +462,7 @@ Blocking is free for good, and paying buys convenience and control, never influe
 
 | Plan | Price | What it includes | Available |
 | --- | --- | --- | --- |
-| Free | $0 | Blocking on every supported platform with the core list. All four strictness levels. Tagging, reporting and appeals. Personal block and allow lists, and third-party lists once they ship in 1.1. | Beta onward |
+| Free | $0 | Blocking on every supported platform with the core list. All three strictness levels. Tagging, reporting and appeals. Personal block and allow lists, and third-party lists once they ship in 1.1. | Beta onward |
 | Plus | $3 a month or $30 a year | Everything in Free. Sync across browsers. Strictness per platform and per topic. Keyword and hashtag rules. A weekly summary. Early access to new platforms. | 1.0 |
 | Family | $6 a month or $60 a year | Everything in Plus for up to 5 profiles. Child profiles with a PIN lock. A shared family list. | 1.1 |
 | Supporter | Any amount, once or monthly | No extra features. Optional credit on the supporters page. | Public beta onward |
@@ -540,7 +547,7 @@ All six marks are drawn in one ink color here to show that shape alone tells the
 | Token | Light | Dark | Use | Contrast with its surface |
 | --- | --- | --- | --- | --- |
 | surface | #FFFFFF | #15171A | Popup, panel and page background | |
-| surface-raised | #F3F0E9 | #1F2226 | Cards and collapsed bars | |
+| surface-raised | #F3F0E9 | #1F2226 | Segmented tracks and row hover | |
 | border | #D9D5CC | #3A3E44 | Dividers | |
 | text | #1A1C1F | #F2F0EB | Body text | 17.1:1 light, 15.8:1 dark |
 | text-muted | #5A5F66 | #A7ABB1 | Secondary text, input outlines | 6.4:1 light, 7.8:1 dark |
@@ -589,7 +596,7 @@ Nothing is set below 12 px. Everything is sentence case. Counts use tabular figu
 | Radius | 6 px for chips and inputs, 10 px for cards and popovers, full for badges and toggles |
 | Borders | 1 px. Focus ring is 2 px brand with a 2 px offset. |
 | Elevation | One shadow, for popovers only. In-page elements are flat. |
-| Motion | 120 ms for hover and press, 200 ms for collapse and reveal, ease-out. None when reduced motion is set. |
+| Motion | 120 ms for hover and press, 200 ms for reveal, ease-out. None when reduced motion is set. |
 | Hit targets | At least 24 by 24 px. The in-page Tag button is 28 px, popup controls 32 px. |
 
 ### Iconography
@@ -610,7 +617,6 @@ The system has two tiers.
 | Action | Lucide icon |
 | --- | --- |
 | Hide and Show | eye-off, eye |
-| Collapse | chevrons-down-up |
 | Tag and Label | tag |
 | Report source | flag |
 | Appeal | scale |
@@ -628,11 +634,10 @@ Icon rules: every icon sits beside a word, except the chip glyph and the toolbar
 | Component | Anatomy | Rules |
 | --- | --- | --- |
 | Verdict chip | Glyph and verdict word | Ink background on media, tint background in panels. Never truncated. Hover or focus offers Why. |
-| Collapsed bar | Glyph, verdict, one reason, Show, Why | 40 px tall and replaces the card. Enter shows the item. |
 | Tag menu | Three choices, then optional type and tests | Opens from the Tag button, closes on Escape, confirms with a notice. |
 | Why popover | Signals that fired, the list, the date, links to the source page and appeal | Five lines at most |
-| Skip notice | "Skipped 1 slop video" and Undo | Shows for 4 seconds, announced politely to screen readers, never stacks |
-| Strictness control | Four-stop segmented control | One line under it says what the chosen level does |
+| Skip notice | "Skipped 1 slop video", Undo and Why | Off by default; an Appearance setting turns it on. Shows for 4 seconds, announced politely to screen readers, never stacks |
+| Strictness control | Three-stop segmented control | One line under it says what the chosen level does |
 | Buttons | Primary in brand fill, secondary outlined, quiet as text | 32 px minimum height, with disabled and loading states |
 | Source page banner | Verdict chip, evidence summary, Appeal button | Neutral layout. Verdict color appears on the chip only. |
 
@@ -644,8 +649,8 @@ Icon rules: every icon sits beside a word, except the chip glyph and the toolbar
 | Verdicts | Slop, Likely slop, AI-made, Disputed, Clear |
 | Types of slop | Filler, Bait, Deceptive |
 | Tests | Low effort, Mass-produced, Hollow |
-| Actions | Hide, Collapse, Label, Allow, Show, Skip, Undo, Why |
-| Strictness levels | Label, Standard, Strict, No AI |
+| Actions | Hide, Label, Allow, Show, Skip, Undo, Why |
+| Strictness levels | Label, Standard, No AI |
 | People | Tagger, Curator, Creator, Supporter |
 
 | Say | Not |
@@ -663,7 +668,6 @@ Icon rules: every icon sits beside a word, except the chip glyph and the toolbar
 
 | Where | Copy |
 | --- | --- |
-| Collapsed bar | Likely slop · Mass-produced, AI-made · Show · Why |
 | Skip notice | Skipped 1 slop video. Undo |
 | Tag confirmation | Tagged. Hidden for you now, and counted toward the shared list. |
 | Why popover title | Why this is hidden |

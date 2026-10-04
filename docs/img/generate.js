@@ -91,7 +91,7 @@ function verdictFlow() {
     box(lx, r4, lw, true), pair(lx, r4, 'Slop: hide', 'All three checks passed'),
     box(ox, r1, ow, false), pair(ox, r1, 'Not rated: allow', 'No AI evidence, so it cannot be slop'),
     box(ox, r2, ow, false), pair(ox, r2, 'AI-made: label', 'AI evidence only'),
-    box(ox, r3, ow, false), pair(ox, r3, 'Likely slop: collapse', 'Evidence is in, consensus still forming'),
+    box(ox, r3, ow, false), pair(ox, r3, 'Likely slop: hide', 'Evidence is in, consensus still forming'),
     small(mid + 10, r1 + bh + 24, 'yes'), small(mid + 10, r2 + bh + 24, 'yes'), small(mid + 10, r3 + bh + 24, 'yes'),
     small(lx + lw + 44, r1 + 20, 'no', 'middle'), small(lx + lw + 44, r2 + 20, 'no', 'middle'), small(lx + lw + 44, r3 + 20, 'not yet', 'middle'),
     `<rect x="24" y="420" width="712" height="72" rx="8" fill="${C.tint}" stroke="${C.edge}" stroke-width="1.25"/>`,
@@ -118,7 +118,7 @@ function architecture() {
     title(label0),
     frame(56, 200), t(40, 77, 'On the device: the extension', { weight: 600 }),
     frame(344, 216), t(40, 365, 'Our services', { weight: 600 }),
-    box(k1, rowA, cw, ch, false), trio(k1, rowA, 'Platform adapters', 'Read each card and its IDs.', 'Label, collapse or hide it.'),
+    box(k1, rowA, cw, ch, false), trio(k1, rowA, 'Platform adapters', 'Read each card and its IDs.', 'Label or hide it.'),
     box(k2, rowA, cw, ch, true), trio(k2, rowA, 'Lists and settings', 'Kept on the device.', 'Matching happens here.'),
     box(k3, rowA, cw, ch, false), trio(k3, rowA, 'Popup, panel, options', 'Counts, recent actions,', 'strictness and plan.'),
     box(k1, swy, 680, 56, false),
@@ -147,8 +147,8 @@ function architecture() {
 }
 
 function feedMockup() {
-  const label0 = 'Labeled and collapsed items stay on the page, and hidden items leave only a count';
-  const px = 176, pw = 544, ry1 = 112, ry2 = 218, ry3 = 282, ry4 = 306;
+  const label0 = 'Labeled items stay on the page, and hidden items leave no gap, only a count';
+  const px = 176, pw = 544, ry1 = 112, ry3 = 226, ry4 = 250;
   const thumb = y => `<rect x="${px}" y="${y}" width="160" height="90" rx="8" fill="${C.tint}" stroke="${C.edge}" stroke-width="1"/>`;
   const lines = y =>
     `<g fill="${C.grid}"><rect x="${px + 176}" y="${y + 10}" width="260" height="10" rx="5"/><rect x="${px + 176}" y="${y + 30}" width="200" height="10" rx="5"/><rect x="${px + 176}" y="${y + 62}" width="110" height="8" rx="4"/></g>`;
@@ -156,7 +156,7 @@ function feedMockup() {
   const parts = [
     title(label0),
     // page frame and browser bar
-    `<rect x="160" y="56" width="576" height="356" rx="10" fill="${C.bg}" stroke="${C.edge}" stroke-width="1.25"/>`,
+    `<rect x="160" y="56" width="576" height="300" rx="10" fill="${C.bg}" stroke="${C.edge}" stroke-width="1.25"/>`,
     `<line x1="160" y1="96" x2="736" y2="96" stroke="${C.grid}"/>`,
     `<rect x="${px}" y="66" width="300" height="20" rx="10" fill="none" stroke="${C.grid}"/>`,
     // toolbar mark and count
@@ -169,30 +169,21 @@ function feedMockup() {
     `<rect x="${px + 8}" y="${ry1 + 8}" width="78" height="20" rx="6" fill="${C.bg}" stroke="${C.ink}" stroke-width="1.25"/>`,
     `<path d="${spark(px + 20, ry1 + 18, 6, 1.1)}" fill="${C.ink}"/>`,
     t(px + 30, ry1 + 22, 'AI-made', { size: 11.5, weight: 600 }),
-    // collapse
-    `<rect x="${px}" y="${ry2}" width="${pw}" height="40" rx="8" fill="${C.bg}" stroke="${C.edge}" stroke-width="1.25"/>`,
-    `<path d="M${px + 14.3} ${ry2 + 22.5}A5.7 5.7 0 0 0 ${px + 25.7} ${ry2 + 22.5}Z" fill="${C.ink}"/>`,
-    `<path d="M${px + 20} ${ry2 + 11}C${px + 21.6} ${ry2 + 14.3} ${px + 25.7} ${ry2 + 17.5} ${px + 25.7} ${ry2 + 22.5}A5.7 5.7 0 0 1 ${px + 14.3} ${ry2 + 22.5}C${px + 14.3} ${ry2 + 17.5} ${px + 18.4} ${ry2 + 14.3} ${px + 20} ${ry2 + 11}Z" fill="none" stroke="${C.ink}" stroke-width="1.25"/>`,
-    t(px + 36, ry2 + 25, 'Likely slop', { weight: 600 }),
-    small(px + 122, ry2 + 25, 'Mass-produced, AI-made'),
-    t(px + pw - 58, ry2 + 25, 'Show', { weight: 600, fill: C.accent, anchor: 'end' }),
-    t(px + pw - 14, ry2 + 25, 'Why', { weight: 600, fill: C.accent, anchor: 'end' }),
     // hide
     `<line x1="${px}" y1="${ry3}" x2="302" y2="${ry3}" stroke="${C.line}" stroke-dasharray="4 4"/>`,
     `<line x1="594" y1="${ry3}" x2="${px + pw}" y2="${ry3}" stroke="${C.line}" stroke-dasharray="4 4"/>`,
-    small(448, ry3 + 4, 'One item hidden: nothing is left in the page', 'middle'),
+    small(448, ry3 + 4, 'One item hidden: the list closes up', 'middle'),
     // tag
     thumb(ry4), lines(ry4),
     `<rect x="652" y="${ry4 + 8}" width="60" height="28" rx="6" fill="${C.bg}" stroke="${C.ink}" stroke-width="1.25"/>`,
     `<polygon points="664,${ry4 + 17} 671,${ry4 + 17} 676,${ry4 + 22} 671,${ry4 + 27} 664,${ry4 + 27}" fill="none" stroke="${C.ink}" stroke-width="1.25" stroke-linejoin="round"/>`,
     t(683, ry4 + 26.5, 'Tag', { size: 12.5, weight: 600 }),
     // notes in the left gutter
-    t(24, ry1 + 16, 'Label', { weight: 600 }), small(24, ry1 + 32, 'Chip on the item.'), small(24, ry1 + 48, 'Nothing removed.'),
-    t(24, ry2 + 17, 'Collapse', { weight: 600 }), small(24, ry2 + 33, 'Shrinks to one line'),
-    t(24, ry3 + 4, 'Hide', { weight: 600 }), small(24, ry3 + 20, 'Gone, but counted'),
+    t(24, ry1 + 16, 'Label', { weight: 600 }), small(24, ry1 + 32, 'Chip on the item.'), small(24, ry1 + 48, 'Nothing hidden.'),
+    t(24, ry3 + 4, 'Hide', { weight: 600 }), small(24, ry3 + 20, 'No gap, but counted'),
     t(24, ry4 + 34, 'Tag', { weight: 600 }), small(24, ry4 + 50, 'Two clicks, in place'),
   ];
-  return svg(436, label0, parts.join('\n'));
+  return svg(380, label0, parts.join('\n'));
 }
 
 function roadmap() {

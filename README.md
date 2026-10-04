@@ -14,7 +14,7 @@ Every interface between the parts is defined in [docs/contracts.md](docs/contrac
 
 | Path | What it is | Stack |
 | --- | --- | --- |
-| [extension/](extension/README.md) | The Manifest V3 extension: platform adapters, matching, in-page chips, collapsed bars, Tag and Why, popup, options, welcome page and the curator side panel | WXT, Svelte 5, TypeScript |
+| [extension/](extension/README.md) | The Manifest V3 extension: platform adapters, matching, seamless hiding with grid reflow, in-page chips, Tag and Why, popup, options, welcome page and the curator side panel | WXT, Svelte 5, TypeScript |
 | [server/](server/README.md) | Every backend service in one binary: signed list snapshots and deltas, tags and reports, scoring, review, appeals, accounts, billing, settings sync, and the website itself | Go, SQLite |
 | [web/](web/README.md) | The public website: landing page, definition, source pages, appeals, decision log, plans, support, transparency, account and the review console | SvelteKit (static), Svelte 5 |
 | [packages/shared](packages/shared) | Verdict vocabulary, signal names, verdict glyphs and the brand mark, the Colander theme on top of Mittsu components, and API types | TypeScript, Svelte 5, Mittsu |
