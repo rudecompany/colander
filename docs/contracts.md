@@ -310,7 +310,8 @@ Public pages never name a data source, and never show YouTube Data API data:
 - `name` comes from viewers' reports, never from the YouTube Data API, so it is `null` until someone reports the source.
 
 The decision log never names a data source either: reasons the scoring service writes never mention seed lists, and reviewers cannot publish a reason or reasoning that names one (6.7).
-Log entries written before this rule had the list's name replaced with "an imported seed list"; staff keep the original text internally.
+Log entries written before this rule were rewritten, and staff keep the original text internally: where the scoring service's reason named a seed list it now says "It met a rule Colander no longer uses", and a list's name in a reviewer's or an appeal's words reads `[withheld]`.
+When a list is imported, its name is withheld the same way wherever the log already holds it.
 
 `GET /v1/log?limit=&platform=&verdict=&cursor=` returns `{"entries": [LogEntry, ...], "next_cursor": "..." | null}`, newest first, default limit 50, max 200.
 
@@ -498,6 +499,7 @@ Plan, payment and donation state are never inputs.
 An entry on an imported seed list is a review lead, never evidence: it meets no layer, and on its own it never gives a verdict or a list entry.
 A source with community or staff evidence gets exactly the verdict that evidence gives without the seed list.
 The lead only puts the source in the review queue (9.5).
+Imports from before the license check, which took lists of any license, were cleared: for audits, staff keep only each list's name, license, entry count and a hash of the cleared IDs.
 
 ### 9.4 Verdict, first rule that matches wins
 
@@ -534,11 +536,21 @@ Dev mode has no edge analytics, so there the Worker counts the requests itself.
 ### 9.7 YouTube Data API
 
 The Worker follows the YouTube API Services Developer Policies:
-- Retention: data obtained with the API key alone is never kept 30 days. Cached responses and the per-channel figures are deleted by the hourly prune once they are 29 days old, and a source still needed is looked up again after 20 days. Dumps create those tables but hold none of their rows, so no backup keeps API data either.
+- Retention: figures and responses obtained with the API key alone are never kept 30 days.
+  Responses are not cached, so the per-channel figures are dated by the call that returned them; the hourly prune deletes them once they are 29 days old, and a source still needed is looked up again after 20 days.
+  Dumps create that table but hold none of its rows, so no backup keeps the figures.
+  Dumps taken before migration 5 did hold API data: restoring one runs that migration's data changes on its rows again, and the runbook deletes them (deploy.md, "Dumps from before migration 5").
+- Identifiers: a lookup links the channel ID and handle it returns to the source as aliases, and the channel ID becomes its canonical ID.
+  The next lookup refreshes them, but they are not deleted: they are dumped, published in a source's `id` and `aliases`, and listed, until counsel confirms whether identifiers found through the API may be kept and shipped.
 - Names: the API's channel title is never stored. Source names and the decision log's `source_name` come from viewers' reports.
 - Derived metrics: subscriber counts and uploads per day feed scoring (Behavior's `high_volume`, `large` and a known audience) only when `YOUTUBE_DERIVED_USE` is `1`, which needs YouTube's approval first. Off, uploads per day is never computed and no figure is stored; a lookup only links a channel ID and its handle.
-- Quota: every call is charged to a ledger of the Pacific date (YouTube resets quotas at midnight Pacific Time) with its unit cost before it is made, failed calls included, and no call is made once the day's charges would pass `YOUTUBE_DAILY_UNITS`. When YouTube answers `quotaExceeded`, the day counts as used up.
-- Rate: each scoring pass looks up at most 10 channels. A channel that fails is logged and waits for its next refresh while the others go on; a used-up budget ends the lookups until the next Pacific day. Appeal checks share the budget, and fall back to staff when it is used up.
+- Quota: every call is charged to a ledger of the Pacific date (YouTube resets quotas at midnight Pacific Time) with its unit cost before it is made, failed calls included, and no call is made once the day's charges would pass `YOUTUBE_DAILY_UNITS`.
+  When YouTube answers `quotaExceeded`, the day counts as used up.
+  Production and staging use one Google Cloud project and each keeps its own ledger, so their budgets together stay at 8,000 of the project's 10,000 units.
+  A restore keeps the larger count of each day, so units spent stay spent.
+- Rate: each scoring pass looks up at most 10 channels, and background lookups stop once the day's charges reach 80% of the budget, which keeps the rest for appeal checks: with derived use a lookup can cost 21 units.
+  A channel that fails is logged and waits for its next refresh while the others go on; a used-up share ends the lookups until the next Pacific day.
+  Appeal checks fall back to staff when the whole budget is used up.
 
 ## 10. Configuration of the Worker
 
@@ -557,7 +569,7 @@ The client address always comes from `CF-Connecting-IP`.
 | `COLANDER_MAIL_FROM` | var | `Colander <hello@getcolander.com>` | Sender of sign-in, appeal and billing mail |
 | `RESEND_API_KEY` | secret, optional | unset | Resend, the fallback when the Email Sending binding fails |
 | `YOUTUBE_API_KEY` | secret, optional | unset | YouTube lookups (channel ID and handle) and automatic appeal verification (9.7) |
-| `YOUTUBE_DAILY_UNITS` | var | `8000` | YouTube Data API units the Worker may spend per Pacific day, of the project's 10,000 (9.7) |
+| `YOUTUBE_DAILY_UNITS` | var | `8000`; `api/wrangler.jsonc` sets `7000` in production and `1000` in staging | YouTube Data API units the Worker may spend per Pacific day. Both environments share one project's 10,000, so their values add up to 8,000 at most (9.7). |
 | `YOUTUBE_DERIVED_USE` | var | empty, which is off | `1` lets subscriber counts and uploads per day feed scoring. Set it only after YouTube approves Colander's derived metrics (9.7). |
 | `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` | secret, optional | unset | Billing. Without them billing routes answer `503 billing_unavailable`. |
 | `STRIPE_PRICE_PLUS_MONTHLY`, `STRIPE_PRICE_PLUS_YEARLY` | var | empty | Price IDs of the Plus prices; checkout answers `503 billing_unavailable` until they are set |

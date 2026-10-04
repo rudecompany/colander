@@ -13,10 +13,10 @@ import { prune } from '../src/jobs';
 import { rfc3339 } from '../src/routes/respond';
 import { unix } from '../src/scoring/engine';
 import { createSession, grantRole } from '../src/store/accounts';
-import { cachePut, youTubeQuotaUsed } from '../src/store/misc';
+import { youTubeQuotaUsed } from '../src/store/misc';
 import { ensureSource, findSource, getSource, setYouTube, sourceRefs } from '../src/store/sources';
 import type { Store } from '../src/store/store';
-import { ENRICH_PER_PASS, pacificDay, YouTube, YouTubeNotFoundError, YouTubeQuotaError } from '../src/youtube';
+import { BACKGROUND_SHARE, ENRICH_PER_PASS, pacificDay, YouTube, YouTubeNotFoundError, YouTubeQuotaError } from '../src/youtube';
 
 const CHANNEL = 'UCzzzzzzzzzzzzzzzzzzzzz7';
 const BASE = 'https://fake-youtube.test';
@@ -89,7 +89,7 @@ beforeEach(() => {
 afterEach(() => vi.restoreAllMocks());
 
 describe('youtube', () => {
-	it('enriches stale sources, caches lookups and verifies descriptions live (TestEnrichAndVerify)', () =>
+	it('enriches stale sources and verifies descriptions live (TestEnrichAndVerify)', () =>
 		withStore(async (store) => {
 			const description = { text: 'History videos every hour.' };
 			const api = fakeAPI(NOW, description);
@@ -106,23 +106,14 @@ describe('youtube', () => {
 			expect(src).toMatchObject({ canonicalId: CHANNEL, name: '', subscribers: 150_000, uploadsPerDay: 2 });
 			expect(src.aliases).toEqual([CHANNEL, '@ancientwonders']);
 
-			// Cached for a week: a second lookup of a fresh source costs no calls.
-			const before = api.calls();
-			await c.channel(CHANNEL, false);
-			expect(api.calls()).toBe(before);
-			// A week later the cache is stale.
-			store.now = () => NOW + 8 * DAY;
-			await c.channel(CHANNEL, false);
-			expect(api.calls()).toBe(before + 1);
-
 			// Appeal verification always reads the live description.
 			expect(await c.descriptionContains(CHANNEL, 'colander-7KQ2M9XD')).toBe(false);
 			description.text += ' colander-7KQ2M9XD';
 			expect(await c.descriptionContains(CHANNEL, 'colander-7KQ2M9XD')).toBe(true);
 
-			await expect(c.channel('@nobody', true)).rejects.toBeInstanceOf(YouTubeNotFoundError);
+			await expect(c.channel('@nobody')).rejects.toBeInstanceOf(YouTubeNotFoundError);
 			c.key = 'wrong-key';
-			const err = await c.channel('@other', true).then(
+			const err = await c.channel('@other').then(
 				() => null,
 				(e: Error) => e
 			);
@@ -135,7 +126,7 @@ describe('youtube', () => {
 				throw new TypeError(`connection lost while fetching ${input instanceof Request ? input.url : String(input)}`);
 			});
 			const err = await client(store)
-				.channel(CHANNEL, true)
+				.channel(CHANNEL)
 				.then(
 					() => null,
 					(e: Error) => e
@@ -170,7 +161,8 @@ describe('youtube', () => {
 			const at = unix(NOW);
 			const ref = ensureSource(db, 'yt', '@ancientwonders', '', at);
 			setYouTube(db, ref, { channelId: CHANNEL, handle: '@ancientwonders', subscribers: 1000, uploadsPerDay: 1 }, at);
-			cachePut(db, '/channels?id=' + CHANNEL, new Uint8Array([1]), at);
+			// A response code from before migration 0005 cached, after a rollback.
+			db.run('INSERT INTO youtube_cache (key, body, fetched_at) VALUES (?, x\'01\', ?)', '/channels?id=' + CHANNEL, at);
 			db.run('INSERT INTO youtube_quota (day, units) VALUES (?, 5)', pacificDay(NOW));
 			const rows = () => db.get<{ cache: number; channels: number; quota: number }>(
 				'SELECT (SELECT count(*) FROM youtube_cache) AS cache, (SELECT count(*) FROM youtube_channels) AS channels, (SELECT count(*) FROM youtube_quota) AS quota'
@@ -207,28 +199,27 @@ describe('youtube', () => {
 			const db = store.db;
 			const day = pacificDay(NOW);
 			const c = client(store, 3);
-			await c.channel(CHANNEL, true);
+			await c.channel(CHANNEL);
 			// A failed call costs its units too.
 			c.key = 'wrong-key';
-			await expect(c.channel(CHANNEL, true)).rejects.toThrow('status 403');
+			await expect(c.channel(CHANNEL)).rejects.toThrow('status 403');
 			c.key = 'test-key';
-			await c.channel(CHANNEL, true);
+			await c.channel(CHANNEL);
 			expect([youTubeQuotaUsed(db, day), api.calls()]).toEqual([3, 3]);
-			// Cached answers cost nothing; a call that does not fit is never made.
-			await c.channel(CHANNEL, false);
-			await expect(c.channel(CHANNEL, true)).rejects.toBeInstanceOf(YouTubeQuotaError);
+			// A call that does not fit is never made.
+			await expect(c.channel(CHANNEL)).rejects.toBeInstanceOf(YouTubeQuotaError);
 			expect([youTubeQuotaUsed(db, day), api.calls()]).toEqual([3, 3]);
 			// The budget is back once the Pacific day ends.
 			store.now = () => NOW + DAY;
-			await c.channel(CHANNEL, true);
+			await c.channel(CHANNEL);
 			expect(api.calls()).toBe(4);
 
 			// YouTube's own quotaExceeded uses up the day at once.
 			store.now = () => NOW + 2 * DAY;
 			const big = client(store, 100);
-			await expect(big.channel('@overquota', true)).rejects.toBeInstanceOf(YouTubeQuotaError);
+			await expect(big.channel('@overquota')).rejects.toBeInstanceOf(YouTubeQuotaError);
 			expect(youTubeQuotaUsed(db, pacificDay(NOW + 2 * DAY))).toBe(100);
-			await expect(big.channel(CHANNEL, true)).rejects.toBeInstanceOf(YouTubeQuotaError);
+			await expect(big.channel(CHANNEL)).rejects.toBeInstanceOf(YouTubeQuotaError);
 			expect(api.calls()).toBe(5);
 		}));
 
@@ -249,10 +240,11 @@ describe('youtube', () => {
 			await client(store).enrichStale(db, NOW + DAY, 10, false);
 			expect(api.calls()).toBe(3);
 
-			// A used-up budget ends the run; the rest wait for the next Pacific day.
+			// A used-up budget ends the run; the rest wait for the next Pacific day. Three units are
+			// spent, and lookups stop at 4, BACKGROUND_SHARE of 5.
 			const first = ensureSource(db, 'yt', '@first', '', unix(NOW));
 			const second = ensureSource(db, 'yt', '@second', '', unix(NOW));
-			await client(store, 4).enrichStale(db, NOW, 10, false);
+			await client(store, 5).enrichStale(db, NOW, 10, false);
 			expect(getSource(db, first)!.youtubeCheckedAt).toBe(unix(NOW));
 			expect(getSource(db, second)!.youtubeCheckedAt).toBe(0);
 			expect(warn).toHaveBeenLastCalledWith(JSON.stringify({ message: 'youtube budget used', day: pacificDay(NOW) }));
@@ -281,6 +273,44 @@ describe('youtube', () => {
 			await store.engine.fullPass(NOW);
 			expect(warn).toHaveBeenCalledWith(JSON.stringify({ message: 'youtube lookup failed', error: 'Error: youtube /channels: status 403' }));
 			expect(getSource(store.db, stale)!.youtubeCheckedAt).toBe(unix(NOW));
+		}));
+});
+
+describe('youtube spending and freshness', () => {
+	// Figures are stored with the time YouTube returned them, which the 29-day prune goes by: a
+	// response from an appeal check days earlier is never reused for them.
+	it('looks a channel up afresh for its figures, so they are dated by the call that returned them', () =>
+		withStore(async (store) => {
+			const api = fakeAPI(NOW, { text: '' });
+			const db = store.db;
+			const c = client(store);
+			const ref = ensureSource(db, 'yt', CHANNEL, '', unix(NOW));
+			await c.descriptionContains(CHANNEL, 'colander-7KQ2M9XD');
+			store.now = () => NOW + 6 * DAY;
+			const before = api.paths.filter((p) => p === '/channels').length;
+			await c.enrichStale(db, NOW + 6 * DAY, 10, true);
+			expect(api.paths.filter((p) => p === '/channels').length).toBe(before + 1);
+			expect(db.all('SELECT source_id, subscribers, fetched_at FROM youtube_channels')).toEqual([{ source_id: ref, subscribers: 150_000, fetched_at: unix(NOW + 6 * DAY) }]);
+			expect(db.get('SELECT count(*) AS n FROM youtube_cache'), 'no response is kept').toEqual({ n: 0 });
+		}));
+
+	it('stops background lookups at BACKGROUND_SHARE of the budget, keeping the rest for appeal checks', () =>
+		withStore(async (store) => {
+			const api = fakeAPI(NOW, { text: 'colander-7KQ2M9XD' });
+			const db = store.db;
+			vi.spyOn(console, 'warn').mockImplementation(() => {});
+			// Channels YouTube does not know cost one unit each.
+			for (let i = 0; i < 10; i++) ensureSource(db, 'yt', `@unknown${i}`, '', unix(NOW));
+			const c = client(store, 10);
+			await c.enrichStale(db, NOW, 10, true);
+			expect(BACKGROUND_SHARE).toBe(0.8);
+			expect([youTubeQuotaUsed(db, pacificDay(NOW)), api.calls()]).toEqual([8, 8]);
+			expect(db.get('SELECT count(*) AS n FROM sources WHERE youtube_checked_at IS NULL')).toEqual({ n: 2 });
+			// The appeal check spends from the full budget.
+			expect(await c.descriptionContains(CHANNEL, 'colander-7KQ2M9XD')).toBe(true);
+			expect(await c.descriptionContains(CHANNEL, 'colander-7KQ2M9XD')).toBe(true);
+			await expect(c.descriptionContains(CHANNEL, 'colander-7KQ2M9XD')).rejects.toBeInstanceOf(YouTubeQuotaError);
+			expect(youTubeQuotaUsed(db, pacificDay(NOW))).toBe(10);
 		}));
 });
 

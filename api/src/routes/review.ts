@@ -147,7 +147,7 @@ function layers(ev: Evaluation): Layers {
 	if (labels > 0) prov.push(`${labels} installs saw a platform AI label`);
 	if (r.mixed && inp.rollupLabelInstalls > inp.labelInstalls) prov.push('labels on its items do not count, because the source is mixed');
 	if (r.provenance.met && r.provenance.signals === 0) prov.push('taggers agree it is AI-made');
-	if (src.importList !== '') prov.push(`listed on ${src.importSource} (${src.importLicense}) as a ${src.importList} entry, a review lead that is not evidence`);
+	if (src.importBatch !== 0) prov.push(`listed on ${src.importSource} (${src.importLicense}) as a ${src.importList} entry, a review lead that is not evidence`);
 	const beh: string[] = [];
 	if (inp.uploadsPerDay >= 0) beh.push(`about ${goFixed(inp.uploadsPerDay, 1)} uploads a day over the last 14 days`);
 	if (inp.itemsSeen > 0) beh.push(`${inp.aiItems} of ${inp.itemsSeen} items with evidence carry AI evidence`);
@@ -212,8 +212,8 @@ function writeReviewSource(api: Api, ref: number): Response {
 	return json(200, {
 		source: {
 			...toSource(ev),
-			imported: src.importList !== '',
-			attribution: src.importList !== '' ? `${src.importSource} (${src.importLicense}), ${src.importList}` : null
+			imported: src.importBatch !== 0,
+			attribution: src.importBatch !== 0 ? `${src.importSource} (${src.importLicense}), ${src.importList}` : null
 		},
 		layers: layers(ev),
 		reports: reports.map((rp) => toReportDetail(rp, active)),

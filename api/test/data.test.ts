@@ -387,14 +387,8 @@ describe('misc.go', () => {
 		});
 	});
 
-	it('caches YouTube bodies and counts rated sources and items', async () => {
+	it('counts rated sources and items', async () => {
 		await withDb((db) => {
-			misc.cachePut(db, 'channels?id=UC1', new Uint8Array([1, 2, 3]), 100);
-			expect(misc.cacheGet(db, 'channels?id=UC1', 100)).toEqual(new Uint8Array([1, 2, 3]));
-			expect(misc.cacheGet(db, 'channels?id=UC1', 101)).toBeUndefined();
-			misc.cachePut(db, 'channels?id=UC1', new Uint8Array([4]), 200);
-			expect(misc.cacheGet(db, 'channels?id=UC1', 150)).toEqual(new Uint8Array([4]));
-
 			const ref = sources.ensureSource(db, 'yt', '@a', '', 1);
 			sources.ensureSource(db, 'yt', '@b', '', 1);
 			verdicts.applyUpdate(db, { sourceRef: ref, itemRef: 0, expect: '', state: state({ verdict: 'disputed' }) });

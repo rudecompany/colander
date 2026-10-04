@@ -48,6 +48,12 @@ describe.each([
 	});
 });
 
+it('keeps the YouTube spend of both environments, which share one project and its key, within its budget', () => {
+	// The project gets 10,000 units a day; 2,000 stay as margin (contracts 9.7). Each environment
+	// keeps its own ledger, so only their sum bounds what the project spends.
+	expect(Number(production.vars.YOUTUBE_DAILY_UNITS) + Number(staging.vars.YOUTUBE_DAILY_UNITS)).toBeLessThanOrEqual(8_000);
+});
+
 it('gives staging its own Worker, domain, buckets and rate limit namespace', () => {
 	expect(staging.name).not.toBe(production.name);
 	expect(staging.routes).not.toEqual(production.routes);

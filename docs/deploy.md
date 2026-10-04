@@ -160,7 +160,9 @@ If a later change to `api/wrangler.jsonc` adds or changes routes or Custom Domai
    Use one project for Colander: splitting one use case's quota across projects breaks the YouTube API Services Developer Policies.
 2. Create an API key restricted to that API.
 3. Put it in the `YOUTUBE_API_KEY` Worker secret of both environments (step 8).
-4. Leave `YOUTUBE_DAILY_UNITS` at `8000` in `api/wrangler.jsonc` unless the project's quota changes; the Worker never spends more per Pacific day.
+4. Leave `YOUTUBE_DAILY_UNITS` in `api/wrangler.jsonc` at `7000` for production and `1000` for staging; neither Worker spends more than its own per Pacific day.
+   Both spend the one project's 10,000 units but each keeps its own ledger, so together they stay at 8,000, and a config test fails any change that passes that.
+   Change both together if the project's quota changes.
 5. Leave `YOUTUBE_DERIVED_USE` empty.
    Set it to `1` only after YouTube approves Colander's derived metrics in the Audit and Quota Extension Form; until then no subscriber count or uploads per day reaches a verdict (contracts 9.7).
 
@@ -348,7 +350,7 @@ The workflows talk to the Worker through one authenticated channel, and the Work
 | --- | --- | --- |
 | `status` | `{}` | `head_seq` (Store list head), `r2_seq` (sequence in R2's `list/snapshot.bin`), `pass_age_s` (seconds since the last completed scoring pass), `publish_lag_s` (seconds the oldest verdict change not yet in R2's list has waited, 0 when R2 holds the head), `dump_age_s` (seconds since the newest successful dump), `dump_ms`, `rows_read_last_pass` |
 | `grant-role` | `{"email", "role"}` with role `member`, `curator` or `staff` | The account |
-| `import-seed` | `{"file", "list", "source_name", "license", "attribution", "permission_doc"}`, file being the list text, list `blocklist` or `warnlist`, license `CC0-1.0`, `CC-BY-4.0`, `MIT` or `LicenseRef-written-grant`. `attribution` (the credit) is required for CC BY and MIT, `permission_doc` (where the written grant is kept) for a written grant. Non-commercial, no-derivatives, share-alike, GPL and unlicensed lists answer `400 license_refused`. | Counts imported and the batch ID; entries become review leads, never verdicts |
+| `import-seed` | `{"key"}` and nothing else, key naming an object under `seeds/` in the environment's backup bucket. The object is a JSON object `{"file", "list", "source_name", "license", "attribution", "permission_doc"}`: file the list text, list `blocklist` or `warnlist`, license `CC0-1.0`, `CC-BY-4.0`, `MIT` or `LicenseRef-written-grant`. `attribution` (the credit) is required for CC BY and MIT, `permission_doc` (where the written grant is kept) for a written grant. Non-commercial, no-derivatives, share-alike, GPL and unlicensed lists answer `400 license_refused`. | Counts imported and the batch ID, never the list's name or license; entries become review leads, never verdicts |
 | `sign-config` | `{"file"}`, file being the adapter configuration JSON, signed byte for byte | Version and key ID |
 | `drill` | `{}` | `{"ok": true, ...}` after the dump drill passed (hosting plan section 3) |
 | `purge-cache` | `{"confirm": "purge-cache"}` | Done |
@@ -388,10 +390,21 @@ The run log and its summary are the audit trail.
 Examples:
 - Make a curator: command `grant-role`, args `{"email": "sam@example.com", "role": "curator"}`.
 - Ship new adapter selectors: raise `version` in `extension/src/adapters/default-config.json`, merge it, then run command `sign-config` with that file.
-- Import a seed list: commit it, then command `import-seed` with file set to its path and args `{"list": "blocklist", "source_name": "Example List", "license": "CC0-1.0"}`.
+- Import a seed list.
+  The repository, the run log and its summary are public, so never commit a list or put it, its name or its license in the Ops inputs; the list travels in a private object of the backup bucket.
+  1. Check the list's license file at the exact version you import.
+     A paid product may not use a list under a non-commercial, no-derivatives, share-alike or GPL license, or one with no license, and the command refuses them; such a list needs a written grant from its maintainer first, imported as `LicenseRef-written-grant` with `permission_doc`.
+  2. Build the object and put it under `seeds/` in the environment's backup bucket (`colander-backups`, or `colander-staging-backups` for staging), with a key that does not name the list, such as the date:
+     ```sh
+     jq -n --rawfile file list.txt --arg source_name "Example List" \
+       '{file: $file, list: "blocklist", source_name: $source_name, license: "CC0-1.0"}' >seed.json
+     pnpm -C api exec wrangler r2 object put colander-backups/seeds/2026-10-03.json --file seed.json --remote
+     ```
+     For CC BY and MIT add `attribution`, the credit the license asks for; for a written grant add `permission_doc`, where the grant is kept.
+     The bucket's lifecycle deletes the object after 90 days; `seed_imports` keeps its hash.
+  3. Run command `import-seed` with args `{"key": "seeds/2026-10-03.json"}`.
+     The answer gives counts and the batch ID only.
   Its entries only put sources in the review queue: they never give a verdict and are never named in public.
-  Warning: check the list's license file at the exact commit you import before every run.
-  A paid product may not use a list under a non-commercial, no-derivatives, share-alike or GPL license, or one with no license, and the command refuses them; such a list needs a written grant from its maintainer first, imported as `LicenseRef-written-grant` with `permission_doc`.
 - See the Store's health: command `status`.
 
 ### Restore
@@ -411,6 +424,14 @@ To start from an empty list on purpose instead (a reset staging environment), de
 
 The monthly drill proves the point-in-time path on staging, and the weekly drill proves every dump loads.
 Run either by hand from the Drills workflow.
+
+### Dumps from before migration 5
+
+Dumps taken before migration 5 (`0005_compliance.sql`) hold YouTube Data API data, which may not be kept 30 days, and seed list names that public pages no longer show.
+Restoring one is still safe, because the restore runs that migration's data changes on its rows again.
+If a Worker of either environment ran before its first deploy with migration 5, delete those dumps once they are out of the bucket lock:
+1. Wait until a dump taken after the deploy has passed the weekly drill, and until the newest dump from before the deploy is over 7 days old.
+2. In the Cloudflare dashboard, open the environment's backup bucket and delete every object under `dumps/` whose name is a time before the deploy, or delete each with `pnpm -C api exec wrangler r2 object delete <backup bucket>/<key> --remote`.
 
 ### Rotate the signing key
 

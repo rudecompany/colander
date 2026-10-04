@@ -594,6 +594,13 @@ describe('public pages', () => {
 			expect(await named.json()).toEqual({
 				error: { code: 'source_named', message: 'The text names the seed list Secret Seed List. The decision log is public and never names a data source.' }
 			});
+
+			// An import from before the license check is no provenance for reviewers either.
+			const legacy = ensureSource(h.db, 'yt', '@legacyseed', '', unix(h.clock));
+			h.db.run("UPDATE sources SET import_list = 'blocklist', import_source = 'Old List', import_license = 'CC BY-NC 4.0', imported_at = 1 WHERE id = ?", legacy);
+			const old = (await (await expectStatus(h.do('GET', '/v1/review/sources/yt/@legacyseed', undefined, staff), 200)).json()) as ReviewSourceResponse;
+			expect(old.source).toMatchObject({ imported: false, attribution: null });
+			expect(old.layers.provenance.detail).toBe('No AI evidence yet.');
 		}));
 
 	it('estimates active installs over the 24 whole hours the analytics pull counted', () =>

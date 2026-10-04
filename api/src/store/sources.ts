@@ -390,12 +390,13 @@ export function importSeed(db: Db, batch: number, platform: string, alias: strin
 	});
 }
 
-/** The seed list a text names, case-insensitively, or undefined: public text must never name one. */
+/**
+ * The seed list a text names, case-insensitively, or undefined: public text must never name one.
+ * seed_imports holds every list Colander imported, cleared imports from before the license check too.
+ */
 export function namedSeedList(db: Db, text: string): string | undefined {
-	// ponytail: scans sources on each reviewer decision; keep the names in seed_imports alone once
-	// imports from before the license check are gone.
 	return db.get<{ name: string }>(
-		`SELECT DISTINCT import_source AS name FROM sources WHERE import_source != '' AND instr(lower(?), lower(import_source)) > 0 LIMIT 1`,
+		`SELECT source_name AS name FROM seed_imports WHERE source_name != '' AND instr(lower(?), lower(source_name)) > 0 LIMIT 1`,
 		text
 	)?.name;
 }

@@ -64,8 +64,9 @@
 		"STRIPE_PRICE_PLUS_YEARLY": "",
 		// Plus checkout with Stripe Managed Payments as merchant of record; "0" turns it off.
 		"STRIPE_MANAGED_PAYMENTS": "",
-		// YouTube Data API units the Worker may spend per Pacific day, of the project's 10,000.
-		"YOUTUBE_DAILY_UNITS": "8000",
+		// YouTube Data API units the Worker may spend per Pacific day. Both environments use one Google
+		// Cloud project's 10,000 units, so their budgets together stay at 8,000.
+		"YOUTUBE_DAILY_UNITS": "7000",
 		// "1" only after YouTube approves Colander's derived metrics: subscriber counts and uploads
 		// per day then feed scoring. Empty keeps every YouTube figure out of verdicts.
 		"YOUTUBE_DERIVED_USE": ""
@@ -97,7 +98,7 @@
 				"STRIPE_PRICE_PLUS_MONTHLY": "",
 				"STRIPE_PRICE_PLUS_YEARLY": "",
 				"STRIPE_MANAGED_PAYMENTS": "",
-				"YOUTUBE_DAILY_UNITS": "8000",
+				"YOUTUBE_DAILY_UNITS": "1000",
 				"YOUTUBE_DERIVED_USE": ""
 			},
 			"secrets": { "required": ["COLANDER_SIGNING_KEY", "IP_SALT", "OPS_TOKEN"] }

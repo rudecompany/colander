@@ -5,7 +5,9 @@
 // restore drill, which loads the newest dump into the scratch Store "drill".
 //
 // They replace the Go binary's operator commands: grant-role, import-seed and sign-config behave
-// as `colander <command>` did, with JSON arguments instead of flags.
+// as `colander <command>` did, with JSON arguments instead of flags. The workflow's run log is
+// public, so arguments and answers never name a seed list: import-seed reads the list and its
+// license from a private object in the backup bucket and answers with counts only.
 import { hex, utf8 } from '@colander/shared/bytes';
 import { sha256 } from '@colander/shared/sha256';
 import { CONFIG_CONTEXT, signEnvelope } from '@colander/shared/signing';
@@ -19,6 +21,7 @@ import { rfc3339, trimSpace } from './routes/respond';
 import { unix } from './scoring/engine';
 import { grantRole, type Account } from './store/accounts';
 import { latestSequence, RETENTION_SECONDS, SNAPSHOT_KEY } from './store/list';
+import { redactSeedNames } from './store/compliance';
 import { saveAdapterConfig } from './store/misc';
 import { importSeed, recordSeedImport, type SeedImport } from './store/sources';
 import { primary, type Store } from './store/store';
@@ -191,7 +194,7 @@ export async function storeOps(store: Store, ctx: DurableObjectState, env: Env, 
 		case 'grant-role':
 			return grant(store, a);
 		case 'import-seed': {
-			const answer = importSeedFile(store, a);
+			const answer = await importSeedFile(store, env, a);
 			if (store.jobs.dirty) await store.jobs.arm();
 			return answer;
 		}
@@ -297,10 +300,14 @@ function grant(store: Store, a: OpsArgs): OpsAnswer {
 /** The licenses a paid product may use a seed list under, by their SPDX identifiers. */
 export const SEED_LICENSES = ['CC0-1.0', 'CC-BY-4.0', 'MIT', 'LicenseRef-written-grant'];
 
+/** import-seed reads seed lists from objects under this prefix of the private backup bucket. */
+export const SEED_PREFIX = 'seeds/';
+
 /**
  * Checks a seed list's license and the records it needs: the credit for CC BY and MIT, and where
  * the written grant is kept for LicenseRef-written-grant. Non-commercial, no-derivatives,
- * share-alike, GPL and unlicensed lists are refused. Returns the SPDX spelling or the refusal.
+ * share-alike, GPL and unlicensed lists are refused. Returns the SPDX spelling or the refusal,
+ * which never repeats the license: the answer is public.
  */
 function seedLicense(license: string, attribution: string, permissionDoc: string): string | OpsAnswer {
 	const known = SEED_LICENSES.find((l) => l.toLowerCase() === license.toLowerCase());
@@ -313,13 +320,13 @@ function seedLicense(license: string, attribution: string, permissionDoc: string
 			return fail(
 				400,
 				'license_refused',
-				`Refusing to import: ${license} does not allow use in a paid product. Non-commercial, no-derivatives, share-alike and GPL lists are refused. ${how}`
+				`Refusing to import: the list's license does not allow use in a paid product. Non-commercial, no-derivatives, share-alike and GPL lists are refused. ${how}`
 			);
 		}
-		return fail(400, 'invalid_license', `license must be one of ${SEED_LICENSES.join(', ')}, not ${JSON.stringify(license)}.`);
+		return fail(400, 'invalid_license', `license must be one of ${SEED_LICENSES.join(', ')}.`);
 	}
 	if ((known === 'CC-BY-4.0' || known === 'MIT') && attribution === '') {
-		return fail(400, 'attribution_required', `${known} needs attribution: the credit or copyright notice the license asks for.`);
+		return fail(400, 'attribution_required', 'CC-BY-4.0 and MIT need attribution: the credit or copyright notice the license asks for.');
 	}
 	if (known === 'LicenseRef-written-grant' && permissionDoc === '') {
 		return fail(400, 'permission_doc_required', 'LicenseRef-written-grant needs permission_doc: where the written grant is kept.');
@@ -328,22 +335,38 @@ function seedLicense(license: string, attribution: string, permissionDoc: string
 }
 
 /**
- * `colander import-seed`: one @handle or UC channel ID per line, `!` starts a comment, in one
- * transaction for the whole file. Nothing is downloaded or bundled: the operator supplies the list.
- * Only lists a paid product may use are accepted (seedLicense), and the run is recorded with its
- * license, attribution, grant and file hash for audits. Seed entries are review leads for staff:
- * they never give a verdict and are never named in public (contracts 9.3). The scoring pass that
- * puts them in the review queue starts at once.
+ * `colander import-seed`: the only argument is `key`, an object under SEED_PREFIX in the backup
+ * bucket holding a JSON object with the list text (`file`: one @handle or UC channel ID per line,
+ * `!` starts a comment), `list`, `source_name`, `license`, `attribution` and `permission_doc`.
+ * The repository and the ops run log are public, and no list or its name may be in either.
+ * The whole file goes in one transaction. Only lists a paid product may use are accepted
+ * (seedLicense), and the run is recorded with its license, attribution, grant and file hash for
+ * audits. Seed entries are review leads for staff: they never give a verdict and are never named in
+ * public (contracts 9.3), so the log loses any mention of the list's name too. The scoring pass
+ * that puts them in the review queue starts at once.
  */
-function importSeedFile(store: Store, a: OpsArgs): OpsAnswer {
-	const file = text(a.file);
-	const list = text(a.list);
-	const sourceName = trimSpace(text(a.source_name));
-	const attribution = trimSpace(text(a.attribution));
-	const permissionDoc = trimSpace(text(a.permission_doc));
-	if (file === '' || sourceName === '') return fail(400, 'invalid_args', 'file and source_name are required.');
-	if (list !== 'blocklist' && list !== 'warnlist') return fail(400, 'invalid_args', 'list must be blocklist or warnlist.');
-	const license = seedLicense(trimSpace(text(a.license)), attribution, permissionDoc);
+async function importSeedFile(store: Store, env: Env, a: OpsArgs): Promise<OpsAnswer> {
+	const key = text(a.key);
+	if (!key.startsWith(SEED_PREFIX) || key.length === SEED_PREFIX.length || Object.keys(a).some((k) => k !== 'key')) {
+		return fail(
+			400,
+			'invalid_args',
+			`import-seed takes only key: an object under ${SEED_PREFIX} in the backup bucket that holds the list and its license. The ops run log is public, so nothing about a list may be in the arguments.`
+		);
+	}
+	const obj = await env.BACKUPS.get(key);
+	if (!obj) return fail(404, 'no_seed', `There is no object ${key} in the backup bucket.`);
+	const seed = await obj.json<unknown>().catch(() => undefined);
+	if (typeof seed !== 'object' || seed === null || Array.isArray(seed)) return fail(400, 'invalid_seed', `${key} does not hold a JSON object.`);
+	const s = seed as Record<string, unknown>;
+	const file = text(s.file);
+	const list = text(s.list);
+	const sourceName = trimSpace(text(s.source_name));
+	const attribution = trimSpace(text(s.attribution));
+	const permissionDoc = trimSpace(text(s.permission_doc));
+	if (file === '' || sourceName === '') return fail(400, 'invalid_seed', 'file and source_name are required.');
+	if (list !== 'blocklist' && list !== 'warnlist') return fail(400, 'invalid_seed', 'list must be blocklist or warnlist.');
+	const license = seedLicense(trimSpace(text(s.license)), attribution, permissionDoc);
 	if (typeof license !== 'string') return license;
 	const db = store.db;
 	const now = store.now();
@@ -356,10 +379,12 @@ function importSeedFile(store: Store, a: OpsArgs): OpsAnswer {
 		if (id === undefined) skipped++;
 		else ids.push(id);
 	}
-	const seed: SeedImport = { sourceName, list, license, attribution, permissionDoc, sha256: hex(sha256(utf8(file))), entries: ids.length };
+	const imp: SeedImport = { sourceName, list, license, attribution, permissionDoc, sha256: hex(sha256(utf8(file))), entries: ids.length };
 	const batch = db.tx(() => {
-		const id = recordSeedImport(db, seed, unix(now));
-		for (const alias of ids) importSeed(db, id, 'yt', alias, seed, unix(now));
+		const id = recordSeedImport(db, imp, unix(now));
+		for (const alias of ids) importSeed(db, id, 'yt', alias, imp, unix(now));
+		// A reviewer may have named the list before Colander imported it.
+		redactSeedNames(db, [sourceName]);
 		return id;
 	});
 	store.jobs.schedule('pass', now);
@@ -367,7 +392,7 @@ function importSeedFile(store: Store, a: OpsArgs): OpsAnswer {
 		imported: ids.length,
 		skipped,
 		batch,
-		message: `Imported ${ids.length} YouTube channels from ${sourceName} (${license}) as ${list} review leads, skipped ${skipped} lines. They never give a verdict; the scoring pass now puts them in the review queue.`
+		message: `Imported ${ids.length} YouTube channels as review leads, skipped ${skipped} lines. They never give a verdict; the scoring pass now puts them in the review queue.`
 	});
 }
 

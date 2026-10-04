@@ -7,7 +7,7 @@ import { API_DATA_TABLES, countsAgree, dump, DUMP_PREFIX, dumpKey, dumpLines, du
 import { nextDump, STATUS } from '../src/jobs';
 import { grantRole, setDisplayName } from '../src/store/accounts';
 import type { Db } from '../src/store/db';
-import { cachePut, putSync } from '../src/store/misc';
+import { putSync } from '../src/store/misc';
 import { setYouTube } from '../src/store/sources';
 import { saveTags } from '../src/store/tags';
 import type { Store } from '../src/store/store';
@@ -82,7 +82,7 @@ describe('dump and restore', () => {
 		await runInDurableObject(fresh(), async (store: Store) => {
 			// Rows the restore replaces.
 			grantRole(store.db, 'someone@example.com', 'member', 1);
-			cachePut(store.db, 'live', new Uint8Array([1]), 1);
+			store.db.run("INSERT INTO youtube_cache (key, body, fetched_at) VALUES ('live', x'01', 1)");
 			const rows = await restoreDump(store.db, env.BACKUPS, key, T);
 			expect(rows).toMatchObject({ accounts: 2, tags: 2, sources: 1, list_entries: 3, jobs: 1, limits: 1 });
 			expect(rows).not.toHaveProperty('_migrations');
@@ -178,6 +178,57 @@ describe('dump and restore', () => {
 			expect((await loadDump(store.db, bytes(withCache), T)).sources).toBe(1);
 			expect(store.db.all('SELECT canonical_id, mixed FROM sources')).toEqual([{ canonical_id: 'UCzzzzzzzzzzzzzzzzzzzzz1', mixed: 0 }]);
 			expect(store.db.all('SELECT key FROM youtube_cache')).toEqual([]);
+		});
+	});
+});
+
+describe('restores across migrations and the quota ledger', () => {
+	// A dump from before migration 0005 holds what 0005 took out of the live rows: seed list names in
+	// public reasons, unchecked imports, YouTube API titles and figures. Its data changes run again.
+	it('run the data changes of the migrations newer than the dump on its rows', async () => {
+		const text = await runInDurableObject(fresh(), (store: Store, state) => {
+			const db = store.db;
+			db.run(`INSERT INTO sources (id, platform, canonical_id, name, import_list, import_source, import_license, imported_at, subscribers, youtube_checked_at, created_at)
+				VALUES (1, 'yt', 'UCzzzzzzzzzzzzzzzzzzzzz1', 'API Title', 'blocklist', 'AiSList', 'CC BY-NC 4.0', 5, 5000, 10, 1)`);
+			db.run(`INSERT INTO decision_log (id, at, platform, target_type, target_id, source_id, source_key, source_name, reason, actor) VALUES
+				(1, 1, 'yt', 'source', 'x', 1, 'x', 'API Title', 'Likely slop. Listed on the AiSList seed list.', 'community'),
+				(2, 2, 'yt', 'source', 'x', 1, 'x', 'API Title', 'Staff checked AiSList.', 'staff')`);
+			return dumpText(store, state);
+		});
+		const old = text.replace('-- Colander Store dump, schema version 5,', '-- Colander Store dump, schema version 4,');
+		expect(old).not.toBe(text);
+		await runInDurableObject(fresh(), async (store: Store) => {
+			const db = store.db;
+			await loadDump(db, bytes(old), T);
+			expect(db.all('SELECT source_name, reason, reason_original FROM decision_log ORDER BY id')).toEqual([
+				{ source_name: null, reason: 'Likely slop. It met a rule Colander no longer uses.', reason_original: 'Likely slop. Listed on the AiSList seed list.' },
+				{ source_name: null, reason: 'Staff checked [withheld].', reason_original: 'Staff checked AiSList.' }
+			]);
+			expect(db.get('SELECT name, import_source, subscribers, youtube_checked_at FROM sources')).toEqual({ name: null, import_source: null, subscribers: null, youtube_checked_at: null });
+			expect(db.all('SELECT source_name, entries, cleared_at FROM seed_imports')).toEqual([{ source_name: 'AiSList', entries: 1, cleared_at: T / 1000 }]);
+			expect(db.all('PRAGMA foreign_key_check')).toEqual([]);
+		});
+		// A dump taken after the migration loads as it is.
+		await runInDurableObject(fresh(), async (store: Store) => {
+			await loadDump(store.db, bytes(text), T);
+			expect(store.db.get('SELECT reason, reason_original FROM decision_log WHERE id = 1')).toEqual({ reason: 'Likely slop. Listed on the AiSList seed list.', reason_original: null });
+		});
+	});
+
+	// Units spent stay spent: restoring a ledger from hours ago must not let the Worker spend them again.
+	it('keep the larger count of each day in the YouTube quota ledger', async () => {
+		const text = await runInDurableObject(fresh(), (store: Store, state) => {
+			store.db.run("INSERT INTO youtube_quota (day, units) VALUES ('2030-03-16', 7000), ('2030-03-17', 100)");
+			return dumpText(store, state);
+		});
+		await runInDurableObject(fresh(), async (store: Store) => {
+			store.db.run("INSERT INTO youtube_quota (day, units) VALUES ('2030-03-16', 50), ('2030-03-17', 500), ('2030-03-18', 1)");
+			expect((await loadDump(store.db, bytes(text), T)).youtube_quota).toBe(2);
+			expect(store.db.all('SELECT day, units FROM youtube_quota ORDER BY day')).toEqual([
+				{ day: '2030-03-16', units: 7000 },
+				{ day: '2030-03-17', units: 500 },
+				{ day: '2030-03-18', units: 1 }
+			]);
 		});
 	});
 });

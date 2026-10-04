@@ -1,4 +1,4 @@
-// Adapter configs, trials, settings sync, the YouTube cache and public counts (Go's store/misc.go).
+// Adapter configs, trials, settings sync, the YouTube quota ledger and public counts (Go's store/misc.go).
 import { ConflictError, type Db } from './db';
 import { touchInstall } from './tags';
 
@@ -63,23 +63,6 @@ export function putSync(db: Db, sub: string, base: number, data: string, now: nu
 	});
 }
 
-/** Returns a cached YouTube response fetched at or after notBefore. */
-export function cacheGet(db: Db, key: string, notBefore: number): Uint8Array | undefined {
-	const r = db.get<{ body: ArrayBuffer }>('SELECT body FROM youtube_cache WHERE key = ? AND fetched_at >= ?', key, notBefore);
-	return r && new Uint8Array(r.body);
-}
-
-/** Stores a YouTube response. */
-export function cachePut(db: Db, key: string, body: Uint8Array, now: number): void {
-	db.run(
-		`INSERT INTO youtube_cache (key, body, fetched_at) VALUES (?, ?, ?)
-		ON CONFLICT (key) DO UPDATE SET body = excluded.body, fetched_at = excluded.fetched_at`,
-		key,
-		body.slice().buffer,
-		now
-	);
-}
-
 /**
  * Charges units to a day's YouTube quota ledger when they fit the budget and returns whether they
  * did; nothing is charged when they do not.
@@ -104,8 +87,9 @@ export function youTubeQuotaUsed(db: Db, day: string): number {
 }
 
 /**
- * Deletes YouTube Data API data fetched before `before` (unix seconds): cached responses and the
- * per-channel figures. Ledger days before `beforeDay` go too.
+ * Deletes YouTube Data API data fetched before `before` (unix seconds): the per-channel figures,
+ * and cached responses, which only code from before migration 0005 writes (after a rollback).
+ * Ledger days before `beforeDay` go too.
  */
 export function purgeYouTube(db: Db, before: number, beforeDay: string): void {
 	db.run('DELETE FROM youtube_cache WHERE fetched_at < ?', before);
