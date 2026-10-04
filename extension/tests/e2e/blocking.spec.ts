@@ -109,6 +109,18 @@ test('a tampered list is rejected and the last good copy stays', async ({ ext })
 	await expect(page.locator('ytd-search ytd-video-renderer').first()).toHaveAttribute('data-colander', 'hide');
 });
 
+test('the options page shows the list version as an identifier, not a count', async ({ ext }) => {
+	await ext.setup();
+	// Published sequences are floored to unix seconds (docs/hosting-plan.md section 2).
+	await ext.ctl.evaluate(async () => {
+		const { status } = await chrome.storage.local.get('status');
+		await chrome.storage.local.set({ status: { ...(status as object), listSequence: 1791070723 } });
+	});
+	const opts = await ext.ctx.newPage();
+	await opts.goto(`chrome-extension://${EXT_ID}/options.html#lists`);
+	await expect(opts.locator('dl.facts div', { hasText: 'Version' }).locator('dd')).toHaveText('1791070723');
+});
+
 test('a signed adapter config fixes selectors without a code change (P0-2)', async ({ ext }) => {
 	await ext.setup();
 	// A redesign renamed the search card element; the bundled selector no longer matches.
