@@ -1,6 +1,9 @@
 // The content script's controller: finds cards as they are inserted, decides what happens to
 // each with the matching engine, and applies the treatment before the page paints.
-import { PLATFORM_NAME, type Action, type Platform, type SlopType, type TagVerdict, type Test } from '@colander/shared/verdicts';
+import { INPAGE_COPY } from '@colander/shared/copy';
+import { hyper, Layer, bar, chip, cover, gridStub, inpageContext, makeHost, pageIsDark, reducedMotion, reportPill, setTheme, tagPill, type EvidenceActions } from '@colander/shared/inpage';
+import { SLOP_TYPE_HINT, SLOP_TYPE_WORD, TEST_WORD, type Action, type SlopType, type TagVerdict, type Test } from '@colander/shared/verdicts';
+import { Info, Undo2 } from 'lucide';
 import defaults from '../adapters/default-config.json';
 import { activeSurfaces, extractCard, pageSource, platformForHost, rx, type Extracted, type PageSource } from '../adapters/extract';
 import type { AdapterConfig, Anchor, PlatformConfig, Surface } from '../adapters/schema';
@@ -9,10 +12,10 @@ import { targetKey } from '../lib/ids';
 import { ListIndex } from '../lib/list';
 import { decide, type Decision, type MatchContext } from '../lib/match';
 import type { ActivityEntry, HelloReply, PageAction, PageCounts, PageState, ReportReply, TagRequest, ToPage, ToWorker } from '../lib/messages';
+import { SITE } from '../lib/env';
 import { platformConfig } from '../lib/platforms';
 import { isPlus, K, withDefaults, type Entitlement, type OwnTag, type Settings, type StoredIndex } from '../lib/settings';
-import { pageIsDark, reducedMotion, setDark } from './dom';
-import { Layer, bar, chip, cover, reportButton, tagButton, type CardView } from './ui';
+import { itemView, whyEvidence } from './views';
 
 interface CardState {
 	id: number;
@@ -27,10 +30,99 @@ interface CardState {
 	counted: boolean;
 	/** Swipe feeds: already skipped once automatically. */
 	skipped: boolean;
+	/** Where the thumbnail sits in the card, measured once before the first collapse. */
+	geo?: Geo | null;
 	ui: Partial<Record<'chip' | 'bar' | 'cover' | 'tag', HTMLElement>>;
 }
 
+/** The thumbnail's box inside the card's content box, in px: the bar starts at its left edge, the grid stub takes its footprint. */
+interface Geo {
+	x: number;
+	y: number;
+	w: number;
+	h: number;
+	tw: number;
+}
+
 type Effective = Action | 'none';
+
+/** A tag from the tag menu or Why: applied at once, held while its toast can still undo or refine it. */
+interface TagSession {
+	req: TagRequest;
+	key: string;
+	queued: Promise<unknown>;
+	undone: boolean;
+	sent: boolean;
+}
+
+/**
+ * Extension-only additions to the shared SHEET, adopted by every host this script makes:
+ * - The Tag pill over media (thumbnails and swipe feeds) is ink, so it reads on any picture.
+ * - On dark hosts and on ink, a primary button's hover and press mix toward ink, not toward the
+ *   light text color, which would drop white text to 4.06:1. To move into parts.css.
+ * - Dark hosts draw native checkboxes, radios and text fields dark too.
+ */
+const LOCAL_SHEET =
+	":host([theme='dark']){color-scheme:dark}" +
+	'.pill.ink{background:var(--cl-ink);color:var(--cl-on-ink)}.pill.ink:hover,.pill.ink[aria-expanded="true"]{box-shadow:inset 0 0 0 1px var(--cl-on-ink-muted)}' +
+	":host([theme='dark']) .cl-b-p:hover,.cl-ink .cl-b-p:hover{background:color-mix(in srgb,var(--cl-brand-fill),var(--cl-ink) 12%)}" +
+	":host([theme='dark']) .cl-b-p:active,.cl-ink .cl-b-p:active{background:color-mix(in srgb,var(--cl-brand-fill),var(--cl-ink) 20%)}";
+let localSheet: CSSStyleSheet | null = null;
+function adoptLocal(root: ShadowRoot) {
+	if (!localSheet) {
+		localSheet = new CSSStyleSheet();
+		localSheet.replaceSync(LOCAL_SHEET);
+	}
+	root.adoptedStyleSheets = [...root.adoptedStyleSheets, localSheet];
+}
+
+/**
+ * The shared layer, plus one callback when each toast ends: timed out, closed, replaced or undone.
+ * The callback runs a tick later, so an Undo in the same click cancels what it would do.
+ */
+class PageLayer extends Layer {
+	private next: (() => void) | null = null;
+	private ended: (() => void) | null = null;
+
+	constructor(ctx: ConstructorParameters<typeof Layer>[0]) {
+		super(ctx);
+		// The shared Layer keeps its shadow root to itself; the local additions go on it too.
+		adoptLocal((this as unknown as { root: ShadowRoot }).root);
+	}
+
+	/** The next notice calls `onEnd` once it is gone. */
+	whenNextEnds(onEnd: () => void) {
+		this.next = onEnd;
+	}
+
+	override notice(t: Parameters<Layer['notice']>[0]) {
+		super.notice(t);
+		this.ended = this.next;
+		this.next = null;
+	}
+
+	override dismissNotice() {
+		super.dismissNotice();
+		const f = this.ended;
+		this.ended = null;
+		if (f) setTimeout(f, 0);
+	}
+
+	/** Runs the current toast's end now, when the page goes away. */
+	flush() {
+		const f = this.ended;
+		this.ended = null;
+		f?.();
+	}
+
+	/** A button in the current toast, found by its word, to anchor Why; the toast then holds until closed. */
+	toastButton(label: string): HTMLElement | null {
+		const root = document.querySelector('colander-ui[data-kind="layer"]')?.shadowRoot;
+		const toast = root?.querySelector('.cl-toast');
+		toast?.querySelector('.cl-count')?.setAttribute('data-paused', '');
+		return [...(toast?.querySelectorAll<HTMLElement>('button') ?? [])].find((b) => b.textContent === label) ?? null;
+	}
+}
 
 /** After an extension update the old content script's context is gone and sendMessage throws. */
 const send = <T = unknown>(m: ToWorker): Promise<T> => {
@@ -61,14 +153,20 @@ export function start(): void {
 	let reportHost: HTMLElement | null = null;
 	const states = new Map<Element, CardState>();
 	const batchMs: number[] = [];
-	let layer: Layer | null = null;
-	const ui = () => (layer ??= new Layer());
+	const ip = inpageContext(document, SITE);
+	const copy = ip.strings;
+	let layer: PageLayer | null = null;
+	const ui = () => (layer ??= new PageLayer(ip));
 
 	// Registered at document_start, before the page's own scripts, so Escape and the focus trap
 	// of an open popover or dialog are handled before any site shortcut sees the key.
 	addEventListener('keydown', (e) => layer?.onKey(e), true);
-	// Leaving the page closes an open tag menu, which sends its held tag.
-	addEventListener('pagehide', () => layer?.closePop(false));
+	// Leaving the page closes an open popover and sends a tag its toast still held.
+	addEventListener('pagehide', () => {
+		layer?.closePop(false);
+		layer?.flush();
+	});
+	const theme = () => setTheme(document, pageIsDark(document) ? 'dark' : 'light');
 
 	let ctx: MatchContext = buildCtx();
 	function buildCtx(): MatchContext {
@@ -111,7 +209,7 @@ export function start(): void {
 
 	// ---- Card processing ------------------------------------------------------------
 
-	const noun = (s: Surface) => (platform === 'yt' || platform === 'tt' ? 'video' : s.mode === 'swipe' ? 'reel' : 'post');
+	const noun = (sf: Surface) => (platform === 'yt' || platform === 'tt' ? 'video' : sf.mode === 'swipe' ? 'reel' : 'post');
 
 	function preferredSource(f: Extracted): string | null {
 		return f.sourceIds.find((s) => s.startsWith('UC')) ?? f.sourceIds[0] ?? null;
@@ -201,14 +299,81 @@ export function start(): void {
 		else delete st.ui[slot];
 	}
 
-	function view(st: CardState): CardView {
-		return { platform: platform!, decision: st.decision, noun: noun(st.surface), sourceId: preferredSource(st.facts), plain: settings.plainChips };
+	const hidden = (st: CardState) => effective(st) === 'hide' || effective(st) === 'collapse';
+	const view = (st: CardState) => itemView(st.decision, hidden(st), settings.plainChips);
+
+	/** One shadow host per decorated element, holding one builder's element. `local` adds LOCAL_SHEET (ink pills, primary buttons). */
+	function hostWith(kind: string, el: Element, local = false): HTMLElement {
+		const { host, root } = makeHost(ip, kind);
+		if (local) adoptLocal(root);
+		root.append(el);
+		return host;
+	}
+
+	/**
+	 * The one layout read per collapsed card: where its thumbnail sits in its content box. Cards
+	 * collapsed in one task are measured together in the next animation frame, before it paints:
+	 * their collapse is lifted, every rect is read in one layout, and the collapse goes back. Not
+	 * before the document is parsed, when page styles may still be on their way.
+	 */
+	const toMeasure = new Set<Element>();
+	let measureFrame = 0;
+	function queueMeasure(card: Element) {
+		toMeasure.add(card);
+		measureFrame ||= requestAnimationFrame(measureAll);
+	}
+	function measureAll() {
+		measureFrame = 0;
+		if (document.readyState === 'loading') {
+			document.addEventListener('DOMContentLoaded', () => (measureFrame ||= requestAnimationFrame(measureAll)), { once: true });
+			return;
+		}
+		const t0 = performance.now();
+		const list = [...toMeasure].flatMap((card) => {
+			const st = states.get(card);
+			return st?.ui.bar && card.isConnected ? [{ card, st, bar: st.ui.bar, was: card.getAttribute('data-colander') }] : [];
+		});
+		toMeasure.clear();
+		for (const m of list) {
+			m.card.removeAttribute('data-colander');
+			m.bar.style.setProperty('display', 'none', 'important');
+		}
+		const read = list.map((m) => ({ ...m, geo: rects(m.card, m.st) }));
+		for (const m of read) {
+			m.bar.style.removeProperty('display');
+			if (m.was) m.card.setAttribute('data-colander', m.was);
+			m.st.geo = m.geo;
+			place(m.bar, m.geo, m.st.surface.mode === 'grid');
+		}
+		if (list.length) record(performance.now() - t0);
+	}
+	function rects(card: Element, st: CardState): Geo | null {
+		const thumb = resolve(card, st.surface.chip, { place: 'overlay' })?.el ?? card;
+		const c = card.getBoundingClientRect();
+		const t = thumb.getBoundingClientRect();
+		if (!c.width || !t.width || !t.height) return null;
+		const cs = getComputedStyle(card);
+		const left = c.left + parseFloat(cs.paddingLeft) + parseFloat(cs.borderLeftWidth);
+		const right = c.right - parseFloat(cs.paddingRight) - parseFloat(cs.borderRightWidth);
+		const top = c.top + parseFloat(cs.paddingTop) + parseFloat(cs.borderTopWidth);
+		const x = Math.max(0, Math.round(t.left - left));
+		const w = Math.round(right - left - x);
+		return { x, y: Math.max(0, Math.round(t.top - top)), w, h: Math.round(t.height), tw: Math.min(Math.round(t.width), w) };
+	}
+
+	function place(host: HTMLElement, geo: Geo | null | undefined, grid: boolean) {
+		if (!geo) return;
+		host.style.setProperty('--cl-x', `${geo.x}px`);
+		host.style.setProperty('--cl-y', `${geo.y}px`);
+		host.style.setProperty('--cl-w', `${grid ? geo.tw : geo.w}px`);
+		if (grid) host.style.setProperty('--cl-h', `${geo.h}px`);
 	}
 
 	function render(card: Element, st: CardState) {
 		if (!card.isConnected) return;
 		const action = effective(st);
 		const swipe = st.surface.mode === 'swipe';
+		const grid = st.surface.mode === 'grid';
 		const paused = ctx.paused;
 		card.setAttribute('data-colander-card', '');
 
@@ -226,17 +391,31 @@ export function start(): void {
 			else if (action === 'collapse') card.setAttribute('data-colander', 'collapse');
 			else card.removeAttribute('data-colander');
 		}
-		ensure(st, 'bar', !swipe && action === 'collapse', card, () => bar(view(st), () => show(card, st), (a) => why(a, card, st)), (host) => {
-			card.prepend(host);
-			return true;
-		});
+		const reveal = { onShow: () => show(card, st), onWhy: (a: HTMLElement) => why(a, card, st) };
+		// Lists keep a 40 px bar; grids keep the thumbnail's footprint, so the grid never moves.
+		ensure(
+			st,
+			'bar',
+			!swipe && action === 'collapse',
+			card,
+			() => {
+				const host = hostWith(grid ? 'stub' : 'bar', (grid ? gridStub : bar)(ip, view(st), reveal), true);
+				place(host, st.geo, grid);
+				return host;
+			},
+			(host) => {
+				card.prepend(host);
+				return true;
+			}
+		);
+		if (st.ui.bar && st.geo === undefined) queueMeasure(card);
 		const covered = swipe && (action === 'hide' || action === 'collapse');
 		ensure(
 			st,
 			'cover',
 			covered,
 			card,
-			() => cover(view(st), () => show(card, st), () => skip(card, st, false), (a) => why(a, card, st)),
+			() => hostWith('cover', cover(ip, view(st), { ...reveal, onSkip: () => skip(card, st, false) }), true),
 			(host) => {
 				const at = resolve(card, st.surface.cover ? { sel: st.surface.cover, place: 'overlay' } : undefined, { place: 'overlay' });
 				if (!at) return false;
@@ -249,14 +428,22 @@ export function start(): void {
 		else unguard(card);
 
 		const tone = swipe || resolve(card, st.surface.chip, { place: 'overlay' })?.place.startsWith('overlay') ? 'ink' : 'tint';
-		ensure(st, 'chip', action === 'label' && !!st.decision.verdict, card, () => chip(view(st), tone, (a) => why(a, card, st)), (host) => {
-			const at = resolve(card, st.surface.chip, { place: 'overlay' });
-			if (!at) return false;
-			insert(host, at, 'inline');
-			return true;
-		});
+		ensure(
+			st,
+			'chip',
+			action === 'label' && !!st.decision.verdict,
+			card,
+			() => hostWith('chip', chip(ip, view(st), { tone, onWhy: (a) => why(a, card, st) })),
+			(host) => {
+				const at = resolve(card, st.surface.chip, { place: 'overlay' });
+				if (!at) return false;
+				insert(host, at, 'inline');
+				return true;
+			}
+		);
 
 		// Every card with an item or a source gets the Tag button, also where the card shows no source.
+		// It shows on hover and focus in grids and lists, and always in swipe feeds or when Appearance says so.
 		const taggable = !!(st.facts.itemId || st.facts.sourceIds.length);
 		ensure(
 			st,
@@ -264,8 +451,11 @@ export function start(): void {
 			taggable && !paused && !covered && action !== 'collapse' && action !== 'hide',
 			card,
 			() => {
-				const host = tagButton(noun(st.surface), swipe || !!st.surface.tag?.place.startsWith('overlay'), (a) => tagMenu(a, card, st));
-				if (!swipe) host.setAttribute('data-reveal', '');
+				const ink = swipe || !!st.surface.tag?.place.startsWith('overlay');
+				const pill = tagPill(ip, noun(st.surface), (a) => tagMenu(a, st));
+				if (ink) pill.classList.add('ink');
+				const host = hostWith('tag', pill, ink);
+				if (!swipe && !settings.alwaysTag) host.setAttribute('data-reveal', '');
 				return host;
 			},
 			(host) => {
@@ -328,39 +518,70 @@ export function start(): void {
 			}
 		}
 		if (button && button.getClientRects().length) button.click();
-		else next?.scrollIntoView({ block: 'start', behavior: reducedMotion() ? 'auto' : 'smooth' });
+		else next?.scrollIntoView({ block: 'start', behavior: reducedMotion(document) ? 'auto' : 'smooth' });
 		if (!auto) return;
 		const now = Date.now();
 		skipRun = now - skipRun.at < 4000 ? { n: skipRun.n + 1, at: now } : { n: 1, at: now };
 		lastSkipped = { card, st };
-		const what = st.decision.verdict ? `slop ${noun(st.surface)}` : noun(st.surface);
-		ui().notice(`Skipped ${skipRun.n} ${what}${skipRun.n === 1 ? '' : 's'}.`, () => {
+		const n = skipRun.n;
+		const word = noun(st.surface);
+		const back = () => {
 			const last = lastSkipped;
 			skipRun = { n: 0, at: 0 };
 			if (!last) return;
 			last.st.shown = true;
 			render(last.card, last.st);
-			last.card.scrollIntoView({ block: 'start', behavior: reducedMotion() ? 'auto' : 'smooth' });
+			last.card.scrollIntoView({ block: 'start', behavior: reducedMotion(document) ? 'auto' : 'smooth' });
+		};
+		const l = ui();
+		// One notice, never stacked: a new skip replaces it. In swipe feeds it sits above the player's controls.
+		l.notice({
+			text: st.decision.verdict ? copy.skipped(n, word) : `Skipped ${n} ${n === 1 ? word : `${word}s`}.`,
+			verdict: st.decision.verdict ?? undefined,
+			bottom: 96,
+			actions: [
+				{ label: copy.undo, icon: Undo2, onClick: () => (l.dismissNotice(), back()) },
+				{
+					label: copy.why,
+					icon: Info,
+					onClick: () => {
+						const anchor = l.toastButton(copy.why);
+						if (anchor) l.why(anchor, evidenceFor(st, true), actionsFor(card, st, back));
+					}
+				}
+			]
 		});
 	}
 
 	// ---- Actions from the UI ------------------------------------------------------------
 
-	function show(card: Element, st: CardState) {
+	function show(card: Element, st: CardState, quiet = false) {
 		st.shown = true;
 		render(card, st);
-		const focusTarget = st.ui.chip?.shadowRoot?.querySelector('button') ?? null;
-		focusTarget?.focus();
+		st.ui.chip?.shadowRoot?.querySelector<HTMLElement>('button')?.focus();
+		if (quiet) return;
+		const l = ui();
+		l.notice({
+			text: copy.shownAgain,
+			actions: [{ label: copy.undo, icon: Undo2, onClick: () => (l.dismissNotice(), (st.shown = false), render(card, st)) }]
+		});
+	}
+
+	function evidenceFor(st: CardState, isHidden = hidden(st)) {
+		return whyEvidence(st.decision, { hidden: isHidden, platform: platform!, sourceId: preferredSource(st.facts), site: SITE });
+	}
+
+	function actionsFor(card: Element, st: CardState, showIt?: () => void): EvidenceActions {
+		const d = st.decision;
+		return {
+			show: showIt ?? (hidden(st) ? () => show(card, st) : undefined),
+			allow: d.reason !== 'allowed' ? () => allow(st) : undefined,
+			notSlop: d.verdict && d.verdict !== 'clear' ? () => tagWithToast(st, 'not_slop', d.reason === 'source_list') : undefined
+		};
 	}
 
 	function why(anchor: HTMLElement, card: Element, st: CardState) {
-		const d = st.decision;
-		const hidden = effective(st) === 'hide' || effective(st) === 'collapse';
-		ui().why(anchor, view(st), {
-			show: hidden ? () => show(card, st) : undefined,
-			allow: d.reason !== 'allowed' ? () => allow(st) : undefined,
-			notSlop: d.verdict && d.verdict !== 'clear' ? () => void tagCard(card, st, 'not_slop', d.reason === 'source_list') : undefined
-		});
+		ui().why(anchor, evidenceFor(st), actionsFor(card, st));
 	}
 
 	function allow(st: CardState) {
@@ -371,7 +592,11 @@ export function start(): void {
 		changed();
 		reapplyAll();
 		void send({ type: 'allow', key, name: st.facts.name || undefined });
-		ui().notice(`Always allowed. ${st.facts.name || 'This source'} is on My list allows.`);
+		const l = ui();
+		l.notice({
+			text: `Always allowed. ${st.facts.name || 'This source'} is on My list allows.`,
+			actions: [{ label: copy.undo, icon: Undo2, onClick: () => (l.dismissNotice(), void send({ type: 'unlist', list: 'allows', key })) }]
+		});
 	}
 
 	/** Item tags carry their source when the card shows one; `source_id` is left out otherwise (contract 6.2). */
@@ -389,63 +614,104 @@ export function start(): void {
 		};
 	}
 
-	async function tagCard(card: Element, st: CardState, verdict: TagVerdict, sourceLevel = false, hold = false): Promise<Effective> {
-		const t = tagTarget(st, sourceLevel);
-		if (!t) return 'none';
-		const key = targetKey(platform!, t.targetType, t.targetId);
-		ownTags = new Map(ownTags).set(key, verdict);
+	/**
+	 * One click applies a tag on this device at once. It is queued but held while its toast is up,
+	 * so Undo drops it and Add detail refines it; one tag goes out when the toast ends (the limit
+	 * is 60 a minute). A held tag the page never released goes out after 5 minutes.
+	 */
+	function startTag(req: TagRequest): TagSession {
+		const key = targetKey(req.platform, req.targetType, req.targetId);
+		ownTags = new Map(ownTags).set(key, req.verdict);
 		changed();
 		reapplyAll();
-		void send({ type: 'tag', tag: { ...t, verdict }, hold });
-		if (verdict === 'not_slop' && sourceLevel) ui().notice('Tagged as not slop. Shown for you, and counted toward the shared list.');
-		return states.get(card) ? effective(states.get(card)!) : 'none';
+		const queued = send({ type: 'tag', tag: req, hold: true }).catch(() => undefined);
+		const t: TagSession = { req, key, queued, undone: false, sent: false };
+		ui().whenNextEnds(() => release(t));
+		return t;
 	}
 
-	/**
-	 * One tagging session sends one tag (the limit is 60 a minute): Slop applies and is queued at
-	 * once but held while the menu is open, type and tests refine it here, and the final state
-	 * replaces the queued tag when the menu closes.
-	 */
-	function tagMenu(anchor: HTMLElement, card: Element, st: CardState) {
+	function release(t: TagSession) {
+		if (t.undone || t.sent) return;
+		t.sent = true;
+		void t.queued.then(() => send({ type: 'tag', tag: t.req })).catch(() => undefined);
+	}
+
+	function undoTag(t: TagSession) {
+		t.undone = true;
+		const next = new Map(ownTags);
+		next.delete(t.key);
+		ownTags = next;
+		changed();
+		reapplyAll();
+		void t.queued.then(() => send({ type: 'untag', key: t.key })).catch(() => undefined);
+	}
+
+	/** Not slop from Why: the same tag, confirmed by a toast with Undo. */
+	function tagWithToast(st: CardState, verdict: TagVerdict, sourceLevel: boolean) {
+		const base = tagTarget(st, sourceLevel);
+		if (!base) return;
+		const t = startTag({ ...base, verdict });
+		const l = ui();
+		l.notice({ text: copy.tagged[verdict], actions: [{ label: copy.undo, icon: Undo2, onClick: () => (l.dismissNotice(), undoTag(t)) }] });
+	}
+
+	function tagMenu(anchor: HTMLElement, st: CardState) {
 		const base = tagTarget(st, false);
-		let held: TagRequest | null = null;
-		ui().tagMenu(anchor, {
-			noun: noun(st.surface),
-			reportHelp: pc.reportHelp,
-			tag: (v) => {
-				if (v === 'slop' && base) held = { ...base, verdict: 'slop' };
-				return tagCard(card, st, v, false, v === 'slop');
+		if (!base) return;
+		let session: TagSession | null = null;
+		const l = ui();
+		l.tagMenu(anchor, noun(st.surface), {
+			tag: (verdict) => {
+				session = startTag({ ...base, verdict });
 			},
+			undo: () => session && undoTag(session),
 			detail: (slopType: SlopType | null, tests: Test[]) => {
-				if (held) held = { ...held, slopType, tests };
-			},
-			close: () => {
-				if (held) void send({ type: 'tag', tag: held }).catch(() => undefined);
-				held = null;
+				if (session) session.req = { ...session.req, slopType, tests };
 			}
 		});
+		// Scams and deepfakes are beyond slop: a shortcut to the platform's own reporting.
+		// Extension-only addition to the shared tag menu.
+		const menu = document.querySelector('colander-ui[data-kind="layer"]')?.shadowRoot?.querySelector('.cl-pop.menu');
+		if (menu && pc.reportHelp) {
+			const h = hyper(document);
+			const p = h('p', { class: 'cl-ev-links scam' }, h('a', { class: 'cl-link', href: pc.reportHelp, target: '_blank', rel: 'noopener noreferrer' }, 'This is a scam or deepfake'));
+			// CSSOM, not a style attribute, so a host page's style-src cannot drop it.
+			p.style.padding = '0 8px 4px';
+			menu.append(p);
+		}
+	}
+
+	/** The report's reason: the note, or the type and tests chosen, so reviewers know what to look for. */
+	function reportReason(note: string, slopType: SlopType | null, tests: Test[]): string {
+		if (note) return note.slice(0, 500);
+		const parts = [slopType && `${SLOP_TYPE_WORD[slopType]}: ${SLOP_TYPE_HINT[slopType].toLowerCase()}`, tests.length && tests.map((x) => TEST_WORD[x]).join(', ')].filter(Boolean);
+		return parts.length ? `${parts.join('. ')}.` : '';
 	}
 
 	function openReport() {
 		if (!page) return;
-		const items: { id: string; title: string }[] = [];
+		const items: { id: string; title: string; thumb?: string }[] = [];
 		for (const [card, st] of states) {
 			if (!card.isConnected || !surfaces.includes(st.surface) || !st.facts.itemId) continue;
-			if (st.facts.sourceIds.length && !st.facts.sourceIds.some((s) => page!.sourceIds.includes(s))) continue;
-			if (!items.some((i) => i.id === st.facts.itemId)) items.push({ id: st.facts.itemId, title: st.facts.title });
+			if (st.facts.sourceIds.length && !st.facts.sourceIds.some((x) => page!.sourceIds.includes(x))) continue;
+			if (items.some((i) => i.id === st.facts.itemId)) continue;
+			// Only pictures the page already shows: no new requests to anyone.
+			const img = card.querySelector<HTMLImageElement>('img[src^="https:"]');
+			items.push({ id: st.facts.itemId, title: st.facts.title, thumb: img?.src });
 		}
-		const sourceId = page.sourceIds.find((s) => s.startsWith('UC')) ?? page.sourceIds[0]!;
+		const sourceId = page.sourceIds.find((x) => x.startsWith('UC')) ?? page.sourceIds[0]!;
+		const at = page.sourceIds.find((x) => x.startsWith('@'));
+		const handle = at ?? (platform === 'ig' ? `@${page.sourceIds[0]}` : page.name || sourceId);
 		ui().report({
-			platform: platform!,
-			platformName: PLATFORM_NAME[platform!],
-			sourceId,
-			name: page.name,
+			handle,
 			items,
 			send: async (input) => {
+				const reason = reportReason(input.note, input.slopType, input.tests);
+				if (!reason) return { ok: false, error: 'Choose a type or a test, or add a note, so reviewers know what to look for.' };
 				try {
 					const r = await send<ReportReply>({
 						type: 'report',
-						report: { platform: platform!, sourceId, sourceName: page?.name || undefined, ...input }
+						report: { platform: platform!, sourceId, sourceName: page?.name || undefined, examples: input.examples, reason, slopType: input.slopType, tests: input.tests }
 					});
 					return r.ok ? { ok: true } : r;
 				} catch {
@@ -513,7 +779,7 @@ export function start(): void {
 			at = null;
 		}
 		if (!at) return;
-		reportHost = reportButton(noun(surfaces[0] ?? pc.surfaces[0]!), openReport);
+		reportHost = hostWith('report', reportPill(ip, openReport));
 		const place = page!.rule.anchor!.place;
 		if (place === 'before') at.before(reportHost);
 		else if (place === 'after') at.after(reportHost);
@@ -632,7 +898,7 @@ export function start(): void {
 		surfaces = activeSurfaces(pc.surfaces, location.pathname);
 		layer?.closePop(false);
 		lastCounts = '';
-		if (document.body) setDark(pageIsDark());
+		if (document.body) theme();
 		scanAll();
 		scheduleCounts();
 	}
@@ -699,10 +965,10 @@ export function start(): void {
 	addEventListener('popstate', checkNav);
 	for (const ev of pc.navEvents ?? []) document.addEventListener(ev, checkNav);
 	document.addEventListener('DOMContentLoaded', () => {
-		setDark(pageIsDark());
+		theme();
 		if (ready) scanAll();
 	});
-	matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => setDark(pageIsDark()));
+	matchMedia('(prefers-color-scheme: dark)').addEventListener('change', theme);
 
 	// ---- Messages and storage ---------------------------------------------------------------
 
@@ -715,7 +981,20 @@ export function start(): void {
 				for (const [card, st] of states) {
 					if (st.id !== m.id) continue;
 					show(card, st);
-					if (card instanceof HTMLElement) card.scrollIntoView({ block: 'center', behavior: reducedMotion() ? 'auto' : 'smooth' });
+					if (card instanceof HTMLElement) card.scrollIntoView({ block: 'center', behavior: reducedMotion(document) ? 'auto' : 'smooth' });
+				}
+				reply({ ok: true });
+				return;
+			}
+			case 'why': {
+				for (const [card, st] of states) {
+					if (st.id !== m.id) continue;
+					if (effective(st) === 'hide') show(card, st, true);
+					if (card instanceof HTMLElement) card.scrollIntoView({ block: 'center', behavior: 'auto' });
+					const anchor =
+						st.ui.chip?.shadowRoot?.querySelector<HTMLElement>('button') ??
+						[...(st.ui.bar?.shadowRoot?.querySelectorAll<HTMLElement>('button') ?? [])].find((b) => b.textContent === copy.why);
+					if (anchor) why(anchor, card, st);
 				}
 				reply({ ok: true });
 				return;
@@ -737,11 +1016,16 @@ export function start(): void {
 		if (area !== 'local') return;
 		let dirty = false;
 		if (changes[K.settings]) {
+			const before = settings;
 			settings = withDefaults(changes[K.settings]!.newValue as Partial<Settings>);
-			for (const host of document.querySelectorAll('colander-ui[data-kind="chip"], colander-ui[data-kind="bar"]')) host.remove();
-			for (const st of states.values()) {
-				delete st.ui.chip;
-				delete st.ui.bar;
+			// Appearance changed: chips, bars and Tag buttons are built again in the new look.
+			if (before.plainChips !== settings.plainChips || before.alwaysTag !== settings.alwaysTag) {
+				for (const st of states.values()) {
+					for (const k of ['chip', 'bar', 'tag'] as const) st.ui[k]?.remove();
+					delete st.ui.chip;
+					delete st.ui.bar;
+					delete st.ui.tag;
+				}
 			}
 			dirty = true;
 		}
@@ -771,7 +1055,7 @@ export function start(): void {
 		tabPaused = !!hello?.tabPaused;
 		changed();
 		ready = true;
-		if (document.body) setDark(pageIsDark());
+		if (document.body) theme();
 		scanAll();
 	})();
 

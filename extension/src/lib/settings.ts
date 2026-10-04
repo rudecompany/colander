@@ -32,6 +32,8 @@ export interface Settings {
 	blocks: MyListEntry[];
 	/** Appearance: larger chips with plain-language words. */
 	plainChips: boolean;
+	/** Appearance: the Tag button stays visible on every card, not only on hover and focus. */
+	alwaysTag: boolean;
 	onboarded: boolean;
 }
 
@@ -49,6 +51,7 @@ export const DEFAULT_SETTINGS: Settings = {
 	allows: [],
 	blocks: [],
 	plainChips: false,
+	alwaysTag: false,
 	onboarded: false
 };
 

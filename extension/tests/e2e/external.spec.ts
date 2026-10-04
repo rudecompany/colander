@@ -20,12 +20,17 @@ test('ping, plan token and reviewer token from the website origin', async ({ ext
 test('the 14-day trial needs no card and unlocks Plus features', async ({ ext }) => {
 	const opts = await ext.ctx.newPage();
 	await opts.goto(`chrome-extension://${EXT_ID}/options.html#strictness`);
-	await opts.getByRole('button', { name: 'Start 14-day trial, no card' }).click();
-	await expect(opts.getByLabel('TikTok')).toBeVisible();
+	// Per-platform levels are part of Plus: in view, inert, until the trial starts.
+	await expect(opts.getByText('Part of Plus.')).toBeVisible();
+	await opts.goto(`chrome-extension://${EXT_ID}/options.html#plus`);
+	await opts.getByRole('button', { name: 'Start 14 days free' }).click();
+	await expect(opts.getByRole('heading', { name: 'Plus adds control' })).toHaveCount(0);
 	const trial = ext.api.posted('/v1/trial')[0]!;
 	expect(trial.auth).toMatch(/^Install /);
 	expect(trial.body).toBeUndefined();
-	await opts.getByLabel('TikTok').selectOption('no_ai');
+	await opts.goto(`chrome-extension://${EXT_ID}/options.html#strictness`);
+	await expect(opts.getByText('Part of Plus.')).toHaveCount(0);
+	await opts.getByRole('radiogroup', { name: 'TikTok strictness' }).getByRole('radio', { name: 'No AI' }).click();
 	await expect.poll(() => ext.storage<{ perPlatform: Record<string, string> }>('settings').then((s) => s.perPlatform)).toEqual({ tt: 'no_ai' });
 	// Plus settings sync pushes the change with the plan token.
 	await expect.poll(() => ext.api.sent.filter((s) => s.path === '/v1/sync' && s.method === 'PUT').length).toBeGreaterThan(0);

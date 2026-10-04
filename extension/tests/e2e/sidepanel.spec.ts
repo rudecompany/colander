@@ -1,5 +1,5 @@
 // The curator side panel against the review API (contract 6.7).
-import { EXT_ID, REVIEW_QUEUE, REVIEW_SOURCE, SHOTS, expect, test } from './harness';
+import { EXT_ID, REVIEW_QUEUE, REVIEW_SOURCE, expect, test } from './harness';
 
 test('sign-in state for people without a reviewer token', async ({ ext }) => {
 	const side = await ext.ctx.newPage();
@@ -16,11 +16,11 @@ test('queue, evidence and a decision', async ({ ext }) => {
 	await side.setViewportSize({ width: 400, height: 900 });
 	await side.goto(`chrome-extension://${EXT_ID}/sidepanel.html`);
 	await expect(side.getByRole('button', { name: /Cat Rescue Tales/ })).toBeVisible();
-	if (SHOTS) await side.screenshot({ path: 'screenshots/sidepanel-queue-light.png', animations: 'disabled' });
+	await expect(side.getByRole('tab', { name: 'Reports 1' })).toBeVisible();
 	await side.getByRole('button', { name: /Cat Rescue Tales/ }).click();
 	await expect(side.getByRole('heading', { name: 'Cat Rescue Tales' })).toBeVisible();
 	await expect(side.getByText('Consensus is still forming')).toBeVisible();
-	await expect(side.getByText('Fake rescue videos made with AI, posted every hour.')).toBeVisible();
+	await expect(side.getByText('Staged rescue videos made with AI, posted every hour.')).toBeVisible();
 	expect(ext.api.sent.find((s) => s.path.startsWith('/v1/review/queue'))!.auth).toBe('Bearer rvw_test');
 	await side.getByRole('button', { name: 'Record decision' }).click();
 	await expect(side.getByRole('alert')).toContainText('Write the reason');
@@ -31,12 +31,36 @@ test('queue, evidence and a decision', async ({ ext }) => {
 	expect(d.body).toMatchObject({ verdict: 'slop', reason: 'Staff review confirmed AI narration over generated footage, posted hourly.', signals: ['mostly_ai'], slop_type: 'deceptive', tests: ['mass_produced', 'hollow'] });
 	// "large" goes along only when the reviewer changed it: the server refuses it from curators.
 	expect(d.body).not.toHaveProperty('large');
-	await side.evaluate(() => scrollTo(0, 0));
-	if (SHOTS) await side.screenshot({ path: 'screenshots/sidepanel-evidence-light.png', animations: 'disabled' });
-	await side.getByRole('heading', { name: 'Decision' }).scrollIntoViewIfNeeded();
-	await side.evaluate(() => scrollBy(0, -56));
-	if (SHOTS) await side.screenshot({ path: 'screenshots/sidepanel-decision-light.png', animations: 'disabled' });
-	await side.emulateMedia({ colorScheme: 'dark' });
-	await side.evaluate(() => scrollTo(0, 0));
-	if (SHOTS) await side.screenshot({ path: 'screenshots/sidepanel-evidence-dark.png', animations: 'disabled' });
+});
+
+test('keys pick a verdict, list the shortcuts and go back', async ({ ext }) => {
+	ext.api.review.queue = REVIEW_QUEUE();
+	ext.api.review.source = REVIEW_SOURCE;
+	await ext.ctl.evaluate(() => chrome.storage.local.set({ reviewerToken: 'rvw_test' }));
+	const side = await ext.ctx.newPage();
+	await side.setViewportSize({ width: 360, height: 800 });
+	await side.goto(`chrome-extension://${EXT_ID}/sidepanel.html`);
+	await side.getByRole('button', { name: /Cat Rescue Tales/ }).click();
+	await expect(side.getByRole('heading', { name: 'Cat Rescue Tales' })).toBeVisible();
+	const verdicts = side.getByRole('radiogroup', { name: 'Verdict' });
+	await side.keyboard.press('2');
+	await expect(verdicts.getByRole('radio', { name: /Likely slop/ })).toHaveAttribute('aria-checked', 'true');
+	await side.keyboard.press('0');
+	await expect(verdicts.getByRole('radio', { name: /Not rated/ })).toHaveAttribute('aria-checked', 'true');
+	// Single keys never act while typing.
+	await side.keyboard.press('r');
+	await expect(side.getByLabel('Reason, published in the decision log')).toBeFocused();
+	await side.keyboard.type('1');
+	await expect(verdicts.getByRole('radio', { name: /Not rated/ })).toHaveAttribute('aria-checked', 'true');
+	await side.getByRole('heading', { name: 'Cat Rescue Tales' }).click();
+	await side.keyboard.press('?');
+	await expect(side.getByRole('dialog', { name: 'Keyboard shortcuts' })).toBeVisible();
+	await side.keyboard.press('Escape');
+	await expect(side.getByRole('dialog')).toHaveCount(0);
+	// The decision bar stays in view at the bottom of a 360 px panel.
+	const bar = await side.getByRole('button', { name: 'Record decision' }).boundingBox();
+	expect(bar!.y + bar!.height).toBeLessThanOrEqual(800);
+	expect(await side.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(360);
+	await side.keyboard.press('Escape');
+	await expect(side.getByRole('tab', { name: 'All 1' })).toBeVisible();
 });

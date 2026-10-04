@@ -26,7 +26,8 @@ Only the public half of the RSA key is in the repository; the Chrome Web Store s
 | `pnpm -C extension test:e2e` | Builds the end-to-end variant and runs the Playwright suite. |
 | `pnpm -C extension test:live` | Builds the end-to-end variant and checks the adapters against the real sites. |
 | `pnpm -C extension screenshots` | Builds the end-to-end variant and rewrites `screenshots/`, light and dark. A normal `test:e2e` run never touches them. |
-| `pnpm -C extension icons` | Renders `public/icons/*.png` from the brand geometry. |
+| `pnpm -C extension icons` | Renders `public/icons/*.png` from the brand geometry and checks them against six toolbar colors (`screenshots/toolbar-icons.png`). |
+| `pnpm -C extension store-art` | Builds the end-to-end variant and captures the Chrome Web Store art into `store/` from the real UI. |
 | `node extension/scripts/capture-fixtures.ts` | Captures sanitized YouTube and TikTok fixtures from the live sites. |
 
 To load it, open `chrome://extensions`, switch on Developer mode, choose Load unpacked and pick `extension/dist/chrome-mv3`.
@@ -76,10 +77,15 @@ It re-applies within the same task when settings, tags or the list change (`stor
 `bridge.js` runs in the page's main world for one job: YouTube's newer cards carry their channel only in component data, which the isolated world cannot read.
 It reads the property paths named in the adapter config and writes `{"i": item, "s": [sources]}` to a `data-colander-bridge` attribute on the card.
 The isolated script trusts that attribute only while its item matches the card's own, because the page reuses elements.
-All UI is vanilla DOM in open shadow roots with one constructed stylesheet, the system font stack and no `innerHTML`, so page CSS, page CSP and Trusted Types do not get in the way.
+All UI comes from the shared in-page builders in `@colander/shared/inpage` (the same ones the website prerenders): vanilla DOM in open shadow roots with one constructed stylesheet generated from `colander.css`, the system font stack and no `innerHTML`, so page CSS, page CSP and Trusted Types do not get in the way.
+`src/content/views.ts` turns a match decision into what a card shows and the evidence behind Why.
 
-**Pages** (`src/entrypoints/*`, Svelte 5, Mittsu components, `colander.css`).
-The popup (pause, strictness, counts, this page's actions with Show, Always allow and Not slop, Report this source, the support card, and for Plus a weekly summary once a week), Options (Lists, Platforms, Strictness, Plus, Appearance, Plan, My reports, Data, Privacy), the welcome page, and the curator side panel.
+**Pages** (`src/entrypoints/*`, Svelte 5, the shared components from `@colander/shared`).
+Every page sits on paper with surface cards and follows the system's light or dark setting.
+The popup is the shared PopupView, the same component the website draws in its hero: status and Pause, strictness, counts, this page's items with Show and a menu (Show, Always allow this source, Not slop, Why, Source page), and one slot for a sync failure, a report verdict or the weekly card.
+Options (Lists, Platforms, Strictness, Plus, Appearance, Plan, My reports, Data, Privacy) has a nav, one section per view and from 1200 px a rail with the list status.
+The welcome page sets up Colander in 3 steps (strictness on the recreated feed, platforms, pinning), and the side panel is the curator review queue with keyboard shortcuts (? lists them).
+`storeart.html` exists only in the end-to-end build, for `pnpm store-art`.
 
 ### Matching
 
@@ -102,14 +108,15 @@ Disputed is always labeled with its mark, and Clear is always allowed.
 | Action | Grid or list | Swipe feed |
 | --- | --- | --- |
 | Label | A verdict chip on the thumbnail (ink background, media color glyph and word). | The chip beside the creator name. |
-| Collapse | The card keeps only a 40 px bar: glyph, verdict, one reason, Show and Why. Enter shows it. | The video is covered and paused until Show or Skip. |
-| Hide | The card leaves the layout, so the grid closes up, and the page count goes up. | The video is skipped when it becomes active, with "Skipped 1 slop video. Undo" for 4 seconds, announced politely, never stacked. |
+| Collapse | Lists keep a 40 px bar (chip, "Hidden for you", one reason, Show and Why) from the thumbnail's left edge to the row's right edge. Grids keep the thumbnail's footprint as a hairline stub, so the grid never moves. Enter shows it. | The video is covered and paused until Show or Skip. |
+| Hide | The card leaves the layout, so the grid closes up, and the page count goes up. | The video is skipped when it becomes active, with "Skipped 1 slop video." plus Undo and Why for 4 seconds (a 4-dot countdown that pauses on hover and focus), announced politely, never stacked. |
 
-Every card with an item or a source gets a 28 px Tag button: shown on hover or keyboard focus in grids and lists, always in swipe feeds.
+Every card with an item or a source gets a 28 px Tag button: shown on hover or keyboard focus in grids and lists, always in swipe feeds, and always when Appearance says so.
 Where a card shows no source (the Instagram Explore grid), the item tag goes out without `source_id` (contract 6.2).
-Tag, then Slop, applies the tag at once (two clicks, P0-5); type and tests are optional after that.
-One menu sends one tag: Slop is queued at once but held while the menu is open, type and tests change it on the device, and the final state replaces the queued tag when the menu closes (a held tag goes out after 5 minutes at the latest).
-Why lists every signal that fired on one wrapping line, then the list and its date, and links to the public source page and, for list verdicts only, the appeal page (a platform label or your own tag has nothing to appeal).
+Tag, then Slop, applies the tag at once (two clicks, P0-5); the menu closes and a toast confirms it with Undo and, for Slop, Add detail (type and tests).
+One tag goes out per choice: it is queued at once but held while its toast is up, Add detail changes it on the device, Undo drops it, and the final state replaces the queued tag when the toast ends (a held tag goes out after 5 minutes at the latest).
+Why shows up to 3 evidence layers, those that agreed first, then the list and its date, Show, Always allow and Not slop, and links to the public source page and, for list verdicts only, the appeal page (a platform label or your own tag has nothing to appeal).
+The tag menu adds a shortcut to the platform's own reporting for scams and deepfakes.
 
 ## Storage layout
 
@@ -255,15 +262,16 @@ There is no remote code, no `eval` and no inline script.
 - `tests/unit`: the list decoder and verifier against `testdata/contract` (snapshot, delta, tampering, length, sort order, unknown keys, delta on the wrong base), the config envelope and plan token, the synchronous SHA-256 against Node's, canonical IDs per platform from real-looking URLs, matching precedence and the strictness table, the tag queue's offline retry planning, and adapter extraction against a saved fixture of every surface.
 - `tests/e2e`: the built extension in Chromium with fixtures served on the real hostnames and the API mocked by route handlers serving the contract fixtures.
   It covers hiding, collapsing and labeling per strictness, re-applying within 1 second without a reload (P0-3), pause by site and tab, the badge, delta sync, a tampered list, a signed config fixing a renamed selector, no layout jump during infinite scroll, Tag in two clicks and the exact tag body (one POST per tag menu, item tags without a source on the Instagram Explore grid), the offline queue, keyboard-only use of the tag menu and collapsed bar, Why (every signal that fired, Appeal only for list verdicts), Show, Always allow and Not slop, swipe skip with Undo and covers, the welcome flow's permission request, Report source, website messaging, the trial and Plus sync, Plus early access, the weekly summary and the daily plan check, no install ID on a fresh install's sync, a dismissed report closed calmly, the side panel, and the performance budgets.
-- Performance on a 200-card page: slop cards are hidden 3 ms after insertion at the 95th percentile (budget 150 ms), and the content script adds about 21 ms in total (budget 50 ms).
+- Performance on a 200-card page: slop cards are hidden within about 6 ms of insertion at the 95th percentile (budget 150 ms), and the content script adds about 30 ms in total (budget 50 ms), a third of it the one batched layout read per frame that lines collapsed bars and grid stubs up with their thumbnails.
   On live YouTube pages it adds 7 to 23 ms per page.
 - `tests/live`: the real YouTube and TikTok pages, no login.
   Signed-in surfaces run only with a Playwright storage state in `COLANDER_LIVE_STATE_YT`, `_TT`, `_IG` or `_FB`.
   `.github/workflows/adapters-daily.yml` runs it every day.
   A surface that finds no cards fails the run, and so does a surface whose platform has a storage state when the site refuses the automated browser.
   Without credentials, such surfaces are skipped as unverified: `tests/live/summary-reporter.ts` lists every surface in the job summary and adds a warning annotation for each unverified one.
-- `tests/e2e/shots.spec.ts` (and the side panel test) write the screenshots in `screenshots/`, light and dark, only under `pnpm screenshots` (`SCREENSHOTS=1`).
-- `tests/e2e/a11y.spec.ts` runs axe-core (WCAG 2.2 A and AA) over the popup, every Options section, the welcome page, the side panel and every in-page element (chip, collapsed bar, Tag button, tag menu, Why, report form, skip notice, cover), light and dark, and checks the radio group keys, the popup's 32 px rows and the switches' 3:1 contrast.
+- `tests/e2e/shots.spec.ts` writes the screenshots in `screenshots/`, light and dark, only under `pnpm screenshots` (`SCREENSHOTS=1`).
+- `tests/e2e/a11y.spec.ts` runs axe-core (WCAG 2.2 A and AA) over the popup and its menu, every Options section and the delete dialog, each welcome step, the side panel and its shortcuts, and every in-page element (chip, collapsed bar, Tag button, tag menu, tag toast and Add detail, Why, both report steps, skip notice, cover), light and dark, and checks the radio group keys.
+- `tests/e2e/popup.spec.ts` keeps the popup at most 600 px tall in every state (default, show all, paused, each slot item, an empty page, an unsupported site), in both themes, with long titles.
 
 ## Fixtures
 

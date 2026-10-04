@@ -6,7 +6,7 @@ test('Shorts: slop is skipped with an Undo notice', async ({ ext }) => {
 	await ext.setup();
 	const page = await ext.open('https://www.youtube.com/shorts/_k2w1cC69qY');
 	const scroller = page.locator('#shorts-container');
-	const notice = page.locator('colander-ui[data-kind="layer"] .toast');
+	const notice = page.locator('colander-ui[data-kind="layer"] .cl-toast');
 	await expect(notice).toContainText('Skipped 1 slop video.');
 	await expect(notice).toHaveAttribute('role', 'status');
 	await expect.poll(() => scroller.evaluate((e) => e.scrollTop)).toBeGreaterThan(100);

@@ -12,8 +12,9 @@
     "test": "vitest run",
     "test:e2e": "pnpm build:e2e && playwright test --project=e2e --project=perf",
     "test:live": "pnpm build:e2e && playwright test --project=live",
-    "screenshots": "pnpm build:e2e && SCREENSHOTS=1 playwright test --project=e2e shots sidepanel",
+    "screenshots": "pnpm build:e2e && SCREENSHOTS=1 playwright test --project=e2e shots",
     "icons": "node scripts/make-icons.ts",
+    "store-art": "pnpm build:e2e && node scripts/make-store-art.ts",
     "postinstall": "wxt prepare"
   },
   "devDependencies": {

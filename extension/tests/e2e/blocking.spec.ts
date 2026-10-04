@@ -2,7 +2,7 @@
 // pause, the toolbar count, delta sync and signed adapter configuration.
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { EXT_ID, ROOT, devSign, expect, test, ui } from './harness';
+import { EXT_ID, ROOT, devSign, expect, test } from './harness';
 import defaults from '../../src/adapters/default-config.json' with { type: 'json' };
 
 const SEARCH = 'https://www.youtube.com/results?search_query=history';
@@ -49,32 +49,7 @@ test('the toolbar badge counts what is hidden on the page', async ({ ext }) => {
 	const page = await ext.open(SEARCH);
 	const tabId = await ext.tabId(page);
 	await expect.poll(() => ext.ctl.evaluate((id) => chrome.action.getBadgeText({ tabId: id }), tabId)).toBe('4');
-	await expect.poll(() => ext.ctl.evaluate((id) => chrome.action.getTitle({ tabId: id }), tabId)).toBe('Colander: 4 hidden on this page');
-});
-
-test('pause on this site and on this tab', async ({ ext }) => {
-	await ext.setup();
-	const page = await ext.open(SEARCH);
-	const first = page.locator('ytd-search ytd-video-renderer').first();
-	await expect(first).toHaveAttribute('data-colander', 'hide');
-	const popup = await ext.ctx.newPage();
-	await popup.goto(`chrome-extension://${EXT_ID}/popup.html?tab=${await ext.tabId(page)}`);
-
-	await popup.getByRole('switch', { name: 'Pause on this site' }).click();
-	await expect(popup.getByText('Paused on this site.')).toBeVisible();
-	await expect(first).not.toHaveAttribute('data-colander', /./);
-	await expect(ui(page, 'tag')).toHaveCount(0);
-	await expect(ui(page, 'chip')).toHaveCount(0);
-	await popup.getByRole('switch', { name: 'Pause on this site' }).click();
-	await expect(first).toHaveAttribute('data-colander', 'hide');
-
-	await popup.getByRole('switch', { name: 'Pause on this tab' }).click();
-	await expect(first).not.toHaveAttribute('data-colander', /./);
-	// Other tabs on the same site keep blocking.
-	const other = await ext.open(SEARCH);
-	await expect(other.locator('ytd-search ytd-video-renderer').first()).toHaveAttribute('data-colander', 'hide');
-	await popup.getByRole('switch', { name: 'Pause on this tab' }).click();
-	await expect(first).toHaveAttribute('data-colander', 'hide');
+	await expect.poll(() => ext.ctl.evaluate((id) => chrome.action.getTitle({ tabId: id }), tabId)).toBe('Colander, 4 hidden on this page');
 });
 
 test('a delta moves the open page without a reload', async ({ ext }) => {

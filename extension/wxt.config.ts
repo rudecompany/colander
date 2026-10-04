@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process';
 import { defineConfig } from 'wxt';
 import { ALL_ORIGINS } from './src/lib/platforms';
 
@@ -35,6 +36,16 @@ export default defineConfig({
 		};
 	},
 	hooks: {
+		// The in-page tokens are generated from colander.css; a stale copy fails here, before any build.
+		'prepare:types': () => {
+			execFileSync(process.execPath, ['../packages/shared/scripts/gen-inpage-tokens.ts', '--check'], { stdio: 'inherit' });
+		},
+		// The store art page (scripts/make-store-art.ts) ships only in the end-to-end build.
+		'entrypoints:found': (wxt, infos) => {
+			if (wxt.config.mode === 'e2e') return;
+			const i = infos.findIndex((e) => e.name === 'storeart');
+			if (i >= 0) infos.splice(i, 1);
+		},
 		'build:manifestGenerated': (wxt, manifest) => {
 			// Runtime-registered content scripts must not grant themselves site access: access is
 			// optional and asked for per platform.

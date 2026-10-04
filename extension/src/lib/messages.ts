@@ -77,6 +77,8 @@ export type ToWorker =
 	| { type: 'activity'; entries: ActivityEntry[] }
 	/** `hold`: queue it, but wait for a replacement (an open tag menu) before sending. */
 	| { type: 'tag'; tag: TagRequest; hold?: boolean }
+	/** Undo: drops your own tag on a target, and the queued tag if it has not been sent yet. */
+	| { type: 'untag'; key: string }
 	| { type: 'report'; report: ReportRequest }
 	| { type: 'allow'; key: string; name?: string }
 	| { type: 'block'; key: string; name?: string }
@@ -97,5 +99,7 @@ export type ReportReply = { ok: true; report: Report } | { ok: false; error: str
 export type ToPage =
 	| { type: 'page-state' }
 	| { type: 'show'; id: number }
+	/** Opens Why on the card, showing it first when it was hidden. */
+	| { type: 'why'; id: number }
 	| { type: 'tab-paused'; paused: boolean }
 	| { type: 'report-open' };

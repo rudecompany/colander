@@ -22,7 +22,7 @@ import {
 	type Status
 } from '../lib/settings';
 import { CONFIG_CONTEXT, importKeys, verifyEnvelope, verifyPlanToken, type TrustedKey } from '../lib/signing';
-import { setGlobalIcon, setTabIcon } from './icons';
+import { setGlobalIcon, setTabIcon, type PauseScope } from './icons';
 import { clearList, getStatus, setStatus, syncList } from './listsync';
 import { ApiError, installId, json, request } from './net';
 import { dueBatch, enqueue, nextDue, settle, type Outcome, type Queued } from './queue';
@@ -167,6 +167,15 @@ export async function addTag(req: TagRequest, hold = false): Promise<void> {
 	for (const id of remove) await db.del('tags', id);
 	await db.put('tags', add);
 	// A held tag is not due yet: this sends any other due tags and sets the alarm for it.
+	await flushTags();
+}
+
+/** Undo: the own tag goes, and so does its queued tag while it is still held or waiting. */
+export async function removeTag(key: string): Promise<void> {
+	const own = { ...((await chrome.storage.local.get(K.ownTags))[K.ownTags] as Record<string, OwnTag> | undefined) };
+	delete own[key];
+	await chrome.storage.local.set({ [K.ownTags]: own });
+	for (const q of await db.all<Queued>('tags')) if (q.target === key) await db.del('tags', q.client_id);
 	await flushTags();
 }
 
@@ -395,10 +404,11 @@ async function tabs(): Promise<{ pausedTabs: number[]; tabInfo: Record<string, T
 	return { pausedTabs: (got.pausedTabs as number[]) ?? [], tabInfo: (got.tabInfo as Record<string, TabInfo>) ?? {} };
 }
 
-async function tabPaused(tabId: number, platform: Platform | undefined, s?: Settings): Promise<boolean> {
+/** Whether the tab is paused, and by what: the tab, or its site. */
+async function tabPaused(tabId: number, platform: Platform | undefined, s?: Settings): Promise<PauseScope> {
 	const { pausedTabs } = await tabs();
 	const settings = s ?? (await getSettings());
-	return pausedTabs.includes(tabId) || (!!platform && settings.pausedSites.includes(platform));
+	return pausedTabs.includes(tabId) ? 'tab' : !!platform && settings.pausedSites.includes(platform) ? 'site' : null;
 }
 
 export async function refreshIcons(): Promise<void> {
@@ -423,7 +433,8 @@ export async function setTabPause(tabId: number, paused: boolean): Promise<void>
 	const next = paused ? [...new Set([...pausedTabs, tabId])] : pausedTabs.filter((t) => t !== tabId);
 	await chrome.storage.session.set({ pausedTabs: next });
 	await chrome.tabs.sendMessage(tabId, { type: 'tab-paused', paused } satisfies ToPage).catch(() => undefined);
-	await setTabIcon(tabId, paused || (!!tabInfo[tabId] && (await getSettings()).pausedSites.includes(tabInfo[tabId]!.platform)), await getStatus(), tabInfo[tabId]?.count ?? 0);
+	const site = !!tabInfo[tabId] && (await getSettings()).pausedSites.includes(tabInfo[tabId]!.platform);
+	await setTabIcon(tabId, paused ? 'tab' : site ? 'site' : null, await getStatus(), tabInfo[tabId]?.count ?? 0);
 }
 
 async function logActivity(entries: ActivityEntry[]) {
@@ -555,6 +566,9 @@ async function handle(m: ToWorker, sender: chrome.runtime.MessageSender): Promis
 			return { ok: true };
 		case 'tag':
 			await addTag(m.tag, m.hold);
+			return { ok: true };
+		case 'untag':
+			await removeTag(m.key);
 			return { ok: true };
 		case 'report':
 			return submitReport(m.report);

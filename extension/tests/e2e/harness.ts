@@ -179,7 +179,7 @@ export const test = base.extend<{ ext: Ext }>({
 });
 
 /** A review queue entry and its source, for the side panel (contract 6.7). */
-export const REVIEW_QUEUE = () => [{ id: 'q_1', kind: 'report', priority: 2, created_at: new Date(Date.now() - 3600_000).toISOString(), platform: 'yt', source_id: '@catrescuetales', source_name: 'Cat Rescue Tales', summary: '3 reports: fake rescue narration', large: false, verdict: 'likely_slop', computed_verdict: 'slop', report_count: 3 }];
+export const REVIEW_QUEUE = () => [{ id: 'q_1', kind: 'report', priority: 2, created_at: new Date(Date.now() - 3600_000).toISOString(), platform: 'yt', source_id: '@catrescuetales', source_name: 'Cat Rescue Tales', summary: '3 reports: staged rescue narration', large: false, verdict: 'likely_slop', computed_verdict: 'slop', report_count: 3 }];
 
 export const REVIEW_SOURCE = {
 	source: {
@@ -194,7 +194,7 @@ export const REVIEW_SOURCE = {
 		rubric: { met: true, signals: ['rubric_hollow'], detail: 'Taggers found it hollow and mass-produced.' },
 		consensus: { met: false, signals: [], detail: 'Consensus is still forming: 35 of 41 weighted tags say slop.' }
 	},
-	reports: [{ id: 'rpt_1', platform: 'yt', source_id: '@catrescuetales', source_name: 'Cat Rescue Tales', status: 'under_review', verdict: null, protects: 0, created_at: '2026-10-01T10:00:00Z', updated_at: '2026-10-01T10:00:00Z', reason: 'Fake rescue videos made with AI, posted every hour.', examples: ['dQw4w9WgXcQ'], slop_type: 'deceptive', tests: ['hollow'] }],
+	reports: [{ id: 'rpt_1', platform: 'yt', source_id: '@catrescuetales', source_name: 'Cat Rescue Tales', status: 'under_review', verdict: null, protects: 0, created_at: '2026-10-01T10:00:00Z', updated_at: '2026-10-01T10:00:00Z', reason: 'Staged rescue videos made with AI, posted every hour.', examples: ['dQw4w9WgXcQ'], slop_type: 'deceptive', tests: ['hollow'] }],
 	appeals: [],
 	items: [{ platform: 'yt', id: 'dQw4w9WgXcQ', verdict: null, signals: [], tags: { slop: 5, ai_fine: 0, not_slop: 0 }, platform_label_reports: 2 }],
 	history: [{ id: 'log_1', at: '2026-08-01T00:00:00Z', platform: 'yt', target_type: 'source', target_id: '@catrescuetales', source_id: '@catrescuetales', source_name: 'Cat Rescue Tales', from: null, to: 'likely_slop', reason: 'Imported from the seed list.', signals: ['mostly_ai'], actor: 'community', actor_name: null }]

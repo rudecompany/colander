@@ -21,17 +21,26 @@ test('the welcome tab opens on install', async ({ ext }) => {
 test('choose strictness and platforms, then Chrome asks for those sites only', async ({ ext }) => {
 	const page = await ext.ctx.newPage();
 	await page.goto(`chrome-extension://${EXT_ID}/welcome.html`);
-	await expect(page.getByRole('heading', { name: 'Welcome to Colander' })).toBeVisible();
-	await expect(page.getByRole('radio', { name: /Standard/ })).toHaveAttribute('aria-checked', 'true');
+	await expect(page.getByRole('heading', { name: 'Set up Colander in 3 steps.' })).toBeVisible();
+	await expect(page.getByText('Step 1 of 3')).toBeVisible();
+	const levels = page.getByRole('radiogroup', { name: 'How strict should it be?' });
+	await expect(levels.getByRole('radio', { name: 'Standard' })).toHaveAttribute('aria-checked', 'true');
 	await recordRequests(page, true);
-	await page.getByRole('radio', { name: /Strict Hides slop and likely slop/ }).click();
+	await levels.getByRole('radio', { name: 'Strict' }).click();
+	// The recreated feed follows the level: at Strict the AI-made item collapses too.
+	await expect(page.locator('colander-ui[data-kind="demo"]').getByRole('group', { name: /Hidden for you: AI-made/ })).toBeVisible();
+	await page.getByRole('button', { name: 'Continue' }).click();
+	await expect(page.getByText('Step 2 of 3')).toBeVisible();
 	await page.getByRole('checkbox', { name: /TikTok/ }).click();
-	const opened = ext.ctx.waitForEvent('page');
-	await page.getByRole('button', { name: 'Start using Colander' }).click();
+	await page.getByRole('button', { name: 'Continue' }).click();
 	const requested = await page.evaluate(() => (window as unknown as { requested: { origins: string[] }[] }).requested);
 	expect(requested).toEqual([{ origins: ['*://www.youtube.com/*', '*://m.youtube.com/*', '*://www.tiktok.com/*', '*://m.tiktok.com/*'] }]);
+	await expect(page.getByRole('heading', { name: 'Pin Colander' })).toBeVisible();
+	await expect(page.getByRole('list', { name: 'The toolbar icon' }).getByRole('listitem')).toHaveText(['Active', 'Paused', 'Needs attention']);
 	// YouTube opens in a new tab. Its first navigation can start before routes attach, and nothing
 	// leaves the machine, so check where Chrome sent the tab rather than what loaded in it.
+	const opened = ext.ctx.waitForEvent('page');
+	await page.getByRole('button', { name: 'Done' }).click();
 	await opened;
 	await expect.poll(() => ext.ctl.evaluate(async () => (await chrome.tabs.query({})).map((t) => t.pendingUrl ?? t.url))).toContain('https://www.youtube.com/');
 	await expect(page.getByRole('heading', { name: 'You are set' })).toBeVisible();
@@ -48,8 +57,10 @@ test('if site access is refused, nothing is switched on', async ({ ext }) => {
 	const page = await ext.ctx.newPage();
 	await page.goto(`chrome-extension://${EXT_ID}/welcome.html`);
 	await recordRequests(page, false);
-	await page.getByRole('button', { name: 'Start using Colander' }).click();
+	await page.getByRole('button', { name: 'Continue' }).click();
+	await page.getByRole('button', { name: 'Continue' }).click();
 	await expect(page.getByRole('alert')).toContainText('Chrome did not grant site access');
+	await expect(page.getByText('Step 2 of 3')).toBeVisible();
 	const scripts = await ext.sw.evaluate(async () => (await chrome.scripting.getRegisteredContentScripts()).length);
 	expect(scripts).toBe(0);
 });

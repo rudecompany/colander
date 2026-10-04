@@ -10,6 +10,9 @@ const SECTIONS = ['lists', 'platforms', 'strictness', 'plus', 'appearance', 'pla
 
 /** Violations as readable lines, so a failure says what and where. */
 async function audit(page: Page, include?: string): Promise<string[]> {
+	// Extension pages in their resting colors: the pointer leaves whatever the last click left it
+	// over. In-page checks keep it, since the Tag button shows only on hover.
+	if (!include) await page.mouse.move(0, 0);
 	// The layer (popovers, notices, the report dialog) lives under <html>, outside <body>, where
 	// axe cannot work out colors. It is position: fixed, so moving it into <body> changes nothing
 	// on screen and lets axe check its contrast too.
@@ -54,18 +57,27 @@ for (const scheme of ['light', 'dark'] as const) {
 		// Reduced motion: axe reads colors mid-fade otherwise. The resting colors are the same.
 		test.use({ colorScheme: scheme, reducedMotion: 'reduce' });
 
-		test(`extension pages pass axe, ${scheme}`, async ({ ext }) => {
+		test(`popup and options pass axe, ${scheme}`, async ({ ext }) => {
+			// Fourteen full-page audits: more than the default minute when the suite runs in parallel.
+			test.slow();
 			const page = await ext.ctx.newPage();
 			await page.goto(`chrome-extension://${EXT_ID}/options.html#plus`);
-			await expect(page.getByRole('button', { name: 'Start 14-day trial, no card' }).first()).toBeVisible();
+			await expect(page.getByRole('button', { name: 'Start 14 days free' })).toBeVisible();
 			expect.soft(await audit(page), 'options #plus, free').toEqual([]);
+			await page.goto(`chrome-extension://${EXT_ID}/options.html#plan`);
+			await expect(page.getByRole('heading', { name: 'Current plan: Free' })).toBeVisible();
+			expect.soft(await audit(page), 'options #plan, free').toEqual([]);
 
 			await richState(ext);
 			const yt = await ext.open('https://www.youtube.com/results?search_query=history');
 			await page.setViewportSize({ width: 360, height: 760 });
 			await page.goto(`chrome-extension://${EXT_ID}/popup.html?tab=${await ext.tabId(yt)}`);
-			await expect(page.getByRole('heading', { name: 'Your week' })).toBeVisible();
+			await expect(page.getByText(/slop items this week/)).toBeVisible();
 			expect.soft(await audit(page), 'popup').toEqual([]);
+			await page.getByRole('button', { name: 'Pause' }).click();
+			await expect(page.getByRole('menuitem', { name: 'Pause on this site' })).toBeVisible();
+			expect.soft(await audit(page), 'popup, pause menu').toEqual([]);
+			await page.keyboard.press('Escape');
 
 			await page.setViewportSize({ width: 1200, height: 860 });
 			for (const s of SECTIONS) {
@@ -75,9 +87,24 @@ for (const scheme of ['light', 'dark'] as const) {
 				expect.soft(await audit(page), `options #${s}`).toEqual([]);
 			}
 
+			await page.goto(`chrome-extension://${EXT_ID}/options.html#data`);
+			await page.getByRole('button', { name: 'Delete local data' }).click();
+			await expect(page.getByRole('dialog')).toBeVisible();
+			expect.soft(await audit(page), 'options #data, confirm').toEqual([]);
+		});
+
+		test(`welcome and side panel pass axe, ${scheme}`, async ({ ext }) => {
+			const page = await ext.ctx.newPage();
+			await page.setViewportSize({ width: 1200, height: 860 });
 			await page.goto(`chrome-extension://${EXT_ID}/welcome.html`);
-			await expect(page.getByRole('heading', { name: 'Welcome to Colander' })).toBeVisible();
-			expect.soft(await audit(page), 'welcome').toEqual([]);
+			await expect(page.getByRole('heading', { name: 'Set up Colander in 3 steps.' })).toBeVisible();
+			expect.soft(await audit(page), 'welcome, strictness').toEqual([]);
+			await page.getByRole('button', { name: 'Continue' }).click();
+			await expect(page.getByRole('heading', { name: 'Where should it work?' })).toBeVisible();
+			expect.soft(await audit(page), 'welcome, platforms').toEqual([]);
+			await page.getByRole('button', { name: 'Continue' }).click();
+			await expect(page.getByRole('heading', { name: 'Pin Colander' })).toBeVisible();
+			expect.soft(await audit(page), 'welcome, pin').toEqual([]);
 
 			await page.setViewportSize({ width: 400, height: 900 });
 			await page.goto(`chrome-extension://${EXT_ID}/sidepanel.html`);
@@ -92,6 +119,9 @@ for (const scheme of ['light', 'dark'] as const) {
 			await page.getByRole('button', { name: /Cat Rescue Tales/ }).click();
 			await expect(page.getByRole('heading', { name: 'Cat Rescue Tales' })).toBeVisible();
 			expect.soft(await audit(page), 'side panel, evidence and decision').toEqual([]);
+			await page.keyboard.press('?');
+			await expect(page.getByRole('dialog', { name: 'Keyboard shortcuts' })).toBeVisible();
+			expect.soft(await audit(page), 'side panel, shortcuts').toEqual([]);
 		});
 
 		test(`in-page elements pass axe, ${scheme}`, async ({ ext }) => {
@@ -105,33 +135,36 @@ for (const scheme of ['light', 'dark'] as const) {
 			await cards.nth(3).hover();
 			await expect(cards.nth(3).locator('colander-ui[data-kind="tag"]')).toHaveCSS('opacity', '1');
 			expect.soft(await audit(page, UI), 'chips, collapsed bar, Tag button').toEqual([]);
-			// The tag menu, then the Slop detail.
+			// The tag menu, then its confirmation and Add detail.
 			await cards.nth(3).locator('colander-ui[data-kind="tag"] button').click();
-			await expect(layer.locator('.pop')).toBeVisible();
+			await expect(layer.locator('.cl-pop')).toBeVisible();
 			expect.soft(await audit(page, UI), 'tag menu').toEqual([]);
-			await layer.getByRole('button', { name: /^Slop/ }).click();
-			await expect(layer.getByRole('button', { name: 'Done' })).toBeVisible();
-			expect.soft(await audit(page, UI), 'tag menu, Slop detail').toEqual([]);
+			await layer.getByRole('menuitem', { name: /^Slop/ }).click();
+			await layer.getByRole('button', { name: 'Add detail' }).click();
+			await expect(layer.getByRole('dialog', { name: 'Add detail' })).toBeVisible();
+			expect.soft(await audit(page, UI), 'tag confirmation and Add detail').toEqual([]);
 			await page.keyboard.press('Escape');
+			await layer.getByRole('button', { name: 'Undo' }).click();
 			// The Why popover.
 			await cards.nth(1).locator('colander-ui[data-kind="bar"]').getByRole('button', { name: 'Why' }).click();
-			await expect(layer.locator('.pop')).toBeVisible();
+			await expect(layer.locator('.cl-pop')).toBeVisible();
 			expect.soft(await audit(page, UI), 'Why popover').toEqual([]);
 			await page.keyboard.press('Escape');
 
-			// The report form, and its sent state.
+			// The report sheet, both steps, and an error.
 			const channel = await ext.open('https://www.youtube.com/@NASA/videos', { dark });
 			await channel.locator('colander-ui[data-kind="report"] button').click();
-			const dialog = channel.locator('colander-ui[data-kind="layer"] .dialog');
-			await expect(dialog).toBeVisible();
-			expect.soft(await audit(channel, UI), 'report form').toEqual([]);
-			await dialog.getByRole('button', { name: 'Send report' }).click();
-			await expect(dialog.getByRole('alert')).toBeVisible();
-			expect.soft(await audit(channel, UI), 'report form with an error').toEqual([]);
+			const sheet = channel.locator('colander-ui[data-kind="layer"] .report');
+			await expect(sheet).toBeVisible();
+			expect.soft(await audit(channel, UI), 'report sheet, examples').toEqual([]);
+			await sheet.getByRole('button', { name: 'Next' }).click();
+			await sheet.getByRole('button', { name: 'Send report' }).click();
+			await expect(sheet.getByRole('alert')).toBeVisible();
+			expect.soft(await audit(channel, UI), 'report sheet, reason with an error').toEqual([]);
 
 			// Swipe feeds: the skip notice, then a cover.
 			const shorts = await ext.open('https://www.youtube.com/shorts/_k2w1cC69qY', { dark });
-			await expect(shorts.locator('colander-ui[data-kind="layer"] .toast')).toBeVisible();
+			await expect(shorts.locator('colander-ui[data-kind="layer"] .cl-toast')).toBeVisible();
 			expect.soft(await audit(shorts, UI), 'skip notice').toEqual([]);
 			const covered = await ext.open('https://www.youtube.com/shorts/_k2w1cC69qY', { dark, html: fixtureHtml('yt-shorts').replaceAll('aihistorydaily', 'catrescuetales') });
 			await expect(covered.locator('colander-ui[data-kind="cover"]').first()).toBeVisible();
@@ -184,33 +217,4 @@ test('radio groups: one tab stop, arrow keys, Home and End (WAI-ARIA)', async ({
 	await expect(levels.getByRole('radio', { name: /^Strict/ })).toHaveAttribute('aria-checked', 'true');
 	await welcome.keyboard.press('Home');
 	await expect(levels.getByRole('radio', { name: /^Label/ })).toHaveAttribute('aria-checked', 'true');
-});
-
-test('popup pause rows are whole 32 px targets, and switches keep 3:1 when off', async ({ ext }) => {
-	await ext.setup();
-	const page = await ext.open('https://www.youtube.com/results?search_query=history');
-	const popup = await ext.ctx.newPage();
-	await popup.goto(`chrome-extension://${EXT_ID}/popup.html?tab=${await ext.tabId(page)}`);
-	const row = popup.locator('label', { hasText: 'Pause on this site' });
-	expect((await row.boundingBox())!.height).toBeGreaterThanOrEqual(32);
-	const sw = popup.getByRole('switch', { name: 'Pause on this site' });
-	// Off: the track against the popup surface and against its thumb.
-	const ratios = await sw.evaluate((el) => {
-		const rgb = (c: string) => c.match(/[\d.]+/g)!.slice(0, 3).map(Number);
-		const lum = (c: string) => {
-			const [r, g, b] = rgb(c).map((v) => (v / 255 <= 0.03928 ? v / 255 / 12.92 : ((v / 255 + 0.055) / 1.055) ** 2.4));
-			return 0.2126 * r! + 0.7152 * g! + 0.0722 * b!;
-		};
-		const ratio = (a: string, b: string) => (Math.max(lum(a), lum(b)) + 0.05) / (Math.min(lum(a), lum(b)) + 0.05);
-		const track = getComputedStyle(el.querySelector('.uin-switch-track')!).backgroundColor;
-		const thumb = getComputedStyle(el.querySelector('.uin-switch-thumb')!).backgroundColor;
-		const surface = getComputedStyle(document.querySelector('.popup')!).backgroundColor;
-		return [ratio(track, surface), ratio(track, thumb)];
-	});
-	for (const r of ratios) expect(r).toBeGreaterThanOrEqual(3);
-	// A click anywhere on the row, here on its words, flips the switch.
-	await row.getByText('Pause on this site').click();
-	await expect(sw).toHaveAttribute('aria-checked', 'true');
-	await row.click({ position: { x: 150, y: 4 } });
-	await expect(sw).toHaveAttribute('aria-checked', 'false');
 });

@@ -1,122 +1,117 @@
-<!-- @component Strictness: the global level with the spec's table, and per-platform levels for Plus. -->
+<!--
+@component Strictness: the four levels as cards with the recreated feed at each level, the table
+of what each level does, and per-platform levels for Plus.
+-->
 <script lang="ts">
-	import { VerdictChip } from '@colander/shared';
-	import NativeSelect from '@colander/shared/components/ui/native-select/native-select.svelte';
+	import { PageHeader, PlatformTag, PlusTag, StrictnessTable } from '@colander/shared';
+	import Card from '@colander/shared/components/ui/card/card.svelte';
 	import SegmentedControl from '@colander/shared/components/ui/segmented-control/segmented-control.svelte';
-	import { ACTION_TABLE, PLATFORMS, PLATFORM_NAME, STRICTNESS, STRICTNESS_HINT, STRICTNESS_WORD, type Platform, type Strictness, type Verdict } from '@colander/shared/verdicts';
+	import { PLATFORMS, PLATFORM_NAME, STRICTNESS, STRICTNESS_WORD, type Platform, type Strictness } from '@colander/shared/verdicts';
 	import { isPlus, K, withDefaults, type Entitlement, type Settings } from '../../lib/settings';
-	import Card from '../../ui/Card.svelte';
-	import PlusGate from '../../ui/PlusGate.svelte';
-	import Section from '../../ui/Section.svelte';
+	import Gated from '../../ui/Gated.svelte';
+	import LevelCard from '../../ui/LevelCard.svelte';
 	import { send, stored } from '../../ui/store.svelte';
 
 	const settingsStore = stored<Partial<Settings> | undefined>(K.settings, undefined);
 	const entitlement = stored<Entitlement | undefined>(K.entitlement, undefined);
 	const settings = $derived(withDefaults(settingsStore.value));
 	const plus = $derived(isPlus(entitlement.value));
-	const SHOWN: Verdict[] = ['slop', 'likely_slop', 'ai_made'];
-	const WORD = { hide: 'Hide', collapse: 'Collapse', label: 'Label', allow: 'Allow' } as const;
+	const uid = $props.id();
 
-	function setPlatform(p: Platform, v: string) {
+	const pick = (level: Strictness) => void send({ type: 'settings', patch: { strictness: level } });
+
+	type PerPlatform = Strictness | 'same';
+	const levels = $derived([{ value: 'same' as PerPlatform, label: 'Same' }, ...STRICTNESS.map((l) => ({ value: l as PerPlatform, label: STRICTNESS_WORD[l] }))]);
+	function setPlatform(p: Platform, v: PerPlatform) {
 		const perPlatform = { ...settings.perPlatform };
 		if (v === 'same') delete perPlatform[p];
-		else perPlatform[p] = v as Strictness;
+		else perPlatform[p] = v;
 		void send({ type: 'settings', patch: { perPlatform } });
 	}
 </script>
 
-<Section id="strictness" title="Strictness" description="You decide how strict Colander is. Disputed items always show with their mark, and Clear items are always allowed.">
-	<Card title="Everywhere">
-		<SegmentedControl options={STRICTNESS.map((s) => ({ value: s, label: STRICTNESS_WORD[s] }))} value={settings.strictness} onChange={(v) => send({ type: 'settings', patch: { strictness: v } })} ariaLabel="Strictness" />
-		<p class="muted">{STRICTNESS_HINT[settings.strictness]}</p>
-		<table>
-			<caption class="sr-only">What each level does</caption>
-			<thead>
-				<tr>
-					<th scope="col">Level</th>
-					{#each SHOWN as v (v)}<th scope="col"><VerdictChip verdict={v} /></th>{/each}
-				</tr>
-			</thead>
-			<tbody>
-				{#each STRICTNESS as s (s)}
-					<tr class:current={s === settings.strictness}>
-						<th scope="row">{STRICTNESS_WORD[s]}{#if s === 'standard'}<span class="def muted t-caption">default</span>{/if}</th>
-						{#each SHOWN as v (v)}<td>{WORD[ACTION_TABLE[s][v]]}</td>{/each}
-					</tr>
-				{/each}
-			</tbody>
-		</table>
-	</Card>
+<PageHeader variant="app" eyebrow="Options" title="Strictness" lede="You decide how strict Colander is. Disputed items always show with their mark, and Clear items are always allowed." />
 
-	<Card title="Per platform">
-		{#if plus}
-			<p class="muted">A platform set here uses its own level instead of the one above. Topic rules in Plus can raise it further.</p>
+<div class="cards">
+	<section aria-labelledby="{uid}-every">
+		<h2 id="{uid}-every" class="h">Everywhere</h2>
+		<div class="levels" role="radiogroup" aria-labelledby="{uid}-every">
+			{#each STRICTNESS as level (level)}
+				<LevelCard {level} on={settings.strictness === level} onpick={pick} />
+			{/each}
+		</div>
+	</section>
+
+	<StrictnessTable current={settings.strictness} />
+
+	<Card headingLevel={2} title="Per platform">
+		{#snippet aside()}{#if !plus}<PlusTag />{/if}{/snippet}
+		<p class="muted">A platform set here uses its own level instead of the one above. Topic rules in Plus can raise it further.</p>
+		<Gated locked={!plus}>
 			<ul class="rows">
 				{#each PLATFORMS as p (p)}
 					<li>
-						<label for="lvl-{p}">{PLATFORM_NAME[p]}</label>
-						<div class="select">
-							<NativeSelect
-								id="lvl-{p}"
-								options={[{ value: 'same', label: `Same as everywhere (${STRICTNESS_WORD[settings.strictness]})` }, ...STRICTNESS.map((s) => ({ value: s as string, label: STRICTNESS_WORD[s] }))]}
-								value={settings.perPlatform[p] ?? 'same'}
-								onchange={(e) => setPlatform(p, (e.currentTarget as HTMLSelectElement).value)}
-							/>
-						</div>
+						<PlatformTag platform={p} />
+						<SegmentedControl
+							options={levels}
+							value={plus ? (settings.perPlatform[p] ?? 'same') : 'same'}
+							onChange={(v) => setPlatform(p, v)}
+							ariaLabel="{PLATFORM_NAME[p]} strictness"
+						/>
 					</li>
 				{/each}
 			</ul>
-		{:else}
-			<PlusGate what="Set a different level for each platform, for example Strict on TikTok and Label on Facebook." />
-		{/if}
+			<p class="caption">Same follows the level set everywhere, now {STRICTNESS_WORD[settings.strictness]}.</p>
+		</Gated>
 	</Card>
-</Section>
+</div>
 
 <style>
-	table {
-		width: 100%;
-		border-collapse: collapse;
-		margin-top: 4px;
+	.cards {
+		display: grid;
+		grid-template-columns: minmax(0, 1fr);
+		gap: 24px;
+		margin-top: 32px;
 	}
-	th,
-	td {
-		height: 40px;
-		padding: 0 12px;
-		text-align: left;
-		border-top: 1px solid var(--cl-border);
-	}
-	thead th {
-		border-top: 0;
+	.h {
+		margin-bottom: 12px;
+		font: var(--cl-body-lg);
 		font-weight: 600;
 	}
-	tbody th {
-		font-weight: 600;
+	.levels {
+		display: grid;
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+		gap: 12px;
 	}
-	.def {
-		margin-left: 8px;
-		font-weight: 400;
-	}
-	tr.current th,
-	tr.current td {
-		background: var(--cl-brand-tint);
-	}
-	tr.current th {
-		box-shadow: inset 3px 0 0 var(--cl-brand);
+	.muted {
+		margin-bottom: 8px;
+		color: var(--cl-text-muted);
 	}
 	.rows li {
 		display: flex;
 		align-items: center;
 		justify-content: space-between;
 		gap: 16px;
-		padding: 8px 0;
-	}
-	.rows li + li {
+		min-height: 48px;
 		border-top: 1px solid var(--cl-border);
 	}
-	.rows label {
-		font-weight: 600;
+	.rows :global(.uin-seg) {
+		width: 400px;
+		max-width: 100%;
 	}
-	.select {
-		width: 280px;
+	.caption {
+		padding-top: 8px;
+		color: var(--cl-text-muted);
+		font: var(--cl-caption);
+	}
+	@media (max-width: 639px) {
+		.levels {
+			grid-template-columns: minmax(0, 1fr);
+		}
+		.rows li {
+			flex-direction: column;
+			align-items: flex-start;
+			padding: 12px 0;
+		}
 	}
 </style>
