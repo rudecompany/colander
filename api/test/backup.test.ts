@@ -2,7 +2,7 @@
 // that refuse what they cannot load, and the 6-hourly dump job.
 import { env } from 'cloudflare:workers';
 import { evictDurableObject, runDurableObjectAlarm, runInDurableObject } from 'cloudflare:test';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { countsAgree, dump, DUMP_PREFIX, dumpKey, dumpLines, dumpTables, loadDump, newestDump, parseInsert, restoreDump, tableCounts } from '../src/backup';
 import { nextDump, STATUS } from '../src/jobs';
 import { grantRole, setDisplayName } from '../src/store/accounts';
@@ -56,6 +56,9 @@ function fill(store: Store): void {
 
 const dumpText = (store: Store, state: DurableObjectState) => [...dumpLines(state.storage.sql, store.db, T)].join('\n') + '\n';
 
+/** SQL text as the byte stream loadDump reads. */
+const bytes = (text: string) => new Response(text).body!;
+
 afterEach(async () => {
 	for (const o of (await env.BACKUPS.list({ prefix: DUMP_PREFIX })).objects) await env.BACKUPS.delete(o.key);
 });
@@ -65,10 +68,12 @@ describe('dump and restore', () => {
 		const source = fresh();
 		const { key, before } = await runInDurableObject(source, async (store: Store, state) => {
 			fill(store);
-			const { key, size } = await dump(state, store.db, env.BACKUPS, T);
-			expect(key).toBe(`dumps/${new Date(T).toISOString()}.sql.gz`);
-			expect(size).toBeGreaterThan(0);
-			return { key, before: contents(store.db) };
+			const d = await dump(state, store.db, env.BACKUPS, T);
+			expect(d.key).toBe(`dumps/${new Date(T).toISOString()}.sql.gz`);
+			expect(d.bytes).toBe(new TextEncoder().encode(dumpText(store, state)).length);
+			expect(d.size).toBe((await env.BACKUPS.head(d.key))!.size);
+			expect(d.size).toBeLessThan(d.bytes);
+			return { key: d.key, before: contents(store.db) };
 		});
 		expect(before.accounts).toHaveLength(2);
 		expect((await env.BACKUPS.head(key))!.httpMetadata!.contentType).toBe('application/gzip');
@@ -139,14 +144,16 @@ describe('dump and restore', () => {
 	});
 
 	it('refuse an incomplete dump, or rows this Store cannot hold, and change nothing', async () => {
-		await runInDurableObject(fresh(), (store: Store, state) => {
+		await runInDurableObject(fresh(), async (store: Store, state) => {
 			fill(store);
 			const text = dumpText(store, state);
 			const before = contents(store.db);
-			expect(() => loadDump(store.db, text.replace('COMMIT;\n', ''), T)).toThrow(/does not end with COMMIT/);
-			expect(() => loadDump(store.db, text.replace('COMMIT;', `INSERT INTO "gone"("a") VALUES(1);\nCOMMIT;`), T)).toThrow(/does not know: gone/);
-			expect(() => loadDump(store.db, text.replace('INSERT INTO "jobs"("name","due_at")', 'INSERT INTO "jobs"("name","due_at","extra")').replace(`VALUES('publish',9007199254740991)`, `VALUES('publish',1,2)`), T)).toThrow();
+			await expect(loadDump(store.db, bytes(text.replace('COMMIT;\n', '')), T)).rejects.toThrow(/does not end with COMMIT/);
+			await expect(loadDump(store.db, bytes(text.replace('COMMIT;', `INSERT INTO "gone"("a") VALUES(1);\nCOMMIT;`)), T)).rejects.toThrow(/does not know: gone/);
+			await expect(loadDump(store.db, bytes(text.replace('INSERT INTO "jobs"("name","due_at")', 'INSERT INTO "jobs"("name","due_at","extra")').replace(`VALUES('publish',9007199254740991)`, `VALUES('publish',1,2)`)), T)).rejects.toThrow();
+			await expect(loadDump(store.db, bytes(text.replace(`INSERT INTO "jobs"("name","due_at") VALUES`, `INSERT INTO "jobs"("due_at","name") VALUES`)), T)).rejects.toThrow();
 			expect(contents(store.db)).toEqual(before);
+			expect(dumpTables(store.db).map((t) => t.name), 'no staging table is left').not.toContainEqual(expect.stringMatching(/^_restore_/));
 		});
 	});
 
@@ -158,11 +165,62 @@ describe('dump and restore', () => {
 			return dumpText(store, state);
 		});
 		expect(old).not.toContain('"mixed"');
-		await runInDurableObject(fresh(), (store: Store) => {
+		await runInDurableObject(fresh(), async (store: Store) => {
 			store.db.run("INSERT INTO sources (platform, canonical_id, created_at, mixed) VALUES ('yt', '@gone', 1, 1)");
-			expect(loadDump(store.db, old, T).sources).toBe(1);
+			expect((await loadDump(store.db, bytes(old), T)).sources).toBe(1);
 			expect(store.db.all('SELECT canonical_id, mixed FROM sources')).toEqual([{ canonical_id: 'UCzzzzzzzzzzzzzzzzzzzzz1', mixed: 0 }]);
 		});
+	});
+});
+
+describe('dumps at scale and under failure', () => {
+	it('restore a dump of over 40 MB in bounded batches, without holding it whole', async () => {
+		const { key, d, before } = await runInDurableObject(fresh(), async (store: Store, state) => {
+			const db = store.db;
+			// 60,000 sources with two aliases each, and 300 synced settings of 60 KB.
+			db.run(
+				`WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 60000)
+				INSERT INTO sources (platform, canonical_id, name, created_at, verdict, signals, changed_at) SELECT 'yt', '@channel' || i, 'Channel ' || i, 1790000000, 'slop', 4113, 1790000000 FROM n`
+			);
+			db.run(`INSERT INTO source_aliases (platform, alias, source_id) SELECT 'yt', canonical_id, id FROM sources`);
+			db.run(`INSERT INTO source_aliases (platform, alias, source_id) SELECT 'yt', 'UC' || substr(hex(randomblob(11)), 1, 22), id FROM sources`);
+			for (let i = 0; i < 300; i++) putSync(db, `acc_${i}`, 0, JSON.stringify({ blocks: 'x'.repeat(60_000), i }), 1_790_000_000);
+			const d = await dump(state, store.db, env.BACKUPS, T);
+			return { key: d.key, d, before: tableCounts(db) };
+		});
+		expect(d.bytes).toBeGreaterThan(40 * 1024 * 1024);
+		await runInDurableObject(fresh(), async (store: Store) => {
+			const tx = vi.spyOn(store.db, 'tx');
+			const rows = await restoreDump(store.db, env.BACKUPS, key, T);
+			expect(rows).toMatchObject({ sources: 60_000, source_aliases: 120_000, sync_blobs: 300 });
+			expect(tableCounts(store.db)).toEqual(before);
+			// Batches of about 1 MB of SQL each, then one swap.
+			expect(tx.mock.calls.length).toBeGreaterThan(40);
+			expect(store.db.all('PRAGMA foreign_key_check')).toEqual([]);
+		});
+	}, 120_000);
+
+	it('never reset the Store when the upload fails: the object keeps running and the dump job can back off', async () => {
+		const bucket = {
+			createMultipartUpload: async (key: string, options?: R2MultipartOptions) => {
+				const upload = await env.BACKUPS.createMultipartUpload(key, options);
+				return {
+					uploadPart: async () => {
+						throw new Error('R2 rejected the part');
+					},
+					complete: (uploaded: R2UploadedPart[]) => upload.complete(uploaded),
+					abort: () => upload.abort()
+				};
+			}
+		} as unknown as R2Bucket;
+		const stub = fresh();
+		await runInDurableObject(stub, async (store: Store, state) => {
+			fill(store);
+			(store as unknown as { marker: string }).marker = 'same instance';
+			await expect(dump(state, store.db, bucket, T)).rejects.toThrow('R2 rejected the part');
+		});
+		expect(await runInDurableObject(stub, (store: Store) => (store as unknown as { marker?: string }).marker)).toBe('same instance');
+		expect(await env.BACKUPS.head(dumpKey(T))).toBeNull();
 	});
 });
 

@@ -351,7 +351,7 @@ The workflows talk to the Worker through one authenticated channel, and the Work
 | `drill` | `{}` | `{"ok": true, ...}` after the dump drill passed (hosting plan section 3) |
 | `purge-cache` | `{"confirm": "purge-cache"}` | Done |
 | `restore-dump` | `{"key", "confirm"}`, confirm equal to key | Done |
-| `pitr-restore` | `{"at", "confirm"}`, `at` an RFC 3339 time and confirm equal to it | The undo bookmark |
+| `pitr-restore` | `{"at", "confirm"}`, `at` an RFC 3339 time and confirm equal to it | The bookmark and the undo bookmark, also kept in the backup bucket under `pitr/` |
 
 The probes require `pass_age_s` under 900, `dump_age_s` under 25,200 and `publish_lag_s` under 21,600.
 The restore drill (`scripts/pitr-drill.ts`) uses `head_seq` and `r2_seq`.
@@ -394,12 +394,15 @@ Examples:
 Point-in-time restore covers the last 30 days:
 1. Pick the last good moment, for example `2026-11-02T14:05:00Z`.
 2. Run Ops with command `pitr-restore`, args `{"at": "2026-11-02T14:05:00Z"}` and confirm `2026-11-02T14:05:00Z`.
-3. The answer holds an undo bookmark; keep it from the run summary.
+3. The answer holds an undo bookmark; keep it from the run summary (the backup bucket keeps it too, under `pitr/`).
 4. The Store restarts on the restored data, publishes a list sequence above any that installs hold, and the edge cache is purged.
 
 If the Store namespace itself is gone, restore the newest dump from the backup bucket:
-1. List the dumps with `pnpm -C api exec wrangler r2 object list <backup bucket>` (the bootstrap script prints the bucket names).
+1. Find the newest dump's key: run Ops with command `drill`, whose answer names it as `key` even when the empty Store fails the comparison, or browse the `dumps/` prefix of the backup bucket in the Cloudflare dashboard (the bootstrap script prints the bucket names; Wrangler has no command that lists objects).
 2. Run Ops with command `restore-dump`, args `{"key": "<dump key>"}` and confirm set to the same key.
+
+Until then the empty Store publishes nothing: it never puts an empty list above the one in R2, which every install would take, and the watchdog alerts `store_empty`.
+To start from an empty list on purpose instead (a reset staging environment), delete `list/snapshot.bin` from the lists bucket with `pnpm -C api exec wrangler r2 object delete <lists bucket>/list/snapshot.bin --remote`.
 
 The monthly drill proves the point-in-time path on staging, and the weekly drill proves every dump loads.
 Run either by hand from the Drills workflow.

@@ -178,7 +178,7 @@ export function setListRequests(db: Db, hour: number, n: number): void {
 	db.run('DELETE FROM list_requests WHERE hour < ?', hour - 24 * 7);
 }
 
-/** Sums list requests in hour buckets at or after fromHour. */
-export function listRequestsSince(db: Db, fromHour: number): number {
-	return db.get<{ n: number }>('SELECT ifnull(sum(count), 0) AS n FROM list_requests WHERE hour >= ?', fromHour)!.n;
+/** Sums list requests in hour buckets from fromHour, up to and including toHour when given. */
+export function listRequestsSince(db: Db, fromHour: number, toHour = Number.MAX_SAFE_INTEGER): number {
+	return db.get<{ n: number }>('SELECT ifnull(sum(count), 0) AS n FROM list_requests WHERE hour >= ? AND hour <= ?', fromHour, toHour)!.n;
 }

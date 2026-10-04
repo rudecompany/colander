@@ -1,10 +1,11 @@
 // The edge Worker on getcolander.com (hosting plan sections 2 and 4). Workers Static Assets serves
 // the website; this code runs only for /v1/*, /ops/*, /healthz and /__dev/*, and only on cache
-// misses. It answers preflights, checks `since`, rate-limits misses per salted IP hash, serves
-// snapshot misses from R2 (from the Store while R2 has none) and forwards the rest of /v1 to the
-// Store. The cron triggers run src/scheduled.ts.
+// misses. It answers preflights, checks `since` and the query of the other cached GETs,
+// rate-limits misses per salted IP hash, serves snapshot misses from R2 (from the Store while R2
+// has none or fails) and forwards the rest of /v1 to the Store. The cron triggers run
+// src/scheduled.ts.
 import { testNow } from './dev';
-import { finish, IP_HASH_HEADER, isCorsPath, json, jsonError, notFound, preflight, ROUTE_HEADER, setCache, tooMany } from './http';
+import { finish, IP_HASH_HEADER, ipKey, isCorsPath, json, jsonError, notFound, preflight, ROUTE_HEADER, setCache, tooMany } from './http';
 import { ops as runOps } from './ops';
 import { scheduled } from './scheduled';
 import { SNAPSHOT_KEY } from './store/list';
@@ -53,7 +54,7 @@ async function handle(request: Request, url: URL, env: Env, ctx: ExecutionContex
 		return { route: `${method} (site)`, res: await env.ASSETS.fetch(request) };
 	}
 	const dev = env.COLANDER_DEV === '1';
-	const ipHash = await hashIp(request.headers.get('cf-connecting-ip') ?? '', env.IP_SALT);
+	const ipHash = await hashIp(ipKey(request.headers.get('cf-connecting-ip') ?? ''), env.IP_SALT);
 	// The limiter shields the Store from cache misses. Local runtimes have no Workers Cache, so every
 	// request would be a miss and one developer's browser would trip it: dev mode goes without.
 	if (!dev && !(await env.MISSES.limit({ key: ipHash })).success) return { route: `${method} (rate limited)`, res: tooMany(60) };
@@ -64,6 +65,10 @@ async function handle(request: Request, url: URL, env: Env, ctx: ExecutionContex
 	if (dev && read && (path === '/v1/list/snapshot' || path === '/v1/list/delta')) await primary(env).countListRequest();
 	if (path === '/healthz' && read) return { route: 'GET /healthz', res: await health(env) };
 	if (path === '/ops' || path.startsWith('/ops/')) return { route: `${method} /ops/*`, res: await ops(request, env, ctx) };
+	if (read) {
+		const bad = checkQuery(path, url.search);
+		if (bad) return { route: `GET ${bad.route}`, res: bad.res };
+	}
 	if (path === '/v1/list/snapshot' && read) {
 		const res = await snapshot(env);
 		// Before the first publication reaches R2, or if the object is lost, the Store serves its head.
@@ -77,7 +82,10 @@ async function handle(request: Request, url: URL, env: Env, ctx: ExecutionContex
 	return { route: `${method} (site)`, res: await env.ASSETS.fetch(request) };
 }
 
-/** Salted HMAC-SHA256 of the client address, hex. The raw address is never stored or forwarded. */
+/**
+ * Salted HMAC-SHA256 of the client address (ipKey: an IPv6 address by its /64), hex. The raw
+ * address is never stored or forwarded.
+ */
 async function hashIp(ip: string, salt: string): Promise<string> {
 	if (!salt) throw new Error('IP_SALT is not set');
 	const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(salt), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
@@ -95,12 +103,62 @@ function checkSince(search: string, nowMs: number): Response | null {
 	return jsonError(400, 'invalid_since', 'The since parameter must be a list sequence number.');
 }
 
+/** The cached GETs that take no query, by the route pattern they are logged under. */
+const NO_QUERY: [RegExp, string][] = [
+	[/^\/v1\/list\/snapshot$/, '/v1/list/snapshot'],
+	[/^\/v1\/config\/adapters$/, '/v1/config/adapters'],
+	[/^\/v1\/sources\/[^/]+\/[^/]+$/, '/v1/sources/:platform/:source_id'],
+	[/^\/v1\/stats$/, '/v1/stats'],
+	[/^\/v1\/supporters$/, '/v1/supporters']
+];
+
+/** The decision log's parameters in the order the website sends them, their canonical values and the Store's errors. */
+const LOG_PARAMS: [string, RegExp, string, string][] = [
+	['limit', /^(?:[1-9]\d?|1\d\d|200)$/, 'invalid_limit', 'limit must be a number from 1 to 200.'],
+	['platform', /^(?:yt|tt|ig|fb)$/, 'invalid_platform', 'platform must be yt, tt, ig or fb.'],
+	['verdict', /^(?:slop|likely_slop|ai_made|disputed|clear)$/, 'invalid_verdict', 'verdict must be one of the five verdicts.'],
+	['cursor', /^log_[1-9]\d{0,17}$/, 'invalid_cursor', 'The cursor is not valid.']
+];
+
+/**
+ * The edge caches the public GETs by their full URL, query included, and their handlers ignore
+ * parameters they do not know: only the canonical form may pass, or junk queries would make every
+ * request a miss that runs the Store. Routes without parameters take no query; /v1/log takes
+ * limit, platform, verdict and cursor, each at most once and in that order (the website's), each
+ * with a canonical value; a bad value gets the Store's own error.
+ */
+function checkQuery(path: string, search: string): { route: string; res: Response } | null {
+	const plain = NO_QUERY.find(([re]) => re.test(path));
+	if (plain) {
+		return search === '' ? null : { route: plain[1], res: jsonError(400, 'invalid_query', 'This address takes no query parameters.') };
+	}
+	if (path !== '/v1/log' || search === '') return null;
+	const bad = { route: '/v1/log', res: jsonError(400, 'invalid_query', 'The log takes only limit, platform, verdict and cursor, each once and in that order.') };
+	let next = 0;
+	for (const pair of search.slice(1).split('&')) {
+		const eq = pair.indexOf('=');
+		const name = eq < 0 ? pair : pair.slice(0, eq);
+		const at = LOG_PARAMS.findIndex(([n]) => n === name);
+		if (at < next || eq < 0 || eq === pair.length - 1) return bad;
+		next = at + 1;
+		const [, valid, code, message] = LOG_PARAMS[at]!;
+		if (!valid.test(pair.slice(eq + 1))) return { route: '/v1/log', res: jsonError(400, code, message) };
+	}
+	return null;
+}
+
 /**
  * Snapshot misses come straight from R2, so installs keep syncing while the Store is down.
- * Null when R2 has no valid snapshot.
+ * Null when R2 has no valid snapshot or cannot be read: the Store then serves its head.
  */
 async function snapshot(env: Env): Promise<Response | null> {
-	const obj = await env.LISTS.get(SNAPSHOT_KEY);
+	let obj: R2ObjectBody | null;
+	try {
+		obj = await env.LISTS.get(SNAPSHOT_KEY);
+	} catch (err) {
+		console.error(JSON.stringify({ message: 'reading the snapshot from R2 failed', error: String(err) }));
+		return null;
+	}
 	const seq = obj?.customMetadata?.seq;
 	if (!obj || !seq || !/^\d{1,15}$/.test(seq)) {
 		if (obj) console.error(JSON.stringify({ message: 'snapshot object has no valid seq metadata' }));

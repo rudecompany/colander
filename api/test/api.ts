@@ -54,7 +54,7 @@ export class Harness {
 		await expectStatus(await this.do('POST', '/v1/auth/email', { email, next: '/review' }), 202);
 		const token = /token=([A-Za-z0-9_-]+)/.exec(this.mail)?.[1];
 		if (!token) throw new Error(`no sign-in link in dev mail output: ${this.mail}`);
-		const res = await this.do('POST', '/v1/auth/verify', { token });
+		const res = await this.do('POST', '/v1/auth/verify', { token }, 'X-Colander-CSRF', '1');
 		await expectStatus(res, 200);
 		const cookie = /^(colander_session=[^;]*)/.exec(res.headers.get('Set-Cookie') ?? '')?.[1];
 		if (!cookie) throw new Error('no session cookie');

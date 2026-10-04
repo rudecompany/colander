@@ -15,7 +15,7 @@ import { createReport, reportsByInstall, saveTags, type Report as StoredReport, 
 import { hashInstall } from '../auth';
 import { canonicalItem, canonicalSource, validPlatform } from './ids';
 import { activeInstalls } from './list';
-import { decode, optString, parseRFC3339, rfc3339, runeCount, testBits, trimSpace, type Decoded } from './respond';
+import { clientIP, decode, optString, parseRFC3339, rfc3339, runeCount, testBits, trimSpace, type Decoded } from './respond';
 import type { Api } from './server';
 
 /** Reads "Authorization: Install <id>" and returns the hashed install ID, or the error response. */
@@ -237,7 +237,7 @@ export function getReports(api: Api, request: Request): Response {
 	if (install instanceof Response) return install;
 	const { db } = api.store;
 	const list = reportsByInstall(db, install);
-	const active = activeInstalls(db, api.store.now());
+	const active = activeInstalls(api.store);
 	return json(200, { reports: list.map((rp) => toReport(rp, active)) });
 }
 
@@ -246,17 +246,29 @@ const TRIAL_LENGTH = 14 * 24 * 3600;
 /** The ID prefix of every install trial token's sub; paid tokens carry an account ID. */
 export const trialPrefix = 'trl';
 
-/** POST /v1/trial (contract 6.8): a 14-day Plus trial token, once per install. */
+/**
+ * POST /v1/trial (contract 6.8): a 14-day Plus trial token, once per install and 5 per address a
+ * day, since each trial can store synced settings without signing in. A refused trial gives the
+ * address's token back.
+ */
 export async function postTrial(api: Api, request: Request): Promise<Response> {
 	const install = installHash(request);
 	if (install instanceof Response) return install;
-	const now = unix(api.store.now());
+	const { db } = api.store;
+	const nowMs = api.store.now();
+	const now = unix(nowMs);
 	const claims: PlanTokenPayload = { v: 1, sub: newId(trialPrefix), plan: 'plus', trial: true, iat: now, exp: now + TRIAL_LENGTH };
+	let wait: number;
 	try {
-		startTrial(api.store.db, install, claims.sub, claims.iat, claims.exp);
+		wait = db.tx(() => {
+			const w = allow(db, nowMs, clientIP(request), 1, 'trial_ip');
+			if (w === 0) startTrial(db, install, claims.sub, claims.iat, claims.exp);
+			return w;
+		});
 	} catch (err) {
 		if (err instanceof ConflictError) return jsonError(409, 'trial_used', 'This install has already used its free trial.');
 		throw err;
 	}
+	if (wait > 0) return tooMany(wait / 1000);
 	return json(200, { token: await issuePlanToken(await api.key(), claims) });
 }

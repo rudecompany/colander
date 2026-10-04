@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, inject, it, vi } from 'vitest'
 import { b64decode, hex } from '@colander/shared/bytes';
 import { encodeEntry, ENTRY, HEADER, verifyList } from '@colander/shared/list';
 import { importKeys } from '@colander/shared/signing';
+import { ipKey } from '../src/http';
 import worker from '../src/index';
 import { Store } from '../src/store/store';
 
@@ -71,6 +72,18 @@ describe('GET /v1/list/snapshot', () => {
 			expect(res.headers.get('Retry-After')).toBe('30');
 			expect(((await res.json()) as { error: { code: string } }).error.code).toBe('list_unavailable');
 		}
+	});
+
+	it('falls back to the Store when R2 cannot be read', async () => {
+		const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+		const down = { get: () => Promise.reject(new Error('R2 is unavailable')) } as unknown as R2Bucket;
+		const store = vi.spyOn(Store.prototype, 'fetch');
+		const res = await getWith({ LISTS: down }, '/v1/list/snapshot');
+		expect(store).toHaveBeenCalledOnce();
+		// This Store has published nothing yet; with a head it serves it (the next test).
+		expect(res.status).toBe(503);
+		expect(((await res.json()) as { error: { code: string } }).error.code).toBe('list_unavailable');
+		expect(errors.mock.calls.map((c) => JSON.parse(String(c[0])))).toContainEqual({ message: 'reading the snapshot from R2 failed', error: 'Error: R2 is unavailable' });
 	});
 
 	it('falls back to the Store when R2 has no valid snapshot', async () => {
@@ -235,6 +248,20 @@ describe('forwarding to the Store', () => {
 		expect(seen.headers.get('authorization')).toBe('Install abc');
 	});
 
+	it('hashes an IPv6 client by its /64 and an IPv4-mapped one as its IPv4 address', async () => {
+		expect(
+			['203.0.113.7', '2001:db8:1:2::1', '2001:0DB8:0001:0002:ffff:0:0:9', '2001:db8:1:3::1', '::1', '::ffff:203.0.113.7', '::ffff:cb00:7107', '2001:db8::1.2.3.4', 'fe80::1%eth0', 'junk'].map(ipKey)
+		).toEqual(['203.0.113.7', '2001:db8:1:2::/64', '2001:db8:1:2::/64', '2001:db8:1:3::/64', '0:0:0:0::/64', '203.0.113.7', '203.0.113.7', '2001:db8:0:0::/64', 'fe80::1%eth0', 'junk']);
+		const store = vi.spyOn(Store.prototype, 'fetch');
+		for (const ip of ['2001:db8:1:2::1', '2001:db8:1:2:aaaa:bbbb:cccc:dddd', '2001:db8:1:3::1', '::ffff:203.0.113.7', '203.0.113.7']) {
+			await get('/v1/reports', { headers: { 'CF-Connecting-IP': ip, Authorization: 'Install abc' } });
+		}
+		const hashes = store.mock.calls.map((c) => (c[0] as Request).headers.get('x-colander-ip-hash'));
+		expect(hashes[0]).toBe(hashes[1]);
+		expect(hashes[2]).not.toBe(hashes[0]);
+		expect(hashes[3]).toBe(hashes[4]);
+	});
+
 	it('logs the route pattern, status and duration only', async () => {
 		const logs = vi.spyOn(console, 'log');
 		await get('/v1/sources/yt/@private-channel-name?ref=secret', { headers: { 'CF-Connecting-IP': '198.51.100.9' } });
@@ -283,6 +310,14 @@ describe('miss limiter', () => {
 		expect(res.headers.get('Access-Control-Allow-Origin')).toBe('*');
 		// Other addresses are unaffected.
 		expect((await getWith(prod, '/v1/list/delta?since=x', { headers: { 'CF-Connecting-IP': '192.0.2.45' } })).status).toBe(400);
+	});
+
+	it('counts every address of an IPv6 /64 as one', async () => {
+		const statuses: number[] = [];
+		for (let i = 1; i <= 121; i++) statuses.push((await getWith(prod, '/v1/list/delta?since=x', { headers: { 'CF-Connecting-IP': `2001:db8:44:1::${i.toString(16)}` } })).status);
+		expect(statuses.slice(0, 120).every((s) => s === 400)).toBe(true);
+		expect(statuses[120]).toBe(429);
+		expect((await getWith(prod, '/v1/list/delta?since=x', { headers: { 'CF-Connecting-IP': '2001:db8:44:2::1' } })).status).toBe(400);
 	});
 
 	it('stays out of dev mode, where every request is a miss', async () => {

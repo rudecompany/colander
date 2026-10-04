@@ -26,6 +26,8 @@ export const THRESHOLDS = {
 	dumpAgeMs: 7 * HOUR,
 	/** the dump blocks the Store and the platform caps that at 30 s */
 	dumpMs: 10_000,
+	/** the gzip of the dump sits in memory while it blocks, in an isolate of 128 MB */
+	dumpSize: 32 << 20,
 	/** ship the incremental scoring planner when a pass reads this many rows */
 	rowsPerPass: 2_000_000
 };
@@ -35,7 +37,7 @@ type CronEnv = Env & { CF_ANALYTICS_TOKEN?: string };
 
 export async function scheduled(controller: ScheduledController, env: CronEnv): Promise<void> {
 	if (controller.cron === ANALYTICS_CRON) await pullListRequests(env, controller.scheduledTime);
-	else await watchdog(env);
+	else await watchdog(env, controller.scheduledTime);
 }
 
 export interface Alert {
@@ -66,6 +68,12 @@ export function alerts(s: WatchdogStatus): Alert[] {
 			});
 		}
 	}
+	if (s.head.seq === 0 && s.r2 && s.r2.seq > 0) {
+		out.push({
+			key: 'store_empty',
+			text: `The Store has no list while R2 holds sequence ${s.r2.seq}, so it publishes nothing rather than an empty list installs would take. Restore the newest dump (docs/deploy.md, Restore), or delete list/snapshot.bin from the lists bucket to start from an empty list on purpose.`
+		});
+	}
 	if (s.head.seq > 0 && s.r2?.seq !== s.head.seq && s.now / 1000 - s.head.createdAt > THRESHOLDS.r2LagS) {
 		out.push({
 			key: 'r2_behind',
@@ -82,14 +90,32 @@ export function alerts(s: WatchdogStatus): Alert[] {
 				text: `The last dump blocked the Store for ${(s.dump.ms / 1000).toFixed(1)} s. Switch to the per-table export before it reaches 20 s.`
 			});
 		}
+		if (s.dump && s.dump.size > THRESHOLDS.dumpSize) {
+			out.push({
+				key: 'dump_large',
+				text: `The last dump was ${(s.dump.size / 2 ** 20).toFixed(1)} MiB of gzip (${(s.dump.bytes / 2 ** 20).toFixed(0)} MiB of SQL), held in memory while it blocks the Store. Switch to the per-table export (src/backup.ts).`
+			});
+		}
 	}
 	return out;
 }
 
-/** Status and alerts, each alert mailed once while it lasts. A failed mail is retried next time. */
-async function watchdog(env: CronEnv): Promise<void> {
+/** Where the watchdog remembers mailing store_unreachable, in the lists bucket, since the Store keeps the other alerts. */
+export const UNREACHABLE_KEY = 'watchdog/store_unreachable';
+
+/**
+ * Status and alerts, each alert mailed once while it lasts. A failed mail is retried next time. A
+ * Store that does not answer is mailed at most once an hour, and the trigger still fails.
+ */
+async function watchdog(env: CronEnv, now: number): Promise<void> {
 	const store = primary(env);
-	const s = await store.watchdog();
+	let s: WatchdogStatus;
+	try {
+		s = await store.watchdog();
+	} catch (err) {
+		await storeUnreachable(env, now, err);
+		throw err;
+	}
 	const active = alerts(s);
 	const sec = (at: number | undefined) => (at === undefined ? null : Math.round((s.now - at) / 1000));
 	console.log(
@@ -121,6 +147,22 @@ async function watchdog(env: CronEnv): Promise<void> {
 		}
 	}
 	if (mailed.join() !== s.alerted.join()) await store.recordAlerts(mailed);
+}
+
+async function storeUnreachable(env: CronEnv, now: number, error: unknown): Promise<void> {
+	try {
+		const last = await env.LISTS.head(UNREACHABLE_KEY);
+		if (last && now - Number(last.customMetadata?.at ?? 0) < HOUR) return;
+		await env.ALERTS.send({
+			from: { name: 'Colander watchdog', email: ALERT_FROM },
+			to: env.ALERT_ADDRESS,
+			subject: `Colander on ${new URL(env.PUBLIC_URL).host}: store_unreachable`,
+			text: `The watchdog could not reach the Store, so no job status or other alert is known: ${String(error)}\nThis mail repeats each hour while it lasts.`
+		});
+		await env.LISTS.put(UNREACHABLE_KEY, '', { customMetadata: { at: String(now) } });
+	} catch (err) {
+		console.error(JSON.stringify({ message: 'store_unreachable alert failed', error: String(err) }));
+	}
 }
 
 const GRAPHQL = 'https://api.cloudflare.com/client/v4/graphql';

@@ -217,4 +217,41 @@ describe('appeal verification through the Data API', () => {
 			expect(((await res.json()) as { appeal: Appeal }).appeal.status).toBe('pending_manual');
 			expect(warn).toHaveBeenCalledOnce();
 		}));
+
+	it('checks an appeal at most 10 times and an address 30 times an hour, refusing before the Data API is called', () =>
+		withStore(async (store) => {
+			const api = fakeAPI(NOW, { text: 'History videos every hour.' });
+			store.engine.youtube = client(store);
+			const staff = grantRole(store.db, 'rae@colander.test', 'staff', unix(NOW));
+			const { raw, hash } = newToken();
+			createSession(store.db, hash, staff.id, unix(NOW), unix(NOW) + 3600);
+			const review = { Cookie: `${CookieName}=${raw}`, 'X-Colander-CSRF': '1' };
+			expect((await post(store, `/v1/review/sources/yt/${CHANNEL}/decision`, { verdict: 'slop', reason: 'Generated.', signals: ['watermark'] }, review)).status).toBe(200);
+			// Each appeal is filed from its own address; every check comes from 192.0.2.1.
+			const file = async (n: number) => {
+				const res = await post(store, '/v1/appeals', { platform: 'yt', source_id: CHANNEL, email: 'a@example.test', statement: 'Mine.' }, { [IP_HASH_HEADER]: `hash-of-198.51.100.${n}` });
+				expect(res.status).toBe(201);
+				return (await res.json()) as { appeal: Appeal; secret: string };
+			};
+			const verify = (a: { appeal: Appeal; secret: string }) => post(store, `/v1/appeals/${a.appeal.id}/verify`, { secret: a.secret });
+
+			const first = await file(1);
+			for (let i = 0; i < 10; i++) expect((await verify(first)).status).toBe(422);
+			const calls = api.calls();
+			const refused = await verify(first);
+			expect(refused.status).toBe(429);
+			expect(Number(refused.headers.get('Retry-After'))).toBeGreaterThan(0);
+			expect(api.calls(), 'no Data API call').toBe(calls);
+
+			for (const n of [2, 3]) {
+				const a = await file(n);
+				for (let i = 0; i < 10; i++) expect((await verify(a)).status).toBe(422);
+			}
+			const fourth = await file(4);
+			expect((await verify(fourth)).status, 'the address used its 30 checks').toBe(429);
+			expect(api.calls()).toBe(calls + 20);
+
+			store.now = () => NOW + 3_600_000;
+			expect((await verify(first)).status, 'an hour later').toBe(422);
+		}));
 });

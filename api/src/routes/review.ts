@@ -201,7 +201,7 @@ function writeReviewSource(api: Api, ref: number): Response {
 	const reports = reportsBySource(db, ref);
 	const appeals = appealsBySource(db, ref);
 	const history = log(db, { sourceRef: ref, limit: 100 });
-	const active = activeInstalls(db, api.store.now());
+	const active = activeInstalls(api.store);
 	return json(200, {
 		source: toSource(ev),
 		layers: layers(ev),

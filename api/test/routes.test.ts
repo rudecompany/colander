@@ -14,7 +14,7 @@ import { sha256 } from '@colander/shared/sha256';
 import { utf8 } from '@colander/shared/bytes';
 import type { Appeal, LogEntry, QueueItem, Report, ReviewSourceResponse, Source, Stats } from '@colander/shared/api';
 import { IP_HASH_HEADER } from '../src/http';
-import { CookieName, hashToken, newToken, normalizeEmail } from '../src/auth';
+import { CookieName, hashInstall, hashToken, newToken, normalizeEmail } from '../src/auth';
 import { canonicalSource } from '../src/routes/ids';
 import { decode, goFixed, goQuote, parseRFC3339 } from '../src/routes/respond';
 import { unix } from '../src/scoring/engine';
@@ -562,6 +562,21 @@ describe('public pages', () => {
 			await expectStatus(h.do('GET', '/v1/sources/yt/@Caf%C3%A9Histoire'), 200);
 		}));
 
+	it('estimates active installs over the 24 whole hours the analytics pull counted', () =>
+		withHarness(async (h) => {
+			const hour = Math.floor(unix(h.clock) / 3600);
+			const pulled = (from: number, to: number) => Array.from({ length: to - from }, (_, i) => ({ hour: from + i, count: 1000 }));
+			const active = async () => ((await (await expectStatus(h.do('GET', '/v1/stats'), 200)).json()) as Stats).active_installs;
+			// Steady 1,000 installs syncing hourly, as the pull at minute 7 writes them: whole hours up to the last one.
+			h.store.setListRequests(pulled(hour - 24, hour));
+			expect(await active()).toBe(1000);
+			// Between the turn of the hour and the next pull the window still ends at the last counted hour.
+			h.clock += 3_600_000;
+			expect(await active()).toBe(1000);
+			h.store.setListRequests(pulled(hour - 5, hour + 1));
+			expect(await active()).toBe(1000);
+		}));
+
 	it('counts verdicts, decisions, appeals and installs for the website', () =>
 		withHarness(async (h) => {
 			const staff = h.reviewer('rae@colander.test', 'staff', 'Rae');
@@ -811,6 +826,17 @@ describe('trial and sync', () => {
 			const again = await expectStatus(h.do('POST', '/v1/trial', undefined, installAuth(1)), 409);
 			expect(await code(again)).toBe('trial_used');
 			expect(await code(await expectStatus(h.do('POST', '/v1/trial'), 401))).toBe('install_required');
+		}));
+
+	it('gives at most 5 trials a day to one address, and a refused one gives its token back', () =>
+		withHarness(async (h) => {
+			for (let i = 1; i <= 4; i++) await expectStatus(h.do('POST', '/v1/trial', undefined, installAuth(i)), 200);
+			expect(await code(await expectStatus(h.do('POST', '/v1/trial', undefined, installAuth(1)), 409))).toBe('trial_used');
+			await expectStatus(h.do('POST', '/v1/trial', undefined, installAuth(5)), 200);
+			const refused = await expectStatus(h.do('POST', '/v1/trial', undefined, installAuth(6)), 429);
+			expect(Number(refused.headers.get('Retry-After'))).toBeGreaterThan(3 * 3600);
+			expect(h.db.get('SELECT 1 AS used FROM trials WHERE install_hash = ?', hashInstall(installID(6))!), 'nothing was written').toBeUndefined();
+			await expectStatus(h.do('POST', '/v1/trial', undefined, { ...installAuth(6), [IP_HASH_HEADER]: 'hash-of-198.51.100.2' }), 200);
 		}));
 
 	it('syncs settings by version (TestSyncVersions)', () =>

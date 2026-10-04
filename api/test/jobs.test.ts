@@ -3,7 +3,7 @@
 import { env } from 'cloudflare:workers';
 import { evictDurableObject, runDurableObjectAlarm, runInDurableObject } from 'cloudflare:test';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { DEBOUNCE, nextDump, PASS_CHUNK, PASS_INTERVAL, PRUNE_INTERVAL, PUBLISH_FLOOR, STATUS, type PassScorer } from '../src/jobs';
+import { DEBOUNCE, dumpBackoff, nextDump, PASS_CHUNK, PASS_INTERVAL, PRUNE_INTERVAL, PUBLISH_FLOOR, STATUS, type DumpResult, type PassScorer } from '../src/jobs';
 import { allow } from '../src/limits';
 import { SNAPSHOT_KEY } from '../src/store/list';
 import type { Store } from '../src/store/store';
@@ -217,10 +217,13 @@ describe('jobs', () => {
 });
 
 describe('prune', () => {
-	it('drops expired links and sessions, sequences past 30 days but the head, and refilled buckets, hourly', async () => {
+	it('drops expired links and sessions, sequences past 30 days but the head, refilled buckets and ended trials\' settings, hourly', async () => {
 		await at(T, async (store) => {
 			const db = store.db;
 			db.run("INSERT INTO accounts (id, email, created_at) VALUES ('acc_1', 'a@example.com', 1)");
+			db.run("INSERT INTO installs (hash, created_at) VALUES ('i1', 1), ('i2', 1)");
+			db.run("INSERT INTO trials (install_hash, sub, issued_at, expires_at) VALUES ('i1', 'trl_ended', 1, ?), ('i2', 'trl_running', 1, ?)", S, S + 60);
+			db.run("INSERT INTO sync_blobs (sub, version, data, updated_at) VALUES ('trl_ended', 1, '{}', 1), ('trl_running', 1, '{}', 1), ('acc_1', 1, '{}', 1)");
 			db.run("INSERT INTO magic_links (token_hash, email, next, created_at, expires_at) VALUES ('gone', 'a@example.com', '/', 1, ?), ('live', 'a@example.com', '/', 1, ?)", S - 1, S + 60);
 			db.run("INSERT INTO sessions (token_hash, account_id, created_at, expires_at) VALUES ('gone', 'acc_1', 1, ?), ('live', 'acc_1', 1, ?)", S, S + 60);
 			const old = S - 31 * 86_400;
@@ -240,6 +243,8 @@ describe('prune', () => {
 			expect(db.all('SELECT seq FROM list_sequences')).toEqual([{ seq: 2 }]);
 			expect(db.all('SELECT seq FROM list_changes')).toEqual([]);
 			expect(db.all('SELECT key FROM limits')).toEqual([{ key: 'partial' }]);
+			expect(db.all('SELECT sub FROM sync_blobs ORDER BY sub')).toEqual([{ sub: 'acc_1' }, { sub: 'trl_running' }]);
+			expect(db.all('SELECT sub FROM trials ORDER BY sub'), 'each install still gets one trial').toEqual([{ sub: 'trl_ended' }, { sub: 'trl_running' }]);
 			expect(jobRows(store)).toEqual([{ name: 'prune', due_at: T + PRUNE_INTERVAL }]);
 		});
 	});
@@ -257,7 +262,7 @@ describe('dump hook', () => {
 		const dumps: number[] = [];
 		const first = nextDump(T);
 		await at(T, async (store) => {
-			store.jobs.defineDump(async (now) => void dumps.push(now));
+			store.jobs.defineDump(async (now) => (dumps.push(now), { ms: 12, bytes: 3000, size: 400 }));
 			store.jobs.ensure(T);
 			await store.jobs.arm();
 			expect(jobRows(store)).toContainEqual({ name: 'dump', due_at: first });
@@ -265,8 +270,54 @@ describe('dump hook', () => {
 		await alarm(first);
 		expect(dumps).toEqual([first]);
 		await at(first, (store, state) => {
-			expect(state.storage.kv.get(STATUS.dump)).toMatchObject({ at: first, ms: expect.any(Number) });
+			expect(state.storage.kv.get(STATUS.dump)).toEqual({ at: first, ms: 12, bytes: 3000, size: 400 });
 			expect(jobRows(store)).toContainEqual({ name: 'dump', due_at: first + 6 * 3_600_000 });
+		});
+	});
+
+	it('backs off after a failed dump, and after one the platform cut short, instead of retrying every 30 seconds', async () => {
+		const MIN = 60_000;
+		expect([1, 2, 3, 5, 6, 9].map((f) => dumpBackoff(f) / MIN)).toEqual([2, 4, 8, 32, 60, 60]);
+		let fail = true;
+		const tries: number[] = [];
+		const install = (store: Store) =>
+			store.jobs.defineDump(async (now): Promise<DumpResult> => {
+				tries.push(now);
+				if (fail) throw new Error('R2 is down');
+				return { ms: 1, bytes: 2, size: 3 };
+			});
+		const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+		await at(T, async (store) => {
+			install(store);
+			store.jobs.schedule('dump', T);
+			await store.jobs.arm();
+		});
+		await alarm(T);
+		await at(T, (store) => expect(jobRows(store)).toEqual([{ name: 'dump', due_at: T + 2 * MIN }]));
+		await alarm(T + 2 * MIN);
+		await at(T, (store, state) => {
+			expect(jobRows(store)).toEqual([{ name: 'dump', due_at: T + 6 * MIN }]);
+			expect(state.storage.kv.get(STATUS.dumpTry)).toEqual({ failures: 2, at: T + 2 * MIN });
+		});
+		expect(errors.mock.calls.map((c) => JSON.parse(String(c[0])))).toMatchObject([
+			{ message: 'dump failed', failures: 1, error: 'Error: R2 is down' },
+			{ message: 'dump failed', failures: 2 }
+		]);
+		// A try the platform reset mid-dump never returned; the lease brings it back a minute later,
+		// and it waits out the backoff of the try it counted.
+		await at(T, (store, state) => {
+			state.storage.kv.put(STATUS.dumpTry, { failures: 3, at: T + 6 * MIN });
+			store.db.run("UPDATE jobs SET due_at = ? WHERE name = 'dump'", T + 7 * MIN);
+		});
+		await alarm(T + 7 * MIN);
+		expect(tries).toEqual([T, T + 2 * MIN]);
+		await at(T, (store) => expect(jobRows(store)).toEqual([{ name: 'dump', due_at: T + 14 * MIN }]));
+		fail = false;
+		await alarm(T + 14 * MIN);
+		await at(T, (store, state) => {
+			expect(state.storage.kv.get(STATUS.dumpTry)).toBeUndefined();
+			expect(state.storage.kv.get(STATUS.dump)).toEqual({ at: T + 14 * MIN, ms: 1, bytes: 2, size: 3 });
+			expect(jobRows(store)).toEqual([{ name: 'dump', due_at: nextDump(T + 14 * MIN) }]);
 		});
 	});
 });

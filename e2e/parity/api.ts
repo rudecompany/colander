@@ -314,7 +314,7 @@ export async function apiStory(sides: [Side, Side], now: string, check: Check, s
 		'/v1/sources/tt/@chefmarta',
 		'/v1/sources/yt/@nobodyknows',
 		'/v1/log?limit=200',
-		'/v1/log?platform=yt&verdict=slop&limit=5',
+		'/v1/log?limit=5&platform=yt&verdict=slop',
 		'/v1/stats',
 		'/v1/supporters',
 		'/v1/config/adapters'

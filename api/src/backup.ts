@@ -7,6 +7,7 @@
 // value exactly, and line breaks inside text become ||char(10)||. A restore into a Store keeps the
 // Store's own schema (its migrations) and replaces the rows of every table with the dump's, so a
 // dump from older code loads into newer code (expand-then-contract keeps new columns defaulted).
+import type { DumpResult } from './jobs';
 import type { Db } from './store/db';
 import { migrate } from './store/migrations';
 
@@ -18,8 +19,14 @@ const PART_SIZE = 5 * 1024 * 1024;
 
 const ident = (name: string): string => `"${name.replaceAll('"', '""')}"`;
 
-/** Not dumped: SQLite's own tables and the runtime's (__cf_kv holds the synchronous KV status). */
-const INTERNAL = `name NOT GLOB 'sqlite_*' AND name NOT GLOB '_cf_*' AND name NOT GLOB '__cf_*'`;
+/** A restore loads each table into a staging table with this prefix first (loadDump). */
+const STAGE = '_restore_';
+
+/**
+ * Not dumped: SQLite's own tables, the runtime's (__cf_kv holds the synchronous KV status) and a
+ * restore's staging tables.
+ */
+const INTERNAL = `name NOT GLOB 'sqlite_*' AND name NOT GLOB '_cf_*' AND name NOT GLOB '__cf_*' AND name NOT GLOB '${STAGE}*'`;
 
 /** The tables a dump holds, in creation order, with their CREATE statements. */
 export function dumpTables(db: Db): { name: string; sql: string }[] {
@@ -57,49 +64,60 @@ export function* dumpLines(sql: SqlStorage, db: Db, now: number): Generator<stri
 	yield 'COMMIT;';
 }
 
-/** Lines as a byte stream, a batch per pull, so a large dump never sits in memory whole. */
-function lineStream(lines: Iterator<string>): ReadableStream<Uint8Array> {
+/** Lines as a byte stream, a batch per pull, so the SQL never sits in memory whole. counted gets each batch's size. */
+function lineStream(lines: Iterator<string>, counted: (bytes: number) => void): ReadableStream<Uint8Array> {
 	const encoder = new TextEncoder();
+	const send = (controller: ReadableStreamDefaultController<Uint8Array>, batch: string) => {
+		const bytes = encoder.encode(batch);
+		counted(bytes.length);
+		controller.enqueue(bytes);
+	};
 	return new ReadableStream({
 		pull(controller) {
 			let batch = '';
 			for (let i = 0; i < 1000; i++) {
 				const next = lines.next();
 				if (next.done) {
-					if (batch) controller.enqueue(encoder.encode(batch));
+					if (batch) send(controller, batch);
 					controller.close();
 					return;
 				}
 				batch += next.value + '\n';
 			}
-			controller.enqueue(encoder.encode(batch));
+			send(controller, batch);
 		}
 	});
 }
 
-/** Uploads a stream as an R2 multipart object of equal PART_SIZE parts (R2 requires that), the last one shorter. */
-async function uploadParts(bucket: R2Bucket, key: string, body: ReadableStream<Uint8Array>): Promise<R2Object> {
-	const upload = await bucket.createMultipartUpload(key, { httpMetadata: { contentType: 'application/gzip' } });
-	try {
-		const parts: R2UploadedPart[] = [];
-		let part = new Uint8Array(PART_SIZE);
-		let filled = 0;
-		const reader = body.getReader();
-		for (let r = await reader.read(); !r.done; r = await reader.read()) {
-			for (let at = 0; at < r.value.length; ) {
-				const n = Math.min(PART_SIZE - filled, r.value.length - at);
-				part.set(r.value.subarray(at, at + n), filled);
-				filled += n;
-				at += n;
-				if (filled === PART_SIZE) {
-					parts.push(await upload.uploadPart(parts.length + 1, part));
-					part = new Uint8Array(PART_SIZE);
-					filled = 0;
-				}
+/** Collects a byte stream into equal PART_SIZE parts (R2 multipart requires that), the last one shorter. */
+async function collectParts(body: ReadableStream<Uint8Array>): Promise<Uint8Array[]> {
+	const parts: Uint8Array[] = [];
+	let part = new Uint8Array(PART_SIZE);
+	let filled = 0;
+	for await (const chunk of body) {
+		for (let at = 0; at < chunk.length; ) {
+			const n = Math.min(PART_SIZE - filled, chunk.length - at);
+			part.set(chunk.subarray(at, at + n), filled);
+			filled += n;
+			at += n;
+			if (filled === PART_SIZE) {
+				parts.push(part);
+				part = new Uint8Array(PART_SIZE);
+				filled = 0;
 			}
 		}
-		if (filled > 0 || parts.length === 0) parts.push(await upload.uploadPart(parts.length + 1, part.subarray(0, filled)));
-		return await upload.complete(parts);
+	}
+	if (filled > 0 || parts.length === 0) parts.push(part.subarray(0, filled));
+	return parts;
+}
+
+/** Uploads the parts as one R2 multipart object. */
+async function uploadParts(bucket: R2Bucket, key: string, parts: Uint8Array[]): Promise<R2Object> {
+	const upload = await bucket.createMultipartUpload(key, { httpMetadata: { contentType: 'application/gzip' } });
+	try {
+		const uploaded: R2UploadedPart[] = [];
+		for (const part of parts) uploaded.push(await upload.uploadPart(uploaded.length + 1, part));
+		return await upload.complete(uploaded);
 	} catch (err) {
 		await upload.abort().catch(() => undefined);
 		throw err;
@@ -107,23 +125,46 @@ async function uploadParts(bucket: R2Bucket, key: string, body: ReadableStream<U
 }
 
 /**
- * Streams a consistent dump through gzip into the backup bucket and returns its key and size.
- * ponytail: the whole dump runs inside blockConcurrencyWhile, which the platform caps at 30 s
- * (the watchdog alerts at 10 s). Before it reaches 20 s, switch to a per-table export with a
- * foreign-key check on restore.
+ * Takes a consistent dump, gzipped, and uploads it to the backup bucket. Only reading and
+ * compressing block the Store; the upload runs after, so a slow or failing R2 never holds the
+ * Store or resets it (blockConcurrencyWhile resets the object when its callback throws or passes
+ * 30 s, so the callback here never throws).
+ * ponytail: the whole compressed dump sits in memory while it blocks, and the platform caps the
+ * block at 30 s (the watchdog alerts at 10 s and at 32 MiB of gzip). Before either nears its
+ * limit, switch to a per-table export with a foreign-key check on restore.
  */
-export function dump(ctx: DurableObjectState, db: Db, bucket: R2Bucket, now: number): Promise<{ key: string; size: number }> {
-	return ctx.blockConcurrencyWhile(async () => {
-		const key = dumpKey(now);
-		const gz = lineStream(dumpLines(ctx.storage.sql, db, now)).pipeThrough(new CompressionStream('gzip'));
-		const obj = await uploadParts(bucket, key, gz);
-		console.log(JSON.stringify({ message: 'dump written', key, bytes: obj.size }));
-		return { key, size: obj.size };
+export async function dump(ctx: DurableObjectState, db: Db, bucket: R2Bucket, now: number): Promise<{ key: string } & DumpResult> {
+	const key = dumpKey(now);
+	const started = Date.now();
+	const taken = await ctx.blockConcurrencyWhile(async () => {
+		try {
+			let bytes = 0;
+			const sql = lineStream(dumpLines(ctx.storage.sql, db, now), (n) => (bytes += n));
+			return { parts: await collectParts(sql.pipeThrough(new CompressionStream('gzip'))), bytes };
+		} catch (err) {
+			return { err };
+		}
 	});
+	const ms = Date.now() - started;
+	if ('err' in taken) throw taken.err;
+	const obj = await uploadParts(bucket, key, taken.parts);
+	console.log(JSON.stringify({ message: 'dump written', key, bytes: taken.bytes, size: obj.size, ms }));
+	return { key, ms, bytes: taken.bytes, size: obj.size };
+}
+
+/** One parsed INSERT line of a dump. */
+export interface Insert {
+	table: string;
+	columns: string[];
+	/** the statement, for the table it names */
+	sql: string;
+	params: SqlStorageValue[];
+	/** the same statement for another table */
+	into(table: string): string;
 }
 
 /** One INSERT line of a dump as a statement: numbers and NULL stay inline, text and blobs are bound. */
-export function parseInsert(line: string): { table: string; sql: string; params: SqlStorageValue[] } {
+export function parseInsert(line: string): Insert {
 	let i = 0;
 	const fail = (what: string): never => {
 		throw new Error(`dump line is not an INSERT this Store writes (${what} at ${i}): ${line.slice(0, 120)}`);
@@ -188,45 +229,89 @@ export function parseInsert(line: string): { table: string; sql: string; params:
 	expect(');');
 	if (i !== line.length) fail('trailing text');
 	if (values.length !== columns.length) fail(`${values.length} values for ${columns.length} columns`);
-	return { table, sql: `INSERT INTO ${ident(table)}(${columns.map(ident).join(',')}) VALUES(${values.join(',')})`, params };
+	const into = (t: string) => `INSERT INTO ${ident(t)}(${columns.map(ident).join(',')}) VALUES(${values.join(',')})`;
+	return { table, columns, sql: into(table), params, into };
 }
 
+/** The text lines of a byte stream, without their line breaks, one at a time. */
+async function* textLines(body: ReadableStream<Uint8Array>): AsyncGenerator<string> {
+	let rest = '';
+	for await (const chunk of body.pipeThrough(new TextDecoderStream())) {
+		const lines = (rest + chunk).split('\n');
+		rest = lines.pop()!;
+		yield* lines;
+	}
+	if (rest !== '') yield rest;
+}
+
+/** A batch of rows goes into the staging tables per transaction once it holds this much SQL. */
+const BATCH_CHARS = 1 << 20;
+
 /**
- * Replaces the rows of every table with the dump's, in one transaction, and returns the rows
- * loaded per table. It keeps the Store's schema and _migrations; a table or column this Store does
- * not know fails the whole restore, and so does a dump that does not end with its COMMIT.
- * ponytail: the whole dump text sits in memory while it loads; stage it in chunks once dumps pass
- * about 30 MB uncompressed.
+ * Replaces the rows of every table with the dump's SQL text (a stream of UTF-8 bytes) and returns
+ * the rows loaded per table. It keeps the Store's schema and _migrations; a table or column this
+ * Store does not know fails the whole restore, and so does a dump that does not end with its
+ * COMMIT. The rows stream into staging tables in bounded batches, so a dump never sits in memory
+ * whole; one transaction then swaps them in, so the live tables change all at once or not at all.
+ * Requests keep being served from the live tables meanwhile, and what they write is replaced.
  */
-export function loadDump(db: Db, text: string, now: number): Record<string, number> {
-	const lines = text.split('\n');
-	if (lines.at(-1) === '') lines.pop();
-	if (lines.at(-1) !== 'COMMIT;') throw new Error('the dump is incomplete: it does not end with COMMIT');
-	const statements = lines.filter((l) => l.startsWith('INSERT INTO ')).map(parseInsert);
+export async function loadDump(db: Db, body: ReadableStream<Uint8Array>, now: number): Promise<Record<string, number>> {
 	// A drill Store after deleteAll() has no tables until its migrations run again.
 	migrate(db, now);
 	const counts: Record<string, number> = {};
 	for (const t of dumpTables(db)) if (t.name !== '_migrations') counts[t.name] = 0;
-	return db.tx(() => {
-		// The rows go in table by table; foreign keys are checked once, at commit.
-		db.run('PRAGMA defer_foreign_keys = ON');
-		for (const t of Object.keys(counts)) db.run(`DELETE FROM ${ident(t)}`);
-		for (const s of statements) {
+	const tables = Object.keys(counts);
+	const columns = new Map<string, string[]>();
+	const dropStages = () => db.tx(() => tables.forEach((t) => db.run(`DROP TABLE IF EXISTS ${ident(STAGE + t)}`)));
+	dropStages();
+	try {
+		// Staging tables with the live columns and affinities, without constraints.
+		db.tx(() => tables.forEach((t) => db.run(`CREATE TABLE ${ident(STAGE + t)} AS SELECT * FROM ${ident(t)} WHERE 0`)));
+		let batch: Insert[] = [];
+		let chars = 0;
+		const flush = () => {
+			db.tx(() => batch.forEach((s) => db.run(s.into(STAGE + s.table), ...s.params)));
+			batch = [];
+			chars = 0;
+		};
+		let last = '';
+		for await (const line of textLines(body)) {
+			last = line;
+			if (!line.startsWith('INSERT INTO ')) continue;
+			const s = parseInsert(line);
 			if (s.table === '_migrations') continue;
 			if (!(s.table in counts)) throw new Error(`the dump has a table this Store does not know: ${s.table}`);
-			db.run(s.sql, ...s.params);
+			const known = columns.get(s.table);
+			if (!known) columns.set(s.table, s.columns);
+			else if (known.join() !== s.columns.join()) throw new Error(`the dump's rows of ${s.table} name different columns`);
+			batch.push(s);
 			counts[s.table]!++;
+			chars += line.length;
+			if (chars >= BATCH_CHARS) flush();
 		}
+		flush();
+		if (last !== 'COMMIT;') throw new Error('the dump is incomplete: it does not end with COMMIT');
+		db.tx(() => {
+			// The rows go in table by table; foreign keys are checked once, at commit. Columns the dump
+			// lacks (it predates them) take their defaults.
+			db.run('PRAGMA defer_foreign_keys = ON');
+			for (const t of tables) db.run(`DELETE FROM ${ident(t)}`);
+			for (const [t, cols] of columns) {
+				const list = cols.map(ident).join(',');
+				db.run(`INSERT INTO ${ident(t)}(${list}) SELECT ${list} FROM ${ident(STAGE + t)}`);
+			}
+		});
 		return counts;
-	});
+	} finally {
+		dropStages();
+	}
 }
 
 /** Reads a dump from the backup bucket and loads it with loadDump. Undefined when there is no such dump. */
 export async function restoreDump(db: Db, bucket: R2Bucket, key: string, now: number): Promise<Record<string, number> | undefined> {
 	const obj = await bucket.get(key);
 	if (!obj) return undefined;
-	const text = await new Response(obj.body.pipeThrough(new DecompressionStream('gzip'))).text();
-	return loadDump(db, text, now);
+	return loadDump(db, obj.body.pipeThrough(new DecompressionStream('gzip')), now);
 }
 
 /** Rows per table, for the drill's comparison between a loaded dump and the primary Store. */

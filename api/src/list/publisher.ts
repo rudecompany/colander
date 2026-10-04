@@ -54,9 +54,16 @@ export function removedEntry(now: number): (old: Uint8Array) => Uint8Array {
 	return (old) => encodeEntry({ hash: old.slice(0, 8), verdict: 0, flags: old[9]! & (FLAG_ITEM | 7), signals: 0, detail: 0, updated: dayNumber(now) });
 }
 
+/** Go's Publisher kept at most this many encoded deltas per head, then started over. */
+export const DELTA_CACHE = 256;
+
 export class Publisher {
 	/** The snapshot last encoded here, kept to serve R2 misses without signing again. */
 	private snapshot?: { seq: number; bytes: Uint8Array };
+	/** Encoded deltas to the head `seq`, by base (Go's Publisher.deltas). */
+	private deltas: { seq: number; bySince: Map<number, Uint8Array> } = { seq: 0, bySince: new Map() };
+	/** The publication in progress: runs never overlap, so R2 never ends on an older sequence. */
+	private running: Promise<unknown> = Promise.resolve();
 
 	constructor(
 		private readonly db: Db,
@@ -69,17 +76,31 @@ export class Publisher {
 	 * snapshot is ahead of the local head (a restore), then makes R2 hold the head snapshot.
 	 * The head is checked against R2 on every run, so a lagging or lost R2 object heals here too.
 	 * Returns the head sequence. nowMs is unix milliseconds.
+	 *
+	 * A Store with no list while R2 holds one has lost its data (a destroyed namespace): it
+	 * publishes nothing, rather than an empty list above R2 that installs would accept, and
+	 * returns sequence 0 (the watchdog alerts). A restore-dump brings the list back; deleting the
+	 * R2 snapshot starts from an empty list on purpose.
 	 */
-	async publish(nowMs: number): Promise<Sequence> {
+	publish(nowMs: number): Promise<Sequence> {
+		const run = this.running.then(() => this.publishOnce(nowMs));
+		this.running = run.catch(() => undefined);
+		return run;
+	}
+
+	private async publishOnce(nowMs: number): Promise<Sequence> {
 		const now = Math.floor(nowMs / 1000);
 		const r2Seq = r2Sequence(await this.bucket.head(SNAPSHOT_KEY));
 		// One transaction reads the targets, diffs them and records the sequence; the snapshot rows
 		// are read before the first await, so they belong to exactly that sequence.
 		const { seq, changed, size, entries } = this.db.tx(() => {
+			const head = latestSequence(this.db);
+			if (head.seq === 0 && r2Seq > 0) return { seq: head, changed: false, size: 0, entries: null };
 			const want = wantedEntries(listTargets(this.db));
 			const res = publishList(this.db, want, removedEntry(now), now, now - RETENTION_SECONDS, r2Seq);
 			return { ...res, size: want.size, entries: res.seq.seq === r2Seq ? null : publishedEntries(this.db).entries };
 		});
+		if (seq.seq === 0) console.error(JSON.stringify({ message: 'list not published: the Store has no list while R2 holds one', r2Sequence: r2Seq }));
 		if (changed) console.log(JSON.stringify({ message: 'list published', sequence: seq.seq, entries: size }));
 		if (entries) {
 			const bytes = await this.encode(seq, entries);
@@ -121,10 +142,16 @@ export class Publisher {
 		if (since > head.seq || since <= 0) return gone();
 		const created = sequenceCreated(this.db, since);
 		if (created === undefined || created < now - RETENTION_SECONDS) return gone();
-		const entries = changesSince(this.db, since, head.seq);
-		// ponytail: every miss re-signs the delta; Go kept the last 256 in memory. Add that cache if
-		// Store CPU shows signing, since the edge cache already collapses identical requests.
-		const body = await encodeList(await this.key(), { kind: 'delta', sequence: head.seq, base: since, created: head.createdAt }, entries);
+		if (this.deltas.seq !== head.seq) this.deltas = { seq: head.seq, bySince: new Map() };
+		const cache = this.deltas;
+		let body = cache.bySince.get(since);
+		if (!body) {
+			const entries = changesSince(this.db, since, head.seq);
+			body = await encodeList(await this.key(), { kind: 'delta', sequence: head.seq, base: since, created: head.createdAt }, entries);
+			// ponytail: the cache starts over past 256 bases, as Go's did; an LRU if clients spread wider.
+			if (cache.bySince.size >= DELTA_CACHE) cache.bySince.clear();
+			cache.bySince.set(since, body);
+		}
 		headers.set('Content-Type', 'application/octet-stream');
 		return new Response(body, { status: 200, headers: setCache(headers, 'list') });
 	}

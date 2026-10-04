@@ -9,6 +9,7 @@ import { grantRole, setDisplayName } from '../src/store/accounts';
 import { errorCode, expectStatus, Harness, installId } from './api';
 
 const MINUTE = 60_000;
+const CSRF = ['X-Colander-CSRF', '1'];
 const sha256hex = async (s: string) => hex(new Uint8Array(await crypto.subtle.digest('SHA-256', utf8(s))));
 
 describe('auth helpers', () => {
@@ -109,7 +110,7 @@ describe('email sign-in', () => {
 		expect(h.mail).toContain(`${env.PUBLIC_URL}/auth/callback?token=`);
 		expect(h.mail).toContain('next=%2Faccount');
 
-		let res = await h.do('POST', '/v1/auth/verify', { token });
+		let res = await h.do('POST', '/v1/auth/verify', { token }, ...CSRF);
 		await expectStatus(res, 200);
 		const cookie = res.headers.get('Set-Cookie')!;
 		const value = /^colander_session=([A-Za-z0-9_-]{43});/.exec(cookie)?.[1];
@@ -131,7 +132,7 @@ describe('email sign-in', () => {
 		});
 
 		// Links work once.
-		res = await h.do('POST', '/v1/auth/verify', { token });
+		res = await h.do('POST', '/v1/auth/verify', { token }, ...CSRF);
 		await expectStatus(res, 400);
 		expect(await errorCode(res)).toBe('link_invalid');
 		// And expire after 20 minutes.
@@ -139,7 +140,21 @@ describe('email sign-in', () => {
 		await h.do('POST', '/v1/auth/email', { email: 'maya@example.test' });
 		const late = /token=([A-Za-z0-9_-]+)/.exec(h.mail)![1];
 		h.clock += 21 * MINUTE;
-		await expectStatus(await h.do('POST', '/v1/auth/verify', { token: late }), 400);
+		await expectStatus(await h.do('POST', '/v1/auth/verify', { token: late }, ...CSRF), 400);
+	});
+
+	it('needs the CSRF header to sign in, so a cross-site form cannot sign a visitor into another account', async () => {
+		const h = await Harness.create();
+		h.mail = '';
+		await h.do('POST', '/v1/auth/email', { email: 'attacker@example.test' });
+		const token = /token=([A-Za-z0-9_-]+)/.exec(h.mail)![1]!;
+		// What an auto-submitting text/plain form sends: the decoder matches keys ignoring case and the last one wins.
+		const forged = await h.do('POST', '/v1/auth/verify', `{"TOKEN":"=","token":"${token}"}`, 'Content-Type', 'text/plain', 'Origin', 'https://evil.example');
+		await expectStatus(forged, 403);
+		expect(await errorCode(forged)).toBe('csrf_required');
+		expect(forged.headers.get('Set-Cookie')).toBeNull();
+		expect(await h.run((store) => store.db.get('SELECT used_at FROM magic_links'))).toEqual({ used_at: null });
+		await expectStatus(await h.do('POST', '/v1/auth/verify', { token }, ...CSRF), 200);
 	});
 
 	it('prints the dev mail in the block e2e/tests/stack.ts parses', async () => {
@@ -168,7 +183,7 @@ describe('email sign-in', () => {
 		await h.do('POST', '/v1/auth/email', { email: 'maya@example.test' });
 		const token = /token=([A-Za-z0-9_-]+)/.exec(h.mail)![1];
 		await h.run((store) => store.db.run("CREATE TRIGGER no_sessions BEFORE INSERT ON sessions BEGIN SELECT RAISE(ABORT, 'sessions are down'); END"));
-		await expectStatus(await h.do('POST', '/v1/auth/verify', { token }), 500);
+		await expectStatus(await h.do('POST', '/v1/auth/verify', { token }, ...CSRF), 500);
 		// The failed session left the link unused and created no account.
 		expect(
 			await h.run((store) => [
@@ -177,7 +192,7 @@ describe('email sign-in', () => {
 			])
 		).toEqual([{ used_at: null }, 0]);
 		await h.run((store) => store.db.run('DROP TRIGGER no_sessions'));
-		await expectStatus(await h.do('POST', '/v1/auth/verify', { token }), 200);
+		await expectStatus(await h.do('POST', '/v1/auth/verify', { token }, ...CSRF), 200);
 	});
 
 	it('limits links to 5 per email and 30 per address an hour, writing nothing when refused', async () => {

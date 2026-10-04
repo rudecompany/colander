@@ -2,7 +2,7 @@
 // harness runs instead of the Go server's start, the dump route, and COLANDER_TEST_NOW.
 import { env } from 'cloudflare:workers';
 import { createExecutionContext, runInDurableObject } from 'cloudflare:test';
-import { describe, expect, inject, it } from 'vitest';
+import { describe, expect, inject, it, vi } from 'vitest';
 import { keyHash, targetKey } from '@colander/shared/ids';
 import { decodeEntry, ENTRY, FLAG_IMPORTED, FLAG_LARGE, verifyList } from '@colander/shared/list';
 import { importKeys } from '@colander/shared/signing';
@@ -12,17 +12,36 @@ import { testNow } from '../src/dev';
 import worker from '../src/index';
 import { Sig } from '../src/scoring/rules';
 import { AppealAwaiting, AppealDenied, AppealExpired, AppealPendingManual, appealsWithStatus, AppealUnderReview, AppealUpheld } from '../src/store/appeals';
+import { SNAPSHOT_KEY } from '../src/store/list';
 import { findSource } from '../src/store/sources';
 import { openReports, reportsBySource } from '../src/store/tags';
 import { verdictCounts } from '../src/store/misc';
 import { openEscalations } from '../src/store/verdicts';
 import type { Store } from '../src/store/store';
+import type { YouTube } from '../src/youtube';
 
 const keys = await importKeys([inject('contract').devPublicKey]);
 const stub = env.STORE.getByName('seed');
 const post = (path: string) => stub.fetch(`https://store${path}`, { method: 'POST' });
 
 describe('/__dev/seed', () => {
+	it("scores without a YouTube client, as Go's seed-dev did, and gives the Store's back", async () => {
+		const seeded = env.STORE.getByName('seed-youtube');
+		const enrichStale = vi.fn(async () => {});
+		const client = { enrichStale } as unknown as YouTube;
+		await runInDurableObject(seeded, (store: Store) => void (store.engine.youtube = client));
+		expect((await seeded.fetch('https://store/__dev/seed', { method: 'POST' })).status).toBe(200);
+		expect(enrichStale, 'the seed reached no Data API').not.toHaveBeenCalled();
+		await runInDurableObject(seeded, async (store: Store) => {
+			expect(store.engine.youtube).toBe(client);
+			// Settling afterwards is the Go server's start, which does enrich.
+			await store.engine.fullPass(store.now());
+		});
+		expect(enrichStale).toHaveBeenCalledOnce();
+		// The seed published; the next test's Store starts from an empty bucket, as in production.
+		await env.LISTS.delete(SNAPSHOT_KEY);
+	});
+
 	// Go's TestSeedDev: every verdict and appeal state, settled (a further pass changes nothing),
 	// and the contract fixture targets with the verdicts the extension's tests expect.
 	it('fills an empty Store with every verdict and appeal state, once', async () => {
@@ -95,6 +114,8 @@ describe('/__dev/seed', () => {
 describe('/__dev/settle', () => {
 	it('publishes, scores everything and publishes again, as the Go server does when it starts', async () => {
 		const other = env.STORE.getByName('settle');
+		// A fresh deployment: the seed's publication above came from another Store.
+		await env.LISTS.delete(SNAPSHOT_KEY);
 		await runInDurableObject(other, (store: Store) => {
 			store.db.run("INSERT INTO sources (platform, canonical_id, created_at, import_list, import_source, import_license, imported_at) VALUES ('yt', '@imported', 1, 'blocklist', 'Demo', 'CC0', 1)");
 			const id = store.db.get<{ id: number }>('SELECT id FROM sources')!.id;

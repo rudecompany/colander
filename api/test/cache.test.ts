@@ -16,7 +16,7 @@ import { grantRole, setReviewerToken } from '../src/store/accounts';
 import { ensureSource } from '../src/store/sources';
 import { saveAdapterConfig } from '../src/store/misc';
 import { latestSequence } from '../src/store/list';
-import type { Store } from '../src/store/store';
+import { Store } from '../src/store/store';
 
 const ORIGIN = 'https://getcolander.com';
 const files = inject('contract');
@@ -160,7 +160,7 @@ describe('Cache-Control on every route', () => {
 		// Accounts (contract 6.6): sign-in, the account and its reviewer token, sign-out last.
 		await check('POST /v1/auth/email', 'POST', '/v1/auth/email', 202, 'none', { body: { email: 'cache@example.test', next: '/account' } });
 		const link = await runInDurableObject(primary(), (s: Store) => s.auth.startSignIn('cache@example.test', '/account'));
-		const verified = await check('POST /v1/auth/verify', 'POST', '/v1/auth/verify', 200, 'none', { body: { token: link } });
+		const verified = await check('POST /v1/auth/verify', 'POST', '/v1/auth/verify', 200, 'none', { headers: { 'X-Colander-CSRF': '1' }, body: { token: link } });
 		const signedIn = { Cookie: /^[^;]*/.exec(verified.headers.get('Set-Cookie') ?? '')![0], 'X-Colander-CSRF': '1' };
 		await check('GET /v1/account', 'GET', '/v1/account', 200, 'none', { headers: signedIn });
 		await check('PATCH /v1/account', 'PATCH', '/v1/account', 200, 'none', { headers: signedIn, body: { display_name: 'Cache' } });
@@ -183,6 +183,54 @@ describe('Cache-Control on every route', () => {
 		await check('GET /__dev/dump', 'GET', '/__dev/dump', 200, 'none');
 
 		await check('GET (unmatched)', 'GET', '/v1/nothing', 404, 'none');
+	});
+
+	it('answers a cached GET with a non-canonical query at the edge, so junk keys never reach the Store', async () => {
+		const store = vi.spyOn(Store.prototype, 'fetch');
+		const cases: [string, string, string][] = [
+			['/v1/list/snapshot?r=1', 'GET /v1/list/snapshot', 'invalid_query'],
+			['/v1/config/adapters?r=1', 'GET /v1/config/adapters', 'invalid_query'],
+			['/v1/sources/yt/@chan?r=1', 'GET /v1/sources/:platform/:source_id', 'invalid_query'],
+			['/v1/sources/yt/@chan?', 'GET /v1/sources/:platform/:source_id', ''],
+			['/v1/stats?r=2', 'GET /v1/stats', 'invalid_query'],
+			['/v1/supporters?r=3', 'GET /v1/supporters', 'invalid_query'],
+			['/v1/log?r=1', 'GET /v1/log', 'invalid_query'],
+			['/v1/log?limit=5&r=1', 'GET /v1/log', 'invalid_query'],
+			['/v1/log?limit=5&limit=6', 'GET /v1/log', 'invalid_query'],
+			['/v1/log?platform=yt&limit=5', 'GET /v1/log', 'invalid_query'],
+			['/v1/log?limit=', 'GET /v1/log', 'invalid_query'],
+			['/v1/log?cursor', 'GET /v1/log', 'invalid_query'],
+			['/v1/log?limit=05', 'GET /v1/log', 'invalid_limit'],
+			['/v1/log?limit=201', 'GET /v1/log', 'invalid_limit'],
+			['/v1/log?platform=YT', 'GET /v1/log', 'invalid_platform'],
+			['/v1/log?verdict=sloppy', 'GET /v1/log', 'invalid_verdict'],
+			['/v1/log?cursor=7', 'GET /v1/log', 'invalid_cursor'],
+			['/v1/log?cursor=log_007', 'GET /v1/log', 'invalid_cursor']
+		];
+		for (const [path, route, code] of cases) {
+			const logs = vi.spyOn(console, 'log').mockImplementation(() => {});
+			const res = await exports.default.fetch(new Request(ORIGIN + path, { headers: { 'CF-Connecting-IP': `198.18.1.${++client}` } }));
+			const logged = JSON.parse(String(logs.mock.calls.at(-1)![0])) as { route: string };
+			logs.mockRestore();
+			expect(logged.route, path).toBe(route);
+			if (code === '') {
+				// An empty query is no query at all.
+				expect(res.status, path).toBe(200);
+				continue;
+			}
+			expect(res.status, path).toBe(400);
+			expect([res.headers.get('Cache-Control'), res.headers.get('Cloudflare-CDN-Cache-Control')], path).toEqual(POLICY.none);
+			expect(((await res.json()) as { error: { code: string } }).error.code, path).toBe(code);
+		}
+		expect(store.mock.calls.map((c) => new URL((c[0] as Request).url).pathname)).toEqual(['/v1/sources/yt/@chan']);
+		// The website's own forms pass.
+		for (const path of ['/v1/log?limit=3', '/v1/log?limit=50&platform=yt&verdict=likely_slop&cursor=log_12', '/v1/log?verdict=clear']) {
+			const logs = vi.spyOn(console, 'log').mockImplementation(() => {});
+			const res = await exports.default.fetch(new Request(ORIGIN + path, { headers: { 'CF-Connecting-IP': `198.18.1.${++client}` } }));
+			logs.mockRestore();
+			expect(res.status, path).toBe(200);
+		}
+		store.mockRestore();
 	});
 
 	it('covers every route of the Store', async () => {

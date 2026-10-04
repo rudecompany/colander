@@ -7,13 +7,14 @@
 // They replace the Go binary's operator commands: grant-role, import-seed and sign-config behave
 // as `colander <command>` did, with JSON arguments instead of flags.
 import { utf8 } from '@colander/shared/bytes';
-import { canonicalSource, lowerSimple } from '@colander/shared/ids';
 import { CONFIG_CONTEXT, signEnvelope } from '@colander/shared/signing';
+import { normalizeEmail } from './auth';
 import { countsAgree, newestDump, restoreDump, tableCounts } from './backup';
 import { json, jsonError } from './http';
 import { STATUS, type DumpStatus, type PassStatus, type PublishStatus } from './jobs';
 import { r2Sequence } from './list/publisher';
-import { rfc3339 } from './routes/respond';
+import { canonicalSource } from './routes/ids';
+import { rfc3339, trimSpace } from './routes/respond';
 import { unix } from './scoring/engine';
 import { grantRole, type Account } from './store/accounts';
 import { latestSequence, RETENTION_SECONDS, SNAPSHOT_KEY } from './store/list';
@@ -72,7 +73,9 @@ export async function ops(request: Request, env: Env, cache: CacheContext | unde
 			const key = text(a.key);
 			if (key === '' || a.confirm !== key) return send(unconfirmed('the dump key'));
 			const res = await call(primary(env), 'restore-dump', { key });
-			return send(res.status === 200 ? await afterRestore(env, cache, res.body) : res);
+			if (res.status !== 200) return send(res);
+			await restart(env);
+			return send(await afterRestore(env, cache, res.body));
 		}
 		case 'drill':
 			return send(await drill(env));
@@ -94,9 +97,14 @@ async function purgeEverything(cache: CacheContext | undefined): Promise<{ purge
 	return r.success ? { purged: true } : { purged: false, errors: r.errors };
 }
 
+/** Where a point-in-time restore records its bookmarks, in the backup bucket. */
+export const PITR_PREFIX = 'pitr/';
+
 /**
  * Point-in-time restore of the Store (hosting plan section 3). `at` must be an RFC 3339 time in the
- * last 30 days, typed twice. The answer carries the undo bookmark.
+ * last 30 days, typed twice. The Store arms the restore and restarts in one call, so an armed
+ * restore never waits for a later restart; the bookmarks outlive that instance in the backup
+ * bucket, and the answer carries them, the undo bookmark included.
  */
 async function pitrRestore(env: Env, cache: CacheContext | undefined, a: OpsArgs): Promise<OpsAnswer> {
 	const at = text(a.at);
@@ -107,20 +115,32 @@ async function pitrRestore(env: Env, cache: CacheContext | undefined, a: OpsArgs
 	if (t > now || t < now - RETENTION_SECONDS * 1000) {
 		return fail(400, 'invalid_time', 'at must be in the past 30 days: point-in-time recovery keeps no older history.');
 	}
-	const res = await call(primary(env), 'pitr-restore', { at: t });
-	return res.status === 200 ? afterRestore(env, cache, { at, ...res.body }) : res;
+	const record = `${PITR_PREFIX}${new Date(now).toISOString()}.json`;
+	await resetting(call(primary(env), 'pitr-restore', { at: t, record }));
+	const saved = await env.BACKUPS.get(record);
+	if (!saved) {
+		return fail(500, 'restore_unrecorded', `The Store restarted without recording ${record}: check the Worker logs for its bookmarks before anything else.`);
+	}
+	return afterRestore(env, cache, { at, ...(await saved.json<Record<string, unknown>>()) });
 }
 
-/**
- * After a restore: restart the Store so the restored data is all it holds, have the new instance
- * publish (above R2's sequence, so no install ever sees an older list) and purge the edge cache.
- */
-async function afterRestore(env: Env, cache: CacheContext | undefined, restored: Record<string, unknown>): Promise<OpsAnswer> {
+/** Waits for a call that ends by resetting the Store; any other failure is thrown. */
+async function resetting(p: Promise<unknown>): Promise<void> {
 	try {
-		await call(primary(env), 'restart');
+		await p;
 	} catch (err) {
 		if (!(err as { durableObjectReset?: boolean }).durableObjectReset) throw err;
 	}
+}
+
+/** Restarts the Store, so restored data is all the next instance holds. */
+const restart = (env: Env) => resetting(call(primary(env), 'restart'));
+
+/**
+ * After a restore and its restart: have the new instance publish (above R2's sequence, so no
+ * install ever sees an older list) and purge the edge cache.
+ */
+async function afterRestore(env: Env, cache: CacheContext | undefined, restored: Record<string, unknown>): Promise<OpsAnswer> {
 	// A reset object breaks its stubs: primary() makes a new one, which starts a new instance.
 	const published = await call(primary(env), 'publish');
 	const purge = await purgeEverything(cache);
@@ -179,8 +199,15 @@ export async function storeOps(store: Store, ctx: DurableObjectState, env: Env, 
 		case 'pitr-restore': {
 			const bookmark = await ctx.storage.getBookmarkForTime(a.at as number);
 			const undo = await ctx.storage.onNextSessionRestoreBookmark(bookmark);
-			console.log(JSON.stringify({ message: 'point-in-time restore armed', bookmark, undo }));
-			return ok({ bookmark, undo_bookmark: undo });
+			const saved = { bookmark, undo_bookmark: undo };
+			console.log(JSON.stringify({ message: 'point-in-time restore armed', ...saved }));
+			try {
+				await env.BACKUPS.put(text(a.record), JSON.stringify(saved), { httpMetadata: { contentType: 'application/json' } });
+			} finally {
+				// Restart now, recorded or not: the armed restore must never wait for a later restart.
+				ctx.abort('restarting into a point-in-time restore');
+			}
+			return ok(saved);
 		}
 		case 'restore-dump': {
 			const key = text(a.key);
@@ -252,21 +279,6 @@ async function status(store: Store, ctx: DurableObjectState, env: Env): Promise<
 	};
 }
 
-// RFC 5322 atext as Go's net/mail reads it: printable ASCII except the specials, plus any non-ASCII.
-const ATOM = String.raw`[!#$%&'*+\-/0-9=?A-Z^_\x60a-z{|}~\u{80}-\u{10FFFF}]+`;
-const DOT_ATOM = `${ATOM}(?:\\.${ATOM})*`;
-const OCTET = '(?:25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])';
-const EMAIL = new RegExp(`^${DOT_ATOM}@(?:${DOT_ATOM}|\\[${OCTET}(?:\\.${OCTET}){3}\\])$`, 'u');
-
-/**
- * Go's auth.NormalizeEmail: lowercased and trimmed, at most 254 bytes, and what mail.ParseAddress
- * reads back unchanged with no name (a dot-atom local part, a dot-atom domain or IPv4 literal).
- */
-function normalizeEmail(s: string): string | undefined {
-	s = lowerSimple(s.trim());
-	return utf8(s).length <= 254 && EMAIL.test(s) ? s : undefined;
-}
-
 const accountJSON = (a: Account) => ({ id: a.id, email: a.email, display_name: a.displayName || null, role: a.role, created_at: rfc3339(a.createdAt) });
 
 /** `colander grant-role <email> <role>`. */
@@ -303,10 +315,10 @@ function importSeedFile(store: Store, a: OpsArgs): OpsAnswer {
 	let skipped = 0;
 	db.tx(() => {
 		for (const raw of file.split('\n')) {
-			const line = raw.trim();
+			const line = trimSpace(raw);
 			if (line === '' || line.startsWith('!')) continue;
 			const id = canonicalSource('yt', line);
-			if (id === null) {
+			if (id === undefined) {
 				skipped++;
 				continue;
 			}

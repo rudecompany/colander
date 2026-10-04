@@ -5,7 +5,7 @@ import { createScheduledController, runInDurableObject } from 'cloudflare:test';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import worker from '../src/index';
 import { nextDump, STATUS } from '../src/jobs';
-import { alerts, ANALYTICS_CRON, PULL_HOURS, THRESHOLDS } from '../src/scheduled';
+import { alerts, ANALYTICS_CRON, PULL_HOURS, THRESHOLDS, UNREACHABLE_KEY } from '../src/scheduled';
 import { SNAPSHOT_KEY } from '../src/store/list';
 import type { Store, WatchdogStatus } from '../src/store/store';
 
@@ -48,6 +48,7 @@ beforeEach(async () => {
 		await state.storage.deleteAlarm();
 	});
 	await env.LISTS.delete(SNAPSHOT_KEY);
+	await env.LISTS.delete(UNREACHABLE_KEY);
 });
 
 describe('watchdog', () => {
@@ -109,6 +110,22 @@ describe('watchdog', () => {
 		expect(mail.sent.map((m) => m.subject)).toEqual(['Colander on getcolander.com: r2_behind']);
 	});
 
+	it('mails store_unreachable at most once an hour when the Store does not answer, and still fails', async () => {
+		const mail = mailbox();
+		const down = { getByName: () => ({ watchdog: () => Promise.reject(new Error('Durable Object reset because its code was updated.')) }) } as unknown as Env['STORE'];
+		await expect(cron(WATCHDOG, { ALERTS: mail.binding, STORE: down })).rejects.toThrow('Durable Object reset');
+		expect(mail.sent.map((m) => m.subject)).toEqual(['Colander on getcolander.com: store_unreachable']);
+		expect(mail.sent[0]!.text).toContain('The watchdog could not reach the Store, so no job status or other alert is known: Error: Durable Object reset because its code was updated.');
+		await expect(cron(WATCHDOG, { ALERTS: mail.binding, STORE: down }, T + 55 * MINUTE)).rejects.toThrow();
+		expect(mail.sent).toHaveLength(1);
+		await expect(cron(WATCHDOG, { ALERTS: mail.binding, STORE: down }, T + 61 * MINUTE)).rejects.toThrow();
+		expect(mail.sent).toHaveLength(2);
+		// A failed mail does not hide the Store's own error.
+		vi.spyOn(console, 'error').mockImplementation(() => {});
+		await env.LISTS.delete(UNREACHABLE_KEY);
+		await expect(cron(WATCHDOG, { ALERTS: mailbox(true).binding, STORE: down })).rejects.toThrow('Durable Object reset');
+	});
+
 	it('re-arms a lost alarm and says so', async () => {
 		const mail = mailbox();
 		await inStore((store) => {
@@ -155,12 +172,19 @@ describe('alerts', () => {
 		expect(keys({ head: { seq: 0, createdAt: 0 }, r2: null })).toEqual([]);
 	});
 
+	it('alert when the Store has no list while R2 holds one, which it then refuses to publish over', () => {
+		expect(keys({ head: { seq: 0, createdAt: 0 }, r2: { seq: S - 600, created: S - 600 } })).toEqual(['store_empty']);
+		expect(alerts({ ...base, head: { seq: 0, createdAt: 0 }, r2: { seq: S - 600, created: S - 600 } })[0]!.text).toContain('Restore the newest dump');
+	});
+
 	it('alert on dumps only once the dump job exists', () => {
-		expect(keys({ dump: { at: T - 8 * 60 * MINUTE, ms: 20_000 } })).toEqual([]);
+		const sizes = { bytes: 40 << 20, size: 6 << 20 };
+		expect(keys({ dump: { at: T - 8 * 60 * MINUTE, ms: 20_000, ...sizes } })).toEqual([]);
 		const jobs = ['dump', 'prune', 'publish'];
 		expect(keys({ jobs, since: T - 8 * 60 * MINUTE })).toEqual(['dump_stale']);
-		expect(keys({ jobs, dump: { at: T - 60 * MINUTE, ms: 12_000 } })).toEqual(['dump_slow']);
-		expect(keys({ jobs, dump: { at: T - 60 * MINUTE, ms: 900 } })).toEqual([]);
+		expect(keys({ jobs, dump: { at: T - 60 * MINUTE, ms: 12_000, ...sizes } })).toEqual(['dump_slow']);
+		expect(keys({ jobs, dump: { at: T - 60 * MINUTE, ms: 900, ...sizes } })).toEqual([]);
+		expect(keys({ jobs, dump: { at: T - 60 * MINUTE, ms: 900, bytes: 300 << 20, size: THRESHOLDS.dumpSize + 1 } })).toEqual(['dump_large']);
 		expect(keys({ alarmLost: true, overdueMs: 3 * MINUTE })).toEqual(['alarm_lost']);
 	});
 });

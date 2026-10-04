@@ -168,6 +168,8 @@ Base URL: the server origin, which also serves the website. Dev default `http://
 All bodies are JSON with `snake_case` keys; times are RFC 3339 strings in UTC.
 Errors use `{"error": {"code": "machine_code", "message": "Plain sentence for people."}}` with a fitting status.
 Rate-limited requests get `429` with `Retry-After` in seconds.
+Limits per IP count an IPv6 client by its /64.
+GETs that the edge caches by their full URL take only their canonical query and answer `400` to any other: `/v1/list/delta` exactly `?since=N` (section 3.2), `/v1/log` the parameters of 6.4 each at most once, non-empty and in the order `limit` (1 to 200), `platform`, `verdict`, `cursor` (as `next_cursor` gives it), and `/v1/list/snapshot`, `/v1/config/adapters`, `/v1/sources/*`, `/v1/stats` and `/v1/supporters` none (`invalid_query`).
 
 CORS: `/v1/list/*`, `/v1/config/*`, `/v1/tags`, `/v1/reports`, `/v1/trial`, `/v1/entitlement/refresh`, `/v1/sync`, `/v1/review/*` (bearer only) and `/v1/sources/*` answer any origin (`Access-Control-Allow-Origin: *`, no credentials), so the extension needs no host permission for the API.
 Cookie-authenticated routes are same-origin only and require the header `X-Colander-CSRF: 1` on every non-GET request.
@@ -294,7 +296,7 @@ A report's status follows its source: it stays `under_review` until a reviewer d
 A lookup by any alias returns the same source.
 `imported` is true when the source came from an imported seed list, reviewed or not; `attribution` then names the list and its license (for example `AiSList (CC BY-NC 4.0), blocklist`), and the source page must show it.
 
-`GET /v1/log?cursor=&platform=&verdict=&limit=` returns `{"entries": [LogEntry, ...], "next_cursor": "..." | null}`, newest first, default limit 50, max 200.
+`GET /v1/log?limit=&platform=&verdict=&cursor=` returns `{"entries": [LogEntry, ...], "next_cursor": "..." | null}`, newest first, default limit 50, max 200.
 
 ```json
 {
@@ -324,7 +326,7 @@ A lookup by any alias returns the same source.
 | --- | --- | --- |
 | `POST /v1/appeals` `{"platform","source_id","email","statement"}` | none, 5 per IP per day | Creates an appeal. `201` `{"appeal": Appeal, "secret": "..."}`. The secret lets the creator check status and verify. It is also emailed as a link. |
 | `GET /v1/appeals/{id}?secret=` | secret | `{"appeal": Appeal}` |
-| `POST /v1/appeals/{id}/verify` `{"secret"}` | secret | Checks for the code on the account. YouTube is checked through the Data API when a key is configured. Otherwise the appeal moves to `pending_manual` for staff. |
+| `POST /v1/appeals/{id}/verify` `{"secret"}` | secret | Checks for the code on the account. YouTube is checked through the Data API when a key is configured, at most 10 times per appeal and 30 times per IP an hour. Otherwise the appeal moves to `pending_manual` for staff. |
 | `POST /v1/review/appeals/{id}/verify` | staff | Staff confirm the code is on the account |
 | `POST /v1/review/appeals/{id}/resolve` `{"outcome": "upheld" \| "denied", "reasoning"}` | staff | Upheld sets Clear. Denied restores the scored verdict. Both write the decision log. |
 
@@ -354,7 +356,7 @@ Appeal pages never show a support or donation link.
 | Request | Effect |
 | --- | --- |
 | `POST /v1/auth/email` `{"email", "next"}` | Sends a sign-in link to `{public_url}/auth/callback?token=...&next=...`. Always `202`. 5 per email per hour. Links expire after 20 minutes and work once. |
-| `POST /v1/auth/verify` `{"token"}` | Sets the session cookie (30 days). `200` `{"account": Account}`. Creates the account on first sign-in. |
+| `POST /v1/auth/verify` `{"token"}` | Sets the session cookie (30 days). `200` `{"account": Account}`. Creates the account on first sign-in. Needs `X-Colander-CSRF: 1` like the cookie routes (`403 csrf_required`), so a cross-site form cannot sign a visitor into another account. |
 | `POST /v1/auth/logout` | Clears the session |
 | `GET /v1/account` | `200` `{"account": Account}` or `401` |
 | `PATCH /v1/account` `{"display_name"}` | Updates the public name used in the decision log and supporters page |
@@ -403,7 +405,7 @@ Session cookie or Reviewer bearer token. Curators may decide sources that are no
 
 | Request | Auth | Effect |
 | --- | --- | --- |
-| `POST /v1/trial` | Install | `200` `{"token": PlanToken}` for a 14-day Plus trial, once per install (`409 trial_used` after). No card, no account. |
+| `POST /v1/trial` | Install | `200` `{"token": PlanToken}` for a 14-day Plus trial, once per install (`409 trial_used` after) and 5 per IP a day. No card, no account. The trial's synced settings are deleted once it ends. |
 | `POST /v1/billing/checkout` `{"price": "plus_yearly" \| "plus_monthly"}` | Session | `200` `{"url": "<hosted checkout>"}`. `400 invalid_price` for any other price. `409 already_subscribed` while the account's plan is `active`, `trialing` or `past_due`. |
 | `POST /v1/billing/donate` `{"amount_cents", "recurring", "credit_name"}` | none | `200` `{"url"}`. `amount_cents` 100 to 100000 (`400 invalid_amount`). `credit_name` optional, one line of at most 80 characters (`400 invalid_credit_name`), shown on the supporters page if set. 10 per IP per hour. |
 | `POST /v1/billing/cancel` `{"refund": bool}` | Session | `200` `{"account": Account}`. Cancels at period end; repeating it changes nothing. With `refund: true` and a charge under 30 days old, refunds it and ends Plus now, also after an earlier cancel at period end. `409 not_refundable` (nothing changes) when `refund` is true and the charge is older. `404 no_plan` without a running plan. |
@@ -501,8 +503,8 @@ Signals on a list entry are the union of the signals that fired for the layers t
 
 ### 9.6 Active install estimate
 
-The server counts list snapshot and delta requests per UTC day without any identifier.
-`active_installs = round(requests in the last 24 hours / 24)`, because each install syncs hourly.
+The server counts list snapshot and delta requests per UTC hour without any identifier; the Worker reads the counts of whole hours from edge analytics, cache hits included.
+`active_installs = round(requests in the last 24 counted hours / 24)`, because each install syncs hourly.
 
 ## 10. Configuration of the server
 

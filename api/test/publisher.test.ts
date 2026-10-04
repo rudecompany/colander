@@ -3,14 +3,15 @@
 // seconds that never go backwards, the snapshot in R2 and its reconciliation.
 import { env } from 'cloudflare:workers';
 import { evictDurableObject, runDurableObjectAlarm, runInDurableObject } from 'cloudflare:test';
-import { beforeEach, describe, expect, inject, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, inject, it, vi } from 'vitest';
 import { hex } from '@colander/shared/bytes';
 import { keyHash } from '@colander/shared/ids';
 import { dayNumber, encodeList, ENTRY, FLAG_ITEM, verifyList, type ListFile } from '@colander/shared/list';
 import { importKeys, SigningKey } from '@colander/shared/signing';
 import { b64decode } from '@colander/shared/bytes';
+import { DELTA_CACHE, Publisher } from '../src/list/publisher';
 import { placeholders, type Db } from '../src/store/db';
-import { SNAPSHOT_KEY } from '../src/store/list';
+import { latestSequence, SNAPSHOT_KEY } from '../src/store/list';
 import { ensureItem, ensureSource, getSource, findItem, type State } from '../src/store/sources';
 import { applyUpdate } from '../src/store/verdicts';
 import type { Store } from '../src/store/store';
@@ -65,6 +66,7 @@ async function decode(res: Response): Promise<ListFile> {
 }
 
 beforeEach(() => env.LISTS.delete(SNAPSHOT_KEY));
+afterEach(() => vi.restoreAllMocks());
 
 describe('publish', () => {
 	it('writes the rated targets to R2 as a signed snapshot whose sequence is the unix time', async () => {
@@ -115,6 +117,33 @@ describe('publish', () => {
 			expect(snap.seq).toBe(s2);
 			expect((await verifyList(snap.bytes, keys)).count).toBe(2);
 		});
+	});
+
+	it('keeps the encoded deltas to the head, as Go did, and starts over at each new head', async () => {
+		await runInDurableObject(fresh(), async (store: Store) => {
+			const p = store.publisher;
+			rate(store.db, 'yt', '@alpha', 'slop');
+			const s1 = (await p.publish(T)).seq;
+			rate(store.db, 'yt', '@beta', 'slop');
+			const s2 = (await p.publish(T + 20_000)).seq;
+			const sign = vi.spyOn(SigningKey.prototype, 'sign');
+			const first = new Uint8Array(await (await p.delta(s1, S + 20)).arrayBuffer());
+			const second = new Uint8Array(await (await p.delta(s1, S + 20)).arrayBuffer());
+			expect(hex(second)).toBe(hex(first));
+			expect((await verifyList(second, keys)).count).toBe(1);
+			expect(sign, 'the second answer came from the cache').toHaveBeenCalledTimes(1);
+			// The base is checked before the cache: an expired one is still gone.
+			expect((await p.delta(s1, S + 31 * DAY)).status).toBe(410);
+
+			rate(store.db, 'yt', '@gamma', 'slop');
+			const s3 = (await p.publish(T + 40_000)).seq;
+			const fresh3 = await decode(await p.delta(s1, S + 40));
+			expect([fresh3.sequence, fresh3.count]).toEqual([s3, 2]);
+			// The new head's publication signed its snapshot, and the delta to it was signed afresh.
+			expect(sign).toHaveBeenCalledTimes(3);
+			expect(s2).toBeLessThan(s3);
+		});
+		expect(DELTA_CACHE).toBe(256);
 	});
 
 	it('records a removal with verdict 0, the platform and item bits, and today', async () => {
@@ -204,6 +233,53 @@ describe('sequence monotonicity', () => {
 			// One that held s1 gets a delta to s4 with nothing in it.
 			const delta = await decode(await store.publisher.delta(S, S + 30));
 			expect([delta.base, delta.sequence, delta.count]).toEqual([S, s4, 0]);
+		});
+	});
+});
+
+describe('publication safety', () => {
+	it('runs one publication at a time, so R2 never ends on an older sequence than the head', async () => {
+		await runInDurableObject(fresh(), async (store: Store) => {
+			let release!: () => void;
+			const held = new Promise<void>((r) => (release = r));
+			let puts = 0;
+			// The first upload is slow; without serialization the second would land first.
+			const bucket = {
+				head: (key: string) => env.LISTS.head(key),
+				put: async (key: string, value: Uint8Array, options: R2PutOptions) => {
+					if (++puts === 1) await held;
+					return env.LISTS.put(key, value, options);
+				}
+			} as unknown as R2Bucket;
+			const p = new Publisher(store.db, bucket, store.signingKey);
+			rate(store.db, 'yt', '@a', 'slop');
+			const first = p.publish(T);
+			await vi.waitFor(() => expect(latestSequence(store.db).seq).toBe(S));
+			rate(store.db, 'yt', '@b', 'slop');
+			const second = p.publish(T + 1000);
+			release();
+			const [s1, s2] = await Promise.all([first, second]);
+			expect([s1.seq, s2.seq]).toEqual([S, S + 1]);
+			expect((await r2Snapshot())!.seq).toBe(String(S + 1));
+		});
+	});
+
+	it('never publishes an empty list over R2 from a Store that lost its data', async () => {
+		await runInDurableObject(fresh(), async (store: Store) => {
+			await env.LISTS.put(SNAPSHOT_KEY, new Uint8Array([1]), { customMetadata: { seq: String(S - 100), created: String(S - 100) } });
+			const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+			expect(await store.publisher.publish(T)).toEqual({ seq: 0, createdAt: 0 });
+			expect(latestSequence(store.db).seq).toBe(0);
+			expect((await env.LISTS.head(SNAPSHOT_KEY))!.customMetadata!.seq).toBe(String(S - 100));
+			expect(errors.mock.calls.map((c) => JSON.parse(String(c[0])))).toEqual([
+				{ message: 'list not published: the Store has no list while R2 holds one', r2Sequence: S - 100 }
+			]);
+			// Rated sources alone change nothing: only a restored list, or an R2 emptied on purpose, does.
+			rate(store.db, 'yt', '@a', 'slop');
+			expect((await store.publisher.publish(T)).seq).toBe(0);
+			await env.LISTS.delete(SNAPSHOT_KEY);
+			expect((await store.publisher.publish(T)).seq).toBe(S);
+			expect((await r2Snapshot())!.file.count).toBe(1);
 		});
 	});
 });

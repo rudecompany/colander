@@ -504,11 +504,16 @@ class Seeder {
 async function seedDev(store: Store): Promise<Record<string, unknown>> {
 	const s = new Seeder(store);
 	const realClock = store.now;
+	// Go's seed-dev scored without a YouTube client: the demo channels' figures come from the seed
+	// itself, and nothing reaches the Data API on the simulated clock.
+	const youtube = store.engine.youtube;
 	store.now = () => s.clock;
+	store.engine.youtube = undefined;
 	try {
 		await s.run();
 	} finally {
 		store.now = realClock;
+		store.engine.youtube = youtube;
 	}
 	if (s.err !== undefined) throw new Error(`seed-dev stopped: ${String(s.err)}`);
 	const { counts, items } = verdictCounts(store.db);

@@ -138,7 +138,7 @@ export function getStats(api: Api): Response {
 		items,
 		decisions_7d: logCountSince(db, unix(now) - 7 * 24 * 3600),
 		appeals: { open, median_days: medianDays === null ? null : round2(medianDays) },
-		active_installs: activeInstalls(db, now),
+		active_installs: activeInstalls(api.store),
 		list_sequence: seq.seq,
 		list_updated_at: optTime(seq.createdAt)
 	};

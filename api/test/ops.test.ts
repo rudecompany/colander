@@ -10,7 +10,7 @@ import { CONFIG_CONTEXT, importKeys, verifyEnvelope } from '@colander/shared/sig
 import worker from '../src/index';
 import { dump, DUMP_PREFIX, dumpKey } from '../src/backup';
 import { STATUS } from '../src/jobs';
-import { storeOps } from '../src/ops';
+import { PITR_PREFIX, storeOps } from '../src/ops';
 import { log } from '../src/store/verdicts';
 import { findSource, getSource, sourceRefs } from '../src/store/sources';
 import { SNAPSHOT_KEY } from '../src/store/list';
@@ -63,7 +63,7 @@ async function resetPrimary(): Promise<void> {
 		await state.storage.deleteAlarm();
 	});
 	await env.LISTS.delete(SNAPSHOT_KEY);
-	for (const o of (await env.BACKUPS.list({ prefix: DUMP_PREFIX })).objects) await env.BACKUPS.delete(o.key);
+	for (const prefix of [DUMP_PREFIX, PITR_PREFIX]) for (const o of (await env.BACKUPS.list({ prefix })).objects) await env.BACKUPS.delete(o.key);
 }
 
 beforeEach(resetPrimary);
@@ -132,6 +132,11 @@ describe('grant-role', () => {
 		expect(again.body.account).toMatchObject({ id: res.body.account.id, role: 'staff' });
 	});
 
+	it("trims as Go's strings.TrimSpace did: U+0085 is space, a byte order mark is not", async () => {
+		expect((await op('grant-role', { email: '\u0085Nel@Example.com\u3000', role: 'member' })).body.account.email).toBe('nel@example.com');
+		expect((await op('grant-role', { email: '\ufeffbom@example.com', role: 'member' })).body.account.email).toBe('\ufeffbom@example.com');
+	});
+
 	it.each([
 		[{ email: 'Sam <sam@example.com>', role: 'staff' }, 'invalid_email', '"Sam <sam@example.com>" is not an email address.'],
 		[{ email: 'not-an-email', role: 'staff' }, 'invalid_email', '"not-an-email" is not an email address.'],
@@ -198,6 +203,17 @@ describe('import-seed', () => {
 		await runInDurableObject(stub, async (store: Store) => {
 			await store.engine.fullPass(T);
 			expect(getSource(store.db, findSource(store.db, 'yt', '@aimadebutfine')!)!.state.verdict).toBe('ai_made');
+		});
+	});
+
+	it("reads lines as Go's import-seed did: a byte order mark stays, so that line is skipped; U+0085 is trimmed", async () => {
+		const stub = fresh();
+		const res = await inStore(stub, T, 'import-seed', { ...args, file: '\ufeff@BomFirst\n@NelChannel\u0085\n\u2003@Spaced\u3000\n', accept_license: true });
+		expect(res.body).toMatchObject({ imported: 2, skipped: 1 });
+		await runInDurableObject(stub, (store: Store) => {
+			expect(findSource(store.db, 'yt', '@nelchannel')).toBeDefined();
+			expect(findSource(store.db, 'yt', '@spaced')).toBeDefined();
+			expect(findSource(store.db, 'yt', '@bomfirst')).toBeUndefined();
 		});
 	});
 
@@ -286,18 +302,22 @@ describe('restores', () => {
 		}
 	});
 
-	it('pitr-restore arms the bookmark, restarts the Store, publishes above R2 and purges the edge cache', async () => {
-		const erased = await publishOne('@before');
-		const at = new Date(Date.now() - 3_600_000).toISOString();
-		const asked: number[] = [];
-		await runInDurableObject(primary(), (store: Store, state) => {
-			// Local runtimes keep no history, so the two PITR calls are stand-ins here.
+	/** Local runtimes keep no history, so the two PITR calls are stand-ins; the marker shows a restart. */
+	const standIns = (asked: number[] = []) =>
+		runInDurableObject(primary(), (store: Store, state) => {
 			Object.assign(state.storage, {
 				getBookmarkForTime: async (t: number) => (asked.push(t), 'bookmark-at'),
 				onNextSessionRestoreBookmark: async (b: string) => `undo-before-${b}`
 			});
 			(store as unknown as { marker: string }).marker = 'old instance';
 		});
+	const marker = () => runInDurableObject(primary(), (store: Store) => (store as unknown as { marker?: string }).marker);
+
+	it('pitr-restore arms the bookmark, restarts the Store, publishes above R2 and purges the edge cache', async () => {
+		const erased = await publishOne('@before');
+		const at = new Date(Date.now() - 3_600_000).toISOString();
+		const asked: number[] = [];
+		await standIns(asked);
 		const purge = vi.fn(async () => ({ success: true, errors: [] }));
 		edgeCache = { purge, invalidate: purge } as unknown as CacheContext;
 		const res = await op('pitr-restore', { at, confirm: at });
@@ -306,7 +326,18 @@ describe('restores', () => {
 		expect(res.body).toMatchObject({ at, bookmark: 'bookmark-at', undo_bookmark: 'undo-before-bookmark-at', r2_seq: res.body.head_seq, cache_purged: true });
 		expect(res.body.head_seq).toBeGreaterThanOrEqual(erased);
 		expect(purge).toHaveBeenCalledWith({ purgeEverything: true });
-		expect(await runInDurableObject(primary(), (store: Store) => (store as unknown as { marker?: string }).marker), 'the Store restarted').toBeUndefined();
+		expect(await marker(), 'the Store restarted').toBeUndefined();
+		const records = (await env.BACKUPS.list({ prefix: PITR_PREFIX })).objects;
+		expect(records).toHaveLength(1);
+		expect(await (await env.BACKUPS.get(records[0]!.key))!.json()).toEqual({ bookmark: 'bookmark-at', undo_bookmark: 'undo-before-bookmark-at' });
+	});
+
+	it('pitr-restore restarts the Store in the same call that arms it, so no armed restore waits for a later restart', async () => {
+		await standIns();
+		const record = `${PITR_PREFIX}direct.json`;
+		await expect(inStore(primary(), T, 'pitr-restore', { at: T - 3_600_000, record })).rejects.toThrow();
+		expect(await marker(), 'the Store restarted without a second call').toBeUndefined();
+		expect(await (await env.BACKUPS.get(record))!.json()).toEqual({ bookmark: 'bookmark-at', undo_bookmark: 'undo-before-bookmark-at' });
 	});
 
 	it('restore-dump replaces the data with a dump, then restarts, publishes above R2 and reports an unpurged cache', async () => {

@@ -150,6 +150,11 @@ export async function verifyAppeal(api: Api, request: Request, _url: URL, params
 	const { store } = api;
 	const youtube = store.engine.youtube;
 	if (a.platform === 'yt' && youtube) {
+		// Each check is a live Data API call that spends the daily quota enrichment needs too, so it
+		// is limited per appeal and per address, whatever the check finds.
+		const now = store.now();
+		const wait = allow(store.db, now, `apl:${a.id}`, 1, 'appeal_verify') || allow(store.db, now, clientIP(request), 1, 'appeal_verify_ip');
+		if (wait > 0) return tooMany(wait / 1000);
 		// The network call happens outside any transaction.
 		let found: boolean | undefined;
 		try {

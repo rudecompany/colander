@@ -82,7 +82,7 @@ export class Store extends DurableObject<Env> {
 		this.publisher = new Publisher(this.db, env.LISTS, this.signingKey);
 		this.jobs.definePublish((now) => this.publisher.publish(now));
 		this.jobs.define('prune', (_, now) => prune(this.db, now), (now) => now);
-		this.jobs.defineDump(async (now) => void (await dump(ctx, this.db, env.BACKUPS, now)));
+		this.jobs.defineDump((now) => dump(ctx, this.db, env.BACKUPS, now));
 		// Scoring (Go's Engine.Run): the full pass every 5 minutes in chunks, and the debounced rescore
 		// of the sources the routes hand to jobs.touch() after reports and appeal changes.
 		this.engine = new Engine(this.db, this.jobs, () => this.now());
@@ -211,11 +211,22 @@ export class Store extends DurableObject<Env> {
 		addListRequests(this.db, Math.floor(this.now() / 3_600_000), 1);
 	}
 
-	/** The hourly analytics pull: list requests per unix hour, replacing what was there. */
+	/**
+	 * The hourly analytics pull: list requests per unix hour, replacing what was there. It covers
+	 * whole hours only, so the active install estimate counts up to the last hour it set.
+	 */
 	setListRequests(counts: { hour: number; count: number }[]): void {
+		if (counts.length === 0) return;
+		const kv = this.ctx.storage.kv;
 		this.db.tx(() => {
 			for (const c of counts) setListRequests(this.db, c.hour, c.count);
+			kv.put(STATUS.listRequests, Math.max(kv.get<number>(STATUS.listRequests) ?? 0, ...counts.map((c) => c.hour)));
 		});
+	}
+
+	/** The last whole unix hour the analytics pull counted, or undefined while list requests are counted live (dev mode) or not yet. */
+	listRequestsThrough(): number | undefined {
+		return this.ctx.storage.kv.get<number>(STATUS.listRequests);
 	}
 
 	readonly signingKey = (): Promise<SigningKey> =>

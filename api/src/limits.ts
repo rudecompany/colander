@@ -14,6 +14,11 @@ export const LIMITERS = {
 	tags_day: { n: 500, per: DAY },
 	reports: { n: 20, per: DAY },
 	appeals: { n: 5, per: DAY },
+	/** each automatic appeal check is a live YouTube Data API call that spends the daily quota */
+	appeal_verify: { n: 10, per: HOUR },
+	appeal_verify_ip: { n: 30, per: HOUR },
+	/** a trial lets an install store synced settings without signing in */
+	trial_ip: { n: 5, per: DAY },
 	auth_email: { n: 5, per: HOUR },
 	auth_email_ip: { n: 30, per: HOUR },
 	donate: { n: 10, per: HOUR }

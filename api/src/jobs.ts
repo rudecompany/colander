@@ -43,7 +43,11 @@ export const STATUS = {
 	/** alert keys already mailed and still active */
 	alerts: 'status:alerts',
 	/** when the watchdog first ran */
-	since: 'status:since'
+	since: 'status:since',
+	/** the dump attempt that has not succeeded yet: { failures, at } */
+	dumpTry: 'status:dump_try',
+	/** the last whole unix hour the analytics pull counted list requests for */
+	listRequests: 'status:list_requests'
 } as const;
 
 /** The last completed full scoring pass. */
@@ -67,7 +71,17 @@ export interface DumpStatus {
 	at: number;
 	/** how long the dump blocked the Store */
 	ms: number;
+	/** the SQL, uncompressed */
+	bytes: number;
+	/** the gzip object, which sits in memory while the dump blocks */
+	size: number;
 }
+
+/** What one dump reports back to the job. */
+export type DumpResult = Omit<DumpStatus, 'at'>;
+
+/** A dump that failed is tried again after 2, 4, 8 ... minutes, at most an hour apart. */
+export const dumpBackoff = (failures: number): number => Math.min(2 ** failures * MINUTE, HOUR);
 
 interface PassProgress {
 	cursor: number;
@@ -103,14 +117,16 @@ export function nextDump(now: number): number {
 
 /**
  * The hourly cleanup: expired magic links and sessions (Go pruned them while signing in), list
- * sequences past the delta window (their changes cascade; the head always stays), and refilled
- * rate limit buckets.
+ * sequences past the delta window (their changes cascade; the head always stays), refilled rate
+ * limit buckets, and the synced settings of ended install trials, which no token can read again.
+ * The trial rows stay, so each install still gets one trial.
  */
 export function prune(db: Db, now: number): number {
 	const s = Math.floor(now / 1000);
 	db.tx(() => {
 		db.run('DELETE FROM magic_links WHERE expires_at < ?', s);
 		db.run('DELETE FROM sessions WHERE expires_at <= ?', s);
+		db.run('DELETE FROM sync_blobs WHERE sub IN (SELECT sub FROM trials WHERE expires_at <= ?)', s);
 		db.run(
 			'DELETE FROM list_sequences WHERE created_at < ? AND seq < (SELECT ifnull(max(seq), 0) FROM list_sequences)',
 			s - RETENTION_SECONDS
@@ -180,12 +196,12 @@ export class Jobs {
 		this.schedule('publish', Math.max(now, last + PUBLISH_FLOOR));
 	}
 
-	/** Registers publication. publish returns the head sequence. */
+	/** Registers publication. publish returns the head sequence, 0 when it refused to publish. */
 	definePublish(publish: (now: number) => Promise<{ seq: number }>): void {
 		this.define('publish', async (_, now) => {
 			this.publishStartedAt = now;
 			const { seq } = await publish(now);
-			this.storage.kv.put<PublishStatus>(STATUS.publish, { at: now, seq });
+			if (seq > 0) this.storage.kv.put<PublishStatus>(STATUS.publish, { at: now, seq });
 			return null;
 		});
 	}
@@ -228,14 +244,30 @@ export class Jobs {
 		return p.startedAt + PASS_INTERVAL;
 	}
 
-	/** Registers the 6-hourly dump. dump runs it; its duration is recorded for the watchdog. */
-	defineDump(dump: (now: number) => Promise<void>): void {
+	/**
+	 * Registers the 6-hourly dump. dump runs it; how long it blocked and its sizes are recorded for
+	 * the watchdog. Each try blocks the Store, so failures back off (dumpBackoff) instead of the
+	 * 30-second retry. A try is counted before it starts, so one the platform cut short (a reset
+	 * past the 30-second cap) backs off too, when the lease brings it back.
+	 */
+	defineDump(dump: (now: number) => Promise<DumpResult>): void {
 		this.define(
 			'dump',
 			async (_, now) => {
-				const started = Date.now();
-				await dump(now);
-				this.storage.kv.put<DumpStatus>(STATUS.dump, { at: now, ms: Date.now() - started });
+				const kv = this.storage.kv;
+				const tried = kv.get<{ failures: number; at: number }>(STATUS.dumpTry);
+				if (tried && now < tried.at + dumpBackoff(tried.failures)) return tried.at + dumpBackoff(tried.failures);
+				const failures = (tried?.failures ?? 0) + 1;
+				kv.put(STATUS.dumpTry, { failures, at: now });
+				let d: DumpResult;
+				try {
+					d = await dump(now);
+				} catch (err) {
+					console.error(JSON.stringify({ message: 'dump failed', failures, error: String(err) }));
+					return now + dumpBackoff(failures);
+				}
+				kv.delete(STATUS.dumpTry);
+				kv.put<DumpStatus>(STATUS.dump, { at: now, ...d });
 				return nextDump(now);
 			},
 			nextDump

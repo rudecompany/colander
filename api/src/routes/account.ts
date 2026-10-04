@@ -64,7 +64,12 @@ async function authEmail(s: Store, publicUrl: string, request: Request): Promise
 	return json(202, { ok: true });
 }
 
+/**
+ * Signing in sets the session cookie, so it needs the CSRF header too: without it a cross-site
+ * form could sign a visitor into someone else's account (login CSRF).
+ */
 async function authVerify(s: Store, request: Request): Promise<Response> {
+	if (!csrfOk(request)) return jsonError(403, 'csrf_required', 'Send the X-Colander-CSRF: 1 header with this request.');
 	const body = await decode(request, 4 << 10, { token: 'string' });
 	if (body instanceof Response) return body;
 	const signedIn = s.auth.finishSignIn(trimSpace(body.token));

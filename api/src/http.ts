@@ -7,6 +7,35 @@ export const IP_HASH_HEADER = 'x-colander-ip-hash';
 export const ROUTE_HEADER = 'x-colander-route';
 
 /**
+ * The part of a client address that per-IP limits count: an IPv4 address whole, an IPv6 address
+ * by its /64, since one host or home line usually holds a whole /64 and could rotate through it.
+ * An IPv4-mapped IPv6 address counts as its IPv4 address. Anything unparsable is kept as it is.
+ */
+export function ipKey(ip: string): string {
+	if (!ip.includes(':')) return ip;
+	let s = ip.toLowerCase();
+	let tail: number[] = [];
+	const v4 = /^(.*:)(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(s);
+	if (v4) {
+		const b = v4.slice(2).map(Number) as [number, number, number, number];
+		if (b.some((x) => x > 255)) return ip;
+		tail = [(b[0] << 8) | b[1], (b[2] << 8) | b[3]];
+		s = v4[1]!.endsWith('::') ? v4[1]! : v4[1]!.slice(0, -1);
+	}
+	const halves = s.split('::');
+	if (halves.length > 2) return ip;
+	const words = (h: string) => (h === '' ? [] : h.split(':').map((w) => (/^[0-9a-f]{1,4}$/.test(w) ? parseInt(w, 16) : NaN)));
+	const head = words(halves[0]!);
+	const back = [...(halves.length === 2 ? words(halves[1]!) : []), ...tail];
+	const gap = 8 - head.length - back.length;
+	if (halves.length === 2 ? gap < 1 : gap !== 0) return ip;
+	const all = [...head, ...Array<number>(gap).fill(0), ...back];
+	if (all.some(Number.isNaN)) return ip;
+	if (all.slice(0, 5).every((w) => w === 0) && all[5] === 0xffff) return [all[6]! >> 8, all[6]! & 255, all[7]! >> 8, all[7]! & 255].join('.');
+	return `${all.slice(0, 4).map((w) => w.toString(16)).join(':')}::/64`;
+}
+
+/**
  * Cache policies. `Cache-Control` is what clients see (contract 3.2); Workers Cache obeys
  * `Cloudflare-CDN-Cache-Control` first and strips it. Never use s-maxage, must-revalidate or
  * proxy-revalidate: they turn off stale serving. Everything without a policy is `no-store`.
