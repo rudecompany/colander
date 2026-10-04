@@ -242,6 +242,11 @@ strictness, and the week in data dots. Gated parts stay in view, inert, at 60% o
 		padding-top: 16px;
 		border-top: 1px solid var(--cl-border);
 	}
+	/* Under the topic list, its last row's rule is the divider. */
+	.topics + .form {
+		padding-top: 0;
+		border-top: 0;
+	}
 	.f {
 		display: grid;
 		align-content: end;

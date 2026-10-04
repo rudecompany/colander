@@ -204,7 +204,7 @@
 					"path": "^/@[^/]+/?$",
 					"source": [{ "from": "location" }],
 					"name": [{ "sel": "[data-e2e=\"user-subtitle\"]", "attr": "text" }, { "sel": "[data-e2e=\"user-title\"]", "attr": "text" }],
-					"anchor": { "sel": "[data-e2e=\"user-more\"]", "place": "before" }
+					"anchor": { "sel": "div:has(> div > [data-e2e=\"user-more\"])", "place": "prepend" }
 				}
 			]
 		},

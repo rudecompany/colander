@@ -1,8 +1,10 @@
 /* Host-page rules, registered with the content script so page CSP does not apply.
-   Hidden cards leave no box, so the page closes up around them like around a blocked ad; the
-   content script reflows grids so their rows stay full. A swipe feed keeps the slot its own
+   Hidden cards leave no box, and neither do the page's wrappers around them (data-colander-slot),
+   so the page closes up around them like around a blocked ad; the content script reflows grids so
+   their rows stay full. A swipe feed keeps the slot its own
    scroller counts on, shows nothing in it, and skips past it. */
-[data-colander='hide'] {
+[data-colander='hide'],
+[data-colander-slot] {
 	display: none !important;
 }
 [data-colander='skip'] > * {
@@ -71,6 +73,10 @@ colander-ui[data-kind='report'] {
 	display: inline-block !important;
 	vertical-align: middle !important;
 	margin: 0 8px !important;
+}
+/* First in a row of the page's buttons (TikTok profiles): it lines up with the header text. */
+colander-ui[data-kind='report'][data-place='prepend'] {
+	margin: 0 8px 0 0 !important;
 }
 /* The Tag button appears on card hover or keyboard focus in grids and lists, so feeds stay calm.
    Hidden, it keeps its place in the tab order, and it never adds to a card's height. */

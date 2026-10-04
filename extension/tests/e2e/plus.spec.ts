@@ -91,6 +91,11 @@ test('a paid plan is checked daily, and a cancel or refund turns Plus off within
 	await site.evaluate(([id, token]) => chrome.runtime.sendMessage(id, { type: 'colander:plan-token', token }), [EXT_ID, planToken({ trial: false, exp })] as const);
 	await expect.poll(() => ext.storage('entitlement')).toEqual({ plus: true, trial: false, exp });
 
+	// Options says when it renews, as two sentences.
+	const opts = await ext.ctx.newPage();
+	await opts.goto(`chrome-extension://${EXT_ID}/options.html#plan`);
+	await expect(opts.locator('p', { hasText: 'Plus renews on' })).toHaveText(/^Plus renews on \d{1,2} \w+ \d{4}\. It is connected through your account on the website\.$/);
+
 	const refreshes = () => ext.api.posted('/v1/entitlement/refresh');
 	// The handed-over token is fresh from the server, so it counts as checked now.
 	await ext.send({ type: 'sync-now' });
@@ -112,7 +117,6 @@ test('a paid plan is checked daily, and a cancel or refund turns Plus off within
 	expect(refreshes()).toHaveLength(2);
 	expect(await ext.storage<{ plus: boolean }>('entitlement')).toMatchObject({ plus: false });
 	expect(await ext.storage('planToken')).toBeUndefined();
-	const opts = await ext.ctx.newPage();
 	await opts.goto(`chrome-extension://${EXT_ID}/options.html#plan`);
 	await expect(opts.getByRole('heading', { name: 'Current plan: Free' })).toBeVisible();
 });

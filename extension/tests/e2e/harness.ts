@@ -187,7 +187,7 @@ export const REVIEW_QUEUE = () => [{ id: 'q_1', kind: 'report', priority: 2, cre
 export const REVIEW_SOURCE = {
 	source: {
 		platform: 'yt', id: '@catrescuetales', aliases: ['UCbbbbbbbbbbbbbbbbbbbbbb', '@catrescuetales'], name: 'Cat Rescue Tales', verdict: 'likely_slop',
-		signals: ['mostly_ai', 'rubric_hollow'], slop_type: 'deceptive', tests: ['mass_produced', 'hollow'], large: false, imported: true, appeal_open: false,
+		signals: ['mostly_ai', 'rubric_hollow'], slop_type: 'deceptive', tests: ['mass_produced', 'hollow'], large: false, audience_known: false, imported: true, appeal_open: false,
 		updated_at: '2026-08-01T00:00:00Z', rescore_at: '2026-10-30T00:00:00Z',
 		evidence: { taggers: 41, tags: { slop: 35, ai_fine: 4, not_slop: 2 }, items_seen: 23, ai_item_share: 0.91, uploads_per_day: null }
 	},

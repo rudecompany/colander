@@ -1,5 +1,5 @@
 <!--
-@component The list and plan at a glance: "Core list v.412", when it last updated, Sync now, and
+@component The list and plan at a glance: "Core list v.1791151393", when it last updated, Sync now, and
 the plan line. Leads the options rail at 1200 px and up, except on Lists, whose Core list card
 says the same.
 -->

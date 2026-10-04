@@ -216,12 +216,14 @@
 	.label {
 		font: var(--cl-body-strong);
 	}
+	/* Narrow, the link takes a line of its own, with Block or Allow and Add under it. */
 	.row {
 		display: flex;
+		flex-wrap: wrap;
 		gap: 8px;
 	}
 	.row :global(.grow) {
-		flex: 1;
+		flex: 1 1 240px;
 		min-width: 0;
 	}
 	.empty {
@@ -235,15 +237,18 @@
 		margin-top: 16px;
 		border-top: 1px solid var(--cl-border);
 	}
+	/* Narrow, the badge and Remove move under the name rather than cutting it short. */
 	.entries li {
 		display: flex;
+		flex-wrap: wrap;
 		align-items: center;
-		gap: 12px;
+		gap: 4px 12px;
 		min-height: 48px;
+		padding-block: 4px;
 		border-bottom: 1px solid var(--cl-border);
 	}
 	.name {
-		flex: 1;
+		flex: 1 1 120px;
 		min-width: 0;
 		overflow: hidden;
 		font: var(--cl-body-strong);

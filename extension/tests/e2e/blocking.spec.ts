@@ -176,3 +176,54 @@ test('no layout jump: slop cards inserted by infinite scroll are never painted',
 	});
 	expect(painted).toBe(0);
 });
+
+/**
+ * Where a hidden card sits inside a wrapper of the page's own (a grid cell), the wrapper goes too:
+ * the cells left are packed from the container's start, rows full, with the container's own gap.
+ */
+function packedProblems(page: import('@playwright/test').Page, card: string) {
+	return page.evaluate((sel) => {
+		const hidden = document.querySelector(sel)!;
+		let cell: Element = hidden;
+		while (cell.parentElement?.hasAttribute('data-colander-slot')) cell = cell.parentElement;
+		const out: string[] = [];
+		if (cell === hidden) out.push('no wrapper was hidden with the card');
+		if (cell.getBoundingClientRect().width > 0) out.push('the hidden cell still has a box');
+		const box = cell.parentElement!;
+		const cs = getComputedStyle(box);
+		const gap = parseFloat(cs.columnGap) || 0;
+		const r0 = box.getBoundingClientRect();
+		const start = r0.left + parseFloat(cs.paddingLeft) + parseFloat(cs.borderLeftWidth);
+		const end = r0.right - parseFloat(cs.paddingRight) - parseFloat(cs.borderRightWidth);
+		const cells = [...box.children].map((k) => k.getBoundingClientRect()).filter((r) => r.width > 0);
+		cells.forEach((r, i) => {
+			const prev = cells[i - 1];
+			const sameRow = !!prev && Math.abs(prev.top - r.top) < 1;
+			const want = sameRow ? prev!.right + gap : start;
+			if (Math.abs(r.left - want) > 1) out.push(`cell ${i} starts at ${Math.round(r.left)}, not ${Math.round(want)}`);
+			if (prev && !sameRow && prev.right + gap + r.width <= end + 1) out.push(`row ends early before cell ${i}`);
+		});
+		return out;
+	}, card);
+}
+
+test('a hidden item takes its grid cell with it: Instagram Explore, TikTok profiles and the Shorts shelf', async ({ ext }) => {
+	await ext.setup({
+		platforms: ['yt', 'tt', 'ig'],
+		settings: { blocks: ['ig:i:C9aiWorld01', 'tt:i:7691450773619625247', 'yt:i:JEk-AYHbkmQ'].map((key) => ({ key, at: 1 })) }
+	});
+	for (const [url, card] of [
+		['https://www.instagram.com/explore/', 'main a[href="/p/C9aiWorld01/"]'],
+		['https://www.tiktok.com/@tiktok', '[data-e2e="user-post-item"]:has(a[href$="/7691450773619625247"])'],
+		[SEARCH, 'ytm-shorts-lockup-view-model:has(a[href="/shorts/JEk-AYHbkmQ"])']
+	] as const) {
+		const page = await ext.open(url);
+		await expect(page.locator(card).first()).toHaveAttribute('data-colander', 'hide');
+		expect(await packedProblems(page, card), url).toEqual([]);
+		// Show from the popup brings the card back in its own cell, with its chip.
+		const hidden = (await ext.pageState(page)).actions.find((a: PageAction) => a.action === 'hide' && a.reason === 'my_list');
+		await ext.ctl.evaluate(async ([tabId, id]) => chrome.tabs.sendMessage(tabId, { type: 'show', id }), [await ext.tabId(page), hidden.id] as const);
+		await expect(page.locator(card).first()).toBeVisible();
+		await expect(page.locator('[data-colander-slot]')).toHaveCount(0);
+	}
+});

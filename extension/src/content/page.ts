@@ -282,7 +282,43 @@ export function start(): void {
 			delete st.ui[k];
 		}
 		card.removeAttribute('data-colander');
+		unslot(card);
 		unguard(card);
+	}
+
+	// ---- Slots ------------------------------------------------------------------------
+
+	const SLOT = 'data-colander-slot';
+	/** Gone from the layout: a hidden card, or a wrapper hidden with one. */
+	const isGone = (el: Element) => el.getAttribute('data-colander') === 'hide' || el.hasAttribute(SLOT);
+
+	/**
+	 * Hides the wrappers the page put around a hidden card: each ancestor that holds nothing else
+	 * but Colander's UI and other hidden things, up to the first one with visible content. Without
+	 * this a grid keeps the card's cell (Instagram, TikTok profiles, YouTube's Shorts shelf) as an
+	 * empty tile. Returns the outermost wrapper hidden, or null.
+	 */
+	function slot(card: Element): Element | null {
+		let outer: Element | null = null;
+		for (let el = card.parentElement, from: Element = card; el && el !== document.body; from = el, el = el.parentElement) {
+			const other = [...el.childNodes].some((n) =>
+				n.nodeType === Node.TEXT_NODE ? !!n.textContent?.trim() : n instanceof Element && n !== from && n.nodeName !== 'COLANDER-UI' && !isGone(n)
+			);
+			if (other) break;
+			el.setAttribute(SLOT, '');
+			outer = el;
+		}
+		return outer;
+	}
+
+	/** Shows every wrapper a card's hiding took with it; returns the outermost, or null. */
+	function unslot(card: Element): Element | null {
+		let outer: Element | null = null;
+		for (let el = card.parentElement?.closest(`[${SLOT}]`); el; el = el.parentElement?.closest(`[${SLOT}]`)) {
+			el.removeAttribute(SLOT);
+			outer = el;
+		}
+		return outer;
 	}
 
 	function resolve(card: Element, a: Anchor | undefined, fallback: Anchor | null): { el: Element; place: Anchor['place'] } | null {
@@ -372,7 +408,9 @@ export function start(): void {
 		const now = action === 'hide' ? (swipe ? 'skip' : 'hide') : null;
 		if (now) card.setAttribute('data-colander', now);
 		else card.removeAttribute('data-colander');
-		if (st.surface.mode === 'grid' && (was !== now || reflowed.size)) queueReflow(card.parentElement);
+		// The page's own wrappers around a hidden card go with it, so its grid cell closes up too.
+		const outer = now === 'hide' ? slot(card) : unslot(card);
+		if (st.surface.mode === 'grid' && (was !== now || reflowed.size)) queueReflow((outer ?? card).parentElement);
 		if (swipe && now) guard(card);
 		else unguard(card);
 
@@ -587,7 +625,7 @@ export function start(): void {
 		const flows = cs.display.endsWith('grid') || (cs.display.endsWith('flex') && cs.flexWrap.startsWith('wrap') && cs.flexDirection.startsWith('row'));
 		const kids = layoutKids(box);
 		const isCard = (k: Element) => states.has(k);
-		const gone = (k: Element) => k.getAttribute('data-colander') === 'hide';
+		const gone = isGone;
 		if (!flows || !kids.some(gone)) return reflowed.has(box) ? 'clear' : null;
 		if (!margins.has(box)) {
 			// Read once, before any override: the first card is in the first column, the second is not.
@@ -917,6 +955,7 @@ export function start(): void {
 		if (!at) return;
 		reportHost = hostWith('report', reportPill(ip, openReport));
 		const place = page!.rule.anchor!.place;
+		reportHost.setAttribute('data-place', place);
 		if (place === 'before') at.before(reportHost);
 		else if (place === 'after') at.after(reportHost);
 		else if (place === 'prepend') at.prepend(reportHost);

@@ -31,7 +31,7 @@
 <div class="cards">
 	{#if plus && e}
 		<Card title={e.trial ? 'Plus trial, active' : 'Plus, active'} headingLevel={2}>
-			<p>{e.trial ? 'Your trial ends on' : 'Plus renews on'} <strong>{fmtDate(e.exp * 1000)}</strong>.{#if !e.trial} It is connected through your account on the website.{/if}</p>
+			<p>{e.trial ? 'Your trial ends on' : 'Plus renews on'} <strong>{fmtDate(e.exp * 1000)}</strong>.{#if !e.trial}{' '}It is connected through your account on the website.{/if}</p>
 			<div class="btns">
 				{#if e.trial}<Button variant="primary" href="{SITE}/plans" target="_blank" rel="noopener">Keep Plus after the trial</Button>{/if}
 				<Button variant="secondary" href="{SITE}/account" target="_blank" rel="noopener">Manage on the website</Button>

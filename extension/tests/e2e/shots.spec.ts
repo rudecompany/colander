@@ -1,7 +1,7 @@
 // Screenshots of every surface, light and dark, saved to screenshots/ for review.
 // Run with `pnpm screenshots`; skipped in the normal end-to-end run so it never rewrites them.
 import type { Page } from '@playwright/test';
-import { EXT_ID, REVIEW_QUEUE, REVIEW_SOURCE, SHOTS, expect, test, type Ext } from './harness';
+import { EXT_ID, REVIEW_QUEUE, REVIEW_SOURCE, SHOTS, expect, planToken, test, type Ext } from './harness';
 
 test.skip(!SHOTS, 'Set SCREENSHOTS=1 (pnpm screenshots) to capture screenshots.');
 
@@ -10,6 +10,16 @@ test.skip(!SHOTS, 'Set SCREENSHOTS=1 (pnpm screenshots) to capture screenshots.'
 const shot = (page: Page, name: string, full = false, animations: 'disabled' | 'allow' = 'disabled') =>
 	page.screenshot({ path: `screenshots/${name}.png`, fullPage: full, animations });
 const layer = (page: Page) => page.locator('colander-ui[data-kind="layer"]');
+
+/**
+ * The signed contract fixtures carry list sequence 42; the Worker publishes unix-second sequences
+ * (api/src/store/list.ts), so the pictures show a version as long as the real one.
+ */
+const workerSequence = (ext: Ext) =>
+	ext.ctl.evaluate(async () => {
+		const { status } = await chrome.storage.local.get('status');
+		await chrome.storage.local.set({ status: { ...(status as object), listSequence: 1791070723 } });
+	});
 
 /** Plus on a trial, with a week of history, a topic, My list entries and two reports. */
 async function richState(ext: Ext) {
@@ -47,6 +57,7 @@ for (const scheme of ['light', 'dark'] as const) {
 			const popup = await ext.ctx.newPage();
 			await popup.setViewportSize({ width: 360, height: 600 });
 			const open = async (tab: number | null) => {
+				await workerSequence(ext);
 				await popup.goto(`chrome-extension://${EXT_ID}/popup.html${tab ? `?tab=${tab}` : ''}`);
 				await expect(popup.getByRole('radiogroup', { name: 'Strictness' })).toBeVisible();
 				await popup.waitForTimeout(250);
@@ -90,6 +101,7 @@ for (const scheme of ['light', 'dark'] as const) {
 			await opts.waitForTimeout(300);
 			await shot(opts, `options-plan-free-${scheme}`, true);
 			await richState(ext);
+			await workerSequence(ext);
 			for (const s of ['lists', 'platforms', 'strictness', 'plus', 'appearance', 'plan', 'reports', 'data', 'privacy']) {
 				await opts.goto(`chrome-extension://${EXT_ID}/options.html#${s}`);
 				await opts.waitForTimeout(300);
@@ -114,6 +126,17 @@ for (const scheme of ['light', 'dark'] as const) {
 				await opts.waitForTimeout(300);
 				await shot(opts, `options-${s}-320-${scheme}`, true);
 			}
+			// A paid plan, handed over by the website after checkout.
+			const site = await ext.ctx.newPage();
+			await site.route('http://localhost:8787/account', (r) => r.fulfill({ contentType: 'text/html', body: '<!doctype html><title>Account</title>' }));
+			await site.goto('http://localhost:8787/account');
+			const exp = Math.floor(Date.now() / 1000) + 365 * 86400;
+			await site.evaluate(([id, token]) => chrome.runtime.sendMessage(id, { type: 'colander:plan-token', token }), [EXT_ID, planToken({ trial: false, exp })] as const);
+			await expect.poll(() => ext.storage('entitlement')).toEqual({ plus: true, trial: false, exp });
+			await opts.setViewportSize({ width: 1440, height: 900 });
+			await opts.goto(`chrome-extension://${EXT_ID}/options.html#plan`);
+			await opts.waitForTimeout(300);
+			await shot(opts, `options-plan-paid-${scheme}`, true);
 		});
 
 		test(`welcome ${scheme}`, async ({ ext }) => {
@@ -140,6 +163,7 @@ for (const scheme of ['light', 'dark'] as const) {
 
 		test(`side panel ${scheme}`, async ({ ext }) => {
 			await ext.setup({ platforms: ['yt'] });
+			await workerSequence(ext);
 			const side = await ext.ctx.newPage();
 			await side.setViewportSize({ width: 400, height: 860 });
 			await side.goto(`chrome-extension://${EXT_ID}/sidepanel.html`);
@@ -263,7 +287,8 @@ for (const scheme of ['light', 'dark'] as const) {
 		});
 
 		test(`the other platforms and surfaces ${scheme}`, async ({ ext }) => {
-			await ext.setup({ platforms: ['yt', 'tt', 'ig', 'fb'] });
+			// One item each in the TikTok profile and Explore grids is on My list: its cell closes up.
+			await ext.setup({ platforms: ['yt', 'tt', 'ig', 'fb'], settings: { blocks: ['tt:i:7691450773619625247', 'ig:i:C9aiWorld01'].map((key) => ({ key, at: 1 })) } });
 			const dark = scheme === 'dark';
 			const at = async (url: string, name: string, hover?: string) => {
 				const page = await ext.open(url, { dark });
