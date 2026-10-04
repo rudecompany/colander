@@ -1,4 +1,14 @@
 # Workers Static Assets: source and appeal pages are rendered in the browser from the SPA shell.
 # The target is /200, not /200.html, which html_handling would answer with a 307.
-/s/* /200 200
-/appeal/* /200 200
+# Only the client-rendered routes get the shell. A placeholder matches one path segment, so an
+# unknown platform or an extra segment falls through to the 404 page with status 404.
+# The platforms are PLATFORMS in packages/shared/src/verdicts.ts.
+/s/yt/:id /200 200
+/s/tt/:id /200 200
+/s/ig/:id /200 200
+/s/fb/:id /200 200
+/appeal/yt/:id /200 200
+/appeal/tt/:id /200 200
+/appeal/ig/:id /200 200
+/appeal/fb/:id /200 200
+/appeal/status/:id /200 200

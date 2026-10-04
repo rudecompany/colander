@@ -36,7 +36,7 @@ function expectSecurityHeaders(res: Response, what: string): void {
 	expect(csp, `CSP on ${what}`).not.toContain('script-src');
 }
 
-test('/s/* and /appeal/* are the app shell with 200, and unknown paths are a real 404', async () => {
+test('source and appeal pages are the app shell with 200, and unknown paths are a real 404', async () => {
 	const shell = await get('/200');
 	expect(shell.res.status).toBe(200);
 	expect(shell.res.headers.get('content-type')).toMatch(/^text\/html/);
@@ -47,7 +47,8 @@ test('/s/* and /appeal/* are the app shell with 200, and unknown paths are a rea
 		expect(page.res.headers.get('content-type'), path).toMatch(/^text\/html/);
 		expect(page.body.equals(shell.body), `${path} is the app shell`).toBe(true);
 	}
-	for (const path of [`/no-such-page-${nonce}`, `/s-${nonce}`, `/appealing/${nonce}`]) {
+	// Only the client-rendered routes get the shell: an unknown platform or a wrong segment count is a 404.
+	for (const path of [`/no-such-page-${nonce}`, `/s-${nonce}`, `/appealing/${nonce}`, `/s/xx/${nonce}`, '/s/yt', `/appeal/yt/${nonce}/extra`]) {
 		const page = await get(path);
 		expect(page.res.status, path).toBe(404);
 		expect(page.res.headers.get('content-type'), path).toMatch(/^text\/html/);
