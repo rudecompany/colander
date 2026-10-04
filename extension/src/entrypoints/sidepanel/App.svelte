@@ -491,7 +491,7 @@ Uses a reviewer token sent by the website's account page through externally_conn
 						><span class="word">Next</span><ChevronRight size={16} aria-hidden="true" /><Kbd>J</Kbd></Button
 					>
 					<Button variant="primary" type="submit" form="decision" loading={saving} aria-label="Record decision" aria-keyshortcuts={mac ? 'Meta+Enter' : 'Control+Enter'}
-						><span>Record<span class="rest"> decision</span></span><span class="key" aria-hidden="true"><Kbd>{mac ? '⌘↵' : 'Ctrl ↵'}</Kbd></span></Button
+						><span>Record<span class="rest">{' '}decision</span></span><span class="key" aria-hidden="true"><Kbd>{mac ? '⌘↵' : 'Ctrl ↵'}</Kbd></span></Button
 					>
 				</div>
 			{/if}

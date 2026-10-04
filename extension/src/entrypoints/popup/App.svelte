@@ -187,4 +187,8 @@ website hero renders the same component, so the two cannot drift. 360 wide, neve
 		margin: 0;
 		background: var(--cl-paper);
 	}
+	/* Chrome's popup window is at most 600 tall; PopupView grows with its content elsewhere. */
+	:global(.popup) {
+		max-height: 600px;
+	}
 </style>

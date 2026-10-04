@@ -85,6 +85,10 @@ of what each level does, and per-platform levels for Plus.
 		grid-template-columns: repeat(2, minmax(0, 1fr));
 		gap: 12px;
 	}
+	/* Side by side, a one-line level line keeps the room of two, so the rows start level. */
+	.levels :global(.hint) {
+		min-height: 32px;
+	}
 	.muted {
 		margin-bottom: 8px;
 		color: var(--cl-text-muted);
@@ -112,6 +116,9 @@ of what each level does, and per-platform levels for Plus.
 	@media (max-width: 639px) {
 		.levels {
 			grid-template-columns: minmax(0, 1fr);
+		}
+		.levels :global(.hint) {
+			min-height: 0;
 		}
 		.rows li {
 			flex-direction: column;

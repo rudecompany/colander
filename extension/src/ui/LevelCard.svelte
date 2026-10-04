@@ -107,7 +107,6 @@ Used by Options, Strictness, and by the store art.
 		font-weight: 600;
 	}
 	.hint {
-		min-height: 32px;
 		color: var(--cl-text-muted);
 		font: var(--cl-caption);
 	}

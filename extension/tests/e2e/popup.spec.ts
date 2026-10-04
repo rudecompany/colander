@@ -95,15 +95,20 @@ test('pause and resume from the popup, on this site and on this tab', async ({ e
 	const title = () => ext.ctl.evaluate((id) => chrome.action.getTitle({ tabId: id }), tabId);
 	const popup = await popupFor(ext, tabId);
 
-	await popup.getByRole('button', { name: 'Pause' }).click();
-	await popup.getByRole('menuitem', { name: 'Pause on this site' }).click();
+	// By keyboard, focus follows the control that replaces the one used: Resume, then Pause.
+	await popup.getByRole('button', { name: 'Pause' }).focus();
+	await popup.keyboard.press('Enter');
+	await expect(popup.getByRole('menuitem', { name: 'Pause on this site' })).toBeFocused();
+	await popup.keyboard.press('Enter');
 	await expect(popup.getByText('Paused on this site.')).toBeVisible();
+	await expect(popup.getByRole('button', { name: 'Resume' })).toBeFocused();
 	await expect(first).not.toHaveAttribute('data-colander', /./);
 	await expect(page.locator('colander-ui[data-kind="tag"]')).toHaveCount(0);
 	await expect(page.locator('colander-ui[data-kind="chip"]')).toHaveCount(0);
 	await expect.poll(title).toBe('Colander, paused on this site');
-	await popup.getByRole('button', { name: 'Resume' }).click();
+	await popup.keyboard.press('Enter');
 	await expect(first).toHaveAttribute('data-colander', 'hide');
+	await expect(popup.getByRole('button', { name: 'Pause' })).toBeFocused();
 
 	await popup.getByRole('button', { name: 'Pause' }).click();
 	await popup.getByRole('menuitem', { name: 'Pause on this tab' }).click();

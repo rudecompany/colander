@@ -31,7 +31,9 @@ button.cl-chip { cursor: pointer; }
 .bar { display: flex; align-items: center; gap: 8px; height: 40px; padding: 0 4px 0 12px; border: 1px solid var(--cl-host-line); border-radius: var(--cl-r-card); animation: cl-in var(--cl-slow) var(--cl-ease); }
 .bar .r { flex: 1 1 0; }
 .bar .acts { margin-left: auto; }
-@container (max-width: 379px) { .bar { gap: 6px; } .bar .acts .lucide { display: none; } .bar .acts .cl-b { padding: 0 8px; } }
+/* Narrow bars tighten before anything drops, and "Hidden for you" ellipsizes rather than push Why out. */
+.bar .t { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+@container (max-width: 379px) { .bar { gap: 4px; } .bar .acts .lucide { display: none; } .bar .acts .cl-b { padding: 0 6px; } }
 @container (max-width: 459px) { .bar .r { display: none; } }
 @container (max-width: 319px) { .bar .t { display: none; } }
 .stub { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; width: 100%; height: 100%; min-height: 120px; padding: 8px; border: 1px solid var(--cl-host-line); border-radius: var(--cl-r-card); text-align: center; animation: cl-in var(--cl-slow) var(--cl-ease); }

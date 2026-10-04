@@ -108,7 +108,8 @@ sticky bar holds Back and Continue; Done opens the first platform.
 							<span class="rec" aria-hidden="true"><span class="uin-badge uin-badge-md">Recommended</span></span>
 						</div>
 						<figure class="wide demo">
-							<div class="crop"><FeedDemo variant="full" platform="yt" bind:level={strictness} popup={false} height={528} open={null} /></div>
+							<!-- Two grid rows; the frame fades out below them, so a third row never reads as cut. -->
+							<FeedDemo variant="full" platform="yt" bind:level={strictness} popup={false} height={560} open={null} />
 							<figcaption class="caption">{DEMO_THUMBS_NOTE}</figcaption>
 						</figure>
 					</section>
@@ -259,10 +260,6 @@ sticky bar holds Back and Continue; Done opens the first platform.
 		display: grid;
 		gap: 12px;
 		margin-top: 8px;
-	}
-	/* Two grid rows tall: a third row (at Label) stays below the frame, and a short fade softens any cut. */
-	.crop {
-		mask-image: linear-gradient(to bottom, black calc(100% - 24px), transparent);
 	}
 	.demo figcaption {
 		text-align: center;

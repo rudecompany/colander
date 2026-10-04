@@ -249,7 +249,7 @@ carry the thumbnail disclosure.
 	}
 	.f4 {
 		display: grid;
-		gap: 12px;
+		gap: 8px;
 		zoom: 1.25;
 	}
 	.eyebrow,
@@ -263,7 +263,7 @@ carry the thumbnail disclosure.
 		font: var(--cl-body-strong);
 	}
 	.name {
-		margin: 8px 0 12px;
+		margin: 4px 0 12px;
 		font: var(--cl-title-lg);
 	}
 	.status {

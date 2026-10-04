@@ -173,6 +173,9 @@ export const test = base.extend<{ ext: Ext }>({
 					return chrome.tabs.sendMessage(tab!.id!, { type: 'page-state' });
 				}, page.url())
 		};
+		// First run writes the install's stats once; a test that seeds stats before that write would
+		// race it (and lose under load), so tests start after it.
+		await expect.poll(() => ext.storage('stats'), { timeout: 15_000 }).toBeTruthy();
 		await use(ext);
 		await ctx.close();
 	}
