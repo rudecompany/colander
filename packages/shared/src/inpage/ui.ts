@@ -22,7 +22,7 @@ import {
 	type Verdict
 } from '../verdicts';
 import { glyph, hyper, icon, menuKeys, trapFocus, uid, type Child } from './dom';
-import { popoverRows, type Evidence } from './evidence';
+import { keepTogether, popoverRows, type Evidence } from './evidence';
 import { makeHost, type InpageContext } from './host';
 
 /** What a decorated card shows. The extension maps its match decision onto this. */
@@ -38,7 +38,22 @@ export interface ItemView {
 	hidden?: boolean;
 }
 
-type Btn = { label: string; icon?: IconNode; onClick?: () => void; kind?: 'p' | 's' | 'q'; sm?: boolean; attrs?: Record<string, string> };
+type Btn = { label: string; icon?: IconNode; onClick?: () => void; kind?: 'p' | 's' | 'q'; sm?: boolean; attrs?: Record<string, string | undefined> };
+
+/**
+ * Pages that rebuild the UI (the website's demo) name its controls, so focus survives a rebuild
+ * and a closed popover hands focus back to its anchor: `key` gives data-k values such as "why-6".
+ * `expanded` and `controls` wire the Why anchor to its open popover.
+ */
+export type Anchor = { key?: string | number; expanded?: boolean; controls?: string };
+
+const k = (prefix: string, key?: string | number) => (key == null ? undefined : `${prefix}-${key}`);
+const whyAttrs = (a: Anchor) => ({
+	'aria-haspopup': 'dialog',
+	'aria-expanded': a.expanded ? 'true' : 'false',
+	'aria-controls': a.expanded ? a.controls : undefined,
+	'data-k': k('why', a.key)
+});
 
 const chipWord = (v: ItemView) => (v.verdict ? (v.plain ? VERDICT_PLAIN : VERDICT_WORD)[v.verdict] : (v.word ?? 'Your rule'));
 
@@ -57,7 +72,7 @@ export function button(ctx: InpageContext, b: Btn): HTMLButtonElement {
 export function chip(
 	ctx: InpageContext,
 	v: ItemView,
-	opts: { tone?: 'ink' | 'tint'; size?: 'sm' | 'md' | 'lg'; onWhy?: (anchor: HTMLElement) => void } = {}
+	opts: { tone?: 'ink' | 'tint'; size?: 'sm' | 'md' | 'lg'; onWhy?: (anchor: HTMLElement) => void } & Anchor = {}
 ): HTMLElement {
 	const h = hyper(ctx.doc);
 	const size = opts.size ?? (v.plain ? 'lg' : 'md');
@@ -68,7 +83,7 @@ export function chip(
 	if (!opts.onWhy) return h('span', { class: cls, 'data-v': data }, ...kids);
 	const btn = h(
 		'button',
-		{ type: 'button', class: cls, 'data-v': data, 'aria-haspopup': 'dialog', 'aria-expanded': 'false', 'aria-label': ctx.strings.chipName(word, !!v.hidden) },
+		{ type: 'button', class: cls, 'data-v': data, ...whyAttrs(opts), 'aria-label': ctx.strings.chipName(word, !!v.hidden) },
 		...kids,
 		h('span', { class: 'why', 'aria-hidden': 'true' }, ctx.strings.why)
 	);
@@ -76,12 +91,12 @@ export function chip(
 	return btn;
 }
 
-type Reveal = { onShow: () => void; onWhy: (anchor: HTMLElement) => void };
+type Reveal = { onShow: () => void; onWhy: (anchor: HTMLElement) => void } & Anchor;
 
 function hiddenParts(ctx: InpageContext, v: ItemView, x: Reveal, cls: string): HTMLElement {
 	const h = hyper(ctx.doc);
 	const s = ctx.strings;
-	const why = button(ctx, { label: s.why, icon: Info, attrs: { 'aria-haspopup': 'dialog', 'aria-expanded': 'false' } });
+	const why = button(ctx, { label: s.why, icon: Info, attrs: whyAttrs(x) });
 	why.addEventListener('click', () => x.onWhy(why));
 	const el = h(
 		'div',
@@ -89,7 +104,7 @@ function hiddenParts(ctx: InpageContext, v: ItemView, x: Reveal, cls: string): H
 		chip(ctx, v, { tone: 'tint' }),
 		h('span', { class: 't' }, s.hiddenForYou),
 		v.reason ? h('span', { class: 'r' }, v.reason) : null,
-		h('span', { class: 'acts' }, button(ctx, { label: s.show, icon: Eye, onClick: x.onShow }), why)
+		h('span', { class: 'acts' }, button(ctx, { label: s.show, icon: Eye, onClick: x.onShow, attrs: { 'data-k': k('show', x.key) } }), why)
 	);
 	el.addEventListener('keydown', (e) => {
 		if (e.key === 'Enter' && e.target === el) {
@@ -114,7 +129,7 @@ export function gridStub(ctx: InpageContext, v: ItemView, x: Reveal): HTMLElemen
 export function cover(ctx: InpageContext, v: ItemView, x: Reveal & { onSkip: () => void }): HTMLElement {
 	const h = hyper(ctx.doc);
 	const s = ctx.strings;
-	const why = button(ctx, { label: s.why, attrs: { 'aria-haspopup': 'dialog', 'aria-expanded': 'false' } });
+	const why = button(ctx, { label: s.why, attrs: whyAttrs(x) });
 	why.addEventListener('click', () => x.onWhy(why));
 	return h(
 		'div',
@@ -125,8 +140,8 @@ export function cover(ctx: InpageContext, v: ItemView, x: Reveal & { onSkip: () 
 		h(
 			'div',
 			{ class: 'acts' },
-			button(ctx, { label: s.show, icon: Eye, kind: 's', onClick: x.onShow }),
-			button(ctx, { label: s.skip, kind: 'p', onClick: x.onSkip }),
+			button(ctx, { label: s.show, icon: Eye, kind: 's', onClick: x.onShow, attrs: { 'data-k': k('show', x.key) } }),
+			button(ctx, { label: s.skip, kind: 'p', onClick: x.onSkip, attrs: { 'data-k': k('skip', x.key) } }),
 			why
 		)
 	);
@@ -162,24 +177,35 @@ export interface EvidenceActions {
 	notSlop?: () => void;
 }
 
-/** Why: the signals that agreed, the list and the date, Show, Always allow and Not slop. */
-export function evidencePopover(ctx: InpageContext, ev: Evidence, x: EvidenceActions = {}, opts: { flat?: boolean } = {}): HTMLElement {
+/**
+ * Why: the signals that agreed, the list and the date, Show, Always allow and Not slop, and the
+ * source and appeal links. `key` names the popover ("pop-6") and its actions for pages that
+ * rebuild it; `id` is what the anchor's aria-controls points at.
+ */
+export function evidencePopover(
+	ctx: InpageContext,
+	ev: Evidence,
+	x: EvidenceActions = {},
+	opts: { flat?: boolean; key?: string | number; id?: string } = {}
+): HTMLElement {
 	const h = hyper(ctx.doc);
 	const s = ctx.strings;
 	const titleId = uid('ev');
+	const attrs = (name: string) => ({ 'data-k': k(`pop-${name}`, opts.key) });
 	const actions = [
-		x.show && button(ctx, { label: s.show, icon: Eye, sm: true, onClick: x.show }),
-		x.allow && button(ctx, { label: s.alwaysAllow, icon: Check, sm: true, onClick: x.allow }),
-		x.notSlop && button(ctx, { label: s.notSlop, icon: Tag, sm: true, onClick: x.notSlop })
+		x.show && button(ctx, { label: s.show, icon: Eye, sm: true, onClick: x.show, attrs: attrs('show') }),
+		x.allow && button(ctx, { label: s.alwaysAllow, icon: Check, sm: true, onClick: x.allow, attrs: attrs('allow') }),
+		x.notSlop && button(ctx, { label: s.notSlop, icon: Tag, sm: true, onClick: x.notSlop, attrs: attrs('notslop') })
 	].filter(Boolean) as HTMLElement[];
+	// Inert links (the website's demo, whose invented sources have no pages) keep their look, not their target.
+	const link = (href: string) => (ev.inertLinks ? { class: 'cl-link' } : { class: 'cl-link', href, target: '_blank', rel: 'noopener' });
 	const links: Child[] = [
-		ev.sourceUrl &&
-			h('a', { class: 'cl-link', href: ev.sourceUrl, target: '_blank', rel: 'noopener' }, s.sourcePage, icon(ctx.doc, ArrowRight)),
-		ev.appealUrl && h('a', { class: 'cl-link', href: ev.appealUrl, target: '_blank', rel: 'noopener' }, ev.appealText)
+		ev.sourceUrl && h('a', link(ev.sourceUrl), s.sourcePage, icon(ctx.doc, ArrowRight)),
+		ev.appealUrl && h('a', link(ev.appealUrl), ev.appealText)
 	];
 	return h(
 		'div',
-		{ class: `cl-pop${opts.flat ? ' cl-flat' : ''}`, role: 'dialog', 'aria-labelledby': titleId },
+		{ class: `cl-pop${opts.flat ? ' cl-flat' : ''}`, role: 'dialog', 'aria-labelledby': titleId, id: opts.id, 'data-k': k('pop', opts.key) },
 		h(
 			'div',
 			{ class: 'cl-ev-head' },
@@ -190,7 +216,11 @@ export function evidencePopover(ctx: InpageContext, ev: Evidence, x: EvidenceAct
 			'ul',
 			{ class: 'cl-ev-rows' },
 			...popoverRows(ev).map((r) =>
-				h('li', { class: 'cl-ev-row', 'data-agreed': String(r.agreed) }, h('span', {}, h('b', {}, `${r.label}:`), ` ${r.texts[0]}`))
+				h(
+					'li',
+					{ class: 'cl-ev-row', 'data-agreed': String(r.agreed) },
+					h('span', {}, h('b', {}, `${r.label}:`), ' ', ...keepTogether(r.texts[0]!).map((p, i) => (i % 2 ? h('span', { class: 'cl-nw' }, p) : p)))
+				)
 			)
 		),
 		ev.list ? h('p', { class: 'cl-ev-list' }, ev.list) : null,

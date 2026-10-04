@@ -6,7 +6,9 @@ the website hero render this one component from a PopupState, so they cannot dri
 strictness card 80, stats card 104, On this page card (a 36 header and up to 3 rows of 44), a
 64 slot, and the list version. Cards sit 8 apart with 12 px side padding, on paper.
 "Show all" folds the stats card to one 40 line and scrolls the list inside the card.
-Flat: the website adds the shadow where it docks the popup.
+Flat: the website adds the shadow where it docks the popup. Only "Show all" caps the height at
+600 (the extension's window); otherwise the popup grows with its content, so a narrow website
+column never clips it. Long row titles keep their end ("Ancient Rome facts… Part 46").
 -->
 <script lang="ts" module>
 	import type { Action, Strictness, Verdict } from '../../verdicts';
@@ -66,6 +68,8 @@ Flat: the website adds the shadow where it docks the popup.
 <script lang="ts">
 	import '../ui/badge/badge.css';
 	import '../ui/button/button.css';
+	import ArrowRight from '@lucide/svelte/icons/arrow-right';
+	import Check from '@lucide/svelte/icons/check';
 	import ChevronDown from '@lucide/svelte/icons/chevron-down';
 	import Eye from '@lucide/svelte/icons/eye';
 	import Heart from '@lucide/svelte/icons/heart';
@@ -73,6 +77,7 @@ Flat: the website adds the shadow where it docks the popup.
 	import RefreshCw from '@lucide/svelte/icons/refresh-cw';
 	import ScrollText from '@lucide/svelte/icons/scroll-text';
 	import Settings from '@lucide/svelte/icons/settings';
+	import Tag from '@lucide/svelte/icons/tag';
 	import X from '@lucide/svelte/icons/x';
 	import Button from '../ui/button/button.svelte';
 	import ColanderMark from './ColanderMark.svelte';
@@ -114,22 +119,44 @@ Flat: the website adds the shadow where it docks the popup.
 	const visible = $derived(all ? rows : rows.slice(0, 3));
 	const hidden = (r: PopupRow) => (r.action === 'hide' || r.action === 'collapse') && !r.shown;
 
+	// The same icon for an action everywhere: the Why popover, the row menu and in-page.
 	function rowItems(r: PopupRow): MenuItem[] {
 		return [
 			...(hidden(r) && a.show ? [{ label: 'Show', icon: Eye, onSelect: () => a.show!(r) }] : []),
-			...(a.allow ? [{ label: 'Always allow this source', onSelect: () => a.allow!(r) }] : []),
-			...(r.verdict && a.notSlop ? [{ label: 'Not slop', onSelect: () => a.notSlop!(r) }] : []),
+			...(a.allow ? [{ label: 'Always allow this source', icon: Check, onSelect: () => a.allow!(r) }] : []),
+			...(r.verdict && a.notSlop ? [{ label: 'Not slop', icon: Tag, onSelect: () => a.notSlop!(r) }] : []),
 			...(a.why ? [{ label: 'Why', icon: Info, onSelect: () => a.why!(r) }] : []),
-			...(a.sourcePage ? [{ label: 'Source page', onSelect: () => a.sourcePage!(r) }] : [])
+			...(a.sourcePage ? [{ label: 'Source page', icon: ArrowRight, onSelect: () => a.sourcePage!(r) }] : [])
 		];
 	}
+
+	/** A numbered title keeps its last words (up to 9 characters) when truncated: "Ancient Rome fa… Part 46". */
+	function ends(t: string): [string, string] {
+		if (!/\d$/.test(t)) return [t, ''];
+		let cut = -1;
+		for (let i = t.lastIndexOf(' '); i > 0 && t.length - i <= 9; i = t.lastIndexOf(' ', i - 1)) cut = i;
+		return cut < 0 ? [t, ''] : [t.slice(0, cut), t.slice(cut)];
+	}
+
+	// Pause and Resume replace each other, so focus moves to the new control instead of the page.
+	let root = $state<HTMLElement>();
+	let refocus = false;
 	const pauseItems = $derived<MenuItem[]>([
-		{ label: 'Pause on this site', onSelect: () => a.pause?.('site') },
-		{ label: 'Pause on this tab', onSelect: () => a.pause?.('tab'), disabled: s.canPauseTab === false }
+		{ label: 'Pause on this site', onSelect: () => ((refocus = true), a.pause?.('site')) },
+		{ label: 'Pause on this tab', onSelect: () => ((refocus = true), a.pause?.('tab')), disabled: s.canPauseTab === false }
 	]);
+	$effect(() => {
+		void s.status;
+		if (!refocus || !root) return;
+		const active = root.ownerDocument.activeElement;
+		const btn = root.querySelector<HTMLElement>('.status button');
+		if (!btn || (active && active !== root.ownerDocument.body && !root.contains(active))) return;
+		refocus = false;
+		btn.focus();
+	});
 </script>
 
-<div class="popup" class:all>
+<div class="popup" class:all bind:this={root}>
 	<header class="head">
 		<span class="brand"><ColanderMark size={20} /><span class="name">Colander</span></span>
 		{#if s.plus}<span class="uin-badge uin-badge-md">Plus</span>{/if}
@@ -144,7 +171,7 @@ Flat: the website adds the shadow where it docks the popup.
 				<p class="state wrap">{SUPPORTED_SITES}</p>
 			{:else if s.status === 'paused'}
 				<span class="state" role="status"><span class="ring" aria-hidden="true"></span>{s.pausedScope === 'tab' ? 'Paused on this tab.' : 'Paused on this site.'}</span>
-				<Button variant="primary" onclick={() => a.resume?.()}>Resume</Button>
+				<Button variant="primary" onclick={() => ((refocus = true), a.resume?.())}>Resume</Button>
 			{:else}
 				<span class="state"><span class="dot" aria-hidden="true"></span><span class="ell">Active on {s.domain}</span></span>
 				<Menu items={pauseItems} label="Pause">
@@ -165,13 +192,13 @@ Flat: the website adds the shadow where it docks the popup.
 			<section class="card folded" aria-label="Counts">
 				<span>Hidden for you today <b>{fmtNum(s.hiddenToday)}</b></span>
 				<span aria-hidden="true">·</span>
-				<span>On this page <b>{fmtNum(onPage)}</b></span>
+				<span>Hidden on this page <b>{fmtNum(onPage)}</b></span>
 			</section>
 		{:else}
 			<section class="card stats" aria-label="Counts" aria-describedby={s.status === 'unsupported' ? undefined : `${uid}-sum`}>
 				<div class="cells">
 					<StatCell label="Hidden for you today" value={s.hiddenToday} reserve={3} />
-					{#if s.status !== 'unsupported'}<StatCell label="On this page" value={onPage} reserve={3} />{/if}
+					{#if s.status !== 'unsupported'}<StatCell label="Hidden on this page" value={onPage} reserve={3} />{/if}
 				</div>
 				{#if s.status !== 'unsupported'}
 					<VerdictTally counts={tally} hideZero />
@@ -195,12 +222,15 @@ Flat: the website adds the shadow where it docks the popup.
 				{:else}
 					<ul class="rows">
 						{#each visible as r (r.id)}
+							{@const [head, tail] = ends(r.title)}
 							<li class="row">
 								<Menu items={rowItems(r)} label={r.title} align="start">
 									{#snippet trigger(props)}
 										<button {...props} type="button" class="row-btn">
 											{#if r.verdict}<VerdictChip verdict={r.verdict} size="sm" />{:else}<span class="uin-badge uin-badge-md">Your rule</span>{/if}
-											<span class="title">{r.title}</span>
+											<span class="title"><span class="t-start">{head}</span>{#if tail}<span class="t-end">{tail}</span>{/if}</span>
+											<!-- The row opens a menu: say so, so it never reads as a static line. -->
+											<ChevronDown size={16} aria-hidden="true" class="more" />
 										</button>
 									{/snippet}
 								</Menu>
@@ -255,7 +285,6 @@ Flat: the website adds the shadow where it docks the popup.
 		flex-direction: column;
 		width: 100%;
 		max-width: 360px;
-		max-height: 600px;
 		padding-bottom: 12px;
 		background: var(--cl-paper);
 		color: var(--cl-text);
@@ -386,6 +415,9 @@ Flat: the website adds the shadow where it docks the popup.
 		min-height: 0;
 		padding: 0 4px 4px;
 	}
+	.all {
+		max-height: 600px;
+	}
 	.all .page {
 		flex: 1;
 	}
@@ -405,8 +437,11 @@ Flat: the website adds the shadow where it docks the popup.
 		padding: 0;
 		list-style: none;
 	}
+	/* The scrolled list fades at its bottom edge, so a cut row reads as more to scroll. */
 	.all .rows {
 		overflow-y: auto;
+		padding-bottom: 16px;
+		mask-image: linear-gradient(to bottom, black calc(100% - 16px), transparent);
 	}
 	.row {
 		display: flex;
@@ -433,10 +468,25 @@ Flat: the website adds the shadow where it docks the popup.
 	.row-btn:hover {
 		background: color-mix(in srgb, var(--cl-text) 6%, transparent);
 	}
+	.row-btn :global(.more) {
+		flex: none;
+		color: var(--cl-text-muted);
+	}
 	.title {
+		display: flex;
+		flex: 1 1 auto;
+		min-width: 0;
+		white-space: nowrap;
+	}
+	.t-start {
+		flex: 0 1 auto;
+		min-width: 0;
 		overflow: hidden;
 		text-overflow: ellipsis;
-		white-space: nowrap;
+	}
+	.t-end {
+		flex: none;
+		white-space: pre;
 	}
 	.empty {
 		display: flex;

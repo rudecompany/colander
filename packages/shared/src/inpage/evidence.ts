@@ -27,6 +27,8 @@ export interface Evidence {
 	sourceUrl: string | null;
 	appealUrl: string | null;
 	appealText: string | null;
+	/** The links keep their look but go nowhere: the website's demo, whose sources are invented. */
+	inertLinks?: boolean;
 }
 
 export interface EvidenceInput {
@@ -45,6 +47,8 @@ export interface EvidenceInput {
 	site?: string;
 	/** Only list verdicts can be appealed. */
 	appealable?: boolean;
+	/** For the demo: show the source and appeal links without a target. */
+	inertLinks?: boolean;
 }
 
 const sentence = (s: string) => (/[.?]$/.test(s) ? s : `${s}.`);
@@ -84,9 +88,16 @@ export function evidence(input: EvidenceInput, fmt: (t: DateInput) => string = f
 			: null,
 		sourceUrl: linkable ? site + sourcePath(platform, sourceId) : null,
 		appealUrl: linkable && input.appealable ? site + appealPath(platform, sourceId) : null,
-		appealText: linkable && input.appealable ? INPAGE_COPY.appeal(SOURCE_NOUN[platform]) : null
+		appealText: linkable && input.appealable ? INPAGE_COPY.appeal(SOURCE_NOUN[platform]) : null,
+		...(input.inertLinks ? { inertLinks: true } : {})
 	};
 }
+
+/**
+ * Splits a sentence so hyphenated AI terms never break at the hyphen ("AI-" / "made."): odd
+ * parts are the terms, which renderers set in a no-wrap span (.cl-nw).
+ */
+export const keepTogether = (text: string): string[] => text.split(/(\bAI-[A-Za-z]+\.?)/);
 
 /** The rows a popover shows: agreed layers first, then layers with no data, 3 at most. */
 export function popoverRows(ev: Evidence): EvidenceRow[] {

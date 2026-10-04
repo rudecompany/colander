@@ -15,7 +15,7 @@ Show, Always allow and Not slop appear when their handlers are given.
 	import Tag from '@lucide/svelte/icons/tag';
 	import VerdictChip from './VerdictChip.svelte';
 	import { INPAGE_COPY } from '../../copy';
-	import { emptyLayersLine, popoverRows, type Evidence } from '../../inpage/evidence';
+	import { emptyLayersLine, keepTogether, popoverRows, type Evidence } from '../../inpage/evidence';
 	import { LAYER_WORD, type LayerKey } from '../../layers';
 
 	let {
@@ -72,7 +72,9 @@ Show, Always allow and Not slop appear when their handlers are given.
 	{:else}
 		<ul class="cl-ev-rows">
 			{#each popoverRows(ev) as r (r.key)}
-				<li class="cl-ev-row" data-agreed={String(r.agreed)}><span><b>{r.label}:</b> {r.texts[0]}</span></li>
+				<li class="cl-ev-row" data-agreed={String(r.agreed)}>
+					<span><b>{r.label}:</b>{' '}{#each keepTogether(r.texts[0] ?? '') as part, i (i)}{#if i % 2}<span class="cl-nw">{part}</span>{:else}{part}{/if}{/each}</span>
+				</li>
 			{/each}
 		</ul>
 	{/if}
@@ -87,8 +89,9 @@ Show, Always allow and Not slop appear when their handlers are given.
 	{/if}
 	{#if ev.sourceUrl || ev.appealUrl}
 		<p class="cl-ev-links">
-			{#if ev.sourceUrl}<a class="cl-link" href={ev.sourceUrl}>{s.sourcePage}<ArrowRight size={16} aria-hidden="true" /></a>{/if}
-			{#if ev.appealUrl}<a class="cl-link" href={ev.appealUrl}>{ev.appealText}</a>{/if}
+			<!-- Inert links (the demo's invented sources) keep their look, not their target. -->
+			{#if ev.sourceUrl}<a class="cl-link" href={ev.inertLinks ? undefined : ev.sourceUrl}>{s.sourcePage}<ArrowRight size={16} aria-hidden="true" /></a>{/if}
+			{#if ev.appealUrl}<a class="cl-link" href={ev.inertLinks ? undefined : ev.appealUrl}>{ev.appealText}</a>{/if}
 		</p>
 	{/if}
 </svelte:element>

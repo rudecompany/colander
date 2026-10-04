@@ -38,9 +38,12 @@
 .uin-tab:hover:not(:disabled):not(.uin-tab-active) {
   color: var(--cl-text);
 }
+/* An inset ring: the horizontal strip scrolls, and its overflow would clip one drawn outside.
+   The transparent outline is what forced-colors mode draws. */
 .uin-tab:focus-visible {
-  outline: none;
-  box-shadow: var(--uin-focus-ring);
+  outline: 2px solid transparent;
+  outline-offset: -2px;
+  box-shadow: inset 0 0 0 2px var(--cl-brand);
 }
 .uin-tab:disabled {
   opacity: 0.4;
@@ -71,6 +74,14 @@
 .uin-tabs-vertical .uin-tab-active {
   background: var(--cl-brand-tint);
   color: var(--cl-brand);
+}
+
+/* Forced colors drop backgrounds, so the selected underline uses Highlight. */
+@media (forced-colors: active) {
+  .uin-tabs-horizontal .uin-tab-active::after {
+    background: Highlight;
+    forced-color-adjust: none;
+  }
 }
 
 .uin-tab-count {

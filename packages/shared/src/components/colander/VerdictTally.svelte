@@ -62,6 +62,10 @@ stats, the /log summary); `rows` stacks them with a 50-dot DotMeter each, scaled
 	.tally-rows li {
 		display: contents;
 	}
+	/* A chip is as wide as its word, never stretched to the column. */
+	.tally-rows :global(.cl-chip) {
+		justify-self: start;
+	}
 	.n {
 		font: var(--cl-body-strong);
 		font-variant-numeric: tabular-nums;

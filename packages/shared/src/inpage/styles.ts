@@ -29,11 +29,11 @@ button.cl-chip { cursor: pointer; }
 .r { min-width: 0; color: var(--cl-text-muted); font: var(--cl-caption); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .acts { display: flex; flex: none; gap: 0; }
 .bar { display: flex; align-items: center; gap: 8px; height: 40px; padding: 0 4px 0 12px; border: 1px solid var(--cl-host-line); border-radius: var(--cl-r-card); animation: cl-in var(--cl-slow) var(--cl-ease); }
-.bar .r { flex: 1 1 auto; }
+.bar .r { flex: 1 1 0; }
 .bar .acts { margin-left: auto; }
-@container (max-width: 519px) { .bar .r { display: none; } }
-@container (max-width: 379px) { .bar .t { display: none; } }
-@container (max-width: 279px) { .bar .acts .lucide { display: none; } }
+@container (max-width: 379px) { .bar { gap: 6px; } .bar .acts .lucide { display: none; } .bar .acts .cl-b { padding: 0 8px; } }
+@container (max-width: 459px) { .bar .r { display: none; } }
+@container (max-width: 319px) { .bar .t { display: none; } }
 .stub { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; width: 100%; height: 100%; min-height: 120px; padding: 8px; border: 1px solid var(--cl-host-line); border-radius: var(--cl-r-card); text-align: center; animation: cl-in var(--cl-slow) var(--cl-ease); }
 .stub .r { max-width: 100%; }
 @container (max-width: 199px) { .stub .r { display: none; } }
@@ -93,7 +93,7 @@ textarea { display: block; width: 100%; padding: 8px 12px; border: 1px solid var
 @media (prefers-reduced-motion: reduce) { *:not(.cl-count > i) { animation: none !important; transition: none !important; } }
 @media (forced-colors: active) {
 	.cl-chip, .bar, .stub, .pill, .cl-pop, .cl-toast { border: 1px solid CanvasText; }
-	.cl-glyph { color: CanvasText; }
+	.cl-glyph, .cl-chip .cl-glyph, .cl-toast .cl-glyph { color: CanvasText; }
 }
 `;
 

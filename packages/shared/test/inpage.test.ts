@@ -1,7 +1,7 @@
 import { parseHTML } from 'linkedom';
 import { afterAll, describe, expect, it } from 'vitest';
 import { DEMO_FEED } from '../src/copy';
-import { bar, chip, evidence, evidencePopover, gridStub, inpageContext, popoverRows, prerender, setServerDocument, SHEET, toast } from '../src/inpage';
+import { bar, chip, demoFeed, evidence, evidencePopover, gridStub, inpageContext, keepTogether, popoverRows, prerender, setServerDocument, SHEET, toast } from '../src/inpage';
 import { barReason } from '../src/verdicts';
 
 const doc = () => parseHTML('<!doctype html><html><body></body></html>').document as unknown as Document;
@@ -39,6 +39,31 @@ describe('in-page builders in Node', () => {
 		const el = evidencePopover(ctx, ev, { show: noop, allow: noop, notSlop: noop });
 		expect(el.textContent).toContain('Why this is hidden');
 		expect(el.textContent).toContain('Core list, updated 2 Oct 2026');
+	});
+
+	it('keep hyphenated AI terms on one line', () => {
+		expect(keepTogether('The platform labels it AI-generated.')).toEqual(['The platform labels it ', 'AI-generated.', '']);
+		const ev = evidence({ verdict: 'likely_slop', hidden: true, rows: [{ layer: 'provenance', text: 'The platform labels it AI-generated.', agreed: true }] });
+		expect(evidencePopover(ctx, ev).querySelector('.cl-nw')!.textContent).toBe('AI-generated.');
+	});
+
+	it('wire the demo popover to its anchor, with inert links and keyed actions', () => {
+		const item = DEMO_FEED.find((i) => i.id === 6)!;
+		const handlers = { show: noop, why: noop, allow: noop, notSlop: noop, skip: noop };
+		const feed = demoFeed(ctx, { layout: 'grid', level: 'standard', items: [item], open: 6, focus: ['pop-show-6'] }, handlers);
+		const why = feed.querySelector('[data-k="why-6"]')!;
+		expect(why.getAttribute('aria-expanded')).toBe('true');
+		expect(why.getAttribute('aria-controls')).toBe('cl-pop-6');
+		const pop = feed.querySelector('#cl-pop-6')!;
+		expect(pop.classList.contains('pop-in')).toBe(false);
+		expect(pop.querySelector('[data-k="pop-show-6"]')).not.toBeNull();
+		expect([...pop.querySelectorAll('.cl-link')].map((a) => [a.textContent, a.hasAttribute('href')])).toEqual([
+			['Source page', false],
+			['Is this your channel? Appeal this verdict.', false]
+		]);
+		expect(feed.getAttribute('data-focus')).toBe('pop-show-6');
+		const opened = demoFeed(ctx, { layout: 'grid', level: 'standard', items: [item], open: 6, opened: 6 }, handlers);
+		expect(opened.querySelector('#cl-pop-6')!.classList.contains('pop-in')).toBe(true);
 	});
 
 	it('build evidence from signals, agreed layers first', () => {

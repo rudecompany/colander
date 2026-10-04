@@ -35,8 +35,8 @@ describe('shared copy and demo', () => {
 		expect(PLATFORM_SURFACES.fb).toBe('Feed, Reels');
 	});
 
-	it('count the demo badge by level', () => {
-		expect([demoHiddenCount('label'), demoHiddenCount('standard'), demoHiddenCount('strict'), demoHiddenCount('no_ai')]).toEqual([0, 2, 3, 4]);
+	it('count the demo badge by level: hidden and collapsed, as the extension counts them', () => {
+		expect([demoHiddenCount('label'), demoHiddenCount('standard'), demoHiddenCount('strict'), demoHiddenCount('no_ai')]).toEqual([0, 3, 4, 4]);
 		expect(demoHiddenCount('no_ai', true)).toBe(0);
 		expect(demoCounts('standard')).toBe('2 hidden, 1 collapsed, 2 labeled');
 	});

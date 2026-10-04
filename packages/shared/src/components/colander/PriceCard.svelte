@@ -18,6 +18,7 @@ Plus is the band card with an outline Recommended badge, the 14-day badge and a 
 		size = 'site',
 		recommended = true,
 		cta,
+		cta2,
 		headingLevel = 3
 	}: {
 		plan: 'free' | 'plus';
@@ -26,6 +27,8 @@ Plus is the band card with an outline Recommended badge, the 14-day badge and a 
 		recommended?: boolean;
 		/** Omit to show no button, as on a current plan. */
 		cta?: { label?: string; href?: string; onclick?: () => void };
+		/** A secondary action under the primary, such as /plans' direct purchase. */
+		cta2?: { label: string; href?: string; onclick?: () => void; loading?: boolean };
 		headingLevel?: 2 | 3 | 4;
 	} = $props();
 
@@ -59,6 +62,9 @@ Plus is the band card with an outline Recommended badge, the 14-day badge and a 
 			>
 				{cta.label ?? (plan === 'free' ? P.free.cta : P.plus.cta)}
 			</Button>
+			{#if cta2}
+				<Button variant="secondary" size={btn} href={cta2.href} onclick={cta2.onclick} loading={cta2.loading} block={size !== 'app'}>{cta2.label}</Button>
+			{/if}
 		</div>
 	{/if}
 </article>
@@ -129,7 +135,12 @@ Plus is the band card with an outline Recommended badge, the 14-day badge and a 
 		margin-top: 2px;
 	}
 	.cta {
+		display: grid;
+		gap: 8px;
 		margin-top: auto;
 		padding-top: 16px;
+	}
+	.price-app .cta {
+		justify-items: start;
 	}
 </style>

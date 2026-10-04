@@ -1,11 +1,12 @@
 <!--
 @component PrivacyFacts: what leaves your device and what never does, from copy.ts. Both lists
-use 6 px dot bullets, not checks and crosses. Side by side when there is room.
+use 6 px dot bullets, not checks and crosses. Side by side when there is room. `compact` lists
+the headings only, for a summary that links to the full policy (the landing page).
 -->
 <script lang="ts">
 	import { PRIVACY_HEADINGS, PRIVACY_LEAVES, PRIVACY_NEVER } from '../../copy';
 
-	let { headingLevel = 3 }: { headingLevel?: 2 | 3 | 4 } = $props();
+	let { headingLevel = 3, compact = false }: { headingLevel?: 2 | 3 | 4; compact?: boolean } = $props();
 </script>
 
 <div class="facts">
@@ -13,7 +14,7 @@ use 6 px dot bullets, not checks and crosses. Side by side when there is room.
 		<svelte:element this={`h${headingLevel}`} class="h">{PRIVACY_HEADINGS.leaves}</svelte:element>
 		<ul>
 			{#each PRIVACY_LEAVES as f (f.title)}
-				<li><span class="t">{f.title}</span><span class="d">{f.detail}</span></li>
+				<li><span class="t">{f.title}</span>{#if !compact}<span class="d">{f.detail}</span>{/if}</li>
 			{/each}
 		</ul>
 	</section>

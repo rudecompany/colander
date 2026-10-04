@@ -1,12 +1,17 @@
 <!--
 @component FeedDemo: the recreated feed, decorated by the in-page builders the extension ships.
 
-`full`: a BrowserFrame holding the host page, with the popup docked at the top right (PopupView).
-The platform picks the layout: YouTube a grid, TikTok and Instagram swipe, Facebook a list.
-`level`, `platform` and `paused` are bindable, so a StrictnessControl or tabs outside drive it,
-and the docked popup drives them back. Paused is the feed without Colander: the before and after,
-with no slider. The evidence card of item 6 is open on first render. Below 900 px of width the
-docked popup hides; the page shows PopupView under the frame instead.
+`full`: a BrowserFrame holding the host page, with the popup docked at the top right (PopupView)
+over it; the host page runs on under the popup. The platform picks the page: a YouTube Home grid,
+one TikTok For You video, an Instagram feed or a Facebook feed. `level`, `platform` and `paused`
+are bindable, so a StrictnessControl or tabs outside drive it, and the docked popup drives them
+back. Paused is the feed without Colander: the before and after, with no slider. The evidence
+card of item 6 is open on first render, drawn in its final state: motion is only for changes the
+visitor makes. Below 900 px of width the docked popup hides; the page shows PopupView under the
+frame instead. With a fixed `height`, the page fades out over its last 48 px.
+
+Keyboard: Why moves focus into the popover, Tab stays inside it, and Escape or any of its actions
+closes it and returns focus to Why (or to the card when Why went away).
 
 `mini`: the rows of one strictness card at one level, static (inert), with a count line beside
 it from demoCounts().
@@ -17,8 +22,8 @@ it from demoCounts().
 	import InPage from './InPage.svelte';
 	import PopupView, { type PopupActions, type PopupState } from './PopupView.svelte';
 	import { DEMO_FEED, DEMO_MINI_ITEMS, DEMO_OPEN_ITEM, DEMO_POPUP, ITEM_NOUN, PLATFORM_DOMAIN } from '../../copy';
-	import { demoAction, demoCounts, demoFeed, demoHiddenCount, DEMO_CSS, PLATFORM_LAYOUT, type DemoLayout } from '../../inpage/demo';
-	import type { Theme } from '../../inpage/host';
+	import { DEMO_CSS, DEMO_ORDER, PLATFORM_LAYOUT, demoAction, demoCounts, demoFeed, demoHiddenCount, type DemoLayout } from '../../inpage/demo';
+	import type { InpageContext, Theme } from '../../inpage/host';
 	import type { DateInput } from '../../utils/format';
 	import { STRICTNESS_WORD, type Platform, type Strictness } from '../../verdicts';
 
@@ -44,7 +49,7 @@ it from demoCounts().
 		open?: number | null;
 		/** Overrides the platform's layout, such as `list` on phones. */
 		layout?: Exclude<DemoLayout, 'mini'>;
-		/** Item ids to show, in order. Default: all 9, or the 4 mini rows. */
+		/** Item ids to show, in order. Default: the layout's order of all 9, or the 4 mini rows. */
 		items?: number[];
 		popup?: boolean;
 		height?: number;
@@ -58,33 +63,69 @@ it from demoCounts().
 	let revealed = $state<number[]>([]);
 	let allowed = $state<number[]>([]);
 	let skipped = $state<number[]>([]);
-	let changed = $state<number[]>([]);
 
-	const pick = $derived(ids ?? (variant === 'mini' ? DEMO_MINI_ITEMS : DEMO_FEED.map((i) => i.id)));
-	const items = $derived(pick.map((id) => DEMO_FEED.find((i) => i.id === id)!).filter((i) => !skipped.includes(i.id)));
 	const mode = $derived<DemoLayout>(variant === 'mini' ? 'mini' : (layout ?? PLATFORM_LAYOUT[platform]));
+	const pick = $derived(ids ?? (variant === 'mini' ? DEMO_MINI_ITEMS : (DEMO_ORDER[mode] ?? DEMO_FEED.map((i) => i.id))));
+	const items = $derived(pick.map((id) => DEMO_FEED.find((i) => i.id === id)!).filter((i) => !skipped.includes(i.id)));
 	const badge = $derived(demoHiddenCount(level, paused, items));
 
-	// Fade in only the items whose treatment changed.
-	let prev = untrack(() => ({ level, paused }));
+	// One-shot effects of the visitor's last change, read by the next build and then cleared:
+	// what fades in, which popover opens with motion, and where focus goes. Never set on load.
+	const pending: { changed: number[]; opened: number | null; focus: string[] } = { changed: [], opened: null, focus: [] };
+
+	let prev = untrack(() => ({ level, paused, open }));
 	$effect.pre(() => {
-		const next = { level, paused };
-		if (next.level === prev.level && next.paused === prev.paused) return;
+		const next = { level, paused, open };
 		const was = prev;
 		prev = next;
 		untrack(() => {
-			changed = items.filter((i) => demoAction(i, was.level, was.paused) !== demoAction(i, next.level, next.paused)).map((i) => i.id);
-			revealed = [];
+			if (next.level !== was.level || next.paused !== was.paused) {
+				pending.changed = items.filter((i) => demoAction(i, was.level, was.paused) !== demoAction(i, next.level, next.paused)).map((i) => i.id);
+				revealed = [];
+			}
+			if (next.open !== was.open && next.open != null) pending.opened = next.open;
 		});
 	});
 
+	const back = (id: number) => [`why-${id}`, `card-${id}`];
 	const handlers = {
 		show: (id: number) => ((revealed = [...revealed, id]), (open = null)),
-		why: (id: number) => (open = open === id ? null : id),
+		why: (id: number) => {
+			if (open === id) {
+				pending.focus = back(id);
+				open = null;
+				return;
+			}
+			pending.focus = [`pop-show-${id}`, `pop-allow-${id}`, `pop-${id}`];
+			open = id;
+		},
 		allow: (id: number) => ((allowed = [...allowed, id]), (open = null)),
 		notSlop: (id: number) => ((allowed = [...allowed, id]), (open = null)),
-		skip: (id: number) => (skipped = [...skipped, id])
+		skip: (id: number) => {
+			skipped = [...skipped, id];
+			const next = items[0]?.id;
+			if (next != null) pending.focus = [`skip-${next}`, `why-${next}`, `card-${next}`];
+		}
 	};
+	// Actions taken in the feed hand focus back to the item; the popup's own rows keep theirs.
+	const feedHandlers = {
+		...handlers,
+		show: (id: number) => ((pending.focus = back(id)), handlers.show(id)),
+		allow: (id: number) => ((pending.focus = back(id)), handlers.allow(id)),
+		notSlop: (id: number) => ((pending.focus = back(id)), handlers.notSlop(id))
+	};
+
+	function build(ctx: InpageContext) {
+		const el = demoFeed(
+			ctx,
+			{ layout: mode, level, paused, platform, items, revealed, allowed, open, listDate, changed: pending.changed, opened: pending.opened, focus: pending.focus },
+			feedHandlers
+		);
+		pending.changed = [];
+		pending.opened = null;
+		pending.focus = [];
+		return el;
+	}
 
 	const popupState = $derived<PopupState>({
 		status: paused ? 'paused' : 'active',
@@ -113,30 +154,28 @@ it from demoCounts().
 	let root = $state<HTMLElement>();
 	$effect(() => {
 		if (variant !== 'full' || !root) return;
-		const win = root.ownerDocument.defaultView!;
-		const close = (e: Event) => {
-			if (e instanceof KeyboardEvent && e.key !== 'Escape') return;
-			if (e instanceof PointerEvent && e.composedPath().some((n) => n instanceof Element && (n.classList.contains('cl-pop') || n.hasAttribute('aria-haspopup')))) return;
+		const el = root;
+		const win = el.ownerDocument.defaultView!;
+		const down = (e: PointerEvent) => {
+			if (e.composedPath().some((n) => n instanceof Element && (n.classList.contains('cl-pop') || n.hasAttribute('aria-haspopup')))) return;
 			open = null;
 		};
-		win.addEventListener('pointerdown', close, true);
-		win.addEventListener('keydown', close);
+		const key = (e: KeyboardEvent) => {
+			if (e.key !== 'Escape' || open == null) return;
+			if (e.composedPath().includes(el)) pending.focus = back(open);
+			open = null;
+		};
+		win.addEventListener('pointerdown', down, true);
+		win.addEventListener('keydown', key);
 		return () => {
-			win.removeEventListener('pointerdown', close, true);
-			win.removeEventListener('keydown', close);
+			win.removeEventListener('pointerdown', down, true);
+			win.removeEventListener('keydown', key);
 		};
 	});
 </script>
 
 {#snippet feed()}
-	<InPage
-		kind="demo"
-		{theme}
-		{site}
-		css={DEMO_CSS}
-		build={(ctx) =>
-			demoFeed(ctx, { layout: mode, level, paused, platform, items, revealed, allowed, open, listDate, changed }, handlers)}
-	/>
+	<InPage kind="demo" {theme} {site} css={DEMO_CSS} class={height ? 'crop' : undefined} {build} />
 {/snippet}
 
 {#snippet docked()}<PopupView state={popupState} actions={popupActions} />{/snippet}
@@ -155,11 +194,13 @@ it from demoCounts().
 	.full {
 		container-type: inline-size;
 	}
-	.host {
+	.host,
+	.host :global(colander-ui) {
 		height: 100%;
 	}
+	/* The host page runs under the docked popup; its feed keeps to the left 780 px. */
 	.beside {
-		max-width: 780px;
+		--demo-end: max(16px, calc(100% - 764px));
 	}
 	.mini {
 		overflow: hidden;
@@ -170,7 +211,7 @@ it from demoCounts().
 			display: none;
 		}
 		.beside {
-			max-width: none;
+			--demo-end: 16px;
 		}
 	}
 </style>

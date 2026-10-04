@@ -233,6 +233,13 @@
 .cl-ev-row b {
 	font-weight: 600;
 }
+.cl-ev-row > span {
+	text-wrap: pretty;
+}
+/* A term that must not break at its hyphen, such as "AI-made". */
+.cl-nw {
+	white-space: nowrap;
+}
 .cl-ev-list {
 	margin: 8px 0 0;
 	color: var(--cl-text-muted);
@@ -258,7 +265,8 @@
 }
 
 /* Toast and skip notice: ink, 44 tall, a 4-dot countdown. A long confirmation keeps its text on
-   one line and moves the actions under it, never squeezing the words. */
+   one line and moves the actions under it, never squeezing the words. The band-line edge keeps
+   the ink apart from dark surfaces. */
 .cl-toast {
 	display: flex;
 	flex-wrap: wrap;
@@ -267,7 +275,8 @@
 	width: max-content;
 	max-width: min(420px, calc(100vw - 32px));
 	min-height: 44px;
-	padding: 4px 4px 4px 16px;
+	padding: 3px 3px 3px 15px;
+	border: 1px solid var(--cl-band-line);
 	border-radius: var(--cl-r-card);
 	box-shadow: var(--cl-shadow-pop);
 	font: var(--cl-body);
@@ -280,6 +289,7 @@
 	flex: 1 1 auto;
 	max-width: 100%;
 	margin-right: 4px;
+	text-wrap: pretty;
 }
 .cl-toast-end {
 	display: flex;

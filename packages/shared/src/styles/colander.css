@@ -142,9 +142,11 @@
 		--cl-brand-fill: #3870c0;
 		--cl-brand-fg: #ffffff;
 		--cl-brand-tint: #1f2a3a;
-		--cl-band: #1f2226;
-		/* On-ink 12.0, on-ink-muted 5.92, #8FB8F0 6.69 on it. */
-		--cl-band-card: #2a2e33;
+		/* Lifted off paper (1.23) and wash (1.16) so the page's one contrast moment reads in dark too.
+		   On-ink 13.16, on-ink-muted 6.49, #8FB8F0 7.34, dot-strong 3.01 on it. */
+		--cl-band: #24272c;
+		/* On-ink 11.32, on-ink-muted 5.59, #8FB8F0 6.31 on it. */
+		--cl-band-card: #2e3238;
 		--cl-dot: #2c3035;
 		/* 3.70 on paper, 3.50 on wash, 3.60 on surface. */
 		--cl-dot-strong: #6b7078;
@@ -380,9 +382,9 @@ html {
 	grid-template-columns: repeat(12, minmax(0, 1fr));
 	column-gap: 24px;
 }
-/* Website section rhythm: 128, 96, 64. */
+/* Website section rhythm: 80, 64, 48. Landing pages stay under 8,200 px at 1440 and 12,500 at 390. */
 .cl-section {
-	padding-block: var(--cl-s10);
+	padding-block: 80px;
 }
 .cl-wash {
 	background: var(--cl-wash);
@@ -396,7 +398,7 @@ html {
 		padding-inline: 24px;
 	}
 	.cl-section {
-		padding-block: var(--cl-s9);
+		padding-block: var(--cl-s8);
 	}
 }
 @media (max-width: 639px) {
@@ -404,7 +406,7 @@ html {
 		padding-inline: 16px;
 	}
 	.cl-section {
-		padding-block: var(--cl-s8);
+		padding-block: var(--cl-s7);
 	}
 }
 
@@ -455,6 +457,8 @@ html {
 		border: 1px solid CanvasText;
 	}
 	.cl-glyph,
+	.cl-chip .cl-glyph,
+	.cl-toast .cl-glyph,
 	.cl-mark {
 		color: CanvasText;
 	}

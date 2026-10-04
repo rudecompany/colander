@@ -1,7 +1,9 @@
 <!--
 @component LogRow: one decision log entry in a 56 px row: the time in figure type, the platform,
-the source, the verdict change, a one-line reason and who decided. Below 720 px of width it
-becomes a 3-line block. With `children`, the row is a details element that opens to them (the
+the source, the verdict change, a one-line reason and who decided. Every column but the source and
+the reason has a fixed track, so the platform tags, arrows and chips of a list line up whatever
+the names. Below 660 px of width it becomes a 3-line block: time and platform, then source and
+change, then the reason. With `children`, the row is a details element that opens to them (the
 EvidenceCard on /log); the source name is then plain text, since a summary holds no links.
 `time="date"` shows "2 Oct 2026" instead of "14:02 UTC".
 -->
@@ -23,9 +25,11 @@ EvidenceCard on /log); the source name is then plain text, since a summary holds
 </script>
 
 {#snippet row(link: boolean)}
-	<span class="row">
-		<time class="cl-figure when" datetime={entry.at}>{time === 'date' ? fmtShortDate(entry.at) : fmtTime(entry.at)}</time>
-		<span class="plat"><PlatformTag platform={entry.platform} /></span>
+	<span class="row" class:dated={time === 'date'}>
+		<span class="top">
+			<time class="cl-figure when" datetime={entry.at}>{time === 'date' ? fmtShortDate(entry.at) : fmtTime(entry.at)}</time>
+			<span class="plat"><PlatformTag platform={entry.platform} /></span>
+		</span>
 		{#if link}
 			<a class="src" href={site + sourcePath(entry.platform, entry.source_id)}>{name}</a>
 		{:else}
@@ -63,12 +67,23 @@ EvidenceCard on /log); the source name is then plain text, since a summary holds
 	summary::-webkit-details-marker {
 		display: none;
 	}
+	/* Time 64 (88 for dates), platform 96, source, the change in a 232 track, then the reason. */
 	.row {
 		display: grid;
-		grid-template-columns: 64px 96px minmax(96px, 1fr) max-content minmax(0, 2fr);
+		grid-template-columns: 64px 96px minmax(96px, 1fr) 232px minmax(0, 1.25fr);
 		gap: 16px;
 		align-items: center;
 		height: 56px;
+	}
+	.dated {
+		grid-template-columns: 88px 96px minmax(96px, 1fr) 232px minmax(0, 1.25fr);
+	}
+	.top {
+		display: contents;
+	}
+	/* The from chip has a fixed box, so arrows and to chips form a column. */
+	.change :global(.from) {
+		min-width: 92px;
 	}
 	.when {
 		color: var(--cl-text-muted);
@@ -108,22 +123,40 @@ EvidenceCard on /log); the source name is then plain text, since a summary holds
 	.more {
 		padding: 0 0 16px;
 	}
-	@container (max-width: 719px) {
-		.row {
-			grid-template-columns: auto minmax(0, 1fr);
+	@container (max-width: 659px) {
+		.row,
+		.dated {
+			grid-template-columns: minmax(0, 1fr) max-content;
+			grid-template-areas: 'top top' 'src change' 'why why';
 			gap: 4px 12px;
 			height: auto;
 			padding: 12px 0;
 		}
+		/* The date and the platform always start at the left edge. */
+		.top {
+			display: flex;
+			grid-area: top;
+			align-items: center;
+			gap: 12px;
+		}
 		.src {
-			grid-column: 1;
+			grid-area: src;
 		}
 		.change {
-			grid-column: 2;
-			justify-self: start;
+			grid-area: change;
 		}
 		.why {
-			grid-column: 1 / -1;
+			grid-area: why;
+		}
+	}
+	@container (max-width: 359px) {
+		.row,
+		.dated {
+			grid-template-columns: minmax(0, 1fr);
+			grid-template-areas: 'top' 'src' 'change' 'why';
+		}
+		.change {
+			justify-self: start;
 		}
 	}
 </style>

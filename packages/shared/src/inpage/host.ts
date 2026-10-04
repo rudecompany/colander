@@ -73,15 +73,31 @@ export type Build = (ctx: InpageContext) => Element;
  * Pages: fill an existing <colander-ui> with live children. Reuses the shadow root a Declarative
  * Shadow DOM template made, or attaches one after client-side navigation, where the template is
  * never parsed into a root. `css` adds page-only rules, such as the demo feed's host look.
- * Focus inside the host survives a rebuild: the element with the same data-k gets it back.
+ *
+ * Focus inside the host survives a rebuild: the element with the same data-k gets it back, or
+ * else its nearest keyed ancestor (a card whose Why button went away). A `data-focus` list of
+ * keys on the new root moves focus on purpose instead, to the first key that exists: into a
+ * popover the visitor opened, or back to its anchor when it closes.
  */
 export function mountInto(host: HTMLElement, el: Element, theme: Theme = 'auto', css = ''): ShadowRoot {
 	const root = host.shadowRoot ?? host.attachShadow({ mode: 'open' });
 	const doc = host.ownerDocument;
-	const focused = (root.activeElement as HTMLElement | null)?.closest('[data-k]')?.getAttribute('data-k');
+	const keys: string[] = [];
+	for (let n = root.activeElement as Element | null; n && n !== host; n = n.parentElement) {
+		const key = n.getAttribute('data-k');
+		if (key) keys.push(key);
+	}
+	const wanted = el.getAttribute('data-focus');
+	el.removeAttribute('data-focus');
 	root.adoptedStyleSheets = [sheetFor(doc, sheetText(theme === 'auto')), ...(css ? [sheetFor(doc, css)] : [])];
 	root.replaceChildren(el);
-	if (focused) root.querySelector<HTMLElement>(`[data-k="${focused}"]`)?.focus();
+	for (const key of wanted ? wanted.split(' ') : keys) {
+		const target = root.querySelector<HTMLElement>(`[data-k="${key}"]`);
+		if (target) {
+			target.focus();
+			break;
+		}
+	}
 	return root;
 }
 
