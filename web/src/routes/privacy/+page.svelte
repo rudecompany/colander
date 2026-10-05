@@ -8,6 +8,7 @@
 		['install-id', 'Install IDs'],
 		['website', 'The website'],
 		['appeals', 'Appeals'],
+		['creators', 'Creators'],
 		['payments', 'Payments'],
 		['retention', 'How long we keep it'],
 		['contact', 'Your rights and contact']
@@ -123,6 +124,37 @@
 			</p>
 		</section>
 
+		<section id="creators" class="prose">
+			<h2>Creators</h2>
+			<p>
+				For each channel, profile or page Colander knows about, it keeps the platform IDs and handle, a display name viewers gave in
+				reports, its verdict, the evidence behind it and its entries in the decision log.
+			</p>
+			<h3>Where it comes from</h3>
+			<ul class="dots-list">
+				<li>Tags and reports from people who use the extension.</li>
+				<li>Reviews and decisions by Colander's staff and curators.</li>
+				<li>Appeals and statements from creators themselves.</li>
+				<li>
+					Openly licensed lists from other projects, used only to choose which sources staff review first. They never decide a verdict.
+					The ones whose license asks for credit are named on the <a href="/credits">credits page</a>.
+				</li>
+				<li>
+					YouTube API Services, to link a YouTube channel's ID with its handle and to check appeal codes. Google's
+					<a href="https://policies.google.com/privacy" rel="noreferrer">Privacy Policy</a> applies to that use.
+				</li>
+			</ul>
+			<h3>Why, and what you can ask</h3>
+			<p>
+				Colander uses this to give people a fair, explained and reversible way to filter their own feeds. Every verdict needs evidence,
+				can be appealed, and is published in the decision log.
+			</p>
+			<p>
+				If you run a channel, profile or page, you can ask which sources name it, and object to that use. Prove you control it with an
+				appeal code, then write to the contact address below.
+			</p>
+		</section>
+
 		<section id="payments" class="prose">
 			<h2>Payments</h2>
 			<p>
@@ -137,6 +169,8 @@
 				<li>Tags and reports are kept while they count toward a verdict. Verdicts are re-scored every 90 days.</li>
 				<li>Server logs never record request paths that contain item or source IDs together with an install hash.</li>
 				<li>Unverified appeals expire after 14 days.</li>
+				<li>Entries from outside lists expire on a date set for each list, and a source only a list named goes with them.</li>
+				<li>Staff labels that measure how accurate the lists are stay for 24 months, then go.</li>
 				<li>Account data is kept until you ask us to delete it, apart from billing records the law requires us to keep.</li>
 			</ul>
 		</section>

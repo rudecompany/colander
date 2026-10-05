@@ -1,7 +1,7 @@
 // Full-page screenshots of every page, desktop 1440 and mobile 390, light and dark.
 // Run with `pnpm screenshots` (writes to screenshots/). Skipped in the normal test run.
 import { test } from '@playwright/test';
-import { mockApi, PLUS_ACCOUNT, STAFF, APPEAL, QUEUE, reviewSource } from './mocks.ts';
+import { mockApi, PLUS_ACCOUNT, STAFF, APPEAL, QUEUE, reviewSource, CALIBRATION_ITEM } from './mocks.ts';
 
 test.skip(!process.env.SCREENSHOTS, 'Set SCREENSHOTS=1 to capture screenshots.');
 
@@ -66,8 +66,36 @@ const shots: Shot[] = [
 			await page.getByRole('heading', { name: 'History Bites 24/7', level: 2 }).waitFor();
 		}
 	},
+	{
+		name: 'console-lead',
+		path: '/console',
+		setup: {
+			'GET /v1/account': { json: { account: STAFF } },
+			'GET /v1/review/queue': { json: { items: QUEUE, next_cursor: null } },
+			'GET /v1/review/sources/*': (c) => {
+				const [, , , , p, id] = c.path.split('/');
+				return { json: reviewSource(`${p}:${decodeURIComponent(id)}`) };
+			}
+		},
+		after: async (page) => {
+			await page.getByRole('button', { name: /Everyday Trivia/ }).click();
+			await page.getByRole('heading', { name: /Seed lists/ }).waitFor();
+		}
+	},
+	{
+		name: 'console-calibration',
+		path: '/console/calibration',
+		setup: {
+			'GET /v1/account': { json: { account: STAFF } },
+			'GET /v1/review/calibration/next': { json: { item: CALIBRATION_ITEM } }
+		},
+		after: async (page) => {
+			await page.getByText('Slop', { exact: true }).click();
+		}
+	},
 	{ name: 'privacy', path: '/privacy' },
 	{ name: 'terms', path: '/terms' },
+	{ name: 'credits', path: '/credits' },
 	{ name: 'not-found', path: '/no-such-page' }
 ];
 

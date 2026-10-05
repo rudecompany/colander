@@ -45,7 +45,7 @@ leaves it out there. Below 800 px the nav becomes a Section select.
 		{ id: 'plan', label: 'Plan', icon: CreditCard, view: Plan, learn: [['Compare plans', '/plans'], ['Support our work', '/support']] },
 		{ id: 'reports', label: 'My reports', icon: Flag, view: Reports, learn: [['Decision log', '/log'], ['How appeals work', '/definition#appeals']] },
 		{ id: 'data', label: 'Data', icon: Database, view: Data, learn: [['Privacy policy', '/privacy']] },
-		{ id: 'privacy', label: 'Privacy', icon: Shield, view: Privacy, learn: [['Privacy policy', '/privacy']] }
+		{ id: 'privacy', label: 'Privacy', icon: Shield, view: Privacy, learn: [['Privacy policy', '/privacy'], ['Credits', '/credits']] }
 	];
 
 	const status = stored<Status>(K.status, DEFAULT_STATUS);

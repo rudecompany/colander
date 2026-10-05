@@ -334,7 +334,7 @@ Uses a reviewer token sent by the website's account page through externally_conn
 						{#if s.appeal_open}<Badge>Appeal open</Badge>{/if}
 						{#if open.computed_verdict && open.computed_verdict !== s.verdict}<span class="caption">Scoring says {VERDICT_WORD[open.computed_verdict]}</span>{/if}
 					</p>
-					{#if s.attribution}<p class="caption">Listed on {s.attribution}: a review lead, not evidence.</p>{/if}
+					{#if s.attribution}<p class="caption">Listed on {s.attribution}: a review lead, not evidence.</p>{:else if s.imported}<p class="caption">On a seed list: a review lead, not evidence.</p>{/if}
 					<p class="caption">{RESCORE_LINE(s.rescore_at ? fmtShortDate(s.rescore_at) : null)}</p>
 					<a class="cl-link" href="{SITE}{sourcePath(s.platform, s.id)}" target="_blank" rel="noopener">Public page<ArrowRight size={16} aria-hidden="true" /></a>
 				</section>
@@ -514,7 +514,7 @@ Uses a reviewer token sent by the website's account page through externally_conn
 						<button type="button" class="q" onclick={() => openItem(q)}>
 							<span class="l1">
 								<PlatformTag platform={q.platform} />
-								<span class="kind">{KIND_WORD[q.kind]}</span>
+								<span class="kind">{q.lead ? 'Seed lead' : KIND_WORD[q.kind]}</span>
 								{#if q.report_count}<span class="caption">{plural(q.report_count, 'report')}</span>{/if}
 								{#if q.large}<Badge>Large source</Badge>{/if}
 								<span class="cl-figure age">{fmtAgo(q.created_at)}</span>

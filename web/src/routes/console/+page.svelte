@@ -10,6 +10,7 @@
 	import Lock from '@lucide/svelte/icons/lock';
 	import RefreshCw from '@lucide/svelte/icons/refresh-cw';
 	import { PerforatedDisc, PlatformTag, fmtAgo } from '@colander/shared';
+	import ArrowLink from '#lib/components/ArrowLink.svelte';
 	import AuthCard from '#lib/components/AuthCard.svelte';
 	import { api, errorText } from '#lib/api.ts';
 	import { fmtDateTime } from '@colander/shared';
@@ -149,6 +150,7 @@
 			<h1 class="cl-title">Review queue</h1>
 			<span class="uin-badge uin-badge-lg">{account.role === 'staff' ? 'Staff' : 'Curator'}{account.display_name ? `, ${account.display_name}` : ''}</span>
 			<p class="keys cl-caption cl-muted" aria-hidden="true"><Kbd>J</Kbd><Kbd>K</Kbd> move <Kbd>Enter</Kbd> open</p>
+			<ArrowLink href="/console/calibration" size="sm">Calibration set</ArrowLink>
 			<p class="sr-only">Keyboard: J and K move through the queue, Enter opens the highlighted item.</p>
 		</header>
 
@@ -203,7 +205,7 @@
 								>
 									<span class="q-top">
 										<PlatformTag platform={q.platform} />
-										<span class="q-kind">{KIND_WORD[q.kind]}</span>
+										<span class="q-kind">{q.lead ? 'Seed lead' : KIND_WORD[q.kind]}</span>
 										{#if q.report_count > 0}<span class="q-meta">{q.report_count} {q.report_count === 1 ? 'report' : 'reports'}</span>{/if}
 										{#if q.large}<span class="uin-badge uin-badge-md">Large source</span>{/if}
 										<span class="cl-figure q-age">{age(q.created_at)}</span>

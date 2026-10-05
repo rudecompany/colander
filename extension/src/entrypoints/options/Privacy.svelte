@@ -1,8 +1,14 @@
-<!-- @component Privacy: what leaves the device, what never does, and why each permission is asked. -->
+<!--
+@component Privacy: what leaves the device, what never does, why each permission is asked, and the
+about text on where the list comes from, which points to the website's credits page. It names no
+dataset: only /credits does.
+-->
 <script lang="ts">
 	import { PageHeader, PermissionsTable, PrivacyFacts } from '@colander/shared';
-	import { PRIVACY_INSTALL_ID } from '@colander/shared/copy';
+	import { ABOUT_DATA, PRIVACY_INSTALL_ID } from '@colander/shared/copy';
 	import Card from '@colander/shared/components/ui/card/card.svelte';
+	import ArrowRight from '@lucide/svelte/icons/arrow-right';
+	import { SITE } from '../../lib/env';
 </script>
 
 <PageHeader variant="app" eyebrow="Options" title="Privacy" lede="Matching happens on this device. Colander never asks a server about the page you are viewing." />
@@ -14,6 +20,11 @@
 		<PermissionsTable />
 	</section>
 	<p class="caption">{PRIVACY_INSTALL_ID}</p>
+	<section aria-labelledby="about-data" class="about">
+		<h2 id="about-data" class="h">{ABOUT_DATA.title}</h2>
+		<p>{ABOUT_DATA.body} {ABOUT_DATA.credits}</p>
+		<a class="cl-link" href="{SITE}/credits" target="_blank" rel="noopener">Credits<ArrowRight size={16} aria-hidden="true" /></a>
+	</section>
 </div>
 
 <style>
@@ -31,5 +42,14 @@
 	.caption {
 		color: var(--cl-text-muted);
 		font: var(--cl-caption);
+	}
+	.about {
+		display: grid;
+		justify-items: start;
+		gap: 8px;
+		font: var(--cl-body);
+	}
+	.about .h {
+		margin-bottom: 4px;
 	}
 </style>

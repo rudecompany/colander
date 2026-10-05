@@ -42,6 +42,7 @@
 				Colander is a browser extension that hides or labels content on your own device, based on shared lists
 				and your own settings. It does not act on your accounts, and everything it hides stays on the platform for everyone else.
 			</p>
+			<p>Data Colander uses from other projects keeps its own license. The datasets whose license asks for credit are named on the <a href="/credits">credits page</a>.</p>
 		</section>
 		<section id="opinions">
 			<h2>Verdicts are opinions</h2>

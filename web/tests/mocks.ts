@@ -154,22 +154,60 @@ export const APPEAL: Appeal = {
 };
 
 export const QUEUE: QueueItem[] = [
-	{ id: 'q_01', kind: 'escalation', priority: 1, created_at: '2026-10-03T07:20:00Z', platform: 'yt', source_id: 'UCq3x9Vb2m4LkT7pQe8sW1aZ', source_name: 'Ancient Facts Daily', summary: 'All three layers met. Large audience, capped at Likely slop.', large: true, verdict: 'likely_slop', computed_verdict: 'slop', report_count: 4 },
-	{ id: 'q_02', kind: 'appeal', priority: 1, created_at: '2026-10-02T21:10:00Z', platform: 'yt', source_id: '@numisnotes', source_name: 'Numis Notes', summary: 'Verified appeal: creator says AI is used only for dubbing.', large: false, verdict: 'disputed', computed_verdict: 'likely_slop', report_count: 0 },
-	{ id: 'q_03', kind: 'report', priority: 2, created_at: '2026-10-02T16:40:00Z', platform: 'tt', source_id: '@historybites247', source_name: 'History Bites 24/7', summary: '3 reports: mass-produced history narration', large: false, verdict: 'likely_slop', computed_verdict: 'likely_slop', report_count: 3 },
-	{ id: 'q_04', kind: 'report', priority: 3, created_at: '2026-10-01T09:05:00Z', platform: 'ig', source_id: 'dailyzenquotes.ai', source_name: 'Daily Zen Quotes', summary: '1 report: same quote images on several pages', large: false, verdict: 'ai_made', computed_verdict: 'ai_made', report_count: 1 }
+	{ id: 'q_01', kind: 'escalation', priority: 1, created_at: '2026-10-03T07:20:00Z', platform: 'yt', source_id: 'UCq3x9Vb2m4LkT7pQe8sW1aZ', source_name: 'Ancient Facts Daily', summary: 'All three layers met. Large audience, capped at Likely slop.', large: true, verdict: 'likely_slop', computed_verdict: 'slop', report_count: 4, lead: false },
+	{ id: 'q_02', kind: 'appeal', priority: 1, created_at: '2026-10-02T21:10:00Z', platform: 'yt', source_id: '@numisnotes', source_name: 'Numis Notes', summary: 'Verified appeal: creator says AI is used only for dubbing.', large: false, verdict: 'disputed', computed_verdict: 'likely_slop', report_count: 0, lead: false },
+	{ id: 'q_03', kind: 'report', priority: 2, created_at: '2026-10-02T16:40:00Z', platform: 'tt', source_id: '@historybites247', source_name: 'History Bites 24/7', summary: '3 reports: mass-produced history narration', large: false, verdict: 'likely_slop', computed_verdict: 'likely_slop', report_count: 3, lead: false },
+	{ id: 'q_04', kind: 'report', priority: 3, created_at: '2026-10-01T09:05:00Z', platform: 'ig', source_id: 'dailyzenquotes.ai', source_name: 'Daily Zen Quotes', summary: '1 report: same quote images on several pages', large: false, verdict: 'ai_made', computed_verdict: 'ai_made', report_count: 1, lead: false },
+	{ id: 'q_05', kind: 'escalation', priority: 4, created_at: '2026-09-30T08:00:00Z', platform: 'yt', source_id: '@everydaytrivia', source_name: 'Everyday Trivia', summary: 'Seed lead on 1 seed list, not evidence', large: false, verdict: null, computed_verdict: null, report_count: 0, lead: true }
 ];
 
-export function reviewSource(key: string): ReviewSourceResponse {
+/** The next calibration item, blind: platform and ID only. */
+export const CALIBRATION_ITEM = { platform: 'yt', source_id: 'UCq8Lw3xN2bKp7Tz5vR1mYsA', labels: 1 } as const;
+
+/** The seed list entry behind the @everydaytrivia lead, as staff see it. Fictional. */
+export const SEED_ENTRY = {
+	seed: 'example-list',
+	name: 'Example seed list',
+	license: 'CC0-1.0',
+	use: 'lead',
+	platform: 'yt',
+	alias: '@everydaytrivia',
+	batch: 3,
+	imported_at: '2026-09-28T10:00:00Z',
+	listed_at: '2026-09-15T00:00:00Z',
+	expires_at: '2027-09-15T00:00:00Z'
+} as const;
+
+/** A source only a seed list names: no evidence of its own yet. */
+const leadOnly = (staff: boolean): Pick<ReviewSourceResponse, 'layers' | 'reports' | 'items'> => ({
+	layers: {
+		provenance: {
+			met: false,
+			signals: [],
+			detail: staff ? 'Listed on Example seed list (CC0-1.0) as a lead, a review lead that is not evidence.' : 'On 1 seed list, a review lead that is not evidence.'
+		},
+		behavior: { met: false, signals: [], detail: 'No sign of mass production yet.' },
+		rubric: { met: false, signals: [], detail: 'Needs slop tags with at least two tests chosen by half the weight.' },
+		consensus: { met: false, signals: [], detail: 'Weighted tags: slop 0.0, AI-made but fine 0.0, not slop 0.0 from 0 installs.' }
+	},
+	reports: [],
+	items: []
+});
+
+/** The review API's view of a source: staff see seed provenance, curators a count (contracts 6.7). */
+export function reviewSource(key: string, staff = true): ReviewSourceResponse {
 	const base = SOURCES[key] ?? SOURCES['tt:@historybites247'];
-	return {
-		// Reviewers see seed provenance, which public pages never show (contracts 6.7).
+	const lead = key === 'yt:@everydaytrivia';
+	const out: ReviewSourceResponse = {
+		// Reviewers see that a seed list names a source, which public pages never show.
 		source:
 			key === 'yt:UCq3x9Vb2m4LkT7pQe8sW1aZ'
 				? { ...base, large: true, verdict: 'likely_slop' }
-				: key === 'yt:@everydaytrivia'
-					? { ...base, imported: true, attribution: 'Example seed list (CC0-1.0), warnlist' }
+				: lead
+					? { ...base, imported: true, attribution: staff ? 'Example seed list (CC0-1.0), lead' : null }
 					: base,
+		seed_lists: lead ? 1 : 0,
+		...(staff ? { seeds: lead ? [SEED_ENTRY] : [], seed_suppression: null } : {}),
 		layers: {
 			provenance: { met: true, signals: ['platform_label'], detail: '11 of 14 recent videos carry the platform AI label, reported by 6 installs.' },
 			behavior: { met: true, signals: ['templated', 'near_duplicates'], detail: 'One caption template across 9 of the last 14 videos.' },
@@ -187,6 +225,7 @@ export function reviewSource(key: string): ReviewSourceResponse {
 		],
 		history: LOG.filter((e) => `${e.platform}:${e.source_id}` === key)
 	};
+	return lead ? { ...out, ...leadOnly(staff) } : out;
 }
 
 export type Call = { method: string; path: string; search: URLSearchParams; body: any; headers: Record<string, string> };
@@ -275,7 +314,15 @@ export const PAGES: [string, Record<string, Handler>?][] = [
 			'GET /v1/review/sources/*': { json: reviewSource('tt:@historybites247') }
 		}
 	],
+	[
+		'/console/calibration',
+		{
+			'GET /v1/account': { json: { account: STAFF } },
+			'GET /v1/review/calibration/next': { json: { item: CALIBRATION_ITEM } }
+		}
+	],
 	['/privacy'],
 	['/terms'],
+	['/credits'],
 	['/missing-page']
 ];
