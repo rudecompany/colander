@@ -22,7 +22,7 @@ import { ConflictError } from '../store/db';
 import { getSource } from '../store/sources';
 import { hashToken, newToken, normalizeEmail } from '../auth';
 import { sourceNoun, validPlatform } from './ids';
-import { findSource } from './public';
+import { findPublicSource } from './public';
 import { clientIP, decode, optString, optTime, pathValue, queryEscape, rfc3339, runeCount, trimSpace } from './respond';
 import type { Api, Params } from './server';
 
@@ -71,7 +71,7 @@ export async function postAppeal(api: Api, request: Request): Promise<Response> 
 	const res = db.tx((): Response | [Appeal, string] => {
 		const wait = allow(db, now, clientIP(request), 1, 'appeals');
 		if (wait > 0) return tooMany(wait / 1000);
-		const ref = findSource(api, body.platform, body.source_id);
+		const ref = findPublicSource(api, body.platform, body.source_id);
 		if (ref instanceof Response) return ref;
 		const src = getSource(db, ref)!;
 		if (src.state.verdict === '') return jsonError(404, 'not_rated', 'This source has no verdict to appeal.');

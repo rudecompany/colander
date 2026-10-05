@@ -1,7 +1,7 @@
 // scripts/calibration-report.ts: settled labels, Cohen's kappa, per-group counts with Wilson bounds,
 // and the calibration block a seed list needs before it can be promoted (seed design section 8).
 import { describe, expect, it } from 'vitest';
-import { kappa, report, settled, type ExportItem } from '../../../scripts/calibration-report.ts';
+import { kappa, report, settled, settledField, type ExportItem } from '../../../scripts/calibration-report.ts';
 import { validateEntry } from '../src/seeds';
 
 const item = (frame: string, labels: ExportItem['labels'][number]['label'][], over: Partial<ExportItem> = {}): ExportItem => ({
@@ -9,7 +9,7 @@ const item = (frame: string, labels: ExportItem['labels'][number]['label'][], ov
 	frame,
 	large: false,
 	computed: null,
-	labels: labels.map((label, i) => ({ labeler: `acc_${i}`, label, labeled_at: i })),
+	labels: labels.map((label, i) => ({ labeler: `acc_${i}`, label, language: 'en', kind: 'video', labeled_at: i })),
 	...over
 });
 
@@ -19,6 +19,16 @@ describe('calibration report', () => {
 		expect(settled(item('x', ['slop', 'not_ai']).labels)).toBeNull();
 		expect(settled(item('x', ['slop', 'not_ai', 'not_ai']).labels)).toBe('not_ai');
 		expect(settled(item('x', ['slop']).labels)).toBeNull();
+	});
+
+	it('settles the language and the kind on the most labels, the first label on a tie', () => {
+		const labels = (...pairs: [string | null, string | null][]): ExportItem['labels'] =>
+			pairs.map(([language, kind], i) => ({ labeler: `acc_${i}`, label: 'slop', language, kind, labeled_at: i }));
+		expect(settledField(labels(['tr', 'music'], ['tr', 'music']), 'language')).toBe('tr');
+		expect(settledField(labels(['en', 'video'], ['tr', 'music']), 'language')).toBe('en');
+		expect(settledField(labels(['en', 'video'], ['tr', 'music'], ['tr', 'video']), 'language')).toBe('tr');
+		expect(settledField(labels(['en', 'video'], ['tr', 'music'], ['tr', 'video']), 'kind')).toBe('video');
+		expect(settledField(labels([null, null]), 'kind')).toBe('unknown');
 	});
 
 	it("computes Cohen's kappa over the first two labels", () => {
@@ -49,15 +59,18 @@ describe('calibration report', () => {
 		expect(seed.groups.map((g) => [g.group, g.n, g.ai, g.slop])).toEqual([
 			['all', 148, 148, 140],
 			['platform:yt', 148, 148, 140],
-			['audience:not_recorded', 148, 148, 140]
+			['audience:not_recorded', 148, 148, 140],
+			['language:en', 148, 148, 140],
+			['kind:video', 148, 148, 140]
 		]);
 		expect(seed.groups[0]!.ai_lower).toBeGreaterThan(0.97);
 		expect(seed.groups[0]!.slop_lower).toBeCloseTo(0.897, 3);
-		expect(r.frames['random:frame']).toEqual({ groups: [expect.objectContaining({ group: 'all', n: 1, ai: 0, slop: 0 }), expect.anything(), expect.anything()] });
+		expect(r.frames['random:frame']).toEqual({ groups: [expect.objectContaining({ group: 'all', n: 1, ai: 0, slop: 0 }), ...Array(4).fill(expect.anything())] });
 		expect(r.confusion).toEqual({ likely_slop: { slop: 140 }, not_rated: { ai_not_slop: 8, gone: 1, not_ai: 1 } });
 		const entry = {
 			id: 'open-list',
 			name: 'Open List',
+			aliases: ['OpenList'],
 			homepage: 'https://example.org',
 			platforms: ['yt'],
 			license: 'CC0-1.0',

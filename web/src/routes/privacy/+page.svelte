@@ -1,6 +1,13 @@
 <script lang="ts">
 	import { PageHeader, PermissionsTable, PRIVACY_INSTALL_ID, PrivacyFacts } from '@colander/shared';
 
+	/**
+	 * Colander's representatives in the EU and the UK under GDPR Article 27. The owner names them
+	 * here before the first seed list import (docs/deploy.md, step 18, D3); until then the
+	 * Creators section says nothing about them.
+	 */
+	const REPRESENTATIVES = null as { eu: string; uk: string } | null;
+
 	const toc = [
 		['facts', 'What leaves your device'],
 		['permissions', 'Permissions'],
@@ -150,8 +157,16 @@
 				can be appealed, and is published in the decision log.
 			</p>
 			<p>
-				If you run a channel, profile or page, you can ask which sources name it, and object to that use. Prove you control it with an
-				appeal code, then write to the contact address below.
+				The legal basis is legitimate interest under GDPR Article 6(1)(f): Colander's, and that of the people who use it, in
+				filtering AI-made slop out of their feeds. We weighed that against creators' interests. Colander keeps only what it needs to judge a
+				source, outside lists never decide a verdict, every verdict is explained in public, and every creator can appeal.
+			</p>
+			{#if REPRESENTATIVES}
+				<p>Our representative in the EU is {REPRESENTATIVES.eu}, and in the UK {REPRESENTATIVES.uk}.</p>
+			{/if}
+			<p>
+				If you run a channel, profile or page, you can ask which sources name it, and object to that use. Write to us as
+				<a href="#contact">Your rights and contact</a> says. Staff will give you a code to post on it, to show that you control it.
 			</p>
 		</section>
 

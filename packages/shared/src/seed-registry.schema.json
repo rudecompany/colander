@@ -18,6 +18,7 @@
 			"required": [
 				"id",
 				"name",
+				"aliases",
 				"homepage",
 				"platforms",
 				"license",
@@ -37,6 +38,12 @@
 			"properties": {
 				"id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]{2,62}$", "description": "Stable ID, also the private object key seeds/<id>.json" },
 				"name": { "type": "string", "minLength": 1, "description": "The dataset's own name, as /credits shows it" },
+				"aliases": {
+					"type": "array",
+					"uniqueItems": true,
+					"items": { "type": "string", "minLength": 4 },
+					"description": "Other names people know the dataset by, such as a short name or its domain. Public text may contain none of them; a third-party dataset needs at least one"
+				},
 				"homepage": { "$ref": "#/$defs/url" },
 				"platforms": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "enum": ["yt", "tt", "ig", "fb"] } },
 				"license": { "type": "string", "minLength": 1, "description": "SPDX identifier, LicenseRef-written-grant or LicenseRef-Colander-internal" },

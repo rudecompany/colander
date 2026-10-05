@@ -192,7 +192,8 @@ describe('import-seed', () => {
 	});
 
 	it('imports a fictional dev_only list in dev mode only', async () => {
-		await put('demo-list', { file: '@demoone\n@demotwo\n' });
+		// Colander's own lists carry a note of where staff saw each channel.
+		await put('demo-list', { file: '@demoone Seen in a demo report\n@demotwo Seen in another demo report\n' });
 		const res = await op('import-seed', { seed: 'demo-list', apply: true });
 		expect(res.body).toMatchObject({ seed: 'demo-list', entries: 2, added: 2, applied: true });
 		const prod = await run(fresh(), REGISTRY as SeedEntry[], { seed: 'demo-list' });

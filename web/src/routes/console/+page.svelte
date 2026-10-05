@@ -29,6 +29,11 @@
 	let platform = $state<Platform | ''>('');
 	let queue = $state<QueueItem[]>([]);
 	let cursor = $state<string | null>(null);
+	// Escalations load apart: the server's kind=all carries only the seed leads a report, a slop tag
+	// or a calibrated list backs, so thousands of leads cannot bury the reports, while
+	// kind=escalations carries every lead, after the other escalations (contracts 6.7).
+	let escalations = $state<QueueItem[]>([]);
+	let escalationsCursor = $state<string | null>(null);
 	let queueStatus = $state<'loading' | 'ready' | 'more' | 'error'>('loading');
 	let queueError = $state('');
 	let active = $state(0);
@@ -40,26 +45,44 @@
 
 	const account = $derived(session.account);
 	const canReview = $derived(account?.role === 'curator' || account?.role === 'staff');
-	const KIND_OF: Record<Kind, QueueItem['kind'] | null> = { all: null, reports: 'report', appeals: 'appeal', escalations: 'escalation' };
-	const count = (k: Kind) => queue.filter((q) => !KIND_OF[k] || q.kind === KIND_OF[k]).length;
-	const shown = $derived(queue.filter((q) => (!platform || q.platform === platform) && (!KIND_OF[kind] || q.kind === KIND_OF[kind])));
-	const openItem = $derived(queue.find((q) => q.id === openId) ?? null);
+	const KIND_OF: Record<Kind, QueueItem['kind'] | null> = { all: null, reports: 'report', appeals: 'appeal', escalations: null };
+	const listOf = (k: Kind) => (k === 'escalations' ? escalations : queue);
+	const count = (k: Kind) => listOf(k).filter((q) => !KIND_OF[k] || q.kind === KIND_OF[k]).length;
+	const shown = $derived(listOf(kind).filter((q) => (!platform || q.platform === platform) && (!KIND_OF[kind] || q.kind === KIND_OF[kind])));
+	const openItem = $derived(queue.find((q) => q.id === openId) ?? escalations.find((q) => q.id === openId) ?? null);
+	const nextCursor = $derived(kind === 'escalations' ? escalationsCursor : cursor);
 
 	onMount(async () => {
 		const a = await loadAccount();
 		if (a && (a.role === 'curator' || a.role === 'staff')) loadQueue(false);
 	});
 
+	const page = (k: 'all' | 'escalations', after: string | null) => {
+		const q = new URLSearchParams({ kind: k });
+		if (after) q.set('cursor', after);
+		return api<{ items: QueueItem[]; next_cursor: string | null }>(`/v1/review/queue?${q}`);
+	};
+
 	async function loadQueue(more: boolean) {
 		queueStatus = more ? 'more' : 'loading';
 		queueError = '';
 		try {
-			const q = new URLSearchParams({ kind: 'all' });
-			if (more && cursor) q.set('cursor', cursor);
-			const res = await api<{ items: QueueItem[]; next_cursor: string | null }>(`/v1/review/queue?${q}`);
-			queue = more ? [...queue, ...res.items] : res.items;
-			cursor = res.next_cursor;
-			if (!more) active = 0;
+			if (more && kind === 'escalations') {
+				const res = await page('escalations', escalationsCursor);
+				escalations = [...escalations, ...res.items];
+				escalationsCursor = res.next_cursor;
+			} else if (more) {
+				const res = await page('all', cursor);
+				queue = [...queue, ...res.items];
+				cursor = res.next_cursor;
+			} else {
+				const [all, esc] = await Promise.all([page('all', null), page('escalations', null)]);
+				queue = all.items;
+				cursor = all.next_cursor;
+				escalations = esc.items;
+				escalationsCursor = esc.next_cursor;
+				active = 0;
+			}
 			queueStatus = 'ready';
 		} catch (e) {
 			queueError = errorText(e);
@@ -219,7 +242,7 @@
 							</li>
 						{/each}
 					</ol>
-					{#if cursor}
+					{#if nextCursor}
 						<Button variant="secondary" size="md" block onclick={() => loadQueue(true)} loading={queueStatus === 'more'}>Load more</Button>
 					{/if}
 				{/if}

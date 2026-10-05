@@ -224,6 +224,8 @@ export interface SeedProvenance {
 	/** the upstream date of the file that last listed it */
 	listed_at: ISODate;
 	expires_at: ISODate;
+	/** for Colander's own lists, where staff saw the source */
+	note: string | null;
 }
 
 export interface ReviewSourceResponse {
@@ -250,6 +252,17 @@ export interface CalibrationItem {
 }
 
 export type CalibrationLabel = 'slop' | 'ai_not_slop' | 'not_ai' | 'gone' | 'unsure';
+
+/**
+ * What a source is in, as a labeler records it with any label but gone and unsure: a language
+ * code, other, or none (no words, such as instrumental music). The calibration report groups by it.
+ */
+export const CALIBRATION_LANGUAGES = ['en', 'es', 'pt', 'fr', 'de', 'it', 'tr', 'ru', 'ar', 'hi', 'id', 'ja', 'ko', 'zh', 'other', 'none'] as const;
+export type CalibrationLanguage = (typeof CALIBRATION_LANGUAGES)[number];
+
+/** Whether a source is mostly music or other video, recorded and grouped like the language. */
+export const CALIBRATION_KINDS = ['music', 'video'] as const;
+export type CalibrationKind = (typeof CALIBRATION_KINDS)[number];
 
 export interface DecisionInput {
 	verdict: Verdict | 'none';

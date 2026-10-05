@@ -76,6 +76,10 @@ export interface LabelInput {
 	/** provenance signal bits the labeler saw on the platform */
 	evidence: number;
 	note: string;
+	/** a CALIBRATION_LANGUAGES code, or '' for gone and unsure */
+	language: string;
+	/** music or video, or '' for gone and unsure */
+	kind: string;
 }
 
 /**
@@ -93,13 +97,15 @@ export function addLabel(db: Db, ref: number, accountId: string, staff: boolean,
 		const third = staff && done.n === LABELS_PER_ITEM && done.kinds > 1;
 		if ((done.mine ?? 0) > 0 || (done.n >= LABELS_PER_ITEM && !third)) throw new ConflictError();
 		db.run(
-			'INSERT INTO calibration_labels (source_id, account_id, label, tests, evidence, note, labeled_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+			'INSERT INTO calibration_labels (source_id, account_id, label, tests, evidence, note, language, kind, labeled_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
 			ref,
 			accountId,
 			l.label,
 			l.tests,
 			l.evidence,
 			nullString(l.note),
+			nullString(l.language),
+			nullString(l.kind),
 			now
 		);
 	});
@@ -116,7 +122,7 @@ export interface CalibrationRow {
 	verdict: string | null;
 	computed: string | null;
 	seeds: string[];
-	labels: { labeler: string; label: string; tests: number; evidence: number; labeled_at: number }[];
+	labels: { labeler: string; label: string; tests: number; evidence: number; language: string | null; kind: string | null; note: string | null; labeled_at: number }[];
 }
 
 export function exportCalibration(db: Db): CalibrationRow[] {
@@ -134,8 +140,8 @@ export function exportCalibration(db: Db): CalibrationRow[] {
 		verdict: r.verdict,
 		computed: r.computed,
 		seeds: db.all<{ seed: string }>('SELECT DISTINCT seed FROM seed_entries WHERE source_id = ? ORDER BY seed', r.ref).map((s) => s.seed),
-		labels: db.all<{ labeler: string; label: string; tests: number; evidence: number; labeled_at: number }>(
-			'SELECT account_id AS labeler, label, tests, evidence, labeled_at FROM calibration_labels WHERE source_id = ? ORDER BY labeled_at, account_id',
+		labels: db.all<CalibrationRow['labels'][number]>(
+			'SELECT account_id AS labeler, label, tests, evidence, language, kind, note, labeled_at FROM calibration_labels WHERE source_id = ? ORDER BY labeled_at, account_id',
 			r.ref
 		)
 	}));

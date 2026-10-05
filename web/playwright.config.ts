@@ -13,10 +13,11 @@ export default defineConfig({
 		trace: 'retain-on-failure'
 	},
 	projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
-	// Tests run against a fresh production build, with an extension ID so the handoff code is live.
+	// Tests run against a fresh production build, with an extension ID so the handoff code is live
+	// and a fictional seed registry so /credits shows a dataset (tests/seed-registry.ts).
 	webServer: {
 		command: 'pnpm build && node tests/static-server.ts',
-		env: { PUBLIC_EXTENSION_ID: 'test-extension-id', PORT: String(port) },
+		env: { PUBLIC_EXTENSION_ID: 'test-extension-id', PORT: String(port), COLANDER_SEED_REGISTRY: new URL('tests/seed-registry.ts', import.meta.url).pathname },
 		port,
 		timeout: 120_000,
 		reuseExistingServer: false

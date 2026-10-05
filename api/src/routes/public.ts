@@ -81,6 +81,17 @@ export function findSource(api: Api, platform: string, alias: string): number | 
 	return ref ?? jsonError(404, 'not_rated', 'Colander has no information about this source.');
 }
 
+/**
+ * Resolves a source the public may know of, or answers the same 404 not_rated as for an unknown
+ * one: a source only a seed list or the calibration set brought in is unknown to the public, so no
+ * public answer can tell that a list names it.
+ */
+export function findPublicSource(api: Api, platform: string, alias: string): number | Response {
+	const ref = findSource(api, platform, alias);
+	if (ref instanceof Response || hasPublicRecord(api.store.db, ref)) return ref;
+	return jsonError(404, 'not_rated', 'Colander has no information about this source.');
+}
+
 /** Resolves the {platform} and {source_id} path values (Go's lookupSource). */
 export const lookupSource = (api: Api, params: Params): number | Response =>
 	findSource(api, pathValue(params, 'platform'), pathValue(params, 'source_id'));
@@ -96,11 +107,8 @@ const publicJSON = (body: unknown): Response => json(200, body, setCache(new Hea
 
 /** GET /v1/sources/{platform}/{source_id} (contract 6.4). */
 export function getSource(api: Api, _request: Request, _url: URL, params: Params): Response {
-	const ref = lookupSource(api, params);
+	const ref = findPublicSource(api, pathValue(params, 'platform'), pathValue(params, 'source_id'));
 	if (ref instanceof Response) return ref;
-	// A source only a seed list or the calibration set brought in is unknown to the public, so its
-	// page cannot tell anyone that a list names it.
-	if (!hasPublicRecord(api.store.db, ref)) return jsonError(404, 'not_rated', 'Colander has no information about this source.');
 	const ev = explain(api, ref);
 	const history = log(api.store.db, { sourceRef: ref, limit: 50 });
 	return publicJSON({ source: toSource(ev), history: history.map(toLog) });

@@ -5,9 +5,10 @@ labeled, with only what they need to find it on its platform. No verdict, tags o
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { LAYER_SIGNALS, PerforatedDisc, PLATFORM_NAME, PlatformTag, platformSourceUrl, SIGNAL_TEXT, SOURCE_NOUN, TESTS, TEST_WORD, type Signal, type Test } from '@colander/shared';
-	import type { CalibrationItem, CalibrationLabel } from '@colander/shared/api';
+	import { CALIBRATION_LANGUAGES, type CalibrationItem, type CalibrationKind, type CalibrationLabel, type CalibrationLanguage } from '@colander/shared/api';
 	import Button from '@colander/shared/components/ui/button/button.svelte';
 	import Checkbox from '@colander/shared/components/ui/checkbox/checkbox.svelte';
+	import NativeSelect from '@colander/shared/components/ui/native-select/native-select.svelte';
 	import RadioGroup from '@colander/shared/components/ui/radio-group/radio-group.svelte';
 	import '@colander/shared/components/ui/radio-group/radio-group.css';
 	import Textarea from '@colander/shared/components/ui/textarea/textarea.svelte';
@@ -30,6 +31,31 @@ labeled, with only what they need to find it on its platform. No verdict, tags o
 		{ value: 'unsure', label: 'Not sure' }
 	];
 	const EVIDENCE: Signal[] = LAYER_SIGNALS.provenance;
+	// The calibration report groups every judged source by its language and by music or other video,
+	// so a list cannot pass on average while it is wrong about one group (seed list review 16).
+	const LANGUAGE_NAME: Record<CalibrationLanguage, string> = {
+		en: 'English',
+		es: 'Spanish',
+		pt: 'Portuguese',
+		fr: 'French',
+		de: 'German',
+		it: 'Italian',
+		tr: 'Turkish',
+		ru: 'Russian',
+		ar: 'Arabic',
+		hi: 'Hindi',
+		id: 'Indonesian',
+		ja: 'Japanese',
+		ko: 'Korean',
+		zh: 'Chinese',
+		other: 'Another language',
+		none: 'No words, such as instrumental music'
+	};
+	const LANGUAGES = CALIBRATION_LANGUAGES.map((value) => ({ value, label: LANGUAGE_NAME[value] }));
+	const KINDS: { value: CalibrationKind; label: string }[] = [
+		{ value: 'music', label: 'Mostly music' },
+		{ value: 'video', label: 'Other video' }
+	];
 
 	const account = $derived(session.account);
 	const canLabel = $derived(account?.role === 'curator' || account?.role === 'staff');
@@ -40,11 +66,15 @@ labeled, with only what they need to find it on its platform. No verdict, tags o
 	let tests = $state<Test[]>([]);
 	let evidence = $state<Signal[]>([]);
 	let note = $state('');
+	let language = $state<CalibrationLanguage | ''>('');
+	let kind = $state<CalibrationKind | ''>('');
 	let saving = $state(false);
 	let error = $state('');
 	let saved = $state(0);
 
 	const toggle = <T,>(list: T[], v: T, on: boolean): T[] => (on ? [...list, v] : list.filter((x) => x !== v));
+	/** A source that is there and that the labeler could judge, as opposed to gone or unsure. */
+	const judged = $derived(label !== '' && label !== 'gone' && label !== 'unsure');
 
 	function reset(next: CalibrationItem | null) {
 		item = next;
@@ -52,6 +82,8 @@ labeled, with only what they need to find it on its platform. No verdict, tags o
 		tests = [];
 		evidence = [];
 		note = '';
+		language = '';
+		kind = '';
 		error = '';
 	}
 
@@ -76,13 +108,23 @@ labeled, with only what they need to find it on its platform. No verdict, tags o
 			error = 'Choose what you saw first.';
 			return;
 		}
+		if (judged && (!language || !kind)) {
+			error = 'Choose its language and whether it is mostly music.';
+			return;
+		}
 		saving = true;
 		error = '';
 		try {
 			const path = `/v1/review/calibration/${item.platform}/${encodeURIComponent(item.source_id)}/label`;
 			const res = await api<{ item: CalibrationItem | null }>(path, {
 				method: 'POST',
-				body: { label, tests: label === 'slop' ? tests : [], evidence: label === 'slop' || label === 'ai_not_slop' ? evidence : [], note: note.trim() }
+				body: {
+					label,
+					tests: label === 'slop' ? tests : [],
+					evidence: label === 'slop' || label === 'ai_not_slop' ? evidence : [],
+					note: note.trim(),
+					...(judged ? { language, kind } : {})
+				}
 			});
 			saved++;
 			reset(res.item);
@@ -157,6 +199,16 @@ labeled, with only what they need to find it on its platform. No verdict, tags o
 							<div class="labels"><RadioGroup options={LABELS} bind:value={label} ariaLabel="What is it?" /></div>
 						</fieldset>
 
+						{#if judged}
+							<div class="field">
+								<label class="field-label" for="cal-language">Language</label>
+								<NativeSelect id="cal-language" size="lg" placeholder="Choose a language" options={LANGUAGES} bind:value={language} />
+							</div>
+							<fieldset class="group">
+								<legend class="field-label">Music or video</legend>
+								<div class="labels"><RadioGroup options={KINDS} bind:value={kind} direction="horizontal" ariaLabel="Music or video" /></div>
+							</fieldset>
+						{/if}
 						{#if label === 'slop'}
 							<fieldset class="group">
 								<legend class="field-label">Tests met</legend>
@@ -274,6 +326,13 @@ labeled, with only what they need to find it on its platform. No verdict, tags o
 		.layout {
 			grid-template-columns: minmax(0, 1fr);
 			gap: var(--cl-s5);
+		}
+	}
+	/* A 24-character channel ID stays on one line at phone widths: it is what the labeler reads. */
+	@media (max-width: 479px) {
+		.id {
+			font: var(--cl-body-lg);
+			font-weight: 600;
 		}
 	}
 </style>

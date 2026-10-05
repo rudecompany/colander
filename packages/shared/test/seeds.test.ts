@@ -3,12 +3,13 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { REGISTRY } from '../src/seed-registry';
-import { credits, ownerOnlyChanges, usable, validateEntry, validateRegistry, wilsonLower, type SeedEntry } from '../src/seeds';
+import { credits, datasetNames, ownerOnlyChanges, usable, validateEntry, validateRegistry, wilsonLower, type SeedEntry } from '../src/seeds';
 
 /** A valid cleared CC0 lead; tests change one thing at a time. */
 const cleared = (over: Partial<SeedEntry> = {}): SeedEntry => ({
 	id: 'open-list',
 	name: 'Open List',
+	aliases: ['OpenList'],
 	homepage: 'https://example.org/open-list',
 	platforms: ['yt'],
 	license: 'CC0-1.0',
@@ -30,7 +31,10 @@ const cleared = (over: Partial<SeedEntry> = {}): SeedEntry => ({
 const byAttribution = (over: Partial<SeedEntry> = {}) =>
 	cleared({ id: 'by-list', name: 'BY List', license: 'CC-BY-4.0', license_url: 'https://creativecommons.org/licenses/by/4.0/', attribution: 'BY List by Example, CC BY 4.0', ...over });
 
-const passing = { report: '2026-09-30', groups: [{ group: 'all', n: 150, ai: 149, slop: 146 }, { group: 'platform:yt', n: 150, ai: 149, slop: 146 }] };
+const passing = {
+	report: '2026-09-30',
+	groups: ['all', 'platform:yt', 'audience:not_recorded', 'language:en', 'kind:video'].map((group) => ({ group, n: 150, ai: 149, slop: 146 }))
+};
 
 describe('the committed registry', () => {
 	it('is valid, and lists the day-one candidates pending the owner, with no list data', () => {
@@ -84,7 +88,19 @@ describe('validateEntry', () => {
 	it('needs the exact credit for CC BY and MIT, and none for internal data', () => {
 		expect(validateEntry(byAttribution({ attribution: null }))).toEqual(['CC-BY-4.0 requires attribution: the exact credit its license asks for']);
 		expect(validateEntry(cleared({ license: 'MIT', license_url: 'https://opensource.org/license/mit' }))).toEqual(['MIT requires attribution: the exact credit its license asks for']);
-		expect(validateEntry(cleared({ license: 'LicenseRef-Colander-internal', license_url: null, attribution: 'Us' }))).toEqual(['Colander-internal data takes no attribution']);
+		expect(validateEntry(cleared({ license: 'LicenseRef-Colander-internal', license_url: null, attribution: 'Us' }))).toEqual([
+			'LicenseRef-Colander-internal asks for no credit, so attribution stays null'
+		]);
+		// /credits names only datasets whose license asks for credit, so a courtesy credit is refused.
+		expect(validateEntry(cleared({ attribution: 'Thanks to Open List' }))).toEqual(['CC0-1.0 asks for no credit, so attribution stays null']);
+		expect(validateEntry(cleared({ license: 'LicenseRef-written-grant', license_url: null, attribution: 'As the grant asks' }))).toEqual([]);
+	});
+
+	it('needs the short names a third-party dataset goes by', () => {
+		expect(validateEntry(cleared({ aliases: [] }))).toEqual(['a third-party dataset needs aliases: the short names people use for it']);
+		expect(validateEntry(cleared({ aliases: ['OL'] }))).toEqual(['aliases must list names of at least 4 characters']);
+		expect(validateEntry(cleared({ aliases: ['open list'] }))).toEqual(['aliases must differ from the name and from each other']);
+		expect(validateEntry(cleared({ license: 'LicenseRef-Colander-internal', license_url: null, aliases: [] }))).toEqual([]);
 	});
 
 	it('promotes a list to seed only with blind calibration that passes in every group', () => {
@@ -97,7 +113,15 @@ describe('validateEntry', () => {
 			'calibration group platform:tt: the slop lower bound 0.352 is under 0.8'
 		]);
 		const small = { report: '2026-09-30', groups: [{ group: 'all', n: 60, ai: 60, slop: 60 }] };
-		expect(validateEntry(cleared({ use: 'seed', calibration: small, expires_after_days: 180 }))).toEqual(['calibration group all has 60 labeled sources, under 100']);
+		expect(validateEntry(cleared({ use: 'seed', calibration: small, expires_after_days: 180 }))).toEqual([
+			'calibration needs the groups by platform:, audience:, language:, kind: that scripts/calibration-report.ts writes, copied whole',
+			'calibration group all has 60 labeled sources, under 100'
+		]);
+		// A list-wide average cannot stand in for the groups: each kind of group must be there.
+		const noLanguage = { ...passing, groups: passing.groups.filter((g) => !g.group.startsWith('language:')) };
+		expect(validateEntry(cleared({ use: 'seed', calibration: noLanguage, expires_after_days: 180 }))).toEqual([
+			'calibration needs the groups by language: that scripts/calibration-report.ts writes, copied whole'
+		]);
 	});
 
 	it('keeps fictional dev data pending and internal, and refuses unknown or missing fields', () => {
@@ -112,6 +136,28 @@ describe('validateEntry', () => {
 
 	it('finds duplicate IDs across the registry', () => {
 		expect(validateRegistry({ entries: [cleared(), cleared()] })).toEqual(['open-list: duplicate id']);
+	});
+});
+
+describe('datasetNames', () => {
+	it('gives every name public text may not contain: name, ID, aliases, homepage and the GitHub owner and repository', () => {
+		const aislist = REGISTRY.find((e) => e.id === 'aislist-cc0-20260115-blocklist')!;
+		expect(datasetNames(aislist)).toEqual([
+			'AiSList blocklist, last CC0 version',
+			'aislist-cc0-20260115-blocklist',
+			'AiSList',
+			'AiBlock for YouTube',
+			'https://github.com/Override92/AiSList',
+			'Override92'
+		]);
+		expect(datasetNames(REGISTRY.find((e) => e.id === 'cevval-yt-ai-music')!).slice(2)).toEqual([
+			'Cevval',
+			'CevvalKoala',
+			'https://github.com/cevvalkoala/CevvalYoutubeAIBlocklist',
+			'CevvalYoutubeAIBlocklist'
+		]);
+		// Colander's own lists keep their homepage, a Colander page reviewers may cite, out.
+		expect(datasetNames(REGISTRY.find((e) => e.id === 'staff-research')!)).toEqual(['Colander staff research', 'staff-research']);
 	});
 });
 

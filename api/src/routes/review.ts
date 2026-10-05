@@ -2,7 +2,7 @@
 // review console with the session cookie and CSRF header and by the extension side panel with a
 // reviewer bearer token. Each decision and appeal action is one transaction with its inline
 // rescore and decision log entry (src/scoring/actions.ts).
-import type { ItemSummary, Layer, Layers, QueueItem, ReportDetail, SeedProvenance } from '@colander/shared/api';
+import { CALIBRATION_KINDS, CALIBRATION_LANGUAGES, type ItemSummary, type Layer, type Layers, type QueueItem, type ReportDetail, type SeedProvenance } from '@colander/shared/api';
 import type { Platform, SlopType, Verdict } from '@colander/shared/verdicts';
 import { FLAG_LARGE } from '@colander/shared/list';
 import { json, jsonError } from '../http';
@@ -20,7 +20,7 @@ import type { Account } from '../store/accounts';
 import { AppealPendingManual, AppealUnderReview, appealsBySource, appealsWithStatus, getAppeal, type Appeal } from '../store/appeals';
 import { addLabel, LABELS, nextCalibration, type CalibrationTask, type Label } from '../store/calibration';
 import { ConflictError, NotFoundError } from '../store/db';
-import { leadSummaries, namedDataset, seedLeads, setSeedSuppression, type SeedLead } from '../store/seeds';
+import { leadSummaries, namedDataset, recordProvenanceRead, seedLeads, setSeedSuppression, type SeedLead } from '../store/seeds';
 import { ensureItem, ensureSource, findItem, findSource, getSource, namedSeedList, type Source } from '../store/sources';
 import { dismissReport, getReport, openReports, reportsBySource, type Report } from '../store/tags';
 import { log, openEscalations } from '../store/verdicts';
@@ -130,9 +130,11 @@ export function reviewQueue(api: Api, request: Request, url: URL): Response {
 			}
 			// A seed lead is not evidence and comes last, unless a report or a slop tag backs it or a
 			// calibrated seed list names its channel ID. The summary names no list: curators see it.
+			// kind=all carries only the backed ones, so thousands of leads do not bury the reports.
 			const l = leads.get(e.sourceRef);
 			if (!l) continue; // its entries expired since the last pass, which closes it
 			const backed = l.calibrated || bySource.has(e.sourceRef) || db.get("SELECT 1 FROM tags WHERE source_id = ? AND verdict = 'slop' LIMIT 1", e.sourceRef) !== undefined;
+			if (kind === 'all' && !backed) continue;
 			const lists = l.lists === 1 ? '1 seed list' : `${l.lists} seed lists`;
 			add(e.sourceRef, { id: 'q_esc_' + e.id, kind: 'escalation', priority: backed ? 3 : 4, summary: `Seed lead on ${lists}, not evidence`, created: e.createdAt, lead: true });
 		}
@@ -160,7 +162,7 @@ function leadText(leads: SeedLead[], staff: boolean): string | undefined {
 	const lists = [...new Map(leads.map((l) => [l.entry.id, l.entry])).values()];
 	if (lists.length === 0) return undefined;
 	if (!staff) return `on ${lists.length === 1 ? '1 seed list' : `${lists.length} seed lists`}, a review lead that is not evidence`;
-	return `listed on ${lists.map((e) => `${e.name} (${e.license}) as a ${e.use}`).join(' and ')}, a review lead that is not evidence`;
+	return `listed on ${lists.map((e) => `${e.name} (${e.license}${e.use === 'seed' ? ', calibrated' : ''})`).join(' and ')}, a review lead that is not evidence`;
 }
 
 /** Explains each evidence layer in one plain sentence for the review console. */
@@ -235,21 +237,25 @@ function toProvenance(l: SeedLead): SeedProvenance {
 		batch: l.batch,
 		imported_at: rfc3339(l.importedAt),
 		listed_at: rfc3339(l.listedAt),
-		expires_at: rfc3339(l.expiresAt)
+		expires_at: rfc3339(l.expiresAt),
+		note: l.note
 	};
 }
 
 /**
  * The review console's view of a source: what the public sees, layers, reports, appeals and
  * items, and its seed leads. Every reviewer sees whether seed lists name it and how many; only
- * staff see which lists, with their license, the batch and the line (contracts 6.7).
+ * staff see which lists, with their license, the batch and the line (contracts 6.7), and each
+ * such read is recorded (seed list review 30).
  */
 function writeReviewSource(api: Api, ref: number, a: Account): Response {
 	const { db } = api.store;
 	const ev = explain(api, ref);
 	const src = ev.data.source;
 	const staff = a.role === 'staff';
-	const leads = seedLeads(db, api.store.engine.seeds, ref, unix(api.store.now()));
+	const now = unix(api.store.now());
+	const leads = seedLeads(db, api.store.engine.seeds, ref, now);
+	if (staff && leads.length > 0) recordProvenanceRead(db, a.id, src.platform, src.canonicalId, [...new Set(leads.map((l) => l.entry.id))], now);
 	const reports = reportsBySource(db, ref);
 	const appeals = appealsBySource(db, ref);
 	const history = log(db, { sourceRef: ref, limit: 100 });
@@ -320,11 +326,11 @@ export function reviewCalibrationNext(api: Api, request: Request): Response {
 	return json(200, toTask(nextCalibration(api.store.db, a.id, a.role === 'staff')));
 }
 
-const labelSchema = { label: 'string', tests: 'strings', evidence: 'strings', note: 'string?' } as const;
+const labelSchema = { label: 'string', tests: 'strings', evidence: 'strings', note: 'string?', language: 'string?', kind: 'string?' } as const;
 
 /**
- * POST /v1/review/calibration/{platform}/{source_id}/label {"label", "tests", "evidence", "note"}:
- * records this reviewer's blind label and answers the next item.
+ * POST /v1/review/calibration/{platform}/{source_id}/label {"label", "tests", "evidence", "note",
+ * "language", "kind"}: records this reviewer's blind label and answers the next item.
  */
 export async function reviewCalibrationLabel(api: Api, request: Request, _url: URL, params: Params): Promise<Response> {
 	const a = reviewer(api, request);
@@ -341,13 +347,21 @@ export async function reviewCalibrationLabel(api: Api, request: Request, _url: U
 	}
 	const note = trimSpace(body.note ?? '');
 	if (runeCount(note) > 500) return jsonError(400, 'invalid_note', 'The note must be at most 500 characters.');
+	// The report groups every judged source by language and by music or video (seed list review 16).
+	const judged = body.label !== 'gone' && body.label !== 'unsure';
+	const language = judged ? (body.language ?? '') : '';
+	const kind = judged ? (body.kind ?? '') : '';
+	if (judged && !(CALIBRATION_LANGUAGES as readonly string[]).includes(language)) {
+		return jsonError(400, 'invalid_language', `language must be one of ${CALIBRATION_LANGUAGES.join(', ')}.`);
+	}
+	if (judged && !(CALIBRATION_KINDS as readonly string[]).includes(kind)) return jsonError(400, 'invalid_kind', 'kind must be music or video.');
 	const platform = pathValue(params, 'platform');
 	const id = canonicalSource(platform, pathValue(params, 'source_id'));
 	const { db } = api.store;
 	const ref = validPlatform(platform) && id !== undefined ? findSource(db, platform, id) : undefined;
 	if (ref === undefined) return jsonError(404, 'not_in_calibration', 'This source is not in the calibration set.');
 	try {
-		addLabel(db, ref, a.id, a.role === 'staff', { label: body.label as Label, tests, evidence, note }, unix(api.store.now()));
+		addLabel(db, ref, a.id, a.role === 'staff', { label: body.label as Label, tests, evidence, note, language, kind }, unix(api.store.now()));
 	} catch (err) {
 		if (err instanceof NotFoundError) return jsonError(404, 'not_in_calibration', 'This source is not in the calibration set.');
 		if (err instanceof ConflictError) return jsonError(409, 'already_labeled', 'You labeled this source already, or it has all the labels it needs.');

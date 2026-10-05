@@ -4,7 +4,7 @@
 // which the public registry lists anyway, and answers carry counts only, never a channel.
 import { hex, utf8 } from '@colander/shared/bytes';
 import { sha256 } from '@colander/shared/sha256';
-import { validateEntry, type SeedEntry } from '@colander/shared/seeds';
+import { INTERNAL, validateEntry, type SeedEntry } from '@colander/shared/seeds';
 import { canonicalSource } from './routes/ids';
 import { runeCount, trimSpace } from './routes/respond';
 import { unix } from './scoring/engine';
@@ -32,27 +32,37 @@ export const seedKey = (id: string): string => `${SEED_PREFIX}${id}.json`;
 /** What a list file holds, read by the entry's format. */
 export interface Parsed {
 	aliases: Alias[];
-	/** lines or records that name no valid ID */
+	/** lines or records that name no valid ID, and lines of Colander's own lists without a note */
 	skipped: number;
-	/** records the format leaves out on purpose: Soul Over AI's AI-assisted and removed artists */
+	/**
+	 * records the format leaves out on purpose: Soul Over AI's AI-assisted and removed artists, and
+	 * uBlock Origin rules that name a channel only by handle
+	 */
 	excluded: number;
 }
 
+/** A handle in a uBlock Origin or Adblock Plus rule: after a quote, a slash or an equals sign. */
+const RULE_HANDLE = /["'/=]@[^\s"'/?\])\\,|]+/;
+
 /**
  * Reads a list file by the entry's format, keeping only the entry's platforms:
- * - lines: one ID per line, for the entry's one platform; `!` and `#` start comment lines, and
- *   anything after the ID (a note of where staff saw it) is ignored.
- * - ubo: uBlock Origin rules; every channel ID and /@handle in a rule is an entry (YouTube).
+ * - lines: one ID per line, for the entry's one platform; `!` and `#` start comment lines. For
+ *   Colander's own lists the ID needs a note after it of where staff saw it (seed list review 18),
+ *   kept for staff; a line without one is skipped. Other lists' notes are ignored.
+ * - ubo: uBlock Origin or Adblock Plus rules; every YouTube channel ID in a rule is an entry. A rule
+ *   that names a channel only by handle is excluded, since a handle can pass to another owner (seed
+ *   list review 9); `[Adblock Plus 2.0]` style headers are comments.
  * - soul-over-ai: Soul Over AI's artist JSON array; only artists whose own disclosure says fully
  *   AI-generated, not removed (seed list review 8).
  */
 export function parseSeed(entry: SeedEntry, file: string): Parsed {
 	const out: Parsed = { aliases: [], skipped: 0, excluded: 0 };
-	const add = (platform: string, raw: string): boolean => {
+	const add = (platform: string, raw: string, note?: string): boolean => {
 		const alias = entry.platforms.includes(platform as never) ? canonicalSource(platform, raw) : undefined;
-		if (alias !== undefined) out.aliases.push({ platform, alias });
+		if (alias !== undefined) out.aliases.push(note === undefined ? { platform, alias } : { platform, alias, note });
 		return alias !== undefined;
 	};
+	const ownList = entry.license === INTERNAL;
 	if (entry.format === 'soul-over-ai') {
 		let artists: unknown;
 		try {
@@ -80,11 +90,18 @@ export function parseSeed(entry: SeedEntry, file: string): Parsed {
 		const line = trimSpace(raw);
 		if (line === '' || line.startsWith('!') || line.startsWith('#')) continue;
 		if (entry.format === 'lines') {
-			if (!add(entry.platforms[0]!, line.split(/\s/, 1)[0]!)) out.skipped++;
+			const id = line.split(/\s/, 1)[0]!;
+			const note = [...trimSpace(line.slice(id.length))].slice(0, 500).join('');
+			if (ownList && note === '') out.skipped++;
+			else if (!add(entry.platforms[0]!, id, ownList ? note : undefined)) out.skipped++;
 			continue;
 		}
-		const tokens = [...line.matchAll(/UC[\w-]{22}/g)].map((m) => m[0]).concat([...line.matchAll(/\/(@[^\s"'/?\])\\,|]+)/g)].map((m) => m[1]!));
-		if (tokens.map((t) => add('yt', t)).filter(Boolean).length === 0) out.skipped++;
+		if (line.startsWith('[')) continue; // [Adblock Plus 2.0]
+		const ids = [...line.matchAll(/UC[\w-]{22}/g)].map((m) => m[0]);
+		if (ids.length === 0) {
+			if (RULE_HANDLE.test(line)) out.excluded++;
+			else out.skipped++;
+		} else if (ids.map((t) => add('yt', t)).filter(Boolean).length === 0) out.skipped++;
 	}
 	return out;
 }
@@ -193,17 +210,42 @@ export async function importSeed(store: Store, env: Env, a: Args): Promise<Answe
 	});
 }
 
-/** `revoke-seed {"seed", "reason", "confirm"}`: deletes every entry of a seed at once; confirm repeats the seed. */
-export function revokeSeedOps(store: Store, a: Args): Answer {
+/**
+ * `revoke-seed {"seed", "reason", "confirm"}`: deletes every entry of a seed and every calibration
+ * item sampled from it at once, then its list file in the private bucket; confirm repeats the seed.
+ * The run log is public, so the reason must never name a creator or hold legal advice.
+ */
+export async function revokeSeedOps(store: Store, env: Env, a: Args): Promise<Answer> {
 	const seed = text(a.seed);
 	const reason = trimSpace(text(a.reason));
 	if (!only(a, 'seed', 'reason', 'confirm') || seed === '') return fail(400, 'invalid_args', 'revoke-seed takes seed, reason and confirm.');
 	if (a.confirm !== seed) return fail(400, 'confirmation_required', 'This command is destructive: set confirm to exactly the seed ID.');
-	if (runeCount(reason) < 1 || runeCount(reason) > 500) return fail(400, 'invalid_reason', 'reason must be 1 to 500 characters. It stays with the batches, for staff.');
+	if (runeCount(reason) < 1 || runeCount(reason) > 500) {
+		return fail(400, 'invalid_reason', 'reason must be 1 to 500 characters. The ops run log is public, so never name a creator or give legal advice in it.');
+	}
 	const now = store.now();
-	const { entries, refs } = revokeSeed(store.db, seed, reason, unix(now));
+	const { entries, sampled, refs } = revokeSeed(store.db, seed, reason, unix(now));
 	store.jobs.schedule('pass', now);
-	return ok({ seed, entries, sources: refs.length, message: `Deleted ${entries} entries of ${seed}. Their review leads close at the next scoring pass.` });
+	const key = seedKey(seed);
+	let file = 'deleted';
+	try {
+		await env.BACKUPS.delete(key);
+	} catch (err) {
+		console.error(JSON.stringify({ message: 'seed object not deleted', key, error: String(err) }));
+		file = 'kept';
+	}
+	const deleted = `Deleted ${entries} entries and ${sampled} calibration items of ${seed}. Their review leads close at the next scoring pass.`;
+	return ok({
+		seed,
+		entries,
+		sampled,
+		sources: refs.length,
+		file,
+		message:
+			file === 'deleted'
+				? `${deleted} The list file ${key} is deleted.`
+				: `${deleted} The list file ${key} could not be deleted, most likely because the bucket lock keeps it for 7 days after upload: delete it by hand then (docs/deploy.md, "Withdraw a seed list at once").`
+	});
 }
 
 /** n distinct random picks from xs (Fisher-Yates on a copy). */

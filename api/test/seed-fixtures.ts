@@ -8,6 +8,7 @@ import { applyImport, planImport } from '../src/store/seeds';
 export const clearedEntry = (over: Partial<SeedEntry> = {}): SeedEntry => ({
 	id: 'secret-list',
 	name: 'Secret Seed List',
+	aliases: ['SecretSeeds'],
 	homepage: 'https://example.org/secret-list',
 	platforms: ['yt'],
 	license: 'CC0-1.0',

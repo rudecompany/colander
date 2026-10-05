@@ -191,7 +191,8 @@ class Seeder {
 		this.attempt(() => {
 			const entry = this.store.engine.seeds.lead('demo-list');
 			if (!entry) throw new Error('the registry has no demo-list usable in dev mode');
-			const plan = planImport(this.db, entry.id, aliases.map((alias) => ({ platform: 'yt', alias })));
+			// Colander's own lists carry a note of where staff saw each channel (contracts 14.1).
+			const plan = planImport(this.db, entry.id, aliases.map((alias) => ({ platform: 'yt', alias, note: 'Seen in a fictional demo report' })));
 			applyImport(this.db, entry, plan, { sha256: '0'.repeat(64), entries: aliases.length, records: {}, listedAt: this.unix }, this.unix);
 		});
 	}

@@ -3,7 +3,7 @@
 // that exist only because a list named them. An entry is a review lead for staff and never
 // evidence: nothing here feeds a scoring layer, and nothing here reaches a public response.
 import { REGISTRY } from '@colander/shared/seed-registry';
-import { upstreamUnix, usable, type SeedEntry } from '@colander/shared/seeds';
+import { datasetNames, upstreamUnix, usable, type SeedEntry } from '@colander/shared/seeds';
 import { redactSeedNames } from './compliance';
 import { nullString, type Db } from './db';
 import { ensureSource, findSource } from './sources';
@@ -33,9 +33,18 @@ export class SeedRegistry {
 		return this.leadIds.has(id) ? this.byId.get(id) : undefined;
 	}
 
-	/** Every name and ID a public text may never contain. */
+	/** Every name a public text may never contain: each dataset's datasetNames. */
 	names(): string[] {
-		return this.entries.flatMap((e) => [e.name, e.id]);
+		return this.entries.flatMap(datasetNames);
+	}
+
+	/**
+	 * Whether data from the entry may no longer be used at all: it left the registry, or it is not
+	 * usable (refused, revoked, or no longer cleared). An expired entry is not withdrawn.
+	 */
+	withdrawn(id: string): boolean {
+		const e = this.byId.get(id);
+		return !e || !usable(e, this.dev);
 	}
 }
 
@@ -43,10 +52,12 @@ export class SeedRegistry {
 export type Alias = {
 	platform: string;
 	alias: string;
+	/** for Colander's own lists, where staff saw it; staff only */
+	note?: string;
 };
 
 /** A seed entry that puts its source in the review queue now. */
-export type SeedLead = Alias & {
+export type SeedLead = Omit<Alias, 'note'> & {
 	entry: SeedEntry;
 	batch: number;
 	/** the upstream date of the batch that last listed it, unix seconds */
@@ -54,6 +65,8 @@ export type SeedLead = Alias & {
 	importedAt: number;
 	/** when it stops being a lead, unix seconds */
 	expiresAt: number;
+	/** where staff saw it, for Colander's own lists */
+	note: string | null;
 };
 
 const expiry = (e: SeedEntry, listedAt: number): number => listedAt + e.expires_after_days * DAY;
@@ -61,14 +74,23 @@ const expiry = (e: SeedEntry, listedAt: number): number => listedAt + e.expires_
 /** The entries on a source that are review leads at now (unix seconds): cleared, a lead or seed list, not expired. */
 export function seedLeads(db: Db, reg: SeedRegistry, ref: number, now: number): SeedLead[] {
 	const out: SeedLead[] = [];
-	for (const r of db.all<{ seed: string; platform: string; alias: string; batch: number; listed_at: number; imported_at: number }>(
-		`SELECT e.seed, e.platform, e.alias, e.batch, e.listed_at, b.imported_at FROM seed_entries e JOIN seed_imports b ON b.id = e.batch
+	for (const r of db.all<{ seed: string; platform: string; alias: string; batch: number; listed_at: number; imported_at: number; note: string | null }>(
+		`SELECT e.seed, e.platform, e.alias, e.batch, e.listed_at, b.imported_at, e.note FROM seed_entries e JOIN seed_imports b ON b.id = e.batch
 		WHERE e.source_id = ? ORDER BY e.seed, e.platform, e.alias`,
 		ref
 	)) {
 		const entry = reg.lead(r.seed);
 		if (!entry || expiry(entry, r.listed_at) <= now) continue;
-		out.push({ platform: r.platform, alias: r.alias, entry, batch: r.batch, listedAt: r.listed_at, importedAt: r.imported_at, expiresAt: expiry(entry, r.listed_at) });
+		out.push({
+			platform: r.platform,
+			alias: r.alias,
+			entry,
+			batch: r.batch,
+			listedAt: r.listed_at,
+			importedAt: r.imported_at,
+			expiresAt: expiry(entry, r.listed_at),
+			note: r.note
+		});
 	}
 	return out;
 }
@@ -164,14 +186,15 @@ export function applyImport(db: Db, entry: SeedEntry, plan: ImportPlan, b: Batch
 		for (const a of [...plan.added, ...plan.kept]) {
 			const ref = ensureSource(db, a.platform, a.alias, '', now);
 			db.run(
-				`INSERT INTO seed_entries (seed, platform, alias, source_id, batch, listed_at) VALUES (?, ?, ?, ?, ?, ?)
-				ON CONFLICT (seed, platform, alias) DO UPDATE SET source_id = excluded.source_id, batch = excluded.batch, listed_at = excluded.listed_at`,
+				`INSERT INTO seed_entries (seed, platform, alias, source_id, batch, listed_at, note) VALUES (?, ?, ?, ?, ?, ?, ?)
+				ON CONFLICT (seed, platform, alias) DO UPDATE SET source_id = excluded.source_id, batch = excluded.batch, listed_at = excluded.listed_at, note = excluded.note`,
 				entry.id,
 				a.platform,
 				a.alias,
 				ref,
 				batch,
-				b.listedAt
+				b.listedAt,
+				nullString(a.note ?? '')
 			);
 			refs.push(ref);
 		}
@@ -181,8 +204,8 @@ export function applyImport(db: Db, entry: SeedEntry, plan: ImportPlan, b: Batch
 			if (r) gone.push(r.source_id);
 		}
 		deleteOrphans(db, gone);
-		// A reviewer may have named the list before Colander imported it.
-		redactSeedNames(db, [entry.name]);
+		// A reviewer may have named the list before Colander imported it, by any of its names.
+		redactSeedNames(db, datasetNames(entry));
 		return { batch, refs: [...refs, ...gone] };
 	});
 }
@@ -191,23 +214,34 @@ export function applyImport(db: Db, entry: SeedEntry, plan: ImportPlan, b: Batch
 export const listedAt = (e: SeedEntry, now: number): number => upstreamUnix(e) ?? now;
 
 /**
- * `revoke-seed`: deletes every entry of a seed at once and marks its batches revoked, for when its
- * license or clearance falls away. Returns the entries deleted and the sources they were on.
+ * Deletes the calibration items sampled from a registry entry, under seed:<id> or random:<id>, with
+ * their labels. Returns their sources.
  */
-export function revokeSeed(db: Db, seed: string, reason: string, now: number): { entries: number; refs: number[] } {
+function dropSampled(db: Db, seed: string): number[] {
+	return db.all<{ source_id: number }>('DELETE FROM calibration_items WHERE frame IN (?, ?) RETURNING source_id', `seed:${seed}`, `random:${seed}`).map((r) => r.source_id);
+}
+
+/**
+ * `revoke-seed`: deletes every entry of a seed at once, and every calibration item sampled from it
+ * as a lead list or a frame, and marks its batches revoked, for when its license or clearance falls
+ * away. Returns the entries and items deleted and the sources they were on.
+ */
+export function revokeSeed(db: Db, seed: string, reason: string, now: number): { entries: number; sampled: number; refs: number[] } {
 	return db.tx(() => {
 		const rows = db.all<{ source_id: number }>('DELETE FROM seed_entries WHERE seed = ? RETURNING source_id', seed);
+		const sampled = dropSampled(db, seed);
 		db.run('UPDATE seed_imports SET revoked_at = ?, revoke_reason = ? WHERE seed = ? AND revoked_at IS NULL', now, reason, seed);
-		const refs = [...new Set(rows.map((r) => r.source_id))];
+		const refs = [...new Set([...rows.map((r) => r.source_id), ...sampled])];
 		deleteOrphans(db, refs);
-		return { entries: rows.length, refs };
+		return { entries: rows.length, sampled: sampled.length, refs };
 	});
 }
 
 /**
  * The daily seeds job's cleanup: deletes the entries that are no review lead any more (expired, or
- * their registry entry is not cleared, is no lead or seed list, or is gone after a deploy) and the
- * sources that existed only for them. Returns the sources whose leads changed.
+ * their registry entry is not cleared, is no lead or seed list, or is gone after a deploy), the
+ * calibration items sampled from a withdrawn entry (refused, revoked or gone, as opposed to
+ * expired), and the sources that existed only for them. Returns the sources whose leads changed.
  */
 export function expireSeeds(db: Db, reg: SeedRegistry, now: number): number[] {
 	return db.tx(() => {
@@ -219,8 +253,14 @@ export function expireSeeds(db: Db, reg: SeedRegistry, now: number): number[] {
 				: db.all<{ source_id: number }>('DELETE FROM seed_entries WHERE seed = ? RETURNING source_id', seed);
 			for (const r of rows) refs.push(r.source_id);
 		}
+		const gone: number[] = [];
+		for (const { seed } of db.all<{ seed: string }>(
+			"SELECT DISTINCT substr(frame, instr(frame, ':') + 1) AS seed FROM calibration_items WHERE frame LIKE 'seed:%' OR frame LIKE 'random:%'"
+		)) {
+			if (reg.withdrawn(seed)) gone.push(...dropSampled(db, seed));
+		}
 		const unique = [...new Set(refs)];
-		deleteOrphans(db, unique);
+		deleteOrphans(db, [...unique, ...gone]);
 		return unique;
 	});
 }
@@ -264,10 +304,26 @@ export function setSeedSuppression(db: Db, ref: number, suppress: boolean, reaso
 	});
 }
 
-/** The registry name a text contains, case-insensitively, or undefined. */
+/** The name of the registry dataset a text names by any of its datasetNames, case-insensitively, or undefined. */
 export function namedDataset(reg: SeedRegistry, text: string): string | undefined {
 	const t = text.toLowerCase();
-	return reg.entries.find((e) => t.includes(e.name.toLowerCase()) || t.includes(e.id))?.name;
+	return reg.entries.find((e) => datasetNames(e).some((n) => t.includes(n.toLowerCase())))?.name;
+}
+
+/** Staff reads of seed provenance are kept as long as the calibration rows: 24 months. */
+export const PROVENANCE_READ_RETENTION = 730 * DAY;
+
+/**
+ * Records that a staff account read which seed lists name a source (seed list review 30). Staff
+ * only, never in a response; the daily seeds job deletes rows after 24 months.
+ */
+export function recordProvenanceRead(db: Db, accountId: string, platform: string, source: string, seeds: string[], now: number): void {
+	db.run('INSERT INTO seed_provenance_reads (account_id, platform, source, seeds, read_at) VALUES (?, ?, ?, ?, ?)', accountId, platform, source, JSON.stringify(seeds), now);
+}
+
+/** Deletes provenance reads older than 24 months. Returns how many went. */
+export function pruneProvenanceReads(db: Db, now: number): number {
+	return db.run('DELETE FROM seed_provenance_reads WHERE read_at < ?', now - PROVENANCE_READ_RETENTION);
 }
 
 /** The sources a seed's live entries name, for calibration sampling: not suppressed, not sampled yet. */

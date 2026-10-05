@@ -96,6 +96,9 @@ export default defineConfig(async () => {
 				}
 			}
 		},
+		// The website's tests build with a fictional registry (tests/seed-registry.ts), so /credits
+		// renders a dataset card; every other build reads the real one.
+		resolve: process.env.COLANDER_SEED_REGISTRY ? { alias: [{ find: /^@colander\/shared\/seed-registry$/, replacement: process.env.COLANDER_SEED_REGISTRY }] } : {},
 		server: { proxy: { '/v1': API } }
 	};
 });

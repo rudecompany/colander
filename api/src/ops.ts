@@ -205,7 +205,7 @@ export async function storeOps(store: Store, ctx: DurableObjectState, env: Env, 
 			return grant(store, a);
 		case 'import-seed':
 		case 'revoke-seed': {
-			const answer = command === 'import-seed' ? await importSeed(store, env, a) : revokeSeedOps(store, a);
+			const answer = command === 'import-seed' ? await importSeed(store, env, a) : await revokeSeedOps(store, env, a);
 			if (store.jobs.dirty) await store.jobs.arm();
 			return answer;
 		}

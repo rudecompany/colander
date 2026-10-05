@@ -161,6 +161,17 @@ export const QUEUE: QueueItem[] = [
 	{ id: 'q_05', kind: 'escalation', priority: 4, created_at: '2026-09-30T08:00:00Z', platform: 'yt', source_id: '@everydaytrivia', source_name: 'Everyday Trivia', summary: 'Seed lead on 1 seed list, not evidence', large: false, verdict: null, computed_verdict: null, report_count: 0, lead: true }
 ];
 
+/**
+ * GET /v1/review/queue as the server answers it (contracts 6.7): kind=escalations lists every
+ * escalation, seed leads included, and kind=all leaves out the leads nothing backs (priority 4).
+ */
+export const queueReply = (call: { search: URLSearchParams }) => {
+	const kind = call.search.get('kind') ?? 'all';
+	const items =
+		kind === 'escalations' ? QUEUE.filter((q) => q.kind === 'escalation') : kind === 'leads' ? QUEUE.filter((q) => q.lead) : QUEUE.filter((q) => !(q.lead && q.priority === 4));
+	return { json: { items, next_cursor: null } };
+};
+
 /** The next calibration item, blind: platform and ID only. */
 export const CALIBRATION_ITEM = { platform: 'yt', source_id: 'UCq8Lw3xN2bKp7Tz5vR1mYsA', labels: 1 } as const;
 
@@ -175,7 +186,8 @@ export const SEED_ENTRY = {
 	batch: 3,
 	imported_at: '2026-09-28T10:00:00Z',
 	listed_at: '2026-09-15T00:00:00Z',
-	expires_at: '2027-09-15T00:00:00Z'
+	expires_at: '2027-09-15T00:00:00Z',
+	note: null
 } as const;
 
 /** A source only a seed list names: no evidence of its own yet. */
@@ -184,7 +196,7 @@ const leadOnly = (staff: boolean): Pick<ReviewSourceResponse, 'layers' | 'report
 		provenance: {
 			met: false,
 			signals: [],
-			detail: staff ? 'Listed on Example seed list (CC0-1.0) as a lead, a review lead that is not evidence.' : 'On 1 seed list, a review lead that is not evidence.'
+			detail: staff ? 'Listed on Example seed list (CC0-1.0), a review lead that is not evidence.' : 'On 1 seed list, a review lead that is not evidence.'
 		},
 		behavior: { met: false, signals: [], detail: 'No sign of mass production yet.' },
 		rubric: { met: false, signals: [], detail: 'Needs slop tags with at least two tests chosen by half the weight.' },
@@ -310,7 +322,7 @@ export const PAGES: [string, Record<string, Handler>?][] = [
 		'/console',
 		{
 			'GET /v1/account': { json: { account: STAFF } },
-			'GET /v1/review/queue': { json: { items: QUEUE, next_cursor: null } },
+			'GET /v1/review/queue': queueReply,
 			'GET /v1/review/sources/*': { json: reviewSource('tt:@historybites247') }
 		}
 	],

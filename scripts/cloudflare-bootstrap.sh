@@ -54,9 +54,14 @@ cat >"$tmp/backups-lifecycle.json" <<'JSON'
   "deleteObjectsTransition": {"condition": {"type": "Age", "maxAge": 7776000}},
   "abortMultipartUploadsTransition": {"condition": {"type": "Age", "maxAge": 86400}}}]}
 JSON
-# No backup can be deleted or overwritten for 7 days after it is written, not even by this account.
+# No Store dump or restore bookmark can be deleted or overwritten for 7 days after it is written,
+# not even by this account. Seed list files and calibration exports (seeds/, calibration/) stay
+# unlocked: they name channels, and revoke-seed or an objection must be able to delete them at once.
 cat >"$tmp/backups-lock.json" <<'JSON'
-{"rules": [{"id": "retain-7d", "enabled": true, "condition": {"type": "Age", "maxAgeSeconds": 604800}}]}
+{"rules": [
+  {"id": "retain-dumps-7d", "enabled": true, "prefix": "dumps/", "condition": {"type": "Age", "maxAgeSeconds": 604800}},
+  {"id": "retain-pitr-7d", "enabled": true, "prefix": "pitr/", "condition": {"type": "Age", "maxAgeSeconds": 604800}}
+]}
 JSON
 
 while read -r env worker binding bucket; do

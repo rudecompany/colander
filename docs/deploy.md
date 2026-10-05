@@ -20,6 +20,7 @@ GitHub Actions is the only pipeline, and Workers Builds stays off.
 | Workflow | When | What |
 | --- | --- | --- |
 | `ci.yml` | every pull request and push to main | The required checks: `secrets`, `workflows`, `api`, `contract`, `web-and-extension`, `full-stack` |
+| `seed-guard.yml` | every pull request, from the base branch (`pull_request_target`) | The required check `seed-guard`: only an owner changes a cleared seed entry, a clearance or the seed rules and checks (docs/contracts.md 14.2) |
 | `deploy-staging.yml` | CI succeeded on main | Builds, deploys staging, runs the mutating smoke test, records a GitHub deployment for the commit |
 | `release.yml` | push to main | release-please; on a platform release, production deploy after staging passed the same commit, smoke test, automatic rollback; on an extension release, the store package with provenance and a staged Chrome Web Store submission |
 | `rollback.yml` | by hand | Puts an earlier Worker version back live |
@@ -100,7 +101,8 @@ Write down the public keys:
 Before you start, have two things ready: the `colander-analytics` token from step 10 (it is a Worker secret), and the GitHub repository with its three environments from step 15 (the `OPS_TOKEN` lines write to them).
 1. Log Wrangler in as the owner: `pnpm -C api exec wrangler login`.
 2. Run `scripts/cloudflare-bootstrap.sh`.
-   It reads the R2 bindings of both environments from `api/wrangler.jsonc`, creates the list and backup buckets with the `enam` location hint, sets lifecycle rules (backups expire after 90 days, unfinished multipart uploads after a day), and puts a 7-day bucket lock on the backup buckets.
+   It reads the R2 bindings of both environments from `api/wrangler.jsonc`, creates the list and backup buckets with the `enam` location hint, sets lifecycle rules (backups expire after 90 days, unfinished multipart uploads after a day), and puts a 7-day bucket lock on the Store dumps (`dumps/`) and restore bookmarks (`pitr/`) of the backup buckets.
+   Seed list files and calibration exports stay unlocked, so `revoke-seed` and an objection can delete them at once.
    It is safe to run again.
 3. Run every secret command the script prints, for production and for staging.
    They read values from stdin, so nothing lands in shell history.
@@ -237,7 +239,7 @@ gh api -X PATCH repos/rudecompany/colander -F allow_squash_merge=true -F allow_m
 ```
 
 **Required checks on main.**
-These are the exact check names, one per CI job: `secrets`, `workflows`, `api`, `contract`, `web-and-extension`, `full-stack`.
+These are the exact check names, one per CI job: `secrets`, `workflows`, `api`, `contract`, `web-and-extension`, `full-stack`, and `seed-guard` from `seed-guard.yml`.
 
 ```sh
 gh api -X POST repos/rudecompany/colander/rulesets --input - <<'JSON'
@@ -262,7 +264,8 @@ gh api -X POST repos/rudecompany/colander/rulesets --input - <<'JSON'
           { "context": "api", "integration_id": 15368 },
           { "context": "contract", "integration_id": 15368 },
           { "context": "web-and-extension", "integration_id": 15368 },
-          { "context": "full-stack", "integration_id": 15368 } ] } }
+          { "context": "full-stack", "integration_id": 15368 },
+          { "context": "seed-guard", "integration_id": 15368 } ] } }
   ]
 }
 JSON
@@ -270,7 +273,8 @@ JSON
 
 `15368` is the GitHub Actions app, so only Actions can satisfy these checks.
 Code owner review guards the seed registry (`.github/CODEOWNERS`, docs/contracts.md section 14): a pull request that touches it needs your approval.
-You cannot approve your own pull request, so repository admins (role `5`) may merge one past that rule; the `api` check still fails any change to a clearance that you did not make.
+You cannot approve your own pull request, so repository admins (role `5`) may merge one past that rule; the `seed-guard` check still fails any change to a clearance, a cleared entry or the seed rules and checks that you did not make.
+It runs the base branch's own checker, so a pull request that edits the checker, its rules or `ci.yml` cannot pass it.
 
 **Immutable releases.**
 `gh api -X PUT repos/rudecompany/colander/immutable-releases`.
@@ -338,7 +342,9 @@ Until then the registry's entries stay pending, `import-seed` refuses them, and 
   - `soul-over-ai-cc-by`: find the last commit whose `LICENSE.md` is CC BY 4.0 and pin it. Only fully AI-generated artists are read, and only their YouTube channel IDs.
   - `staff-research`: the channels staff found themselves, one per line with a note of where they saw it. A large channel needs two reviewers.
   - `tubecensus-sample`: a random sample of TubeCensus channel IDs, used only to sample calibration negatives. Its `scraped` stays null until counsel says whether IDs from Internet Archive captures of YouTube pages are scraped YouTube data; it cannot be cleared before.
-  Before the first one, have counsel sign off the credits approach, the DPIA and the legitimate interest assessment, and name the EU and UK representatives; the privacy page's Creators section and `/credits` are live already.
+  Before the first one, have counsel sign off the credits approach, the DPIA and the legitimate interest assessment, and appoint the EU and UK representatives under GDPR Article 27.
+  Naming them on the privacy page is a precondition of the first import: set `REPRESENTATIVES` in `web/src/routes/privacy/+page.svelte` and let it deploy.
+  The rest of the Creators section, with its legal basis, and `/credits` are live already.
 - D4. The numbers, in code where you can change them in a pull request: the promotion thresholds (`CALIBRATION` in `packages/shared/src/seeds.ts`: 100 labeled sources, 30 per group, lower bounds of 0.90 AI-made and 0.80 slop), each entry's `expires_after_days`, `YOUTUBE_DAILY_UNITS` (step 12), and who labels (curators and staff).
 - D5. Staff time: about 100 hours of labeling for 1,000 sources, by 2 or 3 trained labelers working from `/definition`.
   A starting mix: 150 each from `seed:` the AiSList blocklist, Cevval and Soul Over AI, 150 from `community`, and 300 from `random:tubecensus-sample`.
@@ -396,7 +402,7 @@ The workflows talk to the Worker through one authenticated channel, and the Work
 | `status` | `{}` | `head_seq` (Store list head), `r2_seq` (sequence in R2's `list/snapshot.bin`), `pass_age_s` (seconds since the last completed scoring pass), `publish_lag_s` (seconds the oldest verdict change not yet in R2's list has waited, 0 when R2 holds the head), `dump_age_s` (seconds since the newest successful dump), `dump_ms`, `rows_read_last_pass` |
 | `grant-role` | `{"email", "role"}` with role `member`, `curator` or `staff` | The account |
 | `import-seed` | `{"seed", "apply"}`: `seed` a registry ID the owner cleared, `apply` true to write; without it the command is a dry run. The list is the object `seeds/<seed>.json` in the environment's backup bucket (Part 3, "Import a seed list"). | The change in counts (`entries`, `by_platform`, `added`, `kept`, `dropped`, `suppressed`, `skipped`, `excluded`) and, applied, the batch ID; never a channel. Entries become review leads, never verdicts. |
-| `revoke-seed` | `{"seed", "reason"}`, and confirm set to the seed ID | The entries deleted and the sources they were on |
+| `revoke-seed` | `{"seed", "reason"}`, and confirm set to the seed ID. The reason is public in the run log: never name a creator or give legal advice in it. | The entries and calibration items deleted, the sources they were on, and whether the list file `seeds/<seed>.json` was deleted (`file`) |
 | `calibration-sample` | `{"frame", "n"}`: frame `community`, `seed:<id>` or `random:<id>`, n 1 to 1,000 | How many sources were added to the calibration set, and how many were available |
 | `calibration-export` | `{}` | The key of the export under `calibration/` in the backup bucket, and its item and label counts |
 | `sign-config` | `{"file"}`, file being the adapter configuration JSON, signed byte for byte | Version and key ID |
@@ -456,10 +462,13 @@ Examples:
      The scoring pass then puts the sources in the review queue as seed leads; they never give a verdict and are never named in public.
   A newer version of the list is the same steps with the new hash and date: entries it no longer lists are deleted, and so are sources only they made.
 - Withdraw a seed list at once, when its license or clearance falls away: command `revoke-seed`, args `{"seed": "<id>", "reason": "<why>"}`, confirm set to the same ID.
-  Then set its clearance to `revoked` in the registry; the daily `seeds` job would also delete its entries within a day of that deploy.
+  The run log is public, so keep the reason short and general, such as "License withdrawn": never name a creator or put counsel's advice in it.
+  It deletes the list's entries, everything calibration sampled from it (as a lead list or as a frame) with its labels, and its file `seeds/<id>.json` in the backup bucket.
+  If the answer says `"file": "kept"`, the bucket refused the delete, which a bucket lock from before `seeds/` was left unlocked would do for 7 days after upload: delete it by hand then with `pnpm -C api exec wrangler r2 object delete colander-backups/seeds/<id>.json --remote`.
+  Then set its clearance to `revoked` in the registry; the daily `seeds` job would also delete its entries and samples within a day of that deploy.
 - Build the calibration set (step 18, D5): command `calibration-sample` with args such as `{"frame": "seed:cevval-yt-ai-music", "n": 150}`, `{"frame": "community", "n": 150}` or `{"frame": "random:tubecensus-sample", "n": 300}`.
   The `random:` frame reads its own object, `seeds/tubecensus-sample.json`, with the sampled channel IDs one per line, like an import.
-  Curators and staff label at `/console/calibration`.
+  Curators and staff label at `/console/calibration`, recording for each source they can judge its language and whether it is mostly music, which the report groups by.
   To report, run command `calibration-export`, fetch the file it names with `pnpm -C api exec wrangler r2 object get colander-backups/<key> --file export.json --remote`, and run `node scripts/calibration-report.ts export.json`.
   The export names channels, so delete `export.json` once the report is done; the report itself holds counts only.
 - See the Store's health: command `status`.

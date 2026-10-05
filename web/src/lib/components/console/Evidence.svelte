@@ -190,6 +190,7 @@
 									Listed as <span class="cl-figure id">{e.alias}</span> in the file dated {fmtShortDate(e.listed_at)}. Imported
 									{fmtShortDate(e.imported_at)} in batch {e.batch}. Expires {fmtShortDate(e.expires_at)}.
 								</p>
+								{#if e.note}<p class="meta">Where staff saw it: {e.note}</p>{/if}
 							</li>
 						{/each}
 					</ul>

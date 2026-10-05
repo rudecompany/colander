@@ -2,6 +2,7 @@
 // website's /credits page, the one place that names the datasets whose license asks for credit.
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative, resolve } from 'node:path';
+import { datasetNames, INTERNAL, type Registry } from '@colander/shared/seeds';
 import { DIST, EXT_ID, expect, ROOT, test } from './harness';
 
 test('the about text in the options links to the credits page', async ({ ext }) => {
@@ -15,11 +16,10 @@ test('the about text in the options links to the credits page', async ({ ext }) 
 });
 
 test('nothing in the built extension names a dataset', () => {
-	const registry = JSON.parse(readFileSync(resolve(ROOT, '../packages/shared/src/seed-registry.json'), 'utf8')) as {
-		entries: { name: string; id: string; homepage: string; license: string; dev_only: boolean }[];
-	};
-	const needles = registry.entries.filter((e) => !e.dev_only && e.license !== 'LicenseRef-Colander-internal').flatMap((e) => [e.name, e.id, e.homepage]);
-	expect(needles.length).toBeGreaterThan(5);
+	const registry = JSON.parse(readFileSync(resolve(ROOT, '../packages/shared/src/seed-registry.json'), 'utf8')) as Registry;
+	// Every name of a third-party dataset: name, ID, the short names people use, homepage, GitHub owner and repository.
+	const needles = registry.entries.filter((e) => !e.dev_only && e.license !== INTERNAL).flatMap(datasetNames);
+	expect(needles).toEqual(expect.arrayContaining(['AiSList', 'Cevval', 'souloverai', 'Tube Census', 'Override92', 'xoundbyte']));
 	const found: string[] = [];
 	const walk = (dir: string) => {
 		for (const f of readdirSync(dir)) {

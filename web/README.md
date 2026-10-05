@@ -116,8 +116,8 @@ A shared fixture fails any test that logs a page error or a CSP violation.
 | `plans.spec.ts` | Yearly preselected, `503 billing_unavailable`, sign-in before checkout with the Free and Plus cards keeping one height, redirect, closed checkout, `409 already_subscribed`, the welcome page and its full-width sign-in button |
 | `support.spec.ts` | Donation body and redirect, custom amounts and limits, `503 billing_unavailable`, closed payment |
 | `console.spec.ts` | Keyboard queue, evidence, decision body and CSRF header, curator limits (large sources, appeals in review) and `403 staff_required`, AI evidence before Slop and `400 ai_evidence_required`, seed provenance and suppression for staff and only a count for curators |
-| `calibration.spec.ts` | A blind label posted and the next item shown, the empty set, the console's link to it |
-| `credits.spec.ts` | `/credits` lists exactly the credits the registry gives, and no other file of the built site names a dataset |
+| `calibration.spec.ts` | A blind label posted with its language and kind and the next item shown, the empty set, the console's link to it, a 24-character channel ID on one line at 390 px |
+| `credits.spec.ts` | `/credits` shows exactly the credits a fictional test registry (`tests/seed-registry.ts`, which the test build reads through `COLANDER_SEED_REGISTRY`) gives, in light and dark; the privacy page's Creators section; and no other file of the built site names a dataset by any of its names |
 | `a11y.spec.ts` | axe WCAG 2.2 A and AA rules on every page, light and dark |
 | `brand.spec.ts` | The vocabulary table's "Not" words and exclamation marks never appear, nothing is below 12 px (figure labels as rendered too), controls are at least 32 px, nothing spills out of a card |
 | `reflow.spec.ts` | No page scrolls sideways or spills out of a card at 390 and 320 px, the stat cells on the landing page and /transparency keep their labels inside at 1024 and 1100 px, and figure labels stay at 12 px and up |

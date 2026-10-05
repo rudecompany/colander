@@ -28,6 +28,9 @@ export const LICENSES = ['CC0-1.0', 'CC-BY-4.0', 'MIT', 'LicenseRef-written-gran
 /** Licenses whose terms require a credit: the entry must carry the exact attribution text. */
 const ATTRIBUTION_LICENSES = new Set(['CC-BY-4.0', 'MIT']);
 
+/** A written grant says for itself whether it asks for credit. */
+const WRITTEN_GRANT = 'LicenseRef-written-grant';
+
 /** Colander's own data: no license URL, no credit, and no third party to clear with. */
 export const INTERNAL = 'LicenseRef-Colander-internal';
 
@@ -43,6 +46,12 @@ export const SEED_OWNERS = ['slantview'];
  * share that is AI-made and of 0.80 on the share that is slop.
  */
 export const CALIBRATION = { n: 100, groupN: 30, ai: 0.9, slop: 0.8 } as const;
+
+/**
+ * The kinds of group scripts/calibration-report.ts writes besides "all": a calibration block needs
+ * at least one of each, so an average over the whole list cannot hide a group it gets wrong.
+ */
+export const CALIBRATION_GROUPS = ['platform:', 'audience:', 'language:', 'kind:'] as const;
 
 /** A pinned snapshot stops counting as a calibrated `seed` list this long after its upstream date. */
 export const SEED_MAX_DAYS = 180;
@@ -65,6 +74,8 @@ export interface SeedEntry {
 	id: string;
 	/** the dataset's own name, as /credits shows it */
 	name: string;
+	/** other names people know the dataset by; public text may contain none of them (datasetNames) */
+	aliases: string[];
 	homepage: string;
 	platforms: SeedPlatform[];
 	/** SPDX identifier, or a LicenseRef- for a written grant or Colander's own data */
@@ -109,6 +120,7 @@ export interface Credit {
 const KEYS = [
 	'id',
 	'name',
+	'aliases',
 	'homepage',
 	'platforms',
 	'license',
@@ -149,6 +161,8 @@ function calibrationProblems(c: unknown): string[] {
 	const groups = (c as { groups: unknown[] }).groups;
 	const out: string[] = [];
 	if (!groups.some((g) => (g as CalibrationGroup)?.group === 'all')) out.push('calibration needs a group "all" over every labeled source');
+	const missing = CALIBRATION_GROUPS.filter((prefix) => !groups.some((g) => typeof (g as CalibrationGroup)?.group === 'string' && (g as CalibrationGroup).group.startsWith(prefix)));
+	if (missing.length) out.push(`calibration needs the groups by ${missing.join(', ')} that scripts/calibration-report.ts writes, copied whole`);
 	for (const g of groups as CalibrationGroup[]) {
 		if (!isText(g?.group) || !isCount(g.n) || !isCount(g.ai) || !isCount(g.slop) || g.ai > g.n || g.slop > g.ai) {
 			out.push('each calibration group needs a name and counts with slop <= ai <= n');
@@ -178,6 +192,12 @@ export function validateEntry(value: unknown, owners: readonly string[] = SEED_O
 	if (missing.length) p.push(`missing fields: ${missing.join(', ')}`);
 	if (typeof e.id !== 'string' || !/^[a-z0-9][a-z0-9-]{2,62}$/.test(e.id)) p.push('id must be 3 to 63 lowercase letters, digits and dashes');
 	if (!isText(e.name)) p.push('name is required');
+	if (!Array.isArray(e.aliases) || e.aliases.some((a) => !isText(a) || [...a].length < 4)) {
+		p.push('aliases must list names of at least 4 characters');
+	} else {
+		const all = [e.name, ...e.aliases].map((a) => String(a).toLowerCase());
+		if (new Set(all).size !== all.length) p.push('aliases must differ from the name and from each other');
+	}
 	if (!isUrl(e.homepage)) p.push('homepage must be an https URL');
 	if (!Array.isArray(e.platforms) || e.platforms.length === 0 || e.platforms.some((x) => !PLATFORMS.includes(x)) || new Set(e.platforms).size !== e.platforms.length) {
 		p.push(`platforms must list some of ${PLATFORMS.join(', ')}, each once`);
@@ -204,8 +224,13 @@ export function validateEntry(value: unknown, owners: readonly string[] = SEED_O
 
 	const internal = e.license === INTERNAL;
 	if (ATTRIBUTION_LICENSES.has(e.license) && e.attribution === null) p.push(`${e.license} requires attribution: the exact credit its license asks for`);
-	if (internal && e.attribution !== null) p.push('Colander-internal data takes no attribution');
-	if (!internal && e.license !== 'LicenseRef-written-grant' && e.license_url === null) p.push('license_url is required for a public license');
+	// /credits names only the datasets whose license asks for credit, never one credited out of courtesy.
+	if (e.attribution !== null && !ATTRIBUTION_LICENSES.has(e.license) && e.license !== WRITTEN_GRANT) {
+		p.push(`${e.license} asks for no credit, so attribution stays null`);
+	}
+	// The public name checks need the short names people actually use for a third-party dataset.
+	if (!internal && Array.isArray(e.aliases) && e.aliases.length === 0) p.push('a third-party dataset needs aliases: the short names people use for it');
+	if (!internal && e.license !== WRITTEN_GRANT && e.license_url === null) p.push('license_url is required for a public license');
 	if (e.use === 'seed') {
 		p.push(...calibrationProblems(e.calibration));
 		if (e.expires_after_days > SEED_MAX_DAYS) p.push(`a seed list stops counting within ${SEED_MAX_DAYS} days of its upstream date`);
@@ -249,6 +274,22 @@ export function validateRegistry(r: unknown, owners: readonly string[] = SEED_OW
 export function usable(e: SeedEntry, dev: boolean): boolean {
 	if (validateEntry(e).length > 0) return false;
 	return e.dev_only ? dev : e.clearance.status === 'cleared';
+}
+
+/**
+ * Every name a public text may never contain for a dataset (docs/contracts.md 14.3): its name, ID
+ * and aliases and, for a third-party dataset, its homepage and the GitHub owner and repository
+ * there. Colander's own lists keep their homepage out: it is a Colander page reviewers may cite.
+ */
+export function datasetNames(e: SeedEntry): string[] {
+	const names = [e.name, e.id, ...e.aliases];
+	if (e.license !== INTERNAL) {
+		names.push(e.homepage);
+		const gh = /^https:\/\/github\.com\/([^/?#]+)\/([^/?#]+)/.exec(e.homepage);
+		if (gh) names.push(gh[1]!, gh[2]!);
+	}
+	const seen = new Set<string>();
+	return names.filter((n) => !seen.has(n.toLowerCase()) && seen.add(n.toLowerCase()));
 }
 
 /** The upstream date as unix seconds, or undefined. */

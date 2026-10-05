@@ -23,10 +23,11 @@ import { saveSubscription } from '../src/store/billing';
 import { latestSequence, setListRequests, SNAPSHOT_KEY } from '../src/store/list';
 import { saveAdapterConfig } from '../src/store/misc';
 import { addCalibrationItems } from '../src/store/calibration';
-import { SeedRegistry } from '../src/store/seeds';
+import { applyImport, planImport, SeedRegistry } from '../src/store/seeds';
 import { ensureSource, findItem, findSource, getSource, setYouTube } from '../src/store/sources';
 import { loadSourceData } from '../src/store/verdicts';
 import type { Store } from '../src/store/store';
+import { REGISTRY } from '@colander/shared/seed-registry';
 import { clearedEntry, listSeed } from './seed-fixtures';
 
 const files = inject('contract');
@@ -447,11 +448,18 @@ describe('appeals', () => {
 			expect(await code(await h.do('POST', '/v1/appeals', { ...base, statement: ' ' }))).toBe('invalid_statement');
 			expect(await code(await h.do('POST', '/v1/appeals', { ...base, statement: 'x'.repeat(2001) }))).toBe('invalid_statement');
 			// Unknown and unrated sources are 404 not_rated, and spend the quota as in Go.
-			expect(await code(await expectStatus(h.do('POST', '/v1/appeals', base), 404))).toBe('not_rated');
-			ensureSource(h.db, 'yt', '@unrated', '', unix(h.clock));
+			const unknown = await (await expectStatus(h.do('POST', '/v1/appeals', base), 404)).json();
+			expect(unknown).toEqual({ error: { code: 'not_rated', message: 'Colander has no information about this source.' } });
+			// A source only a seed list named answers exactly as an unknown one: no answer may tell
+			// that a list names a channel (contracts 6.4).
+			h.store.engine.seeds = new SeedRegistry([clearedEntry()]);
+			listSeed(h.db, clearedEntry(), ['@listedonly'], unix(h.clock));
+			expect(await (await expectStatus(h.do('POST', '/v1/appeals', { ...base, source_id: '@listedonly' }), 404)).json()).toEqual(unknown);
+			// A source the public knows, without a verdict, says why.
+			await expectStatus(h.do('POST', '/v1/tags', { tags: [tag('unrated', 'source', '@unrated', '', 'not_slop')] }, installAuth(70)), 200);
 			const unrated = await expectStatus(h.do('POST', '/v1/appeals', { ...base, source_id: '@unrated' }), 404);
 			expect(((await unrated.json()) as ErrorBody).error.message).toBe('This source has no verdict to appeal.');
-			for (let i = 0; i < 3; i++) await expectStatus(h.do('POST', '/v1/appeals', base), 404);
+			for (let i = 0; i < 2; i++) await expectStatus(h.do('POST', '/v1/appeals', base), 404);
 			const limited = await expectStatus(h.do('POST', '/v1/appeals', base), 429);
 			expect(Number(limited.headers.get('Retry-After'))).toBe(17280);
 			// Another address still may.
@@ -613,11 +621,17 @@ describe('public pages', () => {
 					batch: 1,
 					imported_at: '2026-10-01T12:00:00Z',
 					listed_at: '2026-09-01T00:00:00Z',
-					expires_at: '2027-09-01T00:00:00Z'
+					expires_at: '2027-09-01T00:00:00Z',
+					note: null
 				}
 			]);
 			expect(review.seed_suppression).toBeNull();
-			expect(review.layers.provenance.detail).toBe('3 installs saw a platform AI label; listed on Secret Seed List (CC0-1.0) as a lead, a review lead that is not evidence.');
+			expect(review.layers.provenance.detail).toBe('3 installs saw a platform AI label; listed on Secret Seed List (CC0-1.0), a review lead that is not evidence.');
+			// Every staff read of which lists name a source is recorded, never shown (seed list review 30).
+			const staffAccount = h.db.get<{ id: string }>("SELECT id FROM accounts WHERE email = 'rae@colander.test'")!.id;
+			expect(h.db.all('SELECT account_id, platform, source, seeds, read_at FROM seed_provenance_reads')).toEqual([
+				{ account_id: staffAccount, platform: 'yt', source: '@seeded', seeds: '["secret-list"]', read_at: unix(h.clock) }
+			]);
 
 			const curator = h.reviewer('sam@colander.test', 'curator', 'Sam');
 			const res = await expectStatus(h.do('GET', '/v1/review/sources/yt/@seeded', undefined, curator), 200);
@@ -629,8 +643,10 @@ describe('public pages', () => {
 			expect(asCurator).not.toHaveProperty('seeds');
 			expect(asCurator).not.toHaveProperty('seed_suppression');
 			expect(asCurator.layers.provenance.detail).toBe('3 installs saw a platform AI label; on 1 seed list, a review lead that is not evidence.');
+			expect(h.db.get('SELECT count(*) AS n FROM seed_provenance_reads'), 'a curator read shows no list, so nothing is recorded').toEqual({ n: 1 });
 
-			// Leads come last in the queue, summarized without a name, and alone under kind=leads.
+			// Leads come last in the queue, summarized without a name, and alone under kind=leads; kind=all
+			// carries only the leads something backs, so thousands of leads cannot bury the reports.
 			const queue = async (kind: string) => {
 				const r = await expectStatus(h.do('GET', `/v1/review/queue?kind=${kind}`, undefined, curator), 200);
 				const t = await r.text();
@@ -642,20 +658,33 @@ describe('public pages', () => {
 				['@seeded', 'escalation', true, 4, 'Seed lead on 1 seed list, not evidence'],
 				['@seedonly', 'escalation', true, 4, 'Seed lead on 1 seed list, not evidence']
 			]);
-			expect((await queue('all')).map((q) => q.source_id)).toEqual(['@seeded', '@seedonly']);
+			expect(await queue('all')).toEqual([]);
 			expect(await queue('reports')).toEqual([]);
-			// A slop tag backs a lead: it moves up to the priority of a report.
+			// A slop tag backs a lead: it moves up to the priority of a report, and into kind=all.
 			await expectStatus(h.do('POST', '/v1/tags', { tags: [tag('backing', 'source', '@seedonly', '', 'slop')] }, installAuth(50)), 200);
 			expect((await queue('leads')).map((q) => [q.source_id, q.priority])).toEqual([
 				['@seedonly', 3],
 				['@seeded', 4]
 			]);
+			expect((await queue('all')).map((q) => [q.source_id, q.priority])).toEqual([['@seedonly', 3]]);
 
-			// Reviewers cannot name a dataset in the public log by accident, imported or not.
+			// Reviewers cannot name a dataset in the public log by accident, imported or not, by its
+			// name, ID, any short name people use for it, its homepage, or its GitHub owner or repository.
+			h.store.engine.seeds = new SeedRegistry([entry, pending, ...REGISTRY]);
 			for (const [reason, name] of [
 				['Also on the secret seed list.', 'Secret Seed List'],
+				['Also in SecretSeeds.', 'Secret Seed List'],
 				['Also on the Pending Open List.', 'Pending Open List'],
-				['Listed in pending-list.', 'Pending Open List']
+				['Listed in pending-list.', 'Pending Open List'],
+				['Listed on AiSList and Cevval, confirmed by watching 3 uploads.', 'AiSList blocklist, last CC0 version'],
+				['Also on the AiSList blocklist', 'AiSList blocklist, last CC0 version'],
+				['See github.com/Override92 for the entry.', 'AiSList blocklist, last CC0 version'],
+				["In CevvalKoala's list too", "CevvalKoala's YouTube AI-Music Blocklist"],
+				['On the Cevval blocklist', "CevvalKoala's YouTube AI-Music Blocklist"],
+				['Also on Soul Over AI', 'Soul Over AI'],
+				['souloverai.com lists it', 'Soul Over AI'],
+				['xoundbyte lists it', 'Soul Over AI'],
+				['TubeCensus sample', 'TubeCensus']
 			]) {
 				const named = await expectStatus(h.do('POST', '/v1/review/sources/yt/@seeded/decision', { verdict: 'ai_made', reason, signals: [] }, staff), 400);
 				expect(await named.json()).toEqual({
@@ -670,6 +699,22 @@ describe('public pages', () => {
 			expect(old.source).toMatchObject({ imported: false, attribution: null });
 			expect(old.seed_lists).toBe(0);
 			expect(old.layers.provenance.detail).toBe('No AI evidence yet.');
+		}));
+
+	// Seed list review 18: a channel on Colander's own list carries a note of where staff saw it.
+	it("shows staff where staff saw a source on Colander's own list, and curators nothing of it", () =>
+		withHarness(async (h) => {
+			const own = clearedEntry({ id: 'staff-research', name: 'Colander staff research', aliases: [], license: 'LicenseRef-Colander-internal', license_url: null });
+			h.store.engine.seeds = new SeedRegistry([own]);
+			const now = unix(h.clock);
+			const plan = planImport(h.db, own.id, [{ platform: 'yt', alias: '@foundbystaff', note: 'Named in a published report on AI music' }]);
+			applyImport(h.db, own, plan, { sha256: own.sha256!, entries: 1, records: { dpia: 'D', lia: 'L' }, listedAt: now }, now);
+			const staff = h.reviewer('rae@colander.test', 'staff', 'Rae');
+			const review = (await (await expectStatus(h.do('GET', '/v1/review/sources/yt/@foundbystaff', undefined, staff), 200)).json()) as ReviewSourceResponse;
+			expect(review.seeds?.map((e) => [e.seed, e.note])).toEqual([['staff-research', 'Named in a published report on AI music']]);
+			const curator = h.reviewer('sam@colander.test', 'curator', 'Sam');
+			const text = await (await expectStatus(h.do('GET', '/v1/review/sources/yt/@foundbystaff', undefined, curator), 200)).text();
+			expect(text).not.toContain('published report');
 		}));
 
 	// Staff suppress seed lists on a source for an objection under GDPR Article 21: its entries go,
@@ -716,7 +761,8 @@ describe('public pages', () => {
 			const [a, b, c] = ['a', 'b', 'c'].map((x) => h.reviewer(`${x}@colander.test`, 'curator', x.toUpperCase()));
 			const staff = h.reviewer('rae@colander.test', 'staff', 'Rae');
 			const next = async (who: Record<string, string>) => (await (await expectStatus(h.do('GET', '/v1/review/calibration/next', undefined, who), 200)).json()) as { item: unknown };
-			const label = (who: Record<string, string>, id: string, body: Body) => h.do('POST', `/v1/review/calibration/yt/${id}/label`, { tests: [], evidence: [], ...body }, who);
+			const label = (who: Record<string, string>, id: string, body: Body) =>
+				h.do('POST', `/v1/review/calibration/yt/${id}/label`, { tests: [], evidence: [], language: 'en', kind: 'video', ...body }, who);
 
 			const first = await next(a!);
 			expect(first).toEqual({ item: { platform: 'yt', source_id: '@calone', labels: 0 } });
@@ -725,21 +771,28 @@ describe('public pages', () => {
 			expect(await code(await expectStatus(label(a!, '@calone', { label: 'not_ai', tests: ['hollow'] }), 400))).toBe('invalid_tests');
 			expect(await code(await expectStatus(label(a!, '@calone', { label: 'slop', evidence: ['mostly_ai'] }), 400))).toBe('invalid_evidence');
 			expect(await code(await expectStatus(label(a!, '@nobody', { label: 'slop' }), 404))).toBe('not_in_calibration');
+			// Every judged source records its language and whether it is music, for the report's groups.
+			expect(await code(await expectStatus(label(a!, '@calone', { label: 'slop', language: undefined }), 400))).toBe('invalid_language');
+			expect(await code(await expectStatus(label(a!, '@calone', { label: 'not_ai', language: 'klingon' }), 400))).toBe('invalid_language');
+			expect(await code(await expectStatus(label(a!, '@calone', { label: 'not_ai', kind: 'podcast' }), 400))).toBe('invalid_kind');
 
 			const after = (await (await expectStatus(label(a!, '@calone', { label: 'slop', tests: ['hollow'], evidence: ['platform_label'], note: 'Labeled shorts' }), 200)).json()) as { item: unknown };
 			expect(after).toEqual({ item: { platform: 'yt', source_id: 'UCzzzzzzzzzzzzzzzzzzzzc2', labels: 0 } });
 			expect(await code(await expectStatus(label(a!, '@calone', { label: 'slop' }), 409))).toBe('already_labeled');
 			// A half-labeled item comes first for the next labeler, so pairs finish.
 			expect(await next(b!)).toEqual({ item: { platform: 'yt', source_id: '@calone', labels: 1 } });
-			await expectStatus(label(b!, '@calone', { label: 'not_ai' }), 200);
+			await expectStatus(label(b!, '@calone', { label: 'not_ai', language: 'none', kind: 'music' }), 200);
 			expect(await next(c!), 'two labels are enough for curators').toEqual({ item: { platform: 'yt', source_id: 'UCzzzzzzzzzzzzzzzzzzzzc2', labels: 0 } });
 			expect(await code(await expectStatus(label(c!, '@calone', { label: 'slop' }), 409))).toBe('already_labeled');
 			expect(await next(staff), 'staff settle the disagreement').toEqual({ item: { platform: 'yt', source_id: '@calone', labels: 2 } });
 			await expectStatus(label(staff, '@calone', { label: 'slop' }), 200);
-			expect(h.db.all('SELECT label, tests, evidence, note FROM calibration_labels ORDER BY labeled_at, label')).toEqual([
-				{ label: 'not_ai', tests: 0, evidence: 0, note: null },
-				{ label: 'slop', tests: 16, evidence: 1, note: 'Labeled shorts' },
-				{ label: 'slop', tests: 0, evidence: 0, note: null }
+			// A source that is gone records no language or kind, whatever the form sent.
+			await expectStatus(label(a!, 'UCzzzzzzzzzzzzzzzzzzzzc2', { label: 'gone', language: undefined, kind: 'music' }), 200);
+			expect(h.db.all('SELECT label, tests, evidence, note, language, kind FROM calibration_labels ORDER BY labeled_at, label')).toEqual([
+				{ label: 'gone', tests: 0, evidence: 0, note: null, language: null, kind: null },
+				{ label: 'not_ai', tests: 0, evidence: 0, note: null, language: 'none', kind: 'music' },
+				{ label: 'slop', tests: 16, evidence: 1, note: 'Labeled shorts', language: 'en', kind: 'video' },
+				{ label: 'slop', tests: 0, evidence: 0, note: null, language: 'en', kind: 'video' }
 			]);
 		}));
 

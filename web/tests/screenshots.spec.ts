@@ -1,7 +1,7 @@
 // Full-page screenshots of every page, desktop 1440 and mobile 390, light and dark.
 // Run with `pnpm screenshots` (writes to screenshots/). Skipped in the normal test run.
 import { test } from '@playwright/test';
-import { mockApi, PLUS_ACCOUNT, STAFF, APPEAL, QUEUE, reviewSource, CALIBRATION_ITEM } from './mocks.ts';
+import { mockApi, PLUS_ACCOUNT, STAFF, APPEAL, queueReply, reviewSource, CALIBRATION_ITEM } from './mocks.ts';
 
 test.skip(!process.env.SCREENSHOTS, 'Set SCREENSHOTS=1 to capture screenshots.');
 
@@ -55,7 +55,7 @@ const shots: Shot[] = [
 		path: '/console',
 		setup: {
 			'GET /v1/account': { json: { account: STAFF } },
-			'GET /v1/review/queue': { json: { items: QUEUE, next_cursor: null } },
+			'GET /v1/review/queue': queueReply,
 			'GET /v1/review/sources/*': (c) => {
 				const [, , , , p, id] = c.path.split('/');
 				return { json: reviewSource(`${p}:${decodeURIComponent(id)}`) };
@@ -71,13 +71,14 @@ const shots: Shot[] = [
 		path: '/console',
 		setup: {
 			'GET /v1/account': { json: { account: STAFF } },
-			'GET /v1/review/queue': { json: { items: QUEUE, next_cursor: null } },
+			'GET /v1/review/queue': queueReply,
 			'GET /v1/review/sources/*': (c) => {
 				const [, , , , p, id] = c.path.split('/');
 				return { json: reviewSource(`${p}:${decodeURIComponent(id)}`) };
 			}
 		},
 		after: async (page) => {
+			await page.getByRole('tab', { name: /^Escalated/ }).click();
 			await page.getByRole('button', { name: /Everyday Trivia/ }).click();
 			await page.getByRole('heading', { name: /Seed lists/ }).waitFor();
 		}
@@ -91,6 +92,8 @@ const shots: Shot[] = [
 		},
 		after: async (page) => {
 			await page.getByText('Slop', { exact: true }).click();
+			await page.getByLabel('Language').selectOption('en');
+			await page.getByText('Other video', { exact: true }).click();
 		}
 	},
 	{ name: 'privacy', path: '/privacy' },
@@ -115,6 +118,8 @@ for (const shot of shots) {
 				await page.waitForLoadState('networkidle');
 				await page.evaluate(() => document.fonts.ready);
 				if (shot.after) await shot.after(page);
+				// A full-page capture draws the sticky header where the page was scrolled to.
+				await page.evaluate(() => window.scrollTo(0, 0));
 				await page.screenshot({ path: `${out}/${shot.name}-${v.id}-${scheme}.png`, fullPage: true });
 			});
 		}
