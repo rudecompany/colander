@@ -152,13 +152,14 @@ website hero renders the same component, so the two cannot drift. 360 wide, neve
 		},
 		// On a supported site that is switched off, Options opens on Platforms.
 		options: () => openOptions(tabPlatform && !running ? 'platforms' : undefined),
-		// Straight from the click, with no await before it: both browsers open their panel only for a user action.
+		// Straight from the click, with no await before it: browsers open their panel only for a user
+		// action. A Chromium browser without the side panel API gets the same page in a tab.
 		review: () => {
 			const opened = import.meta.env.FIREFOX
 				? (browser as unknown as { sidebarAction: { open(): Promise<void> } }).sidebarAction.open()
-				: windowId !== null
+				: browser.sidePanel && windowId !== null
 					? browser.sidePanel.open({ windowId })
-					: Promise.resolve();
+					: browser.tabs.create({ url: browser.runtime.getURL('/sidepanel.html') });
 			void opened.finally(() => window.close());
 		},
 		show: async (r) => {
