@@ -144,7 +144,25 @@ export async function syncAll(): Promise<void> {
 /** How long a tag from an open tag menu waits for its final state before it is sent anyway. */
 const HOLD_MS = 5 * 60_000;
 
+/**
+ * Tag work runs one step at a time. Adding and flushing both read the queue (and adding reads
+ * own tags) and write it back, so overlapping steps lose updates: a tag added while a flush was
+ * sending was missed, and the alarm was set from the stale queue, so it waited until a later sync.
+ */
+let tagWork: Promise<void> = Promise.resolve();
+function serialTags(step: () => Promise<void>): Promise<void> {
+	const run = tagWork.then(step, step);
+	tagWork = run.catch(() => undefined);
+	return run;
+}
+
 export async function addTag(req: TagRequest, hold = false): Promise<void> {
+	await serialTags(() => queueTag(req, hold));
+	// A held tag is not due yet: this sends any other due tags and sets the alarm for it.
+	await flushTags();
+}
+
+async function queueTag(req: TagRequest, hold: boolean): Promise<void> {
 	const key = targetKey(req.platform, req.targetType, req.targetId);
 	const own = (await chrome.storage.local.get(K.ownTags))[K.ownTags] as Record<string, OwnTag> | undefined;
 	await chrome.storage.local.set({ [K.ownTags]: { ...own, [key]: { verdict: req.verdict, at: Date.now() } } });
@@ -167,50 +185,50 @@ export async function addTag(req: TagRequest, hold = false): Promise<void> {
 	const { add, remove } = enqueue(queue, tag, key, Date.now() + (hold ? HOLD_MS : 0));
 	for (const id of remove) await db.del('tags', id);
 	await db.put('tags', add);
-	// A held tag is not due yet: this sends any other due tags and sets the alarm for it.
-	await flushTags();
 }
 
 /** Undo: the own tag goes, and so does its queued tag while it is still held or waiting. */
 export async function removeTag(key: string): Promise<void> {
-	const own = { ...((await chrome.storage.local.get(K.ownTags))[K.ownTags] as Record<string, OwnTag> | undefined) };
-	delete own[key];
-	await chrome.storage.local.set({ [K.ownTags]: own });
-	for (const q of await db.all<Queued>('tags')) if (q.target === key) await db.del('tags', q.client_id);
+	// A tag step like adding, so a flush that is sending cannot write the undone tag back.
+	await serialTags(async () => {
+		const own = { ...((await chrome.storage.local.get(K.ownTags))[K.ownTags] as Record<string, OwnTag> | undefined) };
+		delete own[key];
+		await chrome.storage.local.set({ [K.ownTags]: own });
+		for (const q of await db.all<Queued>('tags')) if (q.target === key) await db.del('tags', q.client_id);
+	});
 	await flushTags();
 }
 
-let flushing: Promise<void> | null = null;
 export function flushTags(): Promise<void> {
-	flushing ??= (async () => {
-		try {
-			for (;;) {
-				const now = Date.now();
-				const batch = dueBatch(await db.all<Queued>('tags'), now);
-				if (!batch.length) break;
-				let outcome: Outcome;
-				try {
-					const res = await request('/v1/tags', { body: { tags: batch.map((q) => q.tag) }, auth: { install: true } });
-					if (res.status === 429) outcome = { kind: 'rate-limited', retryAfterMs: Math.max(1000, Number(res.headers.get('Retry-After')) * 1000 || 60_000) };
-					else if (res.status === 400) outcome = { kind: 'invalid' };
-					else if (res.ok) outcome = { kind: 'sent', ...(await res.json()) };
-					else outcome = { kind: 'failed' };
-				} catch {
-					outcome = { kind: 'failed' };
-				}
-				const { remove, update } = settle(batch, outcome, Date.now());
-				for (const id of remove) await db.del('tags', id);
-				for (const q of update) await db.put('tags', q);
-				if (outcome.kind !== 'sent' || update.length) break;
+	return serialTags(flushOnce);
+}
+
+async function flushOnce(): Promise<void> {
+	try {
+		for (;;) {
+			const now = Date.now();
+			const batch = dueBatch(await db.all<Queued>('tags'), now);
+			if (!batch.length) break;
+			let outcome: Outcome;
+			try {
+				const res = await request('/v1/tags', { body: { tags: batch.map((q) => q.tag) }, auth: { install: true } });
+				if (res.status === 429) outcome = { kind: 'rate-limited', retryAfterMs: Math.max(1000, Number(res.headers.get('Retry-After')) * 1000 || 60_000) };
+				else if (res.status === 400) outcome = { kind: 'invalid' };
+				else if (res.ok) outcome = { kind: 'sent', ...(await res.json()) };
+				else outcome = { kind: 'failed' };
+			} catch {
+				outcome = { kind: 'failed' };
 			}
-		} finally {
-			const due = nextDue(await db.all<Queued>('tags'));
-			if (due === null) await chrome.alarms.clear('tags');
-			else await chrome.alarms.create('tags', { when: Math.max(due, Date.now() + 30_000) });
-			flushing = null;
+			const { remove, update } = settle(batch, outcome, Date.now());
+			for (const id of remove) await db.del('tags', id);
+			for (const q of update) await db.put('tags', q);
+			if (outcome.kind !== 'sent' || update.length) break;
 		}
-	})();
-	return flushing;
+	} finally {
+		const due = nextDue(await db.all<Queued>('tags'));
+		if (due === null) await chrome.alarms.clear('tags');
+		else await chrome.alarms.create('tags', { when: Math.max(due, Date.now() + 30_000) });
+	}
 }
 
 // ---- Reports ------------------------------------------------------------------------------------
@@ -351,8 +369,9 @@ export async function pushSettings(): Promise<void> {
 	try {
 		let res = await put(st.version, pick(s));
 		if (res.status === 409) {
-			const remote = (await res.json()) as { version: number; data: Partial<Settings> };
-			const merged = await updateSettings((cur) => mergeRemote(cur, remote.data, true));
+			// A server with no copy yet answers data: null, version 0 (for example after its data was reset).
+			const remote = (await res.json()) as { version: number; data: Partial<Settings> | null };
+			const merged = await updateSettings((cur) => mergeRemote(cur, remote.data ?? {}, true));
 			res = await put(remote.version, pick(merged));
 		}
 		const out = await json<{ version?: number }>(res);
@@ -624,15 +643,20 @@ async function handle(m: ToWorker, sender: chrome.runtime.MessageSender): Promis
 	}
 }
 
-/** Erases every local trace: lists, tags, activity, settings and the install ID. */
-export async function deleteLocalData(): Promise<void> {
-	await chrome.storage.local.clear();
-	await chrome.storage.session.clear();
-	await db.clear('kv');
-	await db.clear('tags');
-	await db.clear('activity');
-	await clearList();
-	await chrome.scripting.unregisterContentScripts().catch(() => undefined);
+/**
+ * Erases every local trace: lists, tags, activity, settings and the install ID. Runs as a tag
+ * step, so a flush that is sending cannot write its batch back after the clear.
+ */
+export function deleteLocalData(): Promise<void> {
+	return serialTags(async () => {
+		await chrome.storage.local.clear();
+		await chrome.storage.session.clear();
+		await db.clear('kv');
+		await db.clear('tags');
+		await db.clear('activity');
+		await clearList();
+		await chrome.scripting.unregisterContentScripts().catch(() => undefined);
+	});
 }
 
 export type { Status };

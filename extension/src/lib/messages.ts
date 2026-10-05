@@ -43,7 +43,8 @@ export interface PageState {
 	cards: { total: number; withItem: number; withSource: number; tracked: number };
 	/** Per active surface, for adapter health checks. Cards include empty placeholders of virtualized feeds. */
 	bySurface: Record<string, { total: number; withItem: number; withSource: number }>;
-	perf: { batches: number; totalMs: number; p95Ms: number; maxMs: number };
+	/** Content script work. `reads` counts card extractions, so a rescan of unchanged cards shows at any machine speed. */
+	perf: { batches: number; totalMs: number; p95Ms: number; maxMs: number; reads: number };
 }
 
 export interface TagRequest {

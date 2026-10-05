@@ -119,10 +119,23 @@ test('a tampered list is rejected and the last good copy stays', async ({ ext })
 	});
 	await ext.send({ type: 'sync-now' });
 	const status = await ext.storage<{ lastError: string; listSequence: number }>('status');
-	expect(status.lastError).toMatch(/signature/);
+	expect(status.lastError).toBe('the downloaded list did not pass its signature check');
 	expect(status.listSequence).toBe(42);
 	const page = await ext.open(SEARCH);
 	await expect(page.locator('ytd-search ytd-video-renderer').first()).toHaveAttribute('data-colander', 'hide');
+});
+
+test('an unreachable list server is explained in plain words and the last good copy stays', async ({ ext }) => {
+	await ext.setup();
+	ext.api.offline = true;
+	await ext.send({ type: 'sync-now' });
+	const status = await ext.storage<{ lastError: string; listSequence: number }>('status');
+	expect(status.lastError).toBe('the list server could not be reached');
+	expect(status.listSequence).toBe(42);
+	const options = await ext.ctx.newPage();
+	await options.goto(`chrome-extension://${EXT_ID}/options.html`);
+	await expect(options.getByText('The last update failed: the list server could not be reached. Colander keeps using the last good copy.')).toBeVisible();
+	await expect(options.getByText(/Failed to fetch|HTTP \d/)).toHaveCount(0);
 });
 
 test('a signed adapter config fixes selectors without a code change (P0-2)', async ({ ext }) => {

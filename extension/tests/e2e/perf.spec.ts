@@ -1,5 +1,6 @@
 // P0-1 budgets on a 200-card page: a slop card is hidden within 150 ms at the 95th percentile
-// of insertion, and the content script adds under 50 ms of work to the page in total.
+// of insertion, and the content script adds under 50 ms of work to the page in total. Each
+// inserted card is also read exactly once, a count that does not depend on machine speed.
 //
 // The 50 ms budget is stated for the reference machine below. Slower machines, such as shared CI
 // runners, do the same work proportionally slower, so the added time is divided by how much slower
@@ -37,6 +38,7 @@ test('200 cards: hide latency p95 under 150 ms and added time under 50 ms', asyn
 	const slowdown = Math.max(1, (await calibrate(page)) / REFERENCE_MS);
 	// Past this the machine is too slow for timing to mean anything; fail loudly instead of passing quietly.
 	expect(slowdown, 'machine slowdown against the reference').toBeLessThan(12);
+	const before = await ext.pageState(page);
 	const result = await page.evaluate(async () => {
 		const grid = document.querySelector('ytd-rich-grid-renderer #contents')!;
 		const cards = [...grid.querySelectorAll('ytd-rich-item-renderer')];
@@ -83,9 +85,12 @@ test('200 cards: hide latency p95 under 150 ms and added time under 50 ms', asyn
 	});
 	const state = await ext.pageState(page);
 	const normalized = state.perf.totalMs / slowdown;
-	console.log(`200 cards: ${result.hidden}/${result.slop} hidden, latency p95 ${result.p95.toFixed(2)} ms, max ${result.max.toFixed(2)} ms; content script total ${state.perf.totalMs} ms over ${state.perf.batches} batches, batch p95 ${state.perf.p95Ms} ms; machine ${slowdown.toFixed(2)}x slower than reference, so ${normalized.toFixed(1)} reference ms`);
+	const reads = state.perf.reads - before.perf.reads;
+	console.log(`200 cards: ${result.hidden}/${result.slop} hidden, latency p95 ${result.p95.toFixed(2)} ms, max ${result.max.toFixed(2)} ms; content script total ${state.perf.totalMs} ms over ${state.perf.batches} batches, ${reads} reads of 200 inserted cards, batch p95 ${state.perf.p95Ms} ms; machine ${slowdown.toFixed(2)}x slower than reference, so ${normalized.toFixed(1)} reference ms`);
 	expect(result.hidden).toBe(result.slop);
 	expect(result.p95).toBeLessThan(150);
 	expect(state.cards.total).toBe(200);
+	// Rescanning earlier cards on every append makes an infinite feed quadratic; a count catches it on any machine.
+	expect(reads, 'card reads for 200 inserted cards').toBe(200);
 	expect(normalized, 'content script time in reference-machine milliseconds').toBeLessThan(50);
 });

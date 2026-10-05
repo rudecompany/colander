@@ -186,6 +186,7 @@ export function start(): void {
 	let reportHost: HTMLElement | null = null;
 	const states = new Map<Element, CardState>();
 	const batchMs: number[] = [];
+	let reads = 0;
 	const ip = inpageContext(document, SITE);
 	const copy = ip.strings;
 	let layer: PageLayer | null = null;
@@ -256,6 +257,7 @@ export function start(): void {
 
 	function process(card: Element, surface: Surface, force = false) {
 		const prev = states.get(card);
+		reads++;
 		const facts = extractCard(platform!, surface, card, document);
 		if (surface.pageSource && !facts.sourceIds.length && page) facts.sourceIds = [...page.sourceIds];
 		const sig = `${facts.itemId}|${facts.sourceIds.join(',')}|${facts.aiLabel ? 1 : 0}|${facts.title.length}`;
@@ -1060,7 +1062,8 @@ export function start(): void {
 				batches: sorted.length,
 				totalMs: Math.round(sorted.reduce((a, b) => a + b, 0) * 100) / 100,
 				p95Ms: Math.round((sorted[Math.floor(sorted.length * 0.95)] ?? 0) * 100) / 100,
-				maxMs: Math.round((sorted[sorted.length - 1] ?? 0) * 100) / 100
+				maxMs: Math.round((sorted[sorted.length - 1] ?? 0) * 100) / 100,
+				reads
 			}
 		};
 	}
@@ -1087,17 +1090,28 @@ export function start(): void {
 			onNavigate();
 			return;
 		}
-		const touched = new Set<Element>();
+		// Each touched element maps to whether its subtree is new. Only added elements can hold new
+		// cards; an element whose children or attributes changed only re-reads its own card. Also
+		// scanning a changed list would re-read every earlier card on each append to an infinite feed.
+		const touched = new Map<Element, boolean>();
 		for (const r of records) {
-			if (r.type === 'childList') {
-				const t = r.target as Element;
-				if (reflowed.has(t)) queueReflow(t);
-				if (t.nodeType === 1 && t.nodeName !== 'COLANDER-UI') touched.add(t);
-				for (const n of r.addedNodes) if (n.nodeType === 1 && n.nodeName !== 'COLANDER-UI') touched.add(n as Element);
-			} else if (r.target.nodeType === 1) touched.add(r.target as Element);
+			const t = r.target as Element;
+			if (r.type !== 'childList') {
+				if (t.nodeType === 1 && !touched.has(t)) touched.set(t, false);
+				continue;
+			}
+			if (reflowed.has(t)) queueReflow(t);
+			let ours = !r.removedNodes.length;
+			for (const n of r.addedNodes) {
+				if (n.nodeName === 'COLANDER-UI') continue;
+				ours = false;
+				if (n.nodeType === 1) touched.set(n as Element, true);
+			}
+			// A record that only adds Colander UI is this script's own insertion, not a page change.
+			if (!ours && t.nodeType === 1 && t.nodeName !== 'COLANDER-UI' && !touched.has(t)) touched.set(t, false);
 		}
 		const seen = new Set<Element>();
-		for (const el of touched) {
+		for (const [el, isNew] of touched) {
 			for (const s of surfaces) {
 				let card: Element | null;
 				try {
@@ -1110,7 +1124,7 @@ export function start(): void {
 					process(card, s);
 					watch(card, s);
 				}
-				if (el.firstElementChild) {
+				if (isNew && el.firstElementChild) {
 					for (const c of el.querySelectorAll(s.card)) {
 						if (seen.has(c)) continue;
 						seen.add(c);

@@ -45,6 +45,8 @@ export class MockApi {
 	/** What POST /v1/entitlement/refresh finds behind a paid token. */
 	plan: 'active' | 'ended' = 'active';
 	review: { queue: unknown[]; source: unknown } = { queue: [], source: null };
+	/** The Plus settings copy behind /v1/sync, with the server's compare-and-set on version. */
+	syncBlob: { version: number; data: unknown } | null = null;
 
 	async handle(route: Route) {
 		const req = route.request();
@@ -76,7 +78,14 @@ export class MockApi {
 			return ok({ token: planToken({ trial: false, exp: Math.floor(Date.now() / 1000) + 33 * 86400 }) });
 		}
 		if (p === '/v1/trial') return ok({ token: planToken({ trial: true, exp: Math.floor(Date.now() / 1000) + 14 * 86400 }) });
-		if (p === '/v1/sync') return req.method() === 'GET' ? ok({ error: { code: 'not_found', message: 'None.' } }, 404) : ok({ version: 1 });
+		if (p === '/v1/sync') {
+			const have = this.syncBlob ?? { version: 0, data: null };
+			if (req.method() === 'GET') return ok(have);
+			const put = req.postDataJSON() as { version: number; data: unknown };
+			if (put.version !== have.version) return ok({ ...have, error: { code: 'version_conflict', message: 'Settings changed elsewhere.' } }, 409);
+			this.syncBlob = { version: have.version + 1, data: put.data };
+			return ok({ version: this.syncBlob.version });
+		}
 		if (p.startsWith('/v1/review/queue')) return ok({ items: this.review.queue, next_cursor: null });
 		if (p.startsWith('/v1/review/sources/') && p.endsWith('/decision')) return ok({ ok: true });
 		if (p.startsWith('/v1/review/sources/')) return ok(this.review.source);
