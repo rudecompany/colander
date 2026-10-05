@@ -356,8 +356,9 @@ export async function pushSettings(): Promise<void> {
 	try {
 		let res = await put(st.version, pick(s));
 		if (res.status === 409) {
-			const remote = (await res.json()) as { version: number; data: Partial<Settings> };
-			const merged = await updateSettings((cur) => mergeRemote(cur, remote.data, true));
+			// A server with no copy yet answers data: null, version 0 (for example after its data was reset).
+			const remote = (await res.json()) as { version: number; data: Partial<Settings> | null };
+			const merged = await updateSettings((cur) => mergeRemote(cur, remote.data ?? {}, true));
 			res = await put(remote.version, pick(merged));
 		}
 		const out = await json<{ version?: number }>(res);
