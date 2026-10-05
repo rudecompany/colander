@@ -15,9 +15,10 @@ coverage/
 .env.*
 !.env.example
 
-# Wrangler: local secrets and local state.
+# Wrangler: local secrets and local state, and the local config scripts/dev-config.ts writes.
 .dev.vars*
 .wrangler/
+/api/wrangler.dev.json
 
 # Signing keys made with scripts/keygen.ts never belong in git.
 *.key

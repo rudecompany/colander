@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "wrangler dev",
+    "dev": "node ../scripts/dev-config.ts && wrangler dev -c wrangler.dev.json",
     "check": "wrangler types --strict-vars=false --check && tsc -p . && tsc -p test && tsc -p test/harness",
     "test": "vitest run",
     "deploy:dry": "wrangler deploy --dry-run --env='' --outdir dist/production && wrangler deploy --dry-run --env staging --outdir dist/staging",

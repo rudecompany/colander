@@ -518,3 +518,19 @@ describe('drill', () => {
 		expect((await inStore(primary(), T, 'drill-check', { key })).status).toBe(409);
 	});
 });
+
+describe('check-decision', () => {
+	it('toggles a check channel between Clear and not rated on staging, and never runs in production', async () => {
+		const stub = fresh();
+		const run = (environment: string, args: Record<string, unknown>) =>
+			runInDurableObject(stub, (store: Store, state) => {
+				store.now = () => T;
+				return storeOps(store, state, { ...env, OPS_GITHUB_ENVIRONMENT: environment }, 'check-decision', args);
+			});
+		expect((await run('staging', { source: '@colander-smoke', reason: 'Smoke 1.' })).body).toEqual({ source: '@colander-smoke', verdict: 'clear' });
+		expect((await run('staging', { source: '@colander-smoke', reason: 'Smoke 2.' })).body).toEqual({ source: '@colander-smoke', verdict: 'none' });
+		expect((await run('staging', { source: '@someone-else', reason: 'x' })).status).toBe(400);
+		expect((await run('staging', { source: '@colander-drill', reason: '' })).status).toBe(400);
+		expect((await run('production', { source: '@colander-smoke', reason: 'Smoke.' })).status).toBe(403);
+	});
+});

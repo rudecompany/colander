@@ -29,7 +29,8 @@ import { rank } from './permissions';
 import { latestSequence, RETENTION_SECONDS, SNAPSHOT_KEY } from './store/list';
 import { redactSeedNames } from './store/compliance';
 import { saveAdapterConfig } from './store/misc';
-import { importSeed, recordSeedImport, type SeedImport } from './store/sources';
+import { ensureSource, getSource, importSeed, recordSeedImport, type SeedImport } from './store/sources';
+import { decide } from './scoring/actions';
 import { primary, type Store } from './store/store';
 
 /** A JSON object argument as the workflow sends it. */
@@ -104,7 +105,10 @@ async function call(stub: DurableObjectStub<Store>, command: string, args: OpsAr
 }
 
 /** The commands of the contract. */
-const COMMANDS = new Set(['status', 'grant-role', 'import-seed', 'sign-config', 'drill', 'purge-cache', 'restore-dump', 'pitr-restore']);
+const COMMANDS = new Set(['status', 'grant-role', 'import-seed', 'sign-config', 'drill', 'purge-cache', 'restore-dump', 'pitr-restore', 'check-decision']);
+
+/** The two fictional channels the staging smoke test and the restore drill decide on. */
+export const CHECK_SOURCES = ['@colander-smoke', '@colander-drill'];
 
 /** The drill fails when the newest dump is this old: one 6-hourly dump went missing (hosting plan section 3). */
 export const DUMP_MAX_AGE_S = 7 * 3600;
@@ -269,6 +273,11 @@ export async function storeOps(store: Store, ctx: DurableObjectState, env: Env, 
 			return grant(store, a, caller);
 		case 'reapply-erasures':
 			return ok({ erased: await reapplyErasures(store, env) });
+		case 'check-decision': {
+			const answer = checkDecision(store, env, a);
+			if (store.jobs.dirty) await store.jobs.arm();
+			return answer;
+		}
 		case 'import-seed': {
 			const answer = await importSeedFile(store, env, a);
 			if (store.jobs.dirty) await store.jobs.arm();
@@ -388,6 +397,25 @@ function grant(store: Store, a: OpsArgs, caller?: OpsCaller): OpsAnswer {
 	const acct = grantRole(db, email, role, unix(store.now()), { host: 'ops', actorSub: caller ? `github:${caller.actor}` : undefined, requestId: caller?.runId });
 	const invite = rank(role) >= rank('curator') ? ' It needs a passkey invite from the admin host before it can review.' : '';
 	return ok({ account: accountJSON(acct), message: `${acct.email} (${acct.id}) is now ${acct.role}.${invite}` });
+}
+
+/**
+ * check-decision {"source", "reason"}: the staging smoke test's and the restore drill's write. It
+ * toggles one of the two fictional check channels between Clear and not rated, as a curator
+ * decision would, so every run changes the list. It replaces the long-lived reviewer token those
+ * checks used, and production refuses it: its public log is not for checks.
+ */
+function checkDecision(store: Store, env: Env, a: OpsArgs): OpsAnswer {
+	if (env.OPS_GITHUB_ENVIRONMENT === 'production') return fail(403, 'not_here', 'check-decision runs on staging and in dev only.');
+	const source = text(a.source);
+	const reason = trimSpace(text(a.reason));
+	if (!CHECK_SOURCES.includes(source)) return fail(400, 'invalid_source', `source must be ${CHECK_SOURCES.join(' or ')}.`);
+	if (reason === '' || [...reason].length > 500) return fail(400, 'invalid_reason', 'reason must be 1 to 500 characters.');
+	const db = store.db;
+	const ref = ensureSource(db, 'yt', source, '', unix(store.now()));
+	const verdict = getSource(db, ref)?.state.verdict === 'clear' ? 'none' : 'clear';
+	decide(store.engine, { sourceRef: ref, verdict, reason, actor: 'curator' });
+	return ok({ source, verdict });
 }
 
 /** The licenses a paid product may use a seed list under, by their SPDX identifiers. */

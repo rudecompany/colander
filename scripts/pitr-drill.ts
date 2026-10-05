@@ -3,10 +3,11 @@
 // that the list sequence went up instead of back, and that a client holding a sequence the
 // restore erased recovers through 410 and a fresh signed snapshot.
 //
-// Env: COLANDER_BASE_URL, COLANDER_PUBLIC_KEYS, OPS_TOKEN, COLANDER_REVIEWER_TOKEN, and on
-// staging CF_ACCESS_CLIENT_ID and CF_ACCESS_CLIENT_SECRET. The ops contract is in docs/deploy.md.
+// Env: COLANDER_BASE_URL, COLANDER_PUBLIC_KEYS, and on staging CF_ACCESS_CLIENT_ID and
+// CF_ACCESS_CLIENT_SECRET. In a GitHub workflow with id-token: write it calls the ops channel with
+// OIDC tokens it asks GitHub for; elsewhere with OPS_TOKEN. The ops contract is in docs/deploy.md.
 import { randomBytes } from 'node:crypto';
-import { expect, fetchSnapshot, header, http, json, sleep, trustedKeys } from './smoke.ts';
+import { expect, fetchSnapshot, header, http, json, ops, sleep, trustedKeys } from './smoke.ts';
 
 const need = (name: string): string => {
 	const v = process.env[name]?.trim();
@@ -14,23 +15,10 @@ const need = (name: string): string => {
 	return v;
 };
 const keys = trustedKeys(need('COLANDER_PUBLIC_KEYS'));
-const opsToken = need('OPS_TOKEN');
-const reviewer = { Authorization: `Bearer ${need('COLANDER_REVIEWER_TOKEN')}`, 'Content-Type': 'application/json' };
 
 interface Status {
 	head_seq: number;
 	r2_seq: number;
-}
-
-async function ops<T = any>(command: string, body: object = {}): Promise<T> {
-	const res = await http(`/ops/${command}`, {
-		method: 'POST',
-		headers: { Authorization: `Bearer ${opsToken}`, 'Content-Type': 'application/json' },
-		body: JSON.stringify(body)
-	});
-	const out = await json(res);
-	expect(res.ok, `/ops/${command} answered ${res.status} ${JSON.stringify(out)}`);
-	return out as T;
 }
 
 async function until<T>(what: string, seconds: number, probe: () => Promise<T | undefined>): Promise<T> {
@@ -43,9 +31,10 @@ async function until<T>(what: string, seconds: number, probe: () => Promise<T | 
 	}
 }
 
-const source = '/v1/review/sources/yt/@colander-drill';
+// The public source page carries the channel's decision log; the edge keeps it up to 60 s.
+const source = '/v1/sources/yt/@colander-drill';
 async function history(): Promise<{ reason: string }[]> {
-	const res = await http(source, { headers: reviewer });
+	const res = await http(source);
 	const body = await json(res);
 	if (res.status === 404) return [];
 	expect(res.status === 200, `GET ${source} answered ${res.status} ${JSON.stringify(body)}`);
@@ -60,17 +49,8 @@ console.log(`Before: Store head ${before.head_seq}, R2 head ${before.r2_seq}`);
 const at = new Date().toISOString().replace(/\.\d+Z$/, 'Z');
 await sleep(5000);
 
-const current = await http(source, { headers: reviewer });
-const state = await json(current);
-expect(current.status === 200 || current.status === 404, `GET ${source} answered ${current.status} ${JSON.stringify(state)}`);
-const verdict = state?.source?.verdict === 'clear' ? 'none' : 'clear';
-const decided = await http(`${source}/decision`, {
-	method: 'POST',
-	headers: reviewer,
-	body: JSON.stringify({ verdict, reason: marker, signals: [], tests: [] })
-});
-expect(decided.status === 200, `the marker decision answered ${decided.status} ${JSON.stringify(await json(decided))}`);
-expect((await history()).some((e) => e.reason === marker), 'the marker is not in the decision log');
+await ops('check-decision', { source: '@colander-drill', reason: marker });
+await until('the marker in the decision log', 90, async () => ((await history()).some((e) => e.reason === marker) ? true : undefined));
 
 // The marker changed the list, so a new sequence reaches R2. A client may now hold it.
 const marked = await until('the marker publication', 60, async () => {
