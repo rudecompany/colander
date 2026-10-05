@@ -20,12 +20,36 @@ test('a plan code typed in Options turns Plus on, and the claim carries only the
 	await card.getByLabel('Code from the website').fill('kxq4 jp7m');
 	await card.getByRole('button', { name: 'Connect' }).click();
 	await expect(opts.getByRole('heading', { level: 2, name: 'Plus, active' })).toBeVisible();
-	await expect.poll(() => ext.storage('entitlement')).toEqual({ plus: true, trial: false, exp });
+	await expect.poll(() => ext.storage('entitlement')).toEqual({ plus: true, trial: false, exp, account: 'p***@colander.test' });
 	const claim = ext.api.posted('/v1/pair/claim')[0]!;
 	expect(claim.body).toEqual({ code: 'KXQ4JP7M', ext_version: '1.0.0', browser: 'chromium' });
 	expect(claim.auth).toBeUndefined();
-	// Paid Plus is connected, so the card is gone.
+	// Paid Plus is connected, so the card is gone, with the button that had focus: focus moves to the
+	// Plus card, the change is announced, and the card names the account the code came from.
 	await expect(opts.getByRole('heading', { name: 'Connect Plus with a code' })).toHaveCount(0);
+	await expect(opts.getByRole('heading', { level: 2, name: 'Plus, active' })).toBeFocused();
+	await expect(opts.getByRole('status').filter({ hasText: 'Connected' })).toHaveText('Connected to p***@colander.test. Plus is on in this browser.');
+	await expect(opts.getByText('connected to the account p***@colander.test', { exact: false })).toBeVisible();
+	expect(await ext.storage('entitlement')).toEqual({ plus: true, trial: false, exp, account: 'p***@colander.test' });
+});
+
+// Settings versions count per account: the trial's count says nothing about the account's copy.
+test("a plan paired after a trial takes the account's settings, however far the trial counted", async ({ ext }) => {
+	const opts = await ext.ctx.newPage();
+	await opts.goto(`chrome-extension://${EXT_ID}/options.html#plan`);
+	await opts.getByRole('button', { name: 'Start 14 days free' }).click();
+	await expect(opts.getByRole('heading', { level: 2, name: 'Plus trial, active' })).toBeVisible();
+	await ext.ctl.evaluate(() => chrome.storage.local.set({ syncState: { version: 8, dirty: false, sub: 'trl_e2e' } }));
+	// The account synced from another browser up to version 3.
+	ext.api.syncBlob = { version: 3, data: { strictness: 'no_ai', perPlatform: { yt: 'label' } } };
+	ext.api.pair = { kind: 'plan', token: planToken({ trial: false, exp: Math.floor(Date.now() / 1000) + 30 * 86400, sub: 'acc_pat' }) };
+	await opts.getByLabel('Code from the website').fill('KXQ4-JP7M');
+	await opts.getByRole('button', { name: 'Connect' }).click();
+	await expect(opts.getByRole('heading', { level: 2, name: 'Plus, active' })).toBeVisible();
+	await expect.poll(() => ext.storage('settings')).toMatchObject({ strictness: 'no_ai', perPlatform: { yt: 'label' } });
+	await expect.poll(() => ext.storage('syncState')).toMatchObject({ dirty: false, sub: 'acc_pat' });
+	// Whatever went back to the account keeps its settings.
+	expect(ext.api.syncBlob).toMatchObject({ data: { strictness: 'no_ai', perPlatform: { yt: 'label' } } });
 });
 
 test('a wrong, used or limited code says so, and a plan that does not verify is refused', async ({ ext }) => {
@@ -63,6 +87,9 @@ test('a reviewer code in the side panel connects it to the review queue', async 
 	await side.getByLabel('Code from the website').fill('RVW4-2K9P');
 	await side.getByRole('button', { name: 'Connect' }).click();
 	await expect(side.getByRole('button', { name: /Cat Rescue Tales/ })).toBeVisible();
+	// The form went away with the focused button: focus moves to the panel's heading, and it is said.
+	await expect(side.getByRole('heading', { level: 1, name: 'Review queue' })).toBeFocused();
+	await expect(side.getByRole('status').filter({ hasText: 'Connected' })).toHaveText('Connected to p***@colander.test. The review queue opens in the side panel.');
 	expect(await ext.storage('reviewerToken')).toBe('rvw_paired');
 	expect(ext.api.sent.find((s) => s.path.startsWith('/v1/review/queue'))!.auth).toBe('Bearer rvw_paired');
 

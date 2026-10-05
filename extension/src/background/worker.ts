@@ -308,19 +308,20 @@ export async function refreshReports(): Promise<Report[] | null> {
  * Stores a verified plan token. Every token arrives fresh from the server (pairing code, trial
  * or refresh), so the plan counts as checked now and the daily refresh starts from here.
  */
-export async function applyPlanToken(token: string): Promise<boolean> {
+export async function applyPlanToken(token: string, account?: string): Promise<boolean> {
 	const p = await verifyPlanToken(token, await keys());
 	if (!p) return false;
-	const ent: Entitlement = { plus: true, trial: p.trial, exp: p.exp };
+	const ent: Entitlement = { plus: true, trial: p.trial, exp: p.exp, ...(account && !p.trial ? { account } : {}) };
 	await browser.storage.local.set({ [K.planToken]: token, [K.entitlement]: ent, [K.planCheckedAt]: Date.now() });
 	return true;
 }
 
-async function planToken(): Promise<string | null> {
+/** The stored plan token while it verifies and runs, with its subject: the account, or the trial. */
+async function planToken(): Promise<{ token: string; sub: string } | null> {
 	const t = (await browser.storage.local.get(K.planToken))[K.planToken] as string | undefined;
 	if (!t) return null;
 	const p = await verifyPlanToken(t, await keys());
-	return p && Date.now() / 1000 < p.exp ? t : null;
+	return p && Date.now() / 1000 < p.exp ? { token: t, sub: p.sub } : null;
 }
 
 export async function startTrial(): Promise<{ ok: true } | { ok: false; error: string }> {
@@ -342,7 +343,7 @@ export async function startTrial(): Promise<{ ok: true } | { ok: false; error: s
  * `404 no_plan` means the plan ended: Plus turns off. Trials are never refreshed; they end.
  */
 export async function refreshEntitlement(): Promise<void> {
-	const got = await browser.storage.local.get([K.planToken, K.planCheckedAt]);
+	const got = await browser.storage.local.get([K.planToken, K.planCheckedAt, K.entitlement]);
 	const t = got[K.planToken] as string | undefined;
 	if (!t) return;
 	const p = await verifyPlanToken(t, await keys());
@@ -353,7 +354,8 @@ export async function refreshEntitlement(): Promise<void> {
 	if (p.trial || Date.now() - ((got[K.planCheckedAt] as number | undefined) ?? 0) < 86_400_000) return;
 	try {
 		const { token } = await json<{ token: string }>(await request('/v1/entitlement/refresh', { body: { token: t }, consent: 'authenticationInfo' }));
-		await applyPlanToken(token);
+		// The same account: it keeps the name it was connected with.
+		await applyPlanToken(token, (got[K.entitlement] as Entitlement | undefined)?.account);
 	} catch (e) {
 		if (e instanceof ApiError && e.status === 404 && e.code === 'no_plan') {
 			await browser.storage.local.remove([K.planToken, K.planCheckedAt]);
@@ -364,12 +366,19 @@ export async function refreshEntitlement(): Promise<void> {
 }
 
 const SYNCED = ['strictness', 'perPlatform', 'topics', 'allows', 'blocks', 'plainChips'] as const;
-type SyncState = { version: number; dirty: boolean };
+/** `sub` is the plan token subject the version belongs to. */
+type SyncState = { version: number; dirty: boolean; sub?: string };
 /** Synced settings just taken from the server, so the change listener does not echo them back. */
 let pulled = '';
 
-async function syncState(): Promise<SyncState> {
-	return { version: 0, dirty: false, ...((await browser.storage.local.get(K.syncState))[K.syncState] as Partial<SyncState>) };
+/**
+ * The sync state, for the plan token subject `sub` when given. Versions count per subject, so a
+ * state another one left (a trial before a paid plan, another account) or one from before any plan
+ * starts over at version 0 with nothing waiting, and the first pull takes that account's copy.
+ */
+async function syncState(sub?: string): Promise<SyncState> {
+	const st: SyncState = { version: 0, dirty: false, ...((await browser.storage.local.get(K.syncState))[K.syncState] as Partial<SyncState>) };
+	return sub && st.sub !== sub ? { version: 0, dirty: false, sub } : st;
 }
 
 function pick(s: Settings) {
@@ -378,11 +387,11 @@ function pick(s: Settings) {
 
 /** Plus: pushes settings with optimistic versioning; on a conflict, merges and tries once more. */
 export async function pushSettings(): Promise<void> {
-	const token = await planToken();
-	if (!token) return;
-	const st = await syncState();
+	const plan = await planToken();
+	if (!plan) return;
+	const st = await syncState(plan.sub);
 	const s = await getSettings();
-	const put = (version: number, data: unknown) => request('/v1/sync', { method: 'PUT', body: { version, data }, auth: { plan: token }, consent: 'authenticationInfo' });
+	const put = (version: number, data: unknown) => request('/v1/sync', { method: 'PUT', body: { version, data }, auth: { plan: plan.token }, consent: 'authenticationInfo' });
 	try {
 		let res = await put(st.version, pick(s));
 		if (res.status === 409) {
@@ -392,7 +401,7 @@ export async function pushSettings(): Promise<void> {
 			res = await put(remote.version, pick(merged));
 		}
 		const out = await json<{ version?: number }>(res);
-		await browser.storage.local.set({ [K.syncState]: { version: out?.version ?? st.version + 1, dirty: false } });
+		await browser.storage.local.set({ [K.syncState]: { version: out?.version ?? st.version + 1, dirty: false, sub: plan.sub } satisfies SyncState });
 	} catch {
 		await browser.storage.local.set({ [K.syncState]: { ...st, dirty: true } });
 	}
@@ -423,12 +432,12 @@ export async function migrateSettings(): Promise<void> {
 }
 
 export async function pullSettings(): Promise<void> {
-	const token = await planToken();
-	if (!token) return;
-	const st = await syncState();
+	const plan = await planToken();
+	if (!plan) return;
+	const st = await syncState(plan.sub);
 	if (st.dirty) return pushSettings();
 	try {
-		const res = await request('/v1/sync', { auth: { plan: token }, consent: 'authenticationInfo' });
+		const res = await request('/v1/sync', { auth: { plan: plan.token }, consent: 'authenticationInfo' });
 		if (res.status === 404) return pushSettings();
 		const remote = await json<{ version: number; data: Partial<Settings> | null }>(res);
 		// An empty blob ({"version": 0, "data": null}) means this account has not synced yet.
@@ -441,7 +450,7 @@ export async function pullSettings(): Promise<void> {
 			});
 			// Send back only what this browser adds, such as allows the server did not have yet.
 			const ahead = SYNCED.some((k) => JSON.stringify(merged[k]) !== JSON.stringify(remote.data?.[k]));
-			await browser.storage.local.set({ [K.syncState]: { version: remote.version, dirty: ahead } });
+			await browser.storage.local.set({ [K.syncState]: { version: remote.version, dirty: ahead, sub: plan.sub } satisfies SyncState });
 			if (ahead) await pushSettings();
 		}
 	} catch {
@@ -477,11 +486,11 @@ export async function pair(input: string): Promise<PairReply> {
 		const got = await json<PairClaimed>(await request('/v1/pair/claim', { body, consent: 'authenticationInfo' }));
 		if (got.kind === 'reviewer') {
 			await browser.storage.local.set({ [K.reviewerToken]: got.token });
-			return { ok: true, kind: 'reviewer' };
+			return { ok: true, kind: 'reviewer', account: got.account };
 		}
-		if (!(await applyPlanToken(got.token))) return { ok: false, error: 'Colander could not verify this plan. Update Colander, then make a new code.' };
+		if (!(await applyPlanToken(got.token, got.account))) return { ok: false, error: 'Colander could not verify this plan. Update Colander, then make a new code.' };
 		void pullSettings();
-		return { ok: true, kind: 'plan' };
+		return { ok: true, kind: 'plan', account: got.account };
 	} catch (e) {
 		if (e instanceof ConsentError) return { ok: false, error: CONSENT_PLUS };
 		if (e instanceof ApiError) return { ok: false, error: e.message };
@@ -619,7 +628,7 @@ export function startWorker(): void {
 				const fromServer = JSON.stringify(pick(after)) === pulled;
 				pulled = '';
 				if (!fromServer) {
-					await browser.storage.local.set({ [K.syncState]: { ...(await syncState()), dirty: true } });
+					await browser.storage.local.set({ [K.syncState]: { ...(await syncState((await planToken())?.sub)), dirty: true } });
 					void pushSettings();
 				}
 			}

@@ -137,7 +137,7 @@ for (const scheme of ['light', 'dark'] as const) {
 			await shot(opts, `options-plan-code-error-${scheme}`, true);
 			ext.api.pair = { kind: 'plan', token: planToken({ trial: false, exp }) };
 			await opts.getByRole('button', { name: 'Connect' }).click();
-			await expect.poll(() => ext.storage('entitlement')).toEqual({ plus: true, trial: false, exp });
+			await expect.poll(() => ext.storage('entitlement')).toEqual({ plus: true, trial: false, exp, account: 'p***@colander.test' });
 			await opts.goto(`chrome-extension://${EXT_ID}/options.html#plan`);
 			await opts.waitForTimeout(300);
 			await shot(opts, `options-plan-paid-${scheme}`, true);
@@ -206,6 +206,17 @@ for (const scheme of ['light', 'dark'] as const) {
 			await side.keyboard.press('?');
 			await side.waitForTimeout(250);
 			await shot(side, `sidepanel-shortcuts-${scheme}`);
+			await side.keyboard.press('Escape');
+			// A large source with an appeal: the panel's token carries curator authority only.
+			const appeal = { id: 'apl_1', platform: 'yt', source_id: '@catrescuetales', status: 'under_review', code: 'CLN-7Q4K', statement: 'We film every rescue ourselves.', created_at: '2026-10-02T10:00:00Z' };
+			ext.api.review.source = { ...REVIEW_SOURCE, source: { ...REVIEW_SOURCE.source, large: true }, appeals: [appeal] };
+			await side.setViewportSize({ width: 400, height: 860 });
+			await side.getByRole('button', { name: 'Queue' }).click();
+			await side.getByRole('button', { name: /Cat Rescue Tales/ }).click();
+			await expect(side.getByText('has a large audience', { exact: false })).toBeVisible();
+			await side.getByRole('heading', { name: 'Decision' }).scrollIntoViewIfNeeded();
+			await side.waitForTimeout(200);
+			await shot(side, `sidepanel-staff-${scheme}`);
 		});
 	});
 }

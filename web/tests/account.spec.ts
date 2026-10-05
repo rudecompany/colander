@@ -63,8 +63,12 @@ test('connect a browser shows a pairing code and says when the extension takes i
 	});
 	await page.goto('/account');
 	const connect = page.locator('section', { has: page.getByRole('heading', { name: 'Connect a browser' }) });
-	await connect.getByRole('button', { name: 'Show a code' }).click();
+	// From the keyboard: Show a code goes away when the code shows, so focus moves to the code.
+	await connect.getByRole('button', { name: 'Show a code' }).focus();
+	await page.keyboard.press('Enter');
 	await expect(connect.getByText('KXQ4-JP7M')).toBeVisible();
+	await expect(connect.locator('.step')).toBeFocused();
+	await expect(connect.locator('.step')).toContainText("In the browser you want to connect, open Colander's Options, choose Plan and type this code.");
 	await expect(connect.getByText('Never share this code. Colander staff never ask for it.')).toBeVisible();
 	await expect(connect.getByText(/^Works once, for (10:00|9:\d\d) more\./)).toBeVisible();
 	await expect(connect.getByRole('button', { name: 'Copy' })).toBeVisible();
@@ -74,6 +78,7 @@ test('connect a browser shows a pairing code and says when the extension takes i
 	// Checked every 2 seconds: the third check finds it claimed.
 	await expect(connect.getByText('Connected Colander 1.4.0 in Firefox.')).toBeVisible({ timeout: 10_000 });
 	await expect(connect.getByText('Plus is on there.')).toBeVisible();
+	await expect(connect.locator('.step')).toBeFocused();
 	await expect(connect.getByRole('button', { name: 'Connect another browser' })).toBeVisible();
 	expect(calls.filter((c) => c.path === '/v1/pair/pair_abc')).toHaveLength(3);
 
@@ -123,9 +128,11 @@ test('a reviewer code connects the side panel; an unused code ends after 10 minu
 	await review.getByRole('button', { name: 'Show a code' }).click();
 	await expect(review.getByText('RVW4-2K9P')).toBeVisible();
 	expect(calls.find((c) => c.path === '/v1/pair')!.body).toEqual({ kind: 'reviewer' });
-	await expect(review.getByText("In the browser you review in, open Colander's side panel, or Options and then Plan, and type this code.")).toBeVisible();
+	// Only the side panel takes a reviewer code in every case: Options shows its code box only without paid Plus.
+	await expect(review.getByText("In the browser you review in, open Colander's side panel and type this code.")).toBeVisible();
 	await page.clock.runFor(10 * 60_000);
 	await expect(review.getByText('This code has ended')).toBeVisible();
+	await expect(review.locator('.step')).toBeFocused();
 	await expect(review.getByRole('button', { name: 'Show a code' })).toBeVisible();
 	await expect(review.getByText('Connected', { exact: false })).toHaveCount(0);
 });

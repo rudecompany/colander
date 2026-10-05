@@ -2,7 +2,9 @@
 @component PairCode: takes a pairing code from the website (contracts 7), the one way Plus and
 review reach this browser. The background claims it and keeps the plan or reviewer token it gets.
 In Firefox the click first asks to allow sending a sign-in token (lib/consent.ts), straight from the
-click, as Firefox requires. `hint` says where the code comes from.
+click, as Firefox requires. `hint` says where the code comes from. Success names the account the code
+came from, so a person handed someone else's code can tell; `onpaired` lets the page move focus
+when the form goes away with it.
 -->
 <script lang="ts">
 	import type { PairKind } from '@colander/shared/api';
@@ -14,17 +16,17 @@ click, as Firefox requires. `hint` says where the code comes from.
 	import type { PairReply } from '../lib/messages';
 	import { send } from './store.svelte';
 
-	let { id = 'pair-code', hint }: { id?: string; hint: string } = $props();
+	let { id = 'pair-code', hint, onpaired }: { id?: string; hint: string; onpaired?: (kind: PairKind, done: string) => void } = $props();
 
 	const DONE: Record<PairKind, string> = {
-		plan: 'Connected. Plus is on in this browser.',
-		reviewer: 'Connected. The review queue opens in the side panel.'
+		plan: 'Plus is on in this browser.',
+		reviewer: 'The review queue opens in the side panel.'
 	};
 
 	let code = $state('');
 	let busy = $state(false);
 	let error = $state('');
-	let done = $state<PairKind | null>(null);
+	let done = $state('');
 
 	async function submit(e: SubmitEvent) {
 		e.preventDefault();
@@ -33,14 +35,15 @@ click, as Firefox requires. `hint` says where the code comes from.
 		const consent = ask(['authenticationInfo']);
 		busy = true;
 		error = '';
-		done = null;
+		done = '';
 		const r: PairReply = (await consent)
 			? await send<PairReply>({ type: 'pair', code }).catch(() => ({ ok: false, error: 'Could not reach Colander. Try again in a moment.' }))
 			: { ok: false, error: 'Firefox did not allow Colander to use a sign-in token, so nothing was connected. Choose Connect to be asked again.' };
 		busy = false;
 		if (r.ok) {
 			code = '';
-			done = r.kind;
+			done = `Connected${r.account ? ` to ${r.account}` : ''}. ${DONE[r.kind]}`;
+			onpaired?.(r.kind, done);
 		} else error = r.error;
 	}
 </script>
@@ -64,7 +67,7 @@ click, as Firefox requires. `hint` says where the code comes from.
 	</div>
 	<p class="hint" id="{id}-hint">{hint}</p>
 	{#if error}<p class="msg" role="alert"><CircleAlert size={16} aria-hidden="true" />{error}</p>{/if}
-	{#if done}<p class="msg" role="status"><CircleCheck size={16} aria-hidden="true" />{DONE[done]}</p>{/if}
+	{#if done}<p class="msg" role="status"><CircleCheck size={16} aria-hidden="true" />{done}</p>{/if}
 </form>
 
 <style>

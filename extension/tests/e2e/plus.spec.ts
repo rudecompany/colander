@@ -91,10 +91,11 @@ test('a paid plan is checked daily, and a cancel or refund turns Plus off within
 	await opts.goto(`chrome-extension://${EXT_ID}/options.html#plan`);
 	await opts.getByLabel('Code from the website').fill('KXQ4-JP7M');
 	await opts.getByRole('button', { name: 'Connect' }).click();
-	await expect.poll(() => ext.storage('entitlement')).toEqual({ plus: true, trial: false, exp });
+	await expect.poll(() => ext.storage('entitlement')).toEqual({ plus: true, trial: false, exp, account: 'p***@colander.test' });
 
-	// Options says when it renews, as two sentences.
-	await expect(opts.locator('p', { hasText: 'Plus renews on' })).toHaveText(/^Plus renews on \d{1,2} \w+ \d{4}\. It is connected through your account on the website\.$/);
+	// Options names the account it came from, and leaves the renewal date to the website: the token
+	// runs a few days past the paid period.
+	await expect(opts.getByText('Plus is on in this browser, connected to the account p***@colander.test. Renewal and billing are on the website.', { exact: true })).toBeVisible();
 
 	const refreshes = () => ext.api.posted('/v1/entitlement/refresh');
 	// The paired token is fresh from the server, so it counts as checked now.
@@ -151,11 +152,11 @@ test('settings sync recovers when the server has no copy of the version this bro
 	await opts.goto(`chrome-extension://${EXT_ID}/options.html#strictness`);
 	await expect(opts.getByText('Part of Plus.')).toHaveCount(0);
 	// This browser last saw version 5 on a server that has since lost its copy (a reset store).
-	await ext.ctl.evaluate(() => chrome.storage.local.set({ syncState: { version: 5, dirty: false } }));
+	await ext.ctl.evaluate(() => chrome.storage.local.set({ syncState: { version: 5, dirty: false, sub: 'trl_e2e' } }));
 	ext.api.syncBlob = null;
 	await opts.getByRole('radiogroup', { name: 'TikTok strictness' }).getByRole('radio', { name: 'No AI' }).click();
 	// The 409 carries data: null and version 0; the extension merges nothing and saves on top of 0.
-	await expect.poll(() => ext.storage('syncState')).toEqual({ version: 1, dirty: false });
+	await expect.poll(() => ext.storage('syncState')).toEqual({ version: 1, dirty: false, sub: 'trl_e2e' });
 	const versions = ext.api.sent.filter((s) => s.path === '/v1/sync' && s.method === 'PUT').map((s) => (s.body as { version: number }).version);
 	expect(versions.slice(-2)).toEqual([5, 0]);
 	expect(ext.api.syncBlob).toMatchObject({ version: 1, data: { perPlatform: { tt: 'no_ai' } } });

@@ -1,5 +1,6 @@
 // Journey 6: staff connect the review side panel with a pairing code from the website, work the
-// real queue there, and the decision lands in the public log.
+// real queue there, and the decision lands in the public log. The panel's token carries curator
+// authority only, so a large source is left to the review console.
 import { BASE_URL, LOCAL_ONLY, ORIGIN, STAFF } from './stack.ts';
 import { expect, launch, onboard, pairWith, signIn, test, type Ext } from './harness.ts';
 
@@ -45,15 +46,22 @@ test('a reviewer code from the account page connects the side panel, which decid
 
 	await gossip.click();
 	await expect(side.getByRole('heading', { level: 2, name: 'Celebrity Gossip Narrated' })).toBeVisible();
-	await side.getByRole('radiogroup', { name: 'Verdict' }).getByRole('radio', { name: /^Slop/ }).click();
-	await side.getByLabel('Reason, published in the decision log').fill('Staff review confirmed synthetic narration over celebrity photos, nineteen uploads a day.');
+	await expect(side.getByText('Celebrity Gossip Narrated has a large audience, so only staff can decide it, in the review console on the website.')).toBeVisible();
+	await expect(side.getByRole('radiogroup', { name: 'Verdict' })).toHaveCount(0);
+	await expect(side.getByRole('button', { name: 'Record decision' })).toBeDisabled();
+
+	await side.getByRole('button', { name: 'Queue' }).click();
+	await side.getByRole('button', { name: /Galaxy Facts 4K/ }).click();
+	await expect(side.getByRole('heading', { level: 2, name: 'Galaxy Facts 4K' })).toBeVisible();
+	await side.getByRole('radiogroup', { name: 'Verdict' }).getByRole('radio', { name: /^AI-made/ }).click();
+	await side.getByLabel('Reason, published in the decision log').fill('Generated space footage with a synthetic voice, labeled as AI by the platform.');
 	await side.getByRole('button', { name: 'Record decision' }).click();
 	await expect(side.getByText('Decision recorded.')).toBeVisible();
 
 	await site.goto(`${ORIGIN}/log`);
 	const entry = site.locator('ol.entries > li').first();
-	await expect(entry.locator('.src')).toHaveText('Celebrity Gossip Narrated');
-	await expect(entry.locator('.change')).toContainText('Slop');
-	await expect(entry).toContainText('nineteen uploads a day');
-	await expect(entry).toContainText('Rae');
+	await expect(entry.locator('.src')).toHaveText('Galaxy Facts 4K');
+	await expect(entry.locator('.change')).toContainText('AI-made');
+	await expect(entry).toContainText('synthetic voice');
+	await expect(entry).toContainText('Decided by curator Rae');
 });

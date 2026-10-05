@@ -1,11 +1,14 @@
 <!--
-@component Plan: Free with the Plus price card, or Plus with its renewal; Connect Plus with a code
-from the website (contracts 7) until paid Plus is on; and Support our work.
+@component Plan: Free with the Plus price card, or Plus and the account it comes from; Connect Plus
+with a code from the website (contracts 7) until paid Plus is on; and Support our work. A code that
+turns Plus on takes its card away, so focus moves to the Plus card and the change is announced.
 -->
 <script lang="ts">
 	import { PageHeader, PriceCard } from '@colander/shared';
+	import type { PairKind } from '@colander/shared/api';
 	import { PLAN_COPY } from '@colander/shared/copy';
 	import { fmtDate } from '@colander/shared/format';
+	import { tick } from 'svelte';
 	import Button from '@colander/shared/components/ui/button/button.svelte';
 	import Card from '@colander/shared/components/ui/card/card.svelte';
 	import CircleAlert from '@lucide/svelte/icons/circle-alert';
@@ -20,6 +23,21 @@ from the website (contracts 7) until paid Plus is on; and Support our work.
 	const plus = $derived(isPlus(e));
 	let busy = $state(false);
 	let error = $state('');
+	let announce = $state('');
+	let paired = $state(false);
+
+	function onpaired(kind: PairKind, done: string) {
+		if (kind !== 'plan') return;
+		announce = done;
+		paired = true;
+	}
+
+	// Once the entitlement arrives the code card is gone: focus goes to the Plus card's heading.
+	$effect(() => {
+		if (!paired || !plus) return;
+		paired = false;
+		void tick().then(() => document.getElementById('plan-now')?.focus());
+	});
 
 	async function trial() {
 		busy = true;
@@ -32,10 +50,17 @@ from the website (contracts 7) until paid Plus is on; and Support our work.
 
 <PageHeader variant="app" eyebrow="Options" title="Plan" lede="Blocking is free for good. Plus adds control, never influence over a verdict." />
 
+<p class="cl-sr-only" role="status">{announce}</p>
+
 <div class="cards">
 	{#if plus && e}
-		<Card title={e.trial ? 'Plus trial, active' : 'Plus, active'} headingLevel={2}>
-			<p>{e.trial ? 'Your trial ends on' : 'Plus renews on'} <strong>{fmtDate(e.exp * 1000)}</strong>.{#if !e.trial}{' '}It is connected through your account on the website.{/if}</p>
+		<Card title={e.trial ? 'Plus trial, active' : 'Plus, active'} titleId="plan-now" headingLevel={2}>
+			{#if e.trial}
+				<p>Your trial ends on <strong>{fmtDate(e.exp * 1000)}</strong>.</p>
+			{:else}
+				<!-- The token's end is the paid period plus a few days of grace, not a renewal date: the website has that. -->
+				<p>Plus is on in this browser, connected to {#if e.account}the account <strong>{e.account}</strong>{:else}your account{/if}. Renewal and billing are on the website.</p>
+			{/if}
 			<div class="btns">
 				{#if e.trial}<Button variant="primary" href="{SITE}/plans" target="_blank" rel="noopener">Keep Plus after the trial</Button>{/if}
 				<Button variant="secondary" href="{SITE}/account" target="_blank" rel="noopener">Manage on the website</Button>
@@ -55,7 +80,7 @@ from the website (contracts 7) until paid Plus is on; and Support our work.
 		<Card title="Connect Plus with a code" headingLevel={2}>
 			<p class="muted">Have Plus on your account? Connect this browser with a code. Nothing else about your account comes with it.</p>
 			<div class="pair">
-				<PairCode id="plan-code" hint="On the Colander website, open your account and choose Show a code. It works once, for 10 minutes." />
+				<PairCode id="plan-code" hint="On the Colander website, open your account and choose Show a code. It works once, for 10 minutes." {onpaired} />
 			</div>
 		</Card>
 	{/if}
@@ -77,6 +102,10 @@ from the website (contracts 7) until paid Plus is on; and Support our work.
 	}
 	.pair {
 		margin-top: 16px;
+	}
+	/* No last word alone on a line. */
+	.cards p {
+		text-wrap: pretty;
 	}
 	.btns {
 		display: flex;

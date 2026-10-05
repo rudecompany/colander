@@ -3,10 +3,11 @@
 (contracts 7): Plus with kind "plan", the review side panel with kind "reviewer". Show a code makes
 one and shows it with Copy and its 10-minute countdown, then checks every 2 seconds until the
 extension takes it: "Connected Colander 1.4.0 in Firefox". The code works once, in any browser,
-also one on another computer, and a new code ends the one before.
+also one on another computer, and a new code ends the one before. Each step replaces what had
+focus (Show a code goes away when the code shows), so focus moves to the step's content.
 -->
 <script lang="ts">
-	import { onDestroy } from 'svelte';
+	import { onDestroy, tick } from 'svelte';
 	import { BROWSER_NAME, type PairCreated, type PairKind, type PairStatus } from '@colander/shared/api';
 	import { CopyButton } from '@colander/shared';
 	import Button from '@colander/shared/components/ui/button/button.svelte';
@@ -19,7 +20,7 @@ also one on another computer, and a new code ends the one before.
 
 	const WHERE: Record<PairKind, string> = {
 		plan: "In the browser you want to connect, open Colander's Options, choose Plan and type this code.",
-		reviewer: "In the browser you review in, open Colander's side panel, or Options and then Plan, and type this code."
+		reviewer: "In the browser you review in, open Colander's side panel and type this code."
 	};
 	const DONE: Record<PairKind, string> = {
 		plan: 'Plus is on there.',
@@ -33,6 +34,14 @@ also one on another computer, and a new code ends the one before.
 		| { step: 'error'; message: string };
 	let pair = $state<State>({ step: 'idle' });
 	let now = $state(Date.now());
+	let stepEl = $state<HTMLElement>();
+
+	// The code, the connection, an ended code or an error: focus follows, so it is read out and the
+	// keyboard carries on from there.
+	$effect(() => {
+		if (pair.step === 'idle' || pair.step === 'working') return;
+		void tick().then(() => stepEl?.focus());
+	});
 	let timers: ReturnType<typeof setInterval>[] = [];
 
 	function stop() {
@@ -90,24 +99,28 @@ also one on another computer, and a new code ends the one before.
 	const clock = $derived(`${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}`);
 </script>
 
-{#if pair.step === 'code'}
-	<div class="code-card">
-		<p class="cl-body">{WHERE[kind]}</p>
-		<div class="code-row">
-			<output class="code" aria-label="Pairing code {pair.code.split('').join(' ')}">{pair.code}</output>
-			<CopyButton text={pair.code} size="xl" />
-		</div>
-		<p class="cl-caption cl-muted">Works once, for {clock} more. This page updates when Colander takes it.</p>
-		<p class="warn"><ShieldAlert size={16} aria-hidden="true" />Never share this code. Colander staff never ask for it.</p>
+{#if pair.step !== 'idle' && pair.step !== 'working'}
+	<div class="step" tabindex="-1" bind:this={stepEl}>
+		{#if pair.step === 'code'}
+			<div class="code-card">
+				<p class="cl-body">{WHERE[kind]}</p>
+				<div class="code-row">
+					<output class="code" aria-label="Pairing code {pair.code.split('').join(' ')}">{pair.code}</output>
+					<CopyButton text={pair.code} size="xl" />
+				</div>
+				<p class="cl-caption cl-muted">Works once, for {clock} more. This page updates when Colander takes it.</p>
+				<p class="warn"><ShieldAlert size={16} aria-hidden="true" />Never share this code. Colander staff never ask for it.</p>
+			</div>
+		{:else if pair.step === 'connected'}
+			<Notice tone="success" title={`Connected Colander${pair.version ? ` ${pair.version}` : ''}${pair.browser ? ` in ${pair.browser}` : ''}.`}>
+				<p>{DONE[kind]}</p>
+			</Notice>
+		{:else if pair.step === 'expired'}
+			<Notice title="This code has ended"><p>It was not used within 10 minutes, or a newer code replaced it. Show a new one when you are ready.</p></Notice>
+		{:else if pair.step === 'error'}
+			<Notice tone="error" title="No code was made"><p>{pair.message}</p></Notice>
+		{/if}
 	</div>
-{:else if pair.step === 'connected'}
-	<Notice tone="success" title={`Connected Colander${pair.version ? ` ${pair.version}` : ''}${pair.browser ? ` in ${pair.browser}` : ''}.`}>
-		<p>{DONE[kind]}</p>
-	</Notice>
-{:else if pair.step === 'expired'}
-	<Notice title="This code has ended"><p>It was not used within 10 minutes, or a newer code replaced it. Show a new one when you are ready.</p></Notice>
-{:else if pair.step === 'error'}
-	<Notice tone="error" title="No code was made"><p>{pair.message}</p></Notice>
 {/if}
 
 {#if pair.step !== 'code'}
@@ -119,6 +132,10 @@ also one on another computer, and a new code ends the one before.
 {/if}
 
 <style>
+	/* Focus lands here only from script, after a step replaced the button that had it. */
+	.step:focus {
+		outline: none;
+	}
 	.row {
 		display: flex;
 		flex-wrap: wrap;

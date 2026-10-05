@@ -96,7 +96,8 @@ export type ToWorker =
 
 export type HelloReply = { tabPaused: boolean };
 export type ReportReply = { ok: true; report: Report } | { ok: false; error: string };
-export type PairReply = { ok: true; kind: PairKind } | { ok: false; error: string };
+/** `account` is the masked email of the account the code came from, such as p***@example.com; an older server sends none. */
+export type PairReply = { ok: true; kind: PairKind; account?: string } | { ok: false; error: string };
 
 /** Service worker or popup -> content script. */
 export type ToPage =

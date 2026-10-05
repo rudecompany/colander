@@ -117,6 +117,62 @@ export class Rdp {
 		return (typeof res.result === 'string' ? JSON.parse(res.result) : undefined) as T;
 	}
 
+	/** Runs chrome code with `win`, the browser window. */
+	private inWindow<T = unknown>(body: string): Promise<T> {
+		return this.evalChrome<T>(`const win = Services.wm.getMostRecentWindow('navigator:browser'); ${body}`);
+	}
+
+	/** Opens a URL, such as an add-on page, in a new tab at the front, as the browser itself does. */
+	async openTab(url: string): Promise<void> {
+		await this.inWindow(`win.gBrowser.selectedTab = win.gBrowser.addTab(${JSON.stringify(url)}, { triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal() });`);
+	}
+
+	/**
+	 * Clicks what `js` finds in the add-on page whose URL matches, as a person does: its tab comes to
+	 * the front and native mouse events go to the element's center. Firefox counts that as user
+	 * input, which a permission prompt or sidebarAction.open() needs and a scripted click is not.
+	 */
+	async click(url: RegExp, js: string): Promise<void> {
+		const at = await this.eval<{ x: number; y: number } | null>(
+			`const el = ${js}; if (!el) return null; el.scrollIntoView({ block: 'center' }); const r = el.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 };`,
+			url
+		);
+		if (!at) throw new Error(`nothing matches ${js} in ${url}`);
+		await this.inWindow(`
+			const re = new RegExp(${JSON.stringify(url.source)});
+			const tab = win.gBrowser.tabs.find((t) => re.test(t.linkedBrowser.currentURI.spec));
+			win.gBrowser.selectedTab = tab;
+			await new Promise((r) => win.setTimeout(r, 100));
+			const b = tab.linkedBrowser.getBoundingClientRect();
+			const x = (win.mozInnerScreenX + b.left + ${at.x}) * win.devicePixelRatio;
+			const y = (win.mozInnerScreenY + b.top + ${at.y}) * win.devicePixelRatio;
+			const wu = win.windowUtils;
+			for (const m of [wu.NATIVE_MOUSE_MESSAGE_MOVE, wu.NATIVE_MOUSE_MESSAGE_BUTTON_DOWN, wu.NATIVE_MOUSE_MESSAGE_BUTTON_UP]) {
+				wu.sendNativeMouseEvent(x, y, m, 0, 0, win.document.documentElement, null);
+				await new Promise((r) => win.setTimeout(r, 50));
+			}`);
+	}
+
+	/**
+	 * Answers Firefox's optional permission prompts from now on with `answer`, as a person would,
+	 * and returns what each prompt since the last call asked for, as JSON.
+	 */
+	prompts(answer: boolean): Promise<string[]> {
+		return this.inWindow(`
+			const s = (win.__colanderPrompts ??= { asked: [], answer: true });
+			if (!s.observer) {
+				s.observer = { observe(subject) { const p = subject.wrappedJSObject; s.asked.push(JSON.stringify(p.permissions)); p.resolve(s.answer); } };
+				Services.obs.addObserver(s.observer, 'webextension-optional-permission-prompt');
+			}
+			s.answer = ${answer};
+			return s.asked.splice(0);`);
+	}
+
+	/** Whether Firefox's sidebar is open, and on which panel. */
+	sidebar(): Promise<{ open: boolean; id: string | null }> {
+		return this.inWindow(`return { open: win.SidebarController.isOpen, id: win.SidebarController.currentID ?? null };`);
+	}
+
 	close() {
 		this.sock.destroy();
 	}

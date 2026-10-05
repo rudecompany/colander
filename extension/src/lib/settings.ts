@@ -139,6 +139,8 @@ export interface Entitlement {
 	plus: boolean;
 	trial: boolean;
 	exp: number;
+	/** Paid Plus from a pairing code: the account's masked email, such as p***@example.com. */
+	account?: string;
 }
 
 /** Plus features are on while the verified plan token has not expired. */
