@@ -182,9 +182,9 @@ Cache headers set by the Store:
    They authenticate with the session cookie plus CSRF, or with a reviewer bearer token.
    AddDecision, the inline rescore and the decision_log entry commit in one transaction, and the publisher writes a new sequence within 10 s.
 8. **Email sign-in.**
-   `POST /v1/auth/email` takes the per-email-hash and per-IP-hash quotas and inserts the magic link in one transaction.
+   `POST /v1/auth/code` takes the per-email-hash and per-IP-hash quotas and inserts the 6-digit code's hash in one transaction.
    It then sends through the Email Sending binding, falling back to Resend on any error.
-   `POST /v1/auth/verify` consumes the link and creates the session in one transaction.
+   `POST /v1/auth/code/verify` consumes the code and creates the session in one transaction; passkeys sign in through `/v1/auth/passkey/*`.
    Set-Cookie bypasses the cache.
 9. **Stripe.**
    Checkout creates a Session over fetch.
@@ -205,9 +205,9 @@ Cache headers set by the Store:
     It then encodes the list, signs it with WebCrypto Ed25519, and writes it to R2 with `seq` metadata.
     If R2 lags the local head at start, the Store rewrites it; if R2 is ahead (after a restore), it publishes above R2's seq.
 13. **Ops.**
-    A GitHub `workflow_dispatch` posts to `/ops/<command>` with `OPS_TOKEN`.
-    The Worker compares the token in constant time and calls a Store RPC.
-    The workflow log is the audit trail.
+    A GitHub `workflow_dispatch` posts to `/ops/<command>` with a GitHub Actions OIDC token.
+    The Worker verifies its repository, `main` and GitHub environment and calls a Store RPC.
+    The workflow log and the Store's audit log are the audit trail.
 14. **Deploy.**
     `wrangler deploy` activates a new version, and Durable Objects restart and lose their in-memory state ([docs](https://developers.cloudflare.com/durable-objects/best-practices/access-durable-objects-storage/)).
     The Store constructor runs pending migrations under `blockConcurrencyWhile` and reloads the snapshot.
@@ -407,7 +407,7 @@ Bump the stale actions: checkout v7, setup-node v7, pnpm/action-setup v6, upload
 | Workflow | Trigger | Jobs and gates |
 |---|---|---|
 | `ci.yml` | pull_request, push to main, workflow_dispatch; concurrency per ref, cancel in progress for PRs; `contents: read`; no Cloudflare secrets | **api**: tsc, eslint (including a rule against logging `request.url` or headers), Vitest in workerd, `wrangler deploy --dry-run` for both envs, Wrangler config guard. **contract**: fixtures regenerate with no diff, TypeScript encoder byte-equal. **web-and-extension**: as today. **full-stack**: `xvfb-run make e2e` against `wrangler dev`. **parity** and **server**: until server/ is deleted. **dump-compat**: dump loads into stock sqlite3. All are required status checks on main |
-| `deploy-staging.yml` | `workflow_run` after a successful ci on main; environment `staging`; concurrency `staging`, no cancel | Build web, `wrangler deploy --env staging`, then smoke tests through an Access service token: pages and 404, /healthz, snapshot signature with the staging key, delta 200/204/410, `cf-cache-status: HIT` on repeat, a tag round trip, a magic link to a test inbox, a staff decision visible at the edge in under 60 s, and a Stripe test-mode checkout session. Records a successful GitHub Deployment for the commit |
+| `deploy-staging.yml` | `workflow_run` after a successful ci on main; environment `staging`; concurrency `staging`, no cancel | Build web, `wrangler deploy --env staging`, then smoke tests through an Access service token: pages and 404, /healthz, snapshot signature with the staging key, delta 200/204/410, `cf-cache-status: HIT` on repeat, a tag round trip, a staff decision through the ops channel visible at the edge in under 60 s, and a Stripe test-mode checkout session. Records a successful GitHub Deployment for the commit |
 | `release.yml` | push to main | **release-please** v5 with two components (below). **deploy-production** runs if the platform component released: environment `production`, tag rule `v*`, concurrency `production`, no cancel. It requires a successful staging deployment of the same commit, records the current version id, runs `wrangler deploy --tag vX.Y.Z --message ...` and a read-only production smoke test. On failure it runs `wrangler rollback <previous id> --message auto-rollback` and fails; on success it publishes the draft release. **release-extension** and **submit-chrome-web-store** are described below |
 | `rollback.yml` | workflow_dispatch with input `version`; environment `production` | Looks up the version id for the tag and runs `wrangler rollback <id> --message`; Wrangler refuses across Durable Object class lifecycle changes ([rollbacks](https://developers.cloudflare.com/workers/versions-and-deployments/rollbacks/)) |
 | `ops.yml` | workflow_dispatch with `command` and an optional repo file; environment `production` | POST `/ops/<command>`; pitr-restore requires typing the target time twice; the run log is the audit trail |
@@ -454,10 +454,9 @@ Secrets and credentials:
 | Cloudflare account-owned token, staging | GitHub environment `staging` | Owner |
 | Cloudflare account-owned token, production | GitHub environment `production` | Owner |
 | `CLOUDFLARE_ACCOUNT_ID` | Repository variable | Owner |
-| `OPS_TOKEN` (32+ random bytes, rotated quarterly) | GitHub `production` environment and Worker secret | Owner |
 | Access service token for staging smoke tests | GitHub environment `staging` | Owner |
 | WIF provider, service-account email, CWS publisher and item IDs | Variables in environment `chrome-web-store` | Owner |
-| `COLANDER_SIGNING_KEY`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `YOUTUBE_API_KEY`, `RESEND_API_KEY`, `CF_ANALYTICS_TOKEN`, `IP_SALT`, `OPS_TOKEN` | Worker secrets per environment via `wrangler secret put`; never in GitHub | Owner |
+| `COLANDER_SIGNING_KEY`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `YOUTUBE_API_KEY`, `RESEND_API_KEY`, `CF_ANALYTICS_TOKEN`, `IP_SALT` | Worker secrets per environment via `wrangler secret put`; never in GitHub | Owner |
 
 Token scope, to be verified with `--dry-run` and the first deploy ([account-owned tokens](https://developers.cloudflare.com/fundamentals/api/get-started/account-owned-tokens/)):
 - Account: Workers Scripts Edit, Account Settings Read, and Workers R2 Storage Edit only for bootstrap.

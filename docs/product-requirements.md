@@ -474,7 +474,7 @@ The closest competitor, AI Content Shield, charges $6.00 a month or $4.95 a mont
 1. Install and use it free, with no account.
 2. After the first week, the popup shows one dismissible card with the user's own numbers and two choices: Get Plus or Support our work. It appears at most once every 30 days.
 3. Opening a paid feature shows what it does and offers a 14-day trial with no card.
-4. Checkout runs on the website through a hosted checkout. An emailed sign-in link creates the account.
+4. Checkout runs on the website through a hosted checkout. An emailed 6-digit code creates the account.
 5. The extension receives a signed plan token. Cancelling takes one click on the account page, and refunds are given within 30 days.
 
 ### Support our work
