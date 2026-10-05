@@ -1,6 +1,7 @@
 // The declarative adapter configuration (normative description in extension/README.md).
 // It is plain data: CSS selectors, attribute names, regular expressions and property paths.
 // A signed remote copy with a higher `version` replaces the bundled one without a code change.
+import { BRIDGE_GETTERS } from './bridge-read';
 import type { Platform } from '@colander/shared/verdicts';
 
 export const SCHEMA = 1;
@@ -101,7 +102,7 @@ export interface Bridge {
 	card: string;
 	/** Element inside the card that holds the data. Default: the card. */
 	el?: string;
-	/** Property paths to the data object, tried in order. A trailing `()` reads a getter function. */
+	/** Property paths to the data object, tried in order. A trailing `()` calls a getter from BRIDGE_GETTERS. */
 	props: string[];
 	item?: BridgeKey[];
 	source?: BridgeKey[];
@@ -153,6 +154,11 @@ export function validateConfig(value: unknown): AdapterConfig {
 		}
 		for (const b of pc!.bridges ?? []) {
 			if (!b.card || !Array.isArray(b.props)) fail(`${p} bridge is incomplete`);
+			for (const path of b.props) {
+				for (const part of String(path).split('.')) {
+					if (part.endsWith('()') && !BRIDGE_GETTERS.includes(part.slice(0, -2))) fail(`${p} bridge calls ${part}, which is not an allowed getter`);
+				}
+			}
 			for (const k of [...(b.item ?? []), ...(b.source ?? [])]) if (k.re) regexes.push(k.re);
 		}
 	}

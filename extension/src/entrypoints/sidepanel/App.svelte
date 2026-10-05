@@ -3,7 +3,7 @@
 view, and the decision with a sticky bar. Keys work while the panel has focus and never in a text
 field: 1 to 5 and 0 pick a verdict, J and K move through the queue, R goes to the reason, Escape
 goes back, Ctrl or Cmd with Enter records, and ? lists them all.
-Uses a reviewer token sent by the website's account page through externally_connectable, or pasted here.
+Connects with a pairing code from the website's account page (contracts 7), which brings the reviewer token.
 -->
 <script lang="ts">
 	import { ColanderMark, CopyButton, DotMeter, EvidenceCard, LiveBadge, LogRow, PerforatedDisc, PlatformTag, VerdictChip, VerdictGlyph } from '@colander/shared';
@@ -17,7 +17,6 @@ Uses a reviewer token sent by the website's account page through externally_conn
 	import Card from '@colander/shared/components/ui/card/card.svelte';
 	import Checkbox from '@colander/shared/components/ui/checkbox/checkbox.svelte';
 	import Dialog from '@colander/shared/components/ui/dialog/dialog.svelte';
-	import Input from '@colander/shared/components/ui/input/input.svelte';
 	import Kbd from '@colander/shared/components/ui/kbd/kbd.svelte';
 	import SegmentedControl from '@colander/shared/components/ui/segmented-control/segmented-control.svelte';
 	import Switch from '@colander/shared/components/ui/switch/switch.svelte';
@@ -47,14 +46,15 @@ Uses a reviewer token sent by the website's account page through externally_conn
 	import { SITE } from '../../lib/env';
 	import { DEFAULT_STATUS, K, type Status } from '../../lib/settings';
 	import { ReviewError, review } from '../../ui/review';
+	import PairCode from '../../ui/PairCode.svelte';
 	import { stored } from '../../ui/store.svelte';
+	import { browser } from 'wxt/browser';
 
 	type Kind = 'all' | 'reports' | 'appeals' | 'escalations';
 	type Choice = Verdict | 'none';
 
 	const token = stored<string | undefined>(K.reviewerToken, undefined);
 	const status = stored<Status>(K.status, DEFAULT_STATUS);
-	let pasted = $state('');
 	let kind = $state<Kind>('all');
 	let items = $state<QueueItem[]>([]);
 	let cursor = $state<string | null>(null);
@@ -214,17 +214,8 @@ Uses a reviewer token sent by the website's account page through externally_conn
 		}
 	}
 
-	async function connect(e: Event) {
-		e.preventDefault();
-		const t = pasted.trim();
-		if (!t) return;
-		await chrome.storage.local.set({ [K.reviewerToken]: t });
-		pasted = '';
-		unauthorized = false;
-	}
-
 	async function signOut() {
-		await chrome.storage.local.remove(K.reviewerToken);
+		await browser.storage.local.remove(K.reviewerToken);
 		items = [];
 		back();
 	}
@@ -300,19 +291,13 @@ Uses a reviewer token sent by the website's account page through externally_conn
 		<div class="pad">
 			<Card title="Review for curators" headingLevel={2}>
 				{#if unauthorized}
-					<p class="alert" role="alert"><CircleAlert size={16} aria-hidden="true" />Your reviewer token was not accepted. Connect again from your account page.</p>
+					<p class="alert" role="alert"><CircleAlert size={16} aria-hidden="true" />This connection has ended. Connect again with a new code from your account page.</p>
 				{:else}
-					<p class="muted">Curators and staff review reports, appeals and escalations here. Open your account on the Colander website and choose Connect side panel, or paste a reviewer token.</p>
+					<p class="muted">Curators and staff review reports, appeals and escalations here. Connect this browser with a code from your account page on the Colander website.</p>
 				{/if}
 				<div class="signin">
-					<Button variant="primary" onclick={() => chrome.tabs.create({ url: `${SITE}/account` })}>Open my account</Button>
-					<form class="paste" onsubmit={connect}>
-						<label for="tok" class="label">Reviewer token</label>
-						<div class="row">
-							<Input id="tok" type="password" class="grow" bind:value={pasted} autocomplete="off" />
-							<Button variant="secondary" type="submit">Connect</Button>
-						</div>
-					</form>
+					<PairCode id="review-code" hint="Open your account, choose Show a code under Review, and type it here. It works once, for 10 minutes." />
+					<Button variant="secondary" onclick={() => browser.tabs.create({ url: `${SITE}/account` })}>Open my account</Button>
 				</div>
 			</Card>
 		</div>
@@ -618,22 +603,11 @@ Uses a reviewer token sent by the website's account page through externally_conn
 		gap: 16px;
 		margin-top: 16px;
 	}
-	.paste {
-		display: grid;
-		gap: 4px;
-		width: 100%;
-	}
 	.row {
 		display: flex;
 		flex-wrap: wrap;
 		align-items: center;
 		gap: 8px;
-	}
-	.paste .row {
-		flex-wrap: nowrap;
-	}
-	.row :global(.grow) {
-		flex: 1;
 	}
 
 	/* Queue */

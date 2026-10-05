@@ -13,6 +13,7 @@ website hero renders the same component, so the two cannot drift. 360 wide, neve
 	import { ORIGINS } from '../../lib/platforms';
 	import { dayKey, isPlus, K, needsAttention, withDefaults, DEFAULT_STATUS, type Entitlement, type Settings, type Stats, type Status } from '../../lib/settings';
 	import { send, stored } from '../../ui/store.svelte';
+	import { browser } from 'wxt/browser';
 
 	type CardTiming = { shownAt?: number; dismissedAt?: number };
 	const DAY = 86_400_000;
@@ -29,9 +30,11 @@ website hero renders the same component, so the two cannot drift. 360 wide, neve
 	const entitlement = stored<Entitlement | undefined>(K.entitlement, undefined);
 	const supportCard = stored<CardTiming>(K.supportCard, {});
 	const weeklyCard = stored<CardTiming>(K.weeklyCard, {});
+	const reviewerToken = stored<string | undefined>(K.reviewerToken, undefined);
 	const settings = $derived(withDefaults(settingsStore.value));
 
 	let tabId = $state<number | null>(null);
+	let windowId = $state<number | null>(null);
 	let tabPlatform = $state<Platform | null>(null);
 	let page = $state<PageState | null>(null);
 	let loaded = $state(false);
@@ -63,21 +66,22 @@ website hero renders the same component, so the two cannot drift. 360 wide, neve
 	const showWeekly = $derived(firstWeekDone && week > 0 && card.store.ready && due(card.store.value, card.every));
 	$effect(() => {
 		const c = card.store.value;
-		if (showWeekly && (!c.shownAt || Date.now() - c.shownAt > card.every)) void chrome.storage.local.set({ [card.key]: { ...c, shownAt: Date.now() } });
+		if (showWeekly && (!c.shownAt || Date.now() - c.shownAt > card.every)) void browser.storage.local.set({ [card.key]: { ...c, shownAt: Date.now() } });
 	});
 
 	async function load() {
 		// popup.html?tab=<id> inspects a given tab, for opening the popup in a tab while developing.
 		const forced = Number(new URLSearchParams(location.search).get('tab'));
-		const tab = forced ? await chrome.tabs.get(forced) : (await chrome.tabs.query({ active: true, currentWindow: true }))[0];
+		const tab = forced ? await browser.tabs.get(forced) : (await browser.tabs.query({ active: true, currentWindow: true }))[0];
 		tabId = tab?.id ?? null;
+		windowId = tab?.windowId ?? null;
 		if (tab?.url) {
 			const host = new URL(tab.url).hostname;
 			tabPlatform = (Object.keys(ORIGINS) as Platform[]).find((p) => ORIGINS[p].some((o) => o.split('/')[2] === host)) ?? null;
 		}
 		if (tabId !== null) {
 			try {
-				page = (await chrome.tabs.sendMessage(tabId, { type: 'page-state' } satisfies ToPage)) ?? null;
+				page = (await browser.tabs.sendMessage(tabId, { type: 'page-state' } satisfies ToPage)) ?? null;
 			} catch {
 				page = null;
 			}
@@ -105,15 +109,16 @@ website hero renders the same component, so the two cannot drift. 360 wide, neve
 		// One slot, by priority: a sync failure, a report verdict, the weekly card, else the footer.
 		slot: syncFailed ? { kind: 'sync' } : status.value.reportsUpdated ? { kind: 'report' } : showWeekly ? { kind: 'weekly', hidden: week } : null,
 		list: { sequence: status.value.listSequence || null, updatedAt: status.value.lastSyncAt },
-		canPauseTab: !!page
+		canPauseTab: !!page,
+		review: !!reviewerToken.value
 	});
 
 	function openOptions(section?: string) {
 		void send({ type: 'open', page: 'options', section });
 		window.close();
 	}
-	const openSite = (path: string) => void chrome.tabs.create({ url: `${SITE}${path}` });
-	const toPage = (m: ToPage) => (tabId === null ? Promise.resolve() : chrome.tabs.sendMessage(tabId, m).catch(() => undefined));
+	const openSite = (path: string) => void browser.tabs.create({ url: `${SITE}${path}` });
+	const toPage = (m: ToPage) => (tabId === null ? Promise.resolve() : browser.tabs.sendMessage(tabId, m).catch(() => undefined));
 
 	async function notSlop(a: PageAction) {
 		if (!a.sourceId && !a.itemId) return;
@@ -147,6 +152,15 @@ website hero renders the same component, so the two cannot drift. 360 wide, neve
 		},
 		// On a supported site that is switched off, Options opens on Platforms.
 		options: () => openOptions(tabPlatform && !running ? 'platforms' : undefined),
+		// Straight from the click, with no await before it: both browsers open their panel only for a user action.
+		review: () => {
+			const opened = import.meta.env.FIREFOX
+				? (browser as unknown as { sidebarAction: { open(): Promise<void> } }).sidebarAction.open()
+				: windowId !== null
+					? browser.sidePanel.open({ windowId })
+					: Promise.resolve();
+			void opened.finally(() => window.close());
+		},
 		show: async (r) => {
 			await toPage({ type: 'show', id: Number(r.id) });
 			setTimeout(load, 150);
@@ -172,7 +186,7 @@ website hero renders the same component, so the two cannot drift. 360 wide, neve
 		},
 		sync: () => void send({ type: 'sync-now' }),
 		reports: () => openOptions('reports'),
-		dismissWeekly: () => void chrome.storage.local.set({ [card.key]: { ...card.store.value, dismissedAt: Date.now() } }),
+		dismissWeekly: () => void browser.storage.local.set({ [card.key]: { ...card.store.value, dismissedAt: Date.now() } }),
 		plus: () => openSite('/plans'),
 		support: () => openSite('/support'),
 		log: () => openSite('/log')

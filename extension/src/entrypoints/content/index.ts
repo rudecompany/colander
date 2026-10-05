@@ -1,4 +1,4 @@
-// Isolated-world content script. Registered at runtime (chrome.scripting) only for the
+// Isolated-world content script. Registered at runtime (browser.scripting) only for the
 // platforms the user switched on and granted, and runs at document_start.
 import './host.css';
 import { start } from '../../content/page';

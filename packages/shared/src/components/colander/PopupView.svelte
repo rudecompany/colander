@@ -50,6 +50,8 @@ focus goes back to the same row, or to the list's heading when the row left the 
 		list?: { sequence: number | null; updatedAt?: DateInput | null };
 		/** False when the page has no content script to pause. */
 		canPauseTab?: boolean;
+		/** A connected curator or staff reviewer: the header offers Review, which opens the side panel. */
+		review?: boolean;
 	}
 
 	export interface PopupActions {
@@ -57,6 +59,7 @@ focus goes back to the same row, or to the list's heading when the row left the 
 		pause?: (scope: 'site' | 'tab') => void;
 		resume?: () => void;
 		options?: () => void;
+		review?: () => void;
 		show?: (row: PopupRow) => void;
 		allow?: (row: PopupRow) => void;
 		notSlop?: (row: PopupRow) => void;
@@ -76,6 +79,7 @@ focus goes back to the same row, or to the list's heading when the row left the 
 	import '../ui/button/button.css';
 	import ChevronDown from '@lucide/svelte/icons/chevron-down';
 	import Heart from '@lucide/svelte/icons/heart';
+	import ListChecks from '@lucide/svelte/icons/list-checks';
 	import RefreshCw from '@lucide/svelte/icons/refresh-cw';
 	import ScrollText from '@lucide/svelte/icons/scroll-text';
 	import Settings from '@lucide/svelte/icons/settings';
@@ -169,6 +173,7 @@ focus goes back to the same row, or to the list's heading when the row left the 
 	<header class="head">
 		<span class="brand"><ColanderMark size={20} /><span class="name">Colander</span></span>
 		{#if s.plus}<span class="uin-badge uin-badge-md">Plus</span>{/if}
+		{#if s.review}<Button variant="quiet" class="review" onclick={() => a.review?.()}><ListChecks size={16} aria-hidden="true" />Review</Button>{/if}
 		<Button variant="quiet" class="opts" onclick={() => a.options?.()}><Settings size={16} aria-hidden="true" />Options</Button>
 	</header>
 
@@ -298,8 +303,13 @@ focus goes back to the same row, or to the list's heading when the row left the 
 		font: var(--cl-body-lg);
 		font-weight: 600;
 	}
+	/* Review (curators only) and Options sit together at the right. */
+	.head :global(.review),
 	.head :global(.opts) {
 		margin-left: auto;
+	}
+	.head :global(.review + .opts) {
+		margin-left: -4px;
 	}
 	.cards {
 		display: flex;

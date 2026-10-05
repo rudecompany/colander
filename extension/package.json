@@ -11,7 +11,9 @@
     "check": "wxt prepare && svelte-check --tsconfig ./tsconfig.json --fail-on-warnings",
     "test": "vitest run",
     "test:e2e": "pnpm build:e2e && playwright test --project=e2e --project=perf",
+    "test:firefox": "WXT_COLANDER_API=http://127.0.0.1:${COLANDER_FF_API_PORT:-9206} wxt build -b firefox --mode e2e && playwright test --project=firefox",
     "test:live": "pnpm build:e2e && playwright test --project=live",
+    "lint:firefox": "wxt build -b firefox && web-ext lint --source-dir dist/firefox-mv3",
     "screenshots": "pnpm build:e2e && SCREENSHOTS=1 playwright test --project=e2e shots",
     "icons": "node scripts/make-icons.ts",
     "store-art": "pnpm build:e2e && node scripts/make-store-art.ts",
@@ -30,6 +32,7 @@
     "svelte-check": "^4.0.0",
     "typescript": "^5.9.0",
     "vitest": "^4",
+    "web-ext": "10.7.0",
     "wxt": "^0.21.4"
   },
   "dependencies": {

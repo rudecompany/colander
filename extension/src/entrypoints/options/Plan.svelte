@@ -1,4 +1,7 @@
-<!-- @component Plan: Free with the Plus price card, or Plus with its renewal, and Support our work. -->
+<!--
+@component Plan: Free with the Plus price card, or Plus with its renewal; Connect Plus with a code
+from the website (contracts 7) until paid Plus is on; and Support our work.
+-->
 <script lang="ts">
 	import { PageHeader, PriceCard } from '@colander/shared';
 	import { PLAN_COPY } from '@colander/shared/copy';
@@ -9,7 +12,8 @@
 	import Heart from '@lucide/svelte/icons/heart';
 	import { SITE } from '../../lib/env';
 	import { isPlus, K, type Entitlement } from '../../lib/settings';
-	import { send, stored } from '../../ui/store.svelte';
+	import PairCode from '../../ui/PairCode.svelte';
+	import { startTrial, stored } from '../../ui/store.svelte';
 
 	const entitlement = stored<Entitlement | undefined>(K.entitlement, undefined);
 	const e = $derived(entitlement.value);
@@ -20,7 +24,7 @@
 	async function trial() {
 		busy = true;
 		error = '';
-		const r = await send<{ ok: boolean; error?: string }>({ type: 'start-trial' }).catch(() => ({ ok: false, error: 'Could not reach Colander.' }));
+		const r = await startTrial();
 		busy = false;
 		if (!r.ok) error = r.error ?? 'The trial could not start. Try again in a moment.';
 	}
@@ -47,6 +51,15 @@
 		<p class="caption">{PLAN_COPY.trust}</p>
 	{/if}
 
+	{#if !plus || e?.trial}
+		<Card title="Connect Plus with a code" headingLevel={2}>
+			<p class="muted">Have Plus on your account? Connect this browser with a code. Nothing else about your account comes with it.</p>
+			<div class="pair">
+				<PairCode id="plan-code" hint="On the Colander website, open your account and choose Show a code. It works once, for 10 minutes." />
+			</div>
+		</Card>
+	{/if}
+
 	<Card title="Support our work" headingLevel={2}>
 		<p class="muted">Colander is funded by the people who use it, never by ads or data. A gift of any size keeps the review team going.</p>
 		<div class="btns">
@@ -61,6 +74,9 @@
 		grid-template-columns: minmax(0, 1fr);
 		gap: 24px;
 		margin-top: 32px;
+	}
+	.pair {
+		margin-top: 16px;
 	}
 	.btns {
 		display: flex;

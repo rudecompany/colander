@@ -7,6 +7,13 @@
 // ships this function into live pages with Playwright.
 import type { Bridge } from './schema';
 
+/**
+ * The only getter functions a bridge path may call (`name()`), whatever a remote config says:
+ * remote configs are data, so they name a getter from this list and never choose code to run.
+ * validateConfig refuses any other, and this reader skips any other too.
+ */
+export const BRIDGE_GETTERS: readonly string[] = ['data'];
+
 export function readBridge(card: Element, b: Bridge): { i?: string; s?: string[] } | null {
 	const host = b.el ? card.querySelector(b.el) : card;
 	if (!host) return null;
@@ -16,7 +23,8 @@ export function readBridge(card: Element, b: Bridge): { i?: string; s?: string[]
 			let v: any = host;
 			for (const part of path.split('.')) {
 				if (v == null) break;
-				v = part.endsWith('()') ? v[part.slice(0, -2)]?.() : v[part];
+				const getter = part.endsWith('()') ? part.slice(0, -2) : null;
+				v = getter === null ? v[part] : BRIDGE_GETTERS.includes(getter) ? v[getter]?.() : undefined;
 			}
 			if (v && typeof v === 'object') {
 				data = v;

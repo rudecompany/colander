@@ -7,13 +7,14 @@
 	import Download from '@lucide/svelte/icons/download';
 	import * as db from '../../lib/db';
 	import { send } from '../../ui/store.svelte';
+	import { browser } from 'wxt/browser';
 
 	let confirming = $state(false);
 	let deleting = $state(false);
 	let note = $state('');
 
 	async function exportAll() {
-		const local = await chrome.storage.local.get(null);
+		const local = await browser.storage.local.get(null);
 		delete local.listIndex; // the list itself is public and large; its version is in status
 		const data = {
 			colander: 'local-data',

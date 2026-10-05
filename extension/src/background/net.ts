@@ -1,8 +1,10 @@
 // HTTP to the Colander API (docs/contracts.md section 6). The server sends CORS headers, so
 // the extension needs no host permission for it. No request carries a page URL (section 8).
 import { b64url } from '@colander/shared/bytes';
+import { allowed, type DataKind } from '../lib/consent';
 import { API } from '../lib/env';
 import { K } from '../lib/settings';
+import { browser } from 'wxt/browser';
 
 export class ApiError extends Error {
 	constructor(
@@ -17,17 +19,29 @@ export class ApiError extends Error {
 
 /** 16 random bytes as unpadded base64url, made once per install (contract 2.4). */
 export async function installId(): Promise<string> {
-	const got = await chrome.storage.local.get(K.installId);
+	const got = await browser.storage.local.get(K.installId);
 	const have = got[K.installId] as string | undefined;
 	if (have) return have;
 	const id = b64url(crypto.getRandomValues(new Uint8Array(16)));
-	await chrome.storage.local.set({ [K.installId]: id });
+	await browser.storage.local.set({ [K.installId]: id });
 	return id;
+}
+
+/** Firefox has not been allowed to send this kind of data (lib/consent.ts); nothing was sent. */
+export class ConsentError extends Error {
+	constructor(readonly kind: DataKind) {
+		super(`Firefox has not allowed Colander to send ${kind}.`);
+	}
 }
 
 export type Auth = { install: true } | { plan: string } | { reviewer: string } | null;
 
-export async function request(path: string, init: { method?: string; body?: unknown; auth?: Auth } = {}): Promise<Response> {
+/**
+ * One API request. `consent` names the kind of data it sends, and in Firefox it is sent only once
+ * that kind is allowed; requests without it (lists and adapter configuration) carry no identifier.
+ */
+export async function request(path: string, init: { method?: string; body?: unknown; auth?: Auth; consent?: DataKind } = {}): Promise<Response> {
+	if (init.consent && !(await allowed(init.consent))) throw new ConsentError(init.consent);
 	const headers: Record<string, string> = {};
 	if (init.body !== undefined) headers['Content-Type'] = 'application/json';
 	const a = init.auth;

@@ -1,5 +1,6 @@
-// Plus delivered in full: early access to new platforms, the weekly summary in the popup, and a
-// plan token checked every day so a cancel or refund turns Plus off within a day.
+// Plus delivered in full: the 14-day trial and settings sync, early access to new platforms, the
+// weekly summary in the popup, and a plan token checked every day so a cancel or refund turns Plus
+// off within a day.
 import { EXT_ID, devSign, expect, planToken, test, type Ext } from './harness';
 import defaults from '../../src/adapters/default-config.json' with { type: 'json' };
 
@@ -83,21 +84,20 @@ test('the popup shows the week once: every 30 days with Get Plus, weekly with Pl
 });
 
 test('a paid plan is checked daily, and a cancel or refund turns Plus off within a day', async ({ ext }) => {
-	const site = await ext.ctx.newPage();
-	await site.route('http://localhost:8787/account', (r) => r.fulfill({ contentType: 'text/html', body: '<!doctype html><title>Account</title>' }));
-	await site.goto('http://localhost:8787/account');
-	// A yearly plan: months away from its end, so a refresh only near the end would miss a refund.
+	// A yearly plan, connected with a code: months away from its end, so a refresh only near the end would miss a refund.
 	const exp = Math.floor(Date.now() / 1000) + 300 * 86400;
-	await site.evaluate(([id, token]) => chrome.runtime.sendMessage(id, { type: 'colander:plan-token', token }), [EXT_ID, planToken({ trial: false, exp })] as const);
+	ext.api.pair = { kind: 'plan', token: planToken({ trial: false, exp }) };
+	const opts = await ext.ctx.newPage();
+	await opts.goto(`chrome-extension://${EXT_ID}/options.html#plan`);
+	await opts.getByLabel('Code from the website').fill('KXQ4-JP7M');
+	await opts.getByRole('button', { name: 'Connect' }).click();
 	await expect.poll(() => ext.storage('entitlement')).toEqual({ plus: true, trial: false, exp });
 
 	// Options says when it renews, as two sentences.
-	const opts = await ext.ctx.newPage();
-	await opts.goto(`chrome-extension://${EXT_ID}/options.html#plan`);
 	await expect(opts.locator('p', { hasText: 'Plus renews on' })).toHaveText(/^Plus renews on \d{1,2} \w+ \d{4}\. It is connected through your account on the website\.$/);
 
 	const refreshes = () => ext.api.posted('/v1/entitlement/refresh');
-	// The handed-over token is fresh from the server, so it counts as checked now.
+	// The paired token is fresh from the server, so it counts as checked now.
 	await ext.send({ type: 'sync-now' });
 	expect(refreshes()).toHaveLength(0);
 	// A day later the hourly sync checks it once, with only the token and no install ID.
@@ -119,4 +119,44 @@ test('a paid plan is checked daily, and a cancel or refund turns Plus off within
 	expect(await ext.storage('planToken')).toBeUndefined();
 	await opts.goto(`chrome-extension://${EXT_ID}/options.html#plan`);
 	await expect(opts.getByRole('heading', { name: 'Current plan: Free' })).toBeVisible();
+});
+
+test('the 14-day trial needs no card and unlocks Plus features', async ({ ext }) => {
+	const opts = await ext.ctx.newPage();
+	await opts.goto(`chrome-extension://${EXT_ID}/options.html#strictness`);
+	// Per-platform levels are part of Plus: in view, inert, until the trial starts.
+	await expect(opts.getByText('Part of Plus.')).toBeVisible();
+	await opts.goto(`chrome-extension://${EXT_ID}/options.html#plus`);
+	await opts.getByRole('button', { name: 'Start 14 days free' }).click();
+	await expect(opts.getByRole('heading', { name: 'Plus adds control' })).toHaveCount(0);
+	const trial = ext.api.posted('/v1/trial')[0]!;
+	expect(trial.auth).toMatch(/^Install /);
+	expect(trial.body).toBeUndefined();
+	await opts.goto(`chrome-extension://${EXT_ID}/options.html#strictness`);
+	await expect(opts.getByText('Part of Plus.')).toHaveCount(0);
+	await opts.getByRole('radiogroup', { name: 'TikTok strictness' }).getByRole('radio', { name: 'No AI' }).click();
+	await expect.poll(() => ext.storage<{ perPlatform: Record<string, string> }>('settings').then((s) => s.perPlatform)).toEqual({ tt: 'no_ai' });
+	// Plus settings sync pushes the change with the plan token.
+	await expect.poll(() => ext.api.sent.filter((s) => s.path === '/v1/sync' && s.method === 'PUT').length).toBeGreaterThan(0);
+	const put = ext.api.sent.filter((s) => s.path === '/v1/sync' && s.method === 'PUT').at(-1)!;
+	expect(put.auth).toMatch(/^Plan /);
+	expect((put.body as { data: { perPlatform: unknown } }).data.perPlatform).toEqual({ tt: 'no_ai' });
+});
+
+test('settings sync recovers when the server has no copy of the version this browser last saw', async ({ ext }) => {
+	const opts = await ext.ctx.newPage();
+	await opts.goto(`chrome-extension://${EXT_ID}/options.html#plus`);
+	await opts.getByRole('button', { name: 'Start 14 days free' }).click();
+	await expect(opts.getByRole('heading', { name: 'Plus adds control' })).toHaveCount(0);
+	await opts.goto(`chrome-extension://${EXT_ID}/options.html#strictness`);
+	await expect(opts.getByText('Part of Plus.')).toHaveCount(0);
+	// This browser last saw version 5 on a server that has since lost its copy (a reset store).
+	await ext.ctl.evaluate(() => chrome.storage.local.set({ syncState: { version: 5, dirty: false } }));
+	ext.api.syncBlob = null;
+	await opts.getByRole('radiogroup', { name: 'TikTok strictness' }).getByRole('radio', { name: 'No AI' }).click();
+	// The 409 carries data: null and version 0; the extension merges nothing and saves on top of 0.
+	await expect.poll(() => ext.storage('syncState')).toEqual({ version: 1, dirty: false });
+	const versions = ext.api.sent.filter((s) => s.path === '/v1/sync' && s.method === 'PUT').map((s) => (s.body as { version: number }).version);
+	expect(versions.slice(-2)).toEqual([5, 0]);
+	expect(ext.api.syncBlob).toMatchObject({ version: 1, data: { perPlatform: { tt: 'no_ai' } } });
 });

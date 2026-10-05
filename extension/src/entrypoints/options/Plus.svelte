@@ -18,7 +18,7 @@ strictness, and the week in data dots. Gated parts stay in view, inert, at 60% o
 	import { SITE } from '../../lib/env';
 	import { dayKey, isPlus, K, withDefaults, type Entitlement, type Settings, type Stats, type Topic } from '../../lib/settings';
 	import Gated from '../../ui/Gated.svelte';
-	import { send, stored } from '../../ui/store.svelte';
+	import { send, startTrial, stored } from '../../ui/store.svelte';
 
 	const settingsStore = stored<Partial<Settings> | undefined>(K.settings, undefined);
 	const entitlement = stored<Entitlement | undefined>(K.entitlement, undefined);
@@ -32,7 +32,7 @@ strictness, and the week in data dots. Gated parts stay in view, inert, at 60% o
 	async function trial() {
 		busy = true;
 		trialError = '';
-		const r = await send<{ ok: boolean; error?: string }>({ type: 'start-trial' }).catch(() => ({ ok: false, error: 'Could not reach Colander.' }));
+		const r = await startTrial();
 		busy = false;
 		if (!r.ok) trialError = r.error ?? 'The trial could not start. Try again in a moment.';
 	}
