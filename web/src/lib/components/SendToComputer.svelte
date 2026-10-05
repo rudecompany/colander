@@ -1,5 +1,5 @@
 <!--
-@component SendToComputer: on phones, where Chrome extensions do not run, the install button
+@component SendToComputer: on phones, where browser extensions do not run, the install button
 becomes "Send to my computer". It opens the share sheet, or copies the address and says
 "Link copied". `onDone` runs after either, such as closing the menu sheet first.
 -->
@@ -7,6 +7,7 @@ becomes "Send to my computer". It opens the share sheet, or copies the address a
 	import Send from '@lucide/svelte/icons/send';
 	import Button from '@colander/shared/components/ui/button/button.svelte';
 	import { toast } from '@colander/shared/components/ui/toast/toast.svelte.ts';
+	import { BROWSERS } from '#lib/install.svelte.ts';
 
 	let {
 		onDone,
@@ -39,7 +40,7 @@ becomes "Send to my computer". It opens the share sheet, or copies the address a
 
 <div class="send">
 	<Button {variant} {size} block onclick={send}><Send size={16} aria-hidden="true" />Send to my computer</Button>
-	{#if caption}<p class="cap">Colander runs in Chrome on desktop.</p>{/if}
+	{#if caption}<p class="cap">Colander runs in {BROWSERS} on desktop.</p>{/if}
 </div>
 
 <style>

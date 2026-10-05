@@ -6,10 +6,11 @@ while their case is open.
 -->
 <script lang="ts">
 	import { page } from '$app/state';
-	import { PUBLIC_STORE_URL } from '$app/env/public';
 	import { ColanderMark, LiveBadge, PerforationRow } from '@colander/shared';
+	import { BROWSERS, install } from '#lib/install.svelte.ts';
 	import { live } from '#lib/live.svelte.ts';
 	import ArrowLink from './ArrowLink.svelte';
+	import StoreNote from './StoreNote.svelte';
 	import InstallButton from './InstallButton.svelte';
 
 	const path = $derived(page.url.pathname);
@@ -20,7 +21,7 @@ while their case is open.
 		{
 			title: 'Product',
 			links: [
-				{ href: PUBLIC_STORE_URL, label: 'Add to Chrome' },
+				{ href: install.store.href, label: install.store.label },
 				{ href: '/definition', label: 'How it decides' },
 				{ href: '/plans', label: 'Plans' },
 				...(creatorPage ? [] : [{ href: '/support', label: 'Support our work' }])
@@ -58,8 +59,8 @@ while their case is open.
 			<PerforationRow />
 			<div class="cl-container cta-in">
 				<h2 class="cl-display-lg" id="footer-cta">Install once. <span class="cl-tone2">Change nothing.</span></h2>
-				<div class="cta-btn"><InstallButton label="Add to Chrome, free" block={false} /></div>
-				<p class="cl-figure small">Chrome on desktop. Also works in Edge and Brave. No account needed.</p>
+				<div class="cta-btn"><InstallButton free block={false} /></div>
+				<p class="cl-figure small">For {BROWSERS} on desktop. No account needed. <StoreNote /></p>
 			</div>
 		</section>
 	{/if}

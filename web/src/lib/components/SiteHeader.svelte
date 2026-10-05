@@ -1,17 +1,17 @@
 <!--
 @component SiteHeader: sticky, 64 tall on paper at 88% with a blur, over a hairline that is always
-there. The mark and wordmark, four quiet links, Account and Add to Chrome. Below 1024 px it is 56
-tall with a Menu button that opens a full-height sheet: native <dialog>, so focus stays inside,
-Escape closes it and focus returns to Menu.
+there. The mark and wordmark, four quiet links, Account and the install button for this browser.
+Below 1024 px it is 56 tall with a Menu button that opens a full-height sheet: native <dialog>, so
+focus stays inside, Escape closes it and focus returns to Menu.
 -->
 <script lang="ts">
 	import { afterNavigate } from '$app/navigation';
 	import { page } from '$app/state';
-	import { PUBLIC_STORE_URL } from '$app/env/public';
 	import MenuIcon from '@lucide/svelte/icons/menu';
 	import X from '@lucide/svelte/icons/x';
 	import { ColanderMark } from '@colander/shared';
 	import Button from '@colander/shared/components/ui/button/button.svelte';
+	import { install } from '#lib/install.svelte.ts';
 	import SendToComputer from './SendToComputer.svelte';
 
 	let { app = false }: { app?: boolean } = $props();
@@ -46,7 +46,7 @@ Escape closes it and focus returns to Menu.
 
 		<div class="end">
 			<a class="account" href="/account" aria-current={current('/account') ? 'page' : undefined}>Account</a>
-			{#if !app}<Button variant="primary" size="lg" href={PUBLIC_STORE_URL} class="install">Add to Chrome</Button>{/if}
+			{#if !app}<Button variant="primary" size="lg" href={install.store.href} class="install">{install.store.label}</Button>{/if}
 			<button type="button" class="menu-btn" aria-haspopup="dialog" onclick={() => sheet?.showModal()}>
 				<MenuIcon size={16} aria-hidden="true" />Menu
 			</button>

@@ -3,10 +3,8 @@
 	import type { Account, Plan } from '@colander/shared/api';
 	import Input from '@colander/shared/components/ui/input/input.svelte';
 	import LogOut from '@lucide/svelte/icons/log-out';
-	import Plug from '@lucide/svelte/icons/plug';
 	import ListChecks from '@lucide/svelte/icons/list-checks';
 	import { api, ApiError, errorText } from '#lib/api.ts';
-	import { detectExtension, ExtensionRefused, sendToExtension, type ExtensionState } from '#lib/extension.ts';
 	import { fmtDate } from '@colander/shared';
 	import { loadAccount, session } from '#lib/session.svelte.ts';
 	import ConnectBrowser from '#lib/components/ConnectBrowser.svelte';
@@ -17,24 +15,16 @@
 	import Button from '@colander/shared/components/ui/button/button.svelte';
 	import AuthCard from '#lib/components/AuthCard.svelte';
 
-	let ext = $state<ExtensionState>({ kind: 'checking' });
 	let displayName = $state('');
 	let nameStatus = $state<{ kind: 'idle' | 'saving' | 'saved' } | { kind: 'error'; message: string }>({ kind: 'idle' });
 	let billing = $state<{ kind: 'idle' | 'working' } | { kind: 'error'; message: string } | { kind: 'done'; message: string }>({ kind: 'idle' });
-	let reviewer = $state<{ kind: 'idle' | 'working' } | { kind: 'done' | 'error'; message: string }>({ kind: 'idle' });
 
 	const account = $derived(session.account);
 
 	onMount(async () => {
 		const a = await loadAccount();
 		displayName = a?.display_name ?? '';
-		ext = await detectExtension();
 	});
-
-	async function checkExtension() {
-		ext = { kind: 'checking' };
-		ext = await detectExtension();
-	}
 
 	async function saveName(event: SubmitEvent) {
 		event.preventDefault();
@@ -70,25 +60,6 @@
 					e instanceof ApiError && e.code === 'billing_unavailable'
 						? 'Billing is not available right now, so nothing was changed. Please try again later.'
 						: errorText(e)
-			};
-		}
-	}
-
-	async function connectReviewer() {
-		reviewer = { kind: 'working' };
-		try {
-			const { token } = await api<{ token: string }>('/v1/account/reviewer-token', { method: 'POST' });
-			await sendToExtension({ type: 'colander:reviewer-token', token });
-			reviewer = { kind: 'done', message: 'Connected. The side panel can now open the review queue. Any earlier token stopped working.' };
-		} catch (e) {
-			reviewer = {
-				kind: 'error',
-				message:
-					e instanceof ApiError
-						? e.message
-						: e instanceof ExtensionRefused
-							? 'Colander could not accept the reviewer token. Update Colander, then try again.'
-							: 'Colander did not answer. Make sure it is installed in this browser, then try again.'
 			};
 		}
 	}
@@ -180,9 +151,16 @@
 		</section>
 
 		<section class="uin-card uin-card-lg uin-card-pad section-card" aria-labelledby="connect-title">
-			<h2 class="cl-title" id="connect-title">Connect this browser</h2>
-			<p class="cl-body cl-muted">Sends a signed plan token to the extension, so Plus works here. Nothing else about your account is shared with it.</p>
-			<ConnectBrowser {ext} canConnect={!!livePlan} onrecheck={checkExtension} />
+			<h2 class="cl-title" id="connect-title">Connect a browser</h2>
+			{#if livePlan}
+				<p class="cl-body cl-muted">
+					Colander checks your plan on each device with a signed token. A code connects one browser, in any browser and on any
+					computer, and nothing else about your account goes with it.
+				</p>
+				<ConnectBrowser kind="plan" />
+			{:else}
+				<p class="cl-body cl-muted">Once you have Plus, connect each browser you use here with a code.</p>
+			{/if}
 		</section>
 
 		{#if account.role !== 'member'}
@@ -196,17 +174,10 @@
 				</p>
 				<div class="row">
 					<Button variant="primary" size="xl" href="/console"><ListChecks size={16} aria-hidden="true" />Open the review console</Button>
-					{#if ext.kind === 'installed'}
-						<Button variant="secondary" size="xl" onclick={connectReviewer} disabled={reviewer.kind === 'working'}>
-							<Plug size={16} aria-hidden="true" />Connect side panel
-						</Button>
-					{/if}
 				</div>
-				{#if ext.kind !== 'installed' && ext.kind !== 'checking'}
-					<p class="cl-caption cl-muted">To use the side panel, open this page in Chrome with Colander installed.</p>
-				{/if}
-				{#if reviewer.kind === 'done'}<Notice tone="success" title={reviewer.message} />{/if}
-				{#if reviewer.kind === 'error'}<Notice tone="error" title="Not connected"><p>{reviewer.message}</p></Notice>{/if}
+				<h3 class="sub">Review in the extension</h3>
+				<p class="cl-body cl-muted">Connect Colander's side panel with a code, and review from the platforms as you browse.</p>
+				<ConnectBrowser kind="reviewer" />
 			</section>
 		{/if}
 
@@ -269,6 +240,11 @@
 		flex-wrap: wrap;
 		align-items: center;
 		gap: var(--cl-s2);
+	}
+	.sub {
+		margin-top: var(--cl-s2);
+		font: var(--cl-body-lg);
+		font-weight: 600;
 	}
 	.name-form {
 		display: grid;

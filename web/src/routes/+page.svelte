@@ -60,7 +60,9 @@
 	import ArrowLink from '#lib/components/ArrowLink.svelte';
 	import Figure from '#lib/components/Figure.svelte';
 	import SectionHead from '#lib/components/SectionHead.svelte';
+	import StoreNote from '#lib/components/StoreNote.svelte';
 	import InstallButton from '#lib/components/InstallButton.svelte';
+	import { BROWSERS } from '#lib/install.svelte.ts';
 	import { COMPARISON, COMPARISON_CHECKED, COMPARISON_SCOPE, FAQ, KAPWING, KAPWING_URL } from '#lib/content.ts';
 	import { live } from '#lib/live.svelte.ts';
 
@@ -144,11 +146,11 @@
 			every item.
 		</p>
 		<div class="ctas">
-			<span class="install"><InstallButton label="Add to Chrome, free" block={false} caption /></span>
+			<span class="install"><InstallButton free block={false} caption /></span>
 			<ArrowLink href="/definition" size="lg">See how it decides</ArrowLink>
 		</div>
 		<p class="cl-figure version">
-			Version {release.version}{#if release.released}, released {fmtShortDate(release.released)}{/if}. Chrome on desktop, also Edge and Brave.
+			Version {release.version}{#if release.released}, released {fmtShortDate(release.released)}{/if}. For {BROWSERS} on desktop. <StoreNote />
 		</p>
 		<ul class="proof">
 			<li><Lock size={16} aria-hidden="true" />Matched on your device. No account needed.</li>

@@ -1,6 +1,7 @@
 // Website-only copy: the Kapwing figures, the comparison and the FAQ. Copy shared
 // with the extension lives in @colander/shared (copy.ts), prices included.
 import { PLAN_COPY } from '@colander/shared';
+import { BROWSERS } from './install.svelte.ts';
 
 export const KAPWING_URL = 'https://www.kapwing.com/resources/the-tiktok-ai-slop-report/';
 
@@ -114,7 +115,7 @@ export const FAQ: { q: string; a: string }[] = [
 	},
 	{
 		q: 'Which browsers does it work in?',
-		a: 'Chrome on desktop. It also works in Edge and Brave, which install Chrome extensions. Phones do not run browser extensions, so send the link to your computer.'
+		a: `${BROWSERS}, on desktop. Phones do not run browser extensions, so send the link to your computer.`
 	},
 	{
 		q: 'Can I cancel Plus any time?',

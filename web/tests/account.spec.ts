@@ -1,5 +1,5 @@
 import { test, expect } from './fixtures.ts';
-import { ACCOUNT, PLUS_ACCOUNT, mockApi } from './mocks.ts';
+import { ACCOUNT, PLUS_ACCOUNT, STAFF, mockApi } from './mocks.ts';
 
 test('sign in by emailed link, then the account page shows the account', async ({ page }) => {
 	let signedIn = false;
@@ -43,22 +43,13 @@ test('an expired sign-in link explains what to do and never redirects off-site',
 	await expect(page).toHaveURL(/\/auth\/callback/);
 });
 
-test('connect this browser sends the plan token to the extension', async ({ page }) => {
-	await page.addInitScript(() => {
-		const sent: unknown[] = [];
-		(window as unknown as { __sent: unknown[] }).__sent = sent;
-		(window as unknown as { chrome: unknown }).chrome = {
-			runtime: {
-				sendMessage(_id: string, message: { type: string }, reply: (r: unknown) => void) {
-					sent.push(message);
-					setTimeout(() => reply(message.type === 'colander:ping' ? { ok: true, version: '1.0.0' } : { ok: true }), 0);
-				}
-			}
-		};
-	});
+test('connect a browser shows a pairing code and says when the extension takes it', async ({ page }) => {
+	let polls = 0;
 	const calls = await mockApi(page, {
 		'GET /v1/account': { json: { account: PLUS_ACCOUNT } },
-		'POST /v1/entitlement': { json: { token: 'plan.token' } },
+		'POST /v1/pair': { status: 201, json: { id: 'pair_abc', code: 'KXQ4-JP7M', expires_at: new Date(Date.now() + 600_000).toISOString() } },
+		// The extension claims the code on the third check.
+		'GET /v1/pair/*': () => ({ json: ++polls < 3 ? { status: 'pending', ext_version: null, browser: null } : { status: 'claimed', ext_version: '1.4.0', browser: 'firefox' } }),
 		'POST /v1/billing/cancel': (c) => ({
 			json: {
 				account: {
@@ -71,19 +62,27 @@ test('connect this browser sends the plan token to the extension', async ({ page
 		})
 	});
 	await page.goto('/account');
-	await expect(page.getByText('Colander 1.0.0 is installed here.')).toBeVisible();
-	await page.getByRole('button', { name: 'Connect this browser' }).click();
-	await expect(page.getByText('Connected. Plus features are on in this browser.')).toBeVisible();
-	const sent = await page.evaluate(() => (window as unknown as { __sent: unknown[] }).__sent);
-	expect(sent).toContainEqual({ type: 'colander:plan-token', token: 'plan.token' });
-	expect(calls.find((c) => c.path === '/v1/entitlement')!.headers['x-colander-csrf']).toBe('1');
+	const connect = page.locator('section', { has: page.getByRole('heading', { name: 'Connect a browser' }) });
+	await connect.getByRole('button', { name: 'Show a code' }).click();
+	await expect(connect.getByText('KXQ4-JP7M')).toBeVisible();
+	await expect(connect.getByText('Never share this code. Colander staff never ask for it.')).toBeVisible();
+	await expect(connect.getByText(/^Works once, for (10:00|9:\d\d) more\./)).toBeVisible();
+	await expect(connect.getByRole('button', { name: 'Copy' })).toBeVisible();
+	const made = calls.find((c) => c.path === '/v1/pair')!;
+	expect(made.body).toEqual({ kind: 'plan' });
+	expect(made.headers['x-colander-csrf']).toBe('1');
+	// Checked every 2 seconds: the third check finds it claimed.
+	await expect(connect.getByText('Connected Colander 1.4.0 in Firefox.')).toBeVisible({ timeout: 10_000 });
+	await expect(connect.getByText('Plus is on there.')).toBeVisible();
+	await expect(connect.getByRole('button', { name: 'Connect another browser' })).toBeVisible();
+	expect(calls.filter((c) => c.path === '/v1/pair/pair_abc')).toHaveLength(3);
 
 	await page.getByRole('button', { name: 'Cancel Plus' }).click();
 	await page.getByRole('button', { name: 'End now and refund' }).click();
 	await expect(page.getByText('Plus has ended and your last charge is being refunded.')).toBeVisible();
 	expect(calls.filter((c) => c.path === '/v1/billing/cancel').map((c) => c.body)).toEqual([{ refund: false }, { refund: true }]);
 	await expect(page.getByText('Free.', { exact: false })).toBeVisible();
-	await expect(page.getByRole('button', { name: 'Connect this browser' })).toHaveCount(0);
+	await expect(page.getByText('Once you have Plus, connect each browser you use here with a code.')).toBeVisible();
 });
 
 test('one click cancels, keeps Plus until the period ends and still offers the refund', async ({ page }) => {
@@ -111,32 +110,33 @@ test('one click cancels, keeps Plus until the period ends and still offers the r
 	await expect(page.getByText('more than 30 days old', { exact: false })).toBeVisible();
 });
 
-test('a token the extension refuses is an error, never Connected', async ({ page }) => {
-	await page.addInitScript(() => {
-		(window as unknown as { chrome: unknown }).chrome = {
-			runtime: {
-				sendMessage(_id: string, message: { type: string }, reply: (r: unknown) => void) {
-					setTimeout(() => reply(message.type === 'colander:ping' ? { ok: true, version: '1.0.0' } : { ok: false, error: 'invalid_token' }), 0);
-				}
-			}
-		};
-	});
-	await mockApi(page, {
-		'GET /v1/account': { json: { account: { ...PLUS_ACCOUNT, role: 'staff' } } },
-		'POST /v1/entitlement': { json: { token: 'plan.token' } },
-		'POST /v1/account/reviewer-token': { json: { token: 'reviewer.token' } }
+test('a reviewer code connects the side panel; an unused code ends after 10 minutes', async ({ page }) => {
+	await page.clock.install();
+	const calls = await mockApi(page, {
+		'GET /v1/account': { json: { account: STAFF } },
+		'POST /v1/pair': (c) => ({ status: 201, json: { id: 'pair_rvw', code: 'RVW4-2K9P', expires_at: new Date(Date.now() + 600_000).toISOString(), kind: c.body.kind } }),
+		'GET /v1/pair/*': { json: { status: 'pending', ext_version: null, browser: null } }
 	});
 	await page.goto('/account');
-	await page.getByRole('button', { name: 'Connect this browser' }).click();
-	await expect(page.getByText('Colander could not verify this plan. Update Colander, then try again.')).toBeVisible();
-	await page.getByRole('button', { name: 'Connect side panel' }).click();
-	await expect(page.getByText('Colander could not accept the reviewer token. Update Colander, then try again.')).toBeVisible();
-	await expect(page.getByText('Connected.', { exact: false })).toHaveCount(0);
+	const review = page.locator('section', { has: page.getByRole('heading', { name: 'Review', exact: true }) });
+	await expect(review.getByRole('heading', { name: 'Review in the extension' })).toBeVisible();
+	await review.getByRole('button', { name: 'Show a code' }).click();
+	await expect(review.getByText('RVW4-2K9P')).toBeVisible();
+	expect(calls.find((c) => c.path === '/v1/pair')!.body).toEqual({ kind: 'reviewer' });
+	await expect(review.getByText("In the browser you review in, open Colander's side panel, or Options and then Plan, and type this code.")).toBeVisible();
+	await page.clock.runFor(10 * 60_000);
+	await expect(review.getByText('This code has ended')).toBeVisible();
+	await expect(review.getByRole('button', { name: 'Show a code' })).toBeVisible();
+	await expect(review.getByText('Connected', { exact: false })).toHaveCount(0);
 });
 
-test('without the extension the account page says so plainly', async ({ page }) => {
-	await page.addInitScript(() => ((window as unknown as { chrome: unknown }).chrome = {}));
-	await mockApi(page, { 'GET /v1/account': { json: { account: PLUS_ACCOUNT } } });
+test('a member without a curator role, or without a plan, is not offered a code', async ({ page }) => {
+	await mockApi(page, {
+		'GET /v1/account': { json: { account: ACCOUNT } },
+		'POST /v1/pair': { status: 404, json: { error: { code: 'no_plan', message: 'There is no active Plus plan on this account to connect.' } } }
+	});
 	await page.goto('/account');
-	await expect(page.getByText('Colander is not installed in this browser')).toBeVisible();
+	await expect(page.getByText('Once you have Plus, connect each browser you use here with a code.')).toBeVisible();
+	await expect(page.getByRole('button', { name: 'Show a code' })).toHaveCount(0);
+	await expect(page.getByRole('heading', { name: 'Review', exact: true })).toHaveCount(0);
 });

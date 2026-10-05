@@ -1,24 +1,27 @@
 <!--
-@component InstallButton: "Add to Chrome" where Chrome extensions install, and "Send to my
-computer" below 1024 px, where the header also swaps: phones and tablets run no extensions. Both
-are in the page, so it reads right without JavaScript; CSS shows one. `caption` adds "Colander
-runs in Chrome on desktop." under the phone button.
+@component InstallButton: "Add to Chrome", "Add to Edge", "Add to Firefox" or "Add to Opera", for
+the store this browser installs from (lib/install.svelte.ts), and "Send to my computer" below
+1024 px, where the header also swaps: phones and tablets run no extensions. Both are in the page,
+so it reads right without JavaScript; CSS shows one. `free` adds ", free" to the label, and
+`caption` adds the browsers line under the phone button. StoreNote says the rest, in the line under.
 -->
 <script lang="ts">
-	import { PUBLIC_STORE_URL } from '$app/env/public';
 	import Button from '@colander/shared/components/ui/button/button.svelte';
+	import { install } from '#lib/install.svelte.ts';
 	import SendToComputer from './SendToComputer.svelte';
 
 	let {
-		label = 'Add to Chrome',
+		free = false,
 		variant = 'primary',
 		size = 'xxl',
 		block = true,
 		caption = false
-	}: { label?: string; variant?: 'primary' | 'secondary'; size?: 'xl' | 'xxl'; block?: boolean; caption?: boolean } = $props();
+	}: { free?: boolean; variant?: 'primary' | 'secondary'; size?: 'xl' | 'xxl'; block?: boolean; caption?: boolean } = $props();
 </script>
 
-<span class="desk"><Button {variant} {size} {block} href={PUBLIC_STORE_URL}>{label}</Button></span>
+<span class="desk">
+	<Button {variant} {size} {block} href={install.store.href}>{install.store.label}{free ? ', free' : ''}</Button>
+</span>
 <span class="phone"><SendToComputer {variant} {size} {caption} /></span>
 
 <style>

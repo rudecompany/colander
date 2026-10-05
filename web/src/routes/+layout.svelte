@@ -18,10 +18,14 @@
 	import Toaster from '@colander/shared/components/ui/toast/toaster.svelte';
 	import SiteHeader from '#lib/components/SiteHeader.svelte';
 	import SiteFooter from '#lib/components/SiteFooter.svelte';
+	import { detectStore } from '#lib/install.svelte.ts';
 	import { refreshLive } from '#lib/live.svelte.ts';
 
 	let { children } = $props();
-	onMount(refreshLive);
+	onMount(() => {
+		refreshLive();
+		detectStore();
+	});
 </script>
 
 <a class="skip-link" href="#main">Skip to content</a>

@@ -25,6 +25,7 @@
 		['Reports', 'POST /v1/reports', 'The source, up to three example items, your reason, and your install ID.', 'On each report'],
 		['Report status', 'GET /v1/reports', 'Your install ID, to list your own reports.', 'On opening My reports'],
 		['Trial', 'POST /v1/trial', 'Your install ID, so a trial is given once per install.', 'On starting a trial'],
+		['Pairing code', 'POST /v1/pair/claim', 'The code you typed, the extension version and the browser name. Not your install ID.', 'When you connect Plus or the side panel'],
 		['Plan refresh and settings sync', 'POST /v1/entitlement/refresh, /v1/sync', 'Your signed plan token and your settings.', 'Plus only'],
 		['Review queue', '/v1/review/*', 'Your reviewer token.', 'Curators and staff only']
 	];
@@ -68,7 +69,11 @@
 
 		<section id="permissions" class="prose">
 			<h2>Permissions</h2>
-			<p>Chrome asks you before Colander gets any of these. Site access is asked one platform at a time, for the platforms you choose.</p>
+			<p>Your browser asks you before Colander gets any of these. Site access is asked one platform at a time, for the platforms you choose.</p>
+			<p>
+				Firefox also asks before Colander sends anything. Tags and reports wait on your device until you allow them, and Plus and the
+				side panel ask before they use a sign-in token. You can change either in Options under Sharing, or in Firefox's add-ons manager.
+			</p>
 			<PermissionsTable />
 		</section>
 
@@ -145,7 +150,7 @@
 			<h2>Your rights and contact</h2>
 			<p>
 				You can ask to see, correct, export or delete the data tied to your account or your install ID. Your extension's options page
-				can export everything it stores locally. Write to the contact address on our Chrome Web Store listing, and we will answer
+				can export everything it stores locally. Write to the contact address on our store listings, and we will answer
 				within 30 days.
 			</p>
 		</section>
