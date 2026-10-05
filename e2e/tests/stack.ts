@@ -22,6 +22,8 @@ export const LOCAL_ONLY = 'needs the local stack: the seeded data, dev mail and 
 
 export const STAFF = 'rae@colander.test';
 export const CURATOR = 'sam@colander.test';
+/** A member whose yearly Plus the seed stores as the Stripe webhook would. */
+export const PLUS_MEMBER = 'pat@colander.test';
 
 /** The server log as bytes written so far; pass it to `mailsSince` to read only what follows. */
 export const logMark = () => statSync(LOG).size;

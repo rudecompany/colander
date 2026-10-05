@@ -6,7 +6,7 @@ import { execFileSync, spawn } from 'node:child_process';
 import { cpSync, mkdirSync, openSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:net';
 import { resolve } from 'node:path';
-import { BASE_URL, EXT_ID, LOG, REPO, RUN, STAFF, apiSignIn } from './stack.ts';
+import { BASE_URL, LOG, REPO, RUN, STAFF, apiSignIn } from './stack.ts';
 
 const free = (port: number) =>
 	new Promise<boolean>((done) => {
@@ -34,7 +34,7 @@ export default async function globalSetup() {
 
 	rmSync(RUN, { recursive: true, force: true });
 	mkdirSync(RUN, { recursive: true });
-	run('pnpm', ['-C', 'web', 'build'], REPO, { PUBLIC_EXTENSION_ID: EXT_ID });
+	run('pnpm', ['-C', 'web', 'build'], REPO);
 	// A copy, so a web test run that rebuilds web/build cannot change the site under this Worker.
 	const site = resolve(RUN, 'site');
 	cpSync(resolve(REPO, 'web/build'), site, { recursive: true });

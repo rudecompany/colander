@@ -1,7 +1,7 @@
-// Journey 6: staff connect the review side panel from the website (externally_connectable),
-// work the real queue there, and the decision lands in the public log.
+// Journey 6: staff connect the review side panel with a pairing code from the website, work the
+// real queue there, and the decision lands in the public log.
 import { BASE_URL, LOCAL_ONLY, ORIGIN, STAFF } from './stack.ts';
-import { expect, launch, onboard, signIn, test, type Ext } from './harness.ts';
+import { expect, launch, onboard, pairWith, signIn, test, type Ext } from './harness.ts';
 
 test.skip(!!BASE_URL, LOCAL_ONLY);
 
@@ -14,7 +14,7 @@ test.afterAll(async () => {
 	await ext?.close();
 });
 
-test('the account page hands the reviewer token to the side panel, which decides from the real queue', async () => {
+test('a reviewer code from the account page connects the side panel, which decides from the real queue', async () => {
 	const side = await ext.page('sidepanel.html');
 	await side.setViewportSize({ width: 400, height: 900 });
 	await expect(side.getByRole('heading', { name: 'Review for curators' })).toBeVisible();
@@ -22,10 +22,17 @@ test('the account page hands the reviewer token to the side panel, which decides
 	const site = await ext.ctx.newPage();
 	await signIn(site, STAFF, '/account');
 	await expect(site.getByRole('heading', { name: 'Hello, Rae' })).toBeVisible();
-	await site.getByRole('button', { name: 'Connect side panel' }).click();
-	await expect(site.getByText('Connected. The side panel can now open the review queue.')).toBeVisible();
+	const review = site.locator('section', { has: site.getByRole('heading', { name: 'Review', exact: true }) });
+	const code = await pairWith(site, review, side);
+	// The site sees the claim, with the extension's version and browser, on its next check.
+	await expect(review.getByText('Connected Colander 1.0.0 in a Chromium browser.')).toBeVisible();
 	const token = await ext.storage<string>('reviewerToken');
 	expect(token).toBeTruthy();
+	// The claim carried the code and nothing that identifies the install.
+	const claim = ext.seen.find((s) => s.url === `${ORIGIN}/v1/pair/claim`)!;
+	expect(claim.by).toBe('worker');
+	expect(JSON.parse(claim.body!)).toEqual({ code: code.replace('-', ''), ext_version: '1.0.0', browser: 'chromium' });
+	expect(claim.headers.authorization).toBeUndefined();
 
 	// The open panel picks the token up from storage and loads the server's queue.
 	const gossip = side.getByRole('button', { name: /Celebrity Gossip Narrated/ });

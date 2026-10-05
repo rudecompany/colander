@@ -2,7 +2,7 @@
 // and appeals need staff, the server refuses them when forced, and the side panel lets a curator
 // decide a source they are allowed to decide.
 import { BASE_URL, CURATOR, LOCAL_ONLY, ORIGIN } from './stack.ts';
-import { expect, launch, onboard, signIn, test, type Ext } from './harness.ts';
+import { expect, launch, onboard, pairWith, signIn, test, type Ext } from './harness.ts';
 
 test.skip(!!BASE_URL, LOCAL_ONLY);
 
@@ -50,12 +50,13 @@ test('curators see staff-only limits, the server enforces them, and the side pan
 	});
 	expect(forced).toEqual({ large: [403, 'staff_required'], verify: [403, 'staff_required'], resolve: [403, 'staff_required'] });
 
-	// The side panel: the account page hands the reviewer token to the extension.
+	// The side panel: a reviewer code from the account page, typed into the panel.
 	await site.goto(`${ORIGIN}/account`);
-	await site.getByRole('button', { name: 'Connect side panel' }).click();
-	await expect(site.getByText('Connected. The side panel can now open the review queue.')).toBeVisible();
 	const side = await ext.page('sidepanel.html');
 	await side.setViewportSize({ width: 400, height: 900 });
+	const review = site.locator('section', { has: site.getByRole('heading', { name: 'Review', exact: true }) });
+	await pairWith(site, review, side);
+	await expect(review.getByText('Connected Colander 1.0.0 in a Chromium browser.')).toBeVisible();
 	await side.getByRole('button', { name: /Fitness Tips AI/ }).click();
 	await expect(side.getByRole('heading', { level: 2, name: 'Fitness Tips AI' })).toBeVisible();
 	await expect(side.getByText('Every post pushes the same supplement link.')).toBeVisible();
