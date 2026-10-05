@@ -125,6 +125,8 @@ offers a new one.
 		flex-wrap: wrap;
 		gap: var(--cl-s2);
 		margin-top: calc(-1 * var(--cl-s2));
+		/* The text lines up with the field; the 14px is the lg button's side padding. */
+		margin-inline-start: -14px;
 	}
 	strong {
 		overflow-wrap: anywhere;

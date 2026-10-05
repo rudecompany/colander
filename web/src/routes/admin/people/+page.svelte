@@ -213,10 +213,11 @@ permission table again.
 </Dialog>
 
 <style>
+	/* One column of at most 960px, starting at the heading's edge. */
 	.people {
 		display: grid;
+		grid-template-columns: minmax(0, 960px);
 		gap: 24px;
-		max-width: 960px;
 	}
 	.card {
 		display: grid;

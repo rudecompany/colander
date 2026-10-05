@@ -1,5 +1,5 @@
 <!--
-@component SiteFooter: the footer CTA (except on /s, /appeal, /console and /account), a
+@component SiteFooter: the footer CTA (except on /s, /appeal, /console, /account and /admin), a
 perforation row, four link columns and a bottom row with the mark, the live list badge and the
 cookie line. Support links never appear on source or appeal pages: no creator is asked for money
 while their case is open.
@@ -11,10 +11,13 @@ while their case is open.
 	import { live } from '#lib/live.svelte.ts';
 	import ArrowLink from './ArrowLink.svelte';
 	import InstallButton from './InstallButton.svelte';
+	import { siteOrigin } from '#lib/site.ts';
 
 	const path = $derived(page.url.pathname);
 	const creatorPage = $derived(/^\/(s|appeal)(\/|$)/.test(path));
-	const cta = $derived(!creatorPage && !/^\/(console|account)(\/|$)/.test(path));
+	const cta = $derived(!creatorPage && !/^\/(console|account|admin)(\/|$)/.test(path));
+	/** On the admin host the site's links lead to the main host. */
+	const site = $derived(siteOrigin(page.url));
 
 	const columns = $derived([
 		{
@@ -69,7 +72,7 @@ while their case is open.
 			<nav aria-labelledby="foot-{c.title}">
 				<h2 id="foot-{c.title}">{c.title}</h2>
 				<ul>
-					{#each c.links as l (l.label)}<li><a href={l.href}>{l.label}</a></li>{/each}
+					{#each c.links as l (l.label)}<li><a href={l.href.startsWith('/') ? site + l.href : l.href}>{l.label}</a></li>{/each}
 				</ul>
 			</nav>
 		{/each}
@@ -79,7 +82,7 @@ while their case is open.
 			<span class="brand"><ColanderMark size={20} /><span class="word">Colander</span></span>
 			<LiveBadge sequence={live.stats?.list_sequence} updatedAt={live.stats?.list_updated_at} now={live.now ?? undefined} />
 			<span class="note">No cookies, so no banner.</span>
-			<span class="who"><ArrowLink href="/transparency" size="sm">Who runs Colander and how it is funded</ArrowLink></span>
+			<span class="who"><ArrowLink href="{site}/transparency" size="sm">Who runs Colander and how it is funded</ArrowLink></span>
 		</div>
 	</div>
 </footer>

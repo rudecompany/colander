@@ -10,6 +10,7 @@ authority, people and roles, and for admins the audit log.
 	import AuthCard from '#lib/components/AuthCard.svelte';
 	import Loading from '#lib/components/Loading.svelte';
 	import { admin, loadMe, may } from '#lib/admin.svelte.ts';
+	import { siteOrigin } from '#lib/site.ts';
 
 	let { children } = $props();
 	onMount(loadMe);
@@ -37,7 +38,7 @@ authority, people and roles, and for admins the audit log.
 					? 'The admin console is for Colander staff. Curators review on the main site.'
 					: 'The admin console opens after Cloudflare Access checks your staff identity and security key.'}
 			</p>
-			<a href="https://getcolander.com/console">Open the review console for curators</a>
+			<a href="{siteOrigin(page.url)}/console">Open the review console for curators</a>
 		</div>
 	</AuthCard>
 {:else}

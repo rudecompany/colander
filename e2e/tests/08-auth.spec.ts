@@ -77,6 +77,8 @@ test('staff work on the admin host through Access, and its token opens nothing o
 	await adminSignIn(page, ADMIN, '/admin/audit');
 	await expect(page.getByRole('heading', { level: 1, name: 'Audit log' })).toBeVisible();
 	await expect(page.getByRole('row').filter({ hasText: 'role changed' }).first()).toBeVisible();
+	// The site's own links leave the admin host for the main one.
+	await expect(page.getByRole('banner').getByRole('link', { name: 'Account' })).toHaveAttribute('href', `${ORIGIN}/account`);
 	await page.screenshot({ path: 'screenshots/admin-audit.png', animations: 'disabled' });
 
 	// A member's identity gets no staff authority there.

@@ -111,7 +111,7 @@ email code; that waits 72 hours. Reviewer accounts get their first passkey throu
 	}
 </script>
 
-<section class="uin-card uin-card-lg uin-card-pad section-card" aria-labelledby="signin-title">
+<section class="uin-card uin-card-lg uin-card-pad section-card" class:tall={!reviewer} aria-labelledby="signin-title">
 	<h2 class="cl-title" id="signin-title">Sign-in</h2>
 	<p class="cl-body cl-muted">
 		{account.session?.method === 'passkey' ? 'You signed in with a passkey.' : 'You signed in with an email code.'}
@@ -168,7 +168,7 @@ email code; that waits 72 hours. Reviewer accounts get their first passkey throu
 		<Button variant="quiet" size="xl" onclick={everywhere}><LogOut size={16} aria-hidden="true" />Sign out everywhere</Button>
 		<p class="cl-caption cl-muted">
 			Ends every session and disconnects the side panel. Right after a passkey sign-in, it also removes every other passkey, so one you
-			do not recognise cannot sign in again.
+			do not recognize cannot sign in again.
 		</p>
 	</div>
 </section>
@@ -218,5 +218,16 @@ email code; that waits 72 hours. Reviewer accounts get their first passkey throu
 		gap: var(--cl-s1);
 		padding-top: var(--cl-s3);
 		border-top: 1px solid var(--cl-border);
+	}
+	/* The text lines up with the caption; the 16px is the xl button's side padding. */
+	.everywhere > :global(.uin-btn) {
+		margin-inline-start: -16px;
+	}
+	/* In the account page's two columns a member's sign-in card sits beside Profile and Your data;
+	   a reviewer's page has the Review card, which fills that row already. */
+	@media (min-width: 1024px) {
+		.tall {
+			grid-row: span 2;
+		}
 	}
 </style>
