@@ -2,8 +2,9 @@
 # merging it is the human approval. Its draft releases are then:
 #   platform  (vX.Y.Z)            deployed to production once staging has passed the same commit,
 #                                 smoke-tested, rolled back automatically on failure, published
-#   extension (extension-vX.Y.Z)  built for the store with provenance, attached and published, then
-#                                 submitted to the Chrome Web Store as a staged publish
+#   extension (extension-vX.Y.Z)  built for each store with provenance, attached and published, then
+#                                 submitted to the Chrome Web Store as a staged publish, and to Edge
+#                                 Add-ons and addons.mozilla.org once their variables are set
 name: Release
 
 on:
@@ -109,8 +110,10 @@ jobs:
       - name: Build the website
         run: pnpm -C web build
         env:
-          PUBLIC_EXTENSION_ID: ${{ vars.CWS_ITEM_ID }}
-          PUBLIC_STORE_URL: https://chromewebstore.google.com/detail/${{ vars.CWS_ITEM_ID }}
+          # A store whose listing is not live yet stays empty, and the site does not offer it.
+          PUBLIC_STORE_CHROME: ${{ vars.CWS_ITEM_ID && format('https://chromewebstore.google.com/detail/{0}', vars.CWS_ITEM_ID) || '' }}
+          PUBLIC_STORE_EDGE: ${{ vars.EDGE_ITEM_ID && format('https://microsoftedge.microsoft.com/addons/detail/{0}', vars.EDGE_ITEM_ID) || '' }}
+          PUBLIC_STORE_FIREFOX: ${{ vars.AMO_SLUG && format('https://addons.mozilla.org/firefox/addon/{0}/', vars.AMO_SLUG) || '' }}
           # Pages prerender with the live numbers and latest decisions, read from the production Worker
           # that is still serving. A failed read falls back to empty pages with a build warning.
           COLANDER_BUILD_API: https://getcolander.com
@@ -166,7 +169,7 @@ jobs:
     needs: release-please
     if: needs.release-please.outputs.extension == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     permissions:
       contents: write # uploads to and publishes the draft release
       id-token: write
@@ -185,42 +188,52 @@ jobs:
           node-version: 24
           package-manager-cache: false
       - run: pnpm install --frozen-lockfile
-      - name: Build the store package
+      - name: Build the store packages from release.env
         env:
-          WXT_COLANDER_API: https://getcolander.com
-          WXT_COLANDER_SITE: https://getcolander.com
-          WXT_COLANDER_PUBLIC_KEYS: ${{ vars.COLANDER_PUBLIC_KEYS }}
-          WXT_COLANDER_STORE_BUILD: '1'
+          KEYS: ${{ vars.COLANDER_PUBLIC_KEYS }}
         run: |
-          if [ -z "$WXT_COLANDER_PUBLIC_KEYS" ]; then
-            echo "::error::The repository variable COLANDER_PUBLIC_KEYS is empty."
+          # release.env is what AMO's reviewers build with, so it must trust exactly the release keys.
+          committed=$(sed -n 's/^WXT_COLANDER_PUBLIC_KEYS=//p' extension/release.env)
+          if [ -z "$KEYS" ] || [ "$committed" != "$KEYS" ]; then
+            echo "::error::extension/release.env must set WXT_COLANDER_PUBLIC_KEYS to the repository variable COLANDER_PUBLIC_KEYS (docs/deploy.md step 7)."
             exit 1
           fi
           rm -rf extension/dist
-          pnpm -C extension zip
-          zip=$(ls extension/dist/*-chrome.zip)
-          manifest=$(unzip -p "$zip" manifest.json)
-          version=$(jq -r .version <<<"$manifest")
-          if [ "extension-v$version" != "$TAG" ]; then
-            echo "::error::The manifest version $version does not match $TAG."
+          for browser in chrome edge firefox; do bash extension/scripts/build-store.sh "$browser"; done
+          bash extension/scripts/check-packages.sh
+          pnpm -C extension exec web-ext lint --source-dir dist/firefox-mv3
+          for zip in extension/dist/*-chrome.zip extension/dist/*-edge.zip extension/dist/*-firefox.zip; do
+            version=$(unzip -p "$zip" manifest.json | jq -r .version)
+            if [ "extension-v$version" != "$TAG" ]; then
+              echo "::error::The manifest version $version in $zip does not match $TAG."
+              exit 1
+            fi
+            # Never ship a build that trusts the published development key or talks to localhost.
+            if unzip -p "$zip" | grep -a -q -e "$(cat testdata/dev-signing.pub)" -e 'localhost:8787'; then
+              echo "::error::$zip contains the development signing key or a localhost origin."
+              exit 1
+            fi
+          done
+      - name: Rebuild the Firefox package from its sources zip, as AMO's reviewers do
+        run: |
+          rebuild="$RUNNER_TEMP/amo-rebuild"
+          mkdir -p "$rebuild"
+          unzip -q extension/dist/*-sources.zip -d "$rebuild"
+          (cd "$rebuild" && pnpm install --frozen-lockfile && bash extension/scripts/build-store.sh firefox)
+          if ! cmp "$rebuild"/extension/dist/*-firefox.zip extension/dist/*-firefox.zip; then
+            echo "::error::The Firefox package does not rebuild byte for byte from its sources zip, which AMO's review requires."
             exit 1
           fi
-          if jq -e 'has("key")' <<<"$manifest" >/dev/null; then
-            echo "::error::The store package carries a manifest key; the Chrome Web Store rejects it."
-            exit 1
-          fi
-          # Never ship a build that trusts the published development key or talks to localhost.
-          if unzip -p "$zip" | grep -a -q -e "$(cat testdata/dev-signing.pub)" -e 'localhost:8787'; then
-            echo "::error::The store package contains the development signing key or a localhost origin."
-            exit 1
-          fi
-          echo "ZIP=$zip" >>"$GITHUB_ENV"
       - uses: actions/attest@v4
         with:
-          subject-path: ${{ env.ZIP }}
-      - name: Attach the package and publish the release
+          subject-path: |
+            extension/dist/*-chrome.zip
+            extension/dist/*-edge.zip
+            extension/dist/*-firefox.zip
+            extension/dist/*-sources.zip
+      - name: Attach the packages and publish the release
         run: |
-          gh release upload "$TAG" "$ZIP" --repo "$GITHUB_REPOSITORY"
+          gh release upload "$TAG" extension/dist/*-chrome.zip extension/dist/*-edge.zip extension/dist/*-firefox.zip extension/dist/*-sources.zip --repo "$GITHUB_REPOSITORY"
           gh release edit "$TAG" --draft=false --repo "$GITHUB_REPOSITORY"
 
   submit-chrome-web-store:
@@ -321,3 +334,133 @@ jobs:
           done
           echo "::error::fetchStatus never showed version $version as submitted: $status"
           exit 1
+
+  # Edge Add-ons: the same code as the Chrome package, never a key. The first version is uploaded
+  # by hand in Partner Center; this job skips until EDGE_PRODUCT_ID is set (docs/deploy.md).
+  submit-edge-add-ons:
+    name: submit-edge-add-ons
+    needs: [release-please, release-extension]
+    if: vars.EDGE_PRODUCT_ID != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment:
+      name: edge-add-ons
+      url: https://microsoftedge.microsoft.com/addons/detail/${{ vars.EDGE_ITEM_ID }}
+    concurrency:
+      group: edge-add-ons
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      attestations: read
+    env:
+      TAG: ${{ needs.release-please.outputs.extension_tag }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Download the released package and verify its provenance
+        run: |
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern '*-edge.zip' --dir "$RUNNER_TEMP/package"
+          zip=$(ls "$RUNNER_TEMP"/package/*-edge.zip)
+          gh attestation verify "$zip" --repo "$GITHUB_REPOSITORY"
+          echo "ZIP=$zip" >>"$GITHUB_ENV"
+      - name: Upload, submit for certification, and confirm the submission
+        env:
+          API: https://api.addons.microsoftedge.microsoft.com/v1/products/${{ vars.EDGE_PRODUCT_ID }}
+          EDGE_CLIENT_ID: ${{ secrets.EDGE_CLIENT_ID }}
+          EDGE_API_KEY: ${{ secrets.EDGE_API_KEY }}
+        run: |
+          edge() { curl -sS -H "Authorization: ApiKey $EDGE_API_KEY" -H "X-ClientID: $EDGE_CLIENT_ID" "$@"; }
+          # Each POST answers 202 with its operation ID at the end of the Location header; the
+          # operation is then polled until it succeeds or fails.
+          post() {
+            local status headers
+            headers=$(mktemp)
+            status=$(edge -o /dev/null -D "$headers" -w '%{http_code}' -X POST "$@")
+            if [ "$status" = 401 ] || [ "$status" = 403 ]; then
+              echo "::error::Edge refused the API key (HTTP $status). Keys expire 72 days after they are made: make a new one in Partner Center and update EDGE_API_KEY."
+              exit 1
+            fi
+            if [ "$status" != 202 ]; then
+              echo "::error::Edge answered HTTP $status to a POST to ${*: -1}."
+              exit 1
+            fi
+            OPERATION=$(tr -d '\r' <"$headers" | awk -F': ' 'tolower($1) == "location" { print $2 }' | sed 's#.*/##')
+          }
+          wait_for() {
+            local result="" status
+            for _ in $(seq 60); do
+              result=$(edge "$1")
+              status=$(jq -r '.status // empty' <<<"$result")
+              case "$status" in
+              Succeeded) return 0 ;;
+              InProgress) sleep 10 ;;
+              *)
+                echo "::error::Edge reports ${status:-no status}: $result"
+                exit 1
+                ;;
+              esac
+            done
+            echo "::error::Edge was still working after 10 minutes: $result"
+            exit 1
+          }
+
+          post -H 'Content-Type: application/zip' -T "$ZIP" "$API/submissions/draft/package"
+          wait_for "$API/submissions/draft/package/operations/$OPERATION"
+          notes=$(jq -n --arg notes "Colander $TAG, built with provenance: https://github.com/$GITHUB_REPOSITORY/releases/tag/$TAG" '{notes: $notes}')
+          post -H 'Content-Type: application/json' -d "$notes" "$API/submissions"
+          wait_for "$API/submissions/operations/$OPERATION"
+          echo "### Edge Add-ons: ${TAG#extension-v} is submitted for certification" >>"$GITHUB_STEP_SUMMARY"
+          echo "Certification takes up to 7 business days, and Edge publishes it when it passes." >>"$GITHUB_STEP_SUMMARY"
+
+  # addons.mozilla.org, listed: the Firefox package with its sources zip, which AMO's reviewers
+  # rebuild. The first version is uploaded by hand; this job skips until AMO_SLUG is set (docs/deploy.md).
+  submit-amo:
+    name: submit-amo
+    needs: [release-please, release-extension]
+    if: vars.AMO_SLUG != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment:
+      name: amo
+      url: https://addons.mozilla.org/firefox/addon/${{ vars.AMO_SLUG }}/
+    concurrency:
+      group: amo
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      attestations: read
+    env:
+      TAG: ${{ needs.release-please.outputs.extension_tag }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.release-please.outputs.extension_sha }}
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          package-manager-cache: false
+      - run: pnpm install --frozen-lockfile
+      - name: Download the released packages and verify their provenance
+        run: |
+          dir="$RUNNER_TEMP/package"
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern '*-firefox.zip' --pattern '*-sources.zip' --dir "$dir"
+          for zip in "$dir"/*.zip; do gh attestation verify "$zip" --repo "$GITHUB_REPOSITORY"; done
+          mkdir "$dir/firefox"
+          unzip -q "$dir"/*-firefox.zip -d "$dir/firefox"
+          echo "ADDON_DIR=$dir/firefox" >>"$GITHUB_ENV"
+          echo "SOURCES=$(ls "$dir"/*-sources.zip)" >>"$GITHUB_ENV"
+      - name: Submit the listed version with its sources
+        env:
+          AMO_JWT_ISSUER: ${{ secrets.AMO_JWT_ISSUER }}
+          AMO_JWT_SECRET: ${{ secrets.AMO_JWT_SECRET }}
+          AMO_REVIEWER_NOTES: ${{ secrets.AMO_REVIEWER_NOTES }}
+        run: |
+          # The listing metadata is committed; the reviewer notes carry the test account, so they come from a secret.
+          meta="$RUNNER_TEMP/amo-metadata.json"
+          jq --arg notes "$AMO_REVIEWER_NOTES" '.version.approval_notes = $notes' extension/amo/metadata.json >"$meta"
+          pnpm -C extension exec web-ext sign --channel listed --source-dir "$ADDON_DIR" --upload-source-code "$SOURCES" \
+            --amo-metadata "$meta" --approval-timeout 0 --artifacts-dir "$RUNNER_TEMP/signed" \
+            --api-key "$AMO_JWT_ISSUER" --api-secret "$AMO_JWT_SECRET"
+          echo "### addons.mozilla.org: ${TAG#extension-v} is submitted for review" >>"$GITHUB_STEP_SUMMARY"
+          echo "Signing usually takes under a day; a manual review can take longer, and AMO publishes it when it passes." >>"$GITHUB_STEP_SUMMARY"
