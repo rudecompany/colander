@@ -10,10 +10,15 @@ authority, people and roles, and for admins the audit log.
 	import AuthCard from '#lib/components/AuthCard.svelte';
 	import Loading from '#lib/components/Loading.svelte';
 	import { admin, loadMe, may } from '#lib/admin.svelte.ts';
-	import { siteOrigin } from '#lib/site.ts';
+	import { adminOrigin, onAdminHost, siteOrigin } from '#lib/site.ts';
 
 	let { children } = $props();
-	onMount(loadMe);
+	onMount(() => {
+		// The console lives on the admin host only: a full load of /admin elsewhere is redirected by the
+		// Worker, and a client-side route that still lands here goes there too.
+		if (!onAdminHost(page.url)) location.replace(adminOrigin(page.url) + page.url.pathname + page.url.search + page.url.hash);
+		else loadMe();
+	});
 
 	const tabs = $derived([
 		{ href: '/admin', label: 'Review' },
@@ -32,7 +37,7 @@ authority, people and roles, and for admins the audit log.
 {:else if admin.status === 'error'}
 	<AuthCard eyebrow="Admin console" title={admin.code === 'not_staff' ? 'Not a staff account' : 'Sign in through Access'}>
 		<div class="gate">
-			<p class="cl-title icon-line"><ShieldAlert size={16} aria-hidden="true" />{admin.message}</p>
+			<p class="cl-title icon-line gate-title"><ShieldAlert size={20} aria-hidden="true" />{admin.message}</p>
 			<p class="cl-muted">
 				{admin.code === 'not_staff'
 					? 'The admin console is for Colander staff. Curators review on the main site.'
@@ -59,6 +64,13 @@ authority, people and roles, and for admins the audit log.
 	.gate {
 		display: grid;
 		gap: 12px;
+	}
+	/* A message over two lines keeps its icon on the first. */
+	.gate-title {
+		align-items: flex-start;
+	}
+	.gate-title :global(svg) {
+		margin-top: calc((1lh - 20px) / 2);
 	}
 	.admin-nav {
 		display: flex;

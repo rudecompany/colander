@@ -256,7 +256,7 @@ function defaults(call: Call): Reply {
 	const { method, path, search } = call;
 	if (method === 'GET' && path === '/v1/account') return err(401, 'not_signed_in', 'Sign in to continue.');
 	if (method === 'GET' && path === '/v1/account/passkeys') return { json: { passkeys: [], current: null } };
-	// The email field's passkey autofill asks for a challenge on every signed-out page.
+	// The email field's passkey autofill asks for a challenge once the person starts on a sign-in form.
 	if (method === 'POST' && path === '/v1/auth/passkey/options') return { json: { options: REQUEST_OPTIONS } };
 	if (method === 'GET' && path === '/v1/stats') return { json: STATS };
 	if (method === 'GET' && path === '/v1/supporters')

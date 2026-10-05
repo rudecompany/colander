@@ -1,9 +1,11 @@
 <!--
 @component Sign in without a password (docs/contracts.md 6.6): an email address, then the 6-digit
-code we email, or a passkey. The email field offers saved passkeys in its autofill where the
-browser supports it (conditional UI), and "Sign in with a passkey" opens the browser's prompt. With
-a Turnstile site key the code request also passes a quick check. Focus follows the steps: the
-code field after the email is sent, the email field again for another address.
+code we email, or a passkey. Once the person starts on the form, the email field offers saved
+passkeys in its autofill where the browser supports it (conditional UI); nothing, no cookie and no
+challenge, happens before that. "Sign in with a passkey" opens the browser's prompt. With a
+Turnstile site key every code request, a new code and another address included, passes a quick
+check with its own token. Focus follows the steps: the code field after the email is sent, the
+email field again for another address.
 -->
 <script lang="ts">
 	import { onDestroy, onMount, tick } from 'svelte';
@@ -15,7 +17,7 @@ code field after the email is sent, the email field again for another address.
 	import Input from '@colander/shared/components/ui/input/input.svelte';
 	import { api, errorText } from '#lib/api.ts';
 	import { session } from '#lib/session.svelte.ts';
-	import { mountTurnstile, turnstileOn } from '#lib/turnstile.ts';
+	import { Challenge } from '#lib/turnstile.ts';
 	import { conditionalSupported, PasskeyCancelled, passkeySignIn, passkeysSupported } from '#lib/webauthn.ts';
 	import CodeForm from './CodeForm.svelte';
 
@@ -31,10 +33,10 @@ code field after the email is sent, the email field again for another address.
 	let status = $state<'idle' | 'sending' | 'passkey'>('idle');
 	let error = $state('');
 	let field = $state<HTMLElement>();
-	let challenge = $state<HTMLElement>();
-	let token = $state('');
+	let challengeEl = $state<HTMLElement>();
 	let passkeys = $state(false);
-	let widget: { reset(): void; remove(): void } | undefined;
+	let started = false;
+	const challenge = new Challenge();
 	let conditional: AbortController | undefined;
 
 	function done(account: Account) {
@@ -44,22 +46,25 @@ code field after the email is sent, the email field again for another address.
 		onsignedin?.(account);
 	}
 
-	onMount(async () => {
+	onMount(() => {
 		passkeys = passkeysSupported();
-		if (turnstileOn() && challenge) {
-			try {
-				widget = await mountTurnstile(challenge, (t) => (token = t));
-			} catch (e) {
-				error = errorText(e);
-			}
-		}
-		if (passkeys && (await conditionalSupported())) startConditional();
 	});
 
 	onDestroy(() => {
 		conditional?.abort();
-		widget?.remove();
+		challenge.remove();
 	});
+
+	/**
+	 * The person started on the form: offer passkeys in the autofill and start the check. Waiting
+	 * until now keeps a page that only shows the form free of cookies and of a passkey challenge.
+	 */
+	async function begin() {
+		if (started) return;
+		started = true;
+		challenge.prepare(challengeEl);
+		if (passkeys && (await conditionalSupported())) startConditional();
+	}
 
 	/**
 	 * Offers saved passkeys in the email field's autofill until one is picked or the form moves on.
@@ -89,8 +94,8 @@ code field after the email is sent, the email field again for another address.
 	}
 
 	async function send() {
-		await api('/v1/auth/code', { method: 'POST', body: { email: email.trim(), next, ...(turnstileOn() ? { turnstile: token } : {}) }, stepUp: false });
-		widget?.reset();
+		const turnstile = await challenge.token(challengeEl);
+		await api('/v1/auth/code', { method: 'POST', body: { email: email.trim(), next, ...(turnstile === undefined ? {} : { turnstile }) }, stepUp: false });
 	}
 
 	async function submit(event: SubmitEvent) {
@@ -99,10 +104,6 @@ code field after the email is sent, the email field again for another address.
 		error = '';
 		if (!/^\S+@\S+\.\S+$/.test(email.trim())) {
 			error = 'Enter an email address, like name@example.com.';
-			return;
-		}
-		if (turnstileOn() && !token) {
-			error = 'Wait a moment for the check below to finish, then try again.';
 			return;
 		}
 		status = 'sending';
@@ -127,7 +128,7 @@ code field after the email is sent, the email field again for another address.
 {#if step === 'code'}
 	<CodeForm email={email.trim()} {block} onsignedin={done} onresend={send} onback={back} />
 {:else}
-	<form class="signin" onsubmit={submit} novalidate>
+	<form class="signin" onsubmit={submit} onfocusin={begin} novalidate>
 		<div class="field" bind:this={field}>
 			<label class="field-label" for="signin-email">Email</label>
 			<Input
@@ -147,7 +148,6 @@ code field after the email is sent, the email field again for another address.
 				<p class="field-hint" id="signin-hint">No password. We email you a 6-digit code.</p>
 			{/if}
 		</div>
-		<div class="challenge" bind:this={challenge}></div>
 		<div class="actions" class:block>
 			<Button type="submit" variant="primary" size="xl" {block} aria-disabled={status !== 'idle' || undefined}>
 				<Mail size={16} aria-hidden="true" />
@@ -162,6 +162,8 @@ code field after the email is sent, the email field again for another address.
 		</div>
 	</form>
 {/if}
+<!-- Outside the steps, so the check lives on while the code step replaces the form. -->
+<div class="challenge" bind:this={challengeEl}></div>
 
 <style>
 	.signin {
@@ -169,6 +171,9 @@ code field after the email is sent, the email field again for another address.
 		grid-template-columns: minmax(0, 1fr);
 		gap: var(--cl-s4);
 		justify-items: stretch;
+	}
+	.challenge {
+		margin-top: var(--cl-s4);
 	}
 	.challenge:empty {
 		display: none;

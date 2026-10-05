@@ -44,6 +44,19 @@ test('sign in by emailed code, then the account page shows the account', async (
 	expect(verify[0]!.headers['x-colander-csrf']).toBe('1');
 });
 
+test('a sign-in form asks the server for nothing until the person starts on it', async ({ page }) => {
+	const calls = await mockApi(page);
+	await page.goto('/account');
+	await expect(page.getByRole('heading', { level: 1 })).toHaveText('Sign in');
+	await page.waitForLoadState('networkidle');
+	// No passkey challenge yet, so no cookie and nothing counted against the network's hourly passkey budget.
+	expect(calls.filter((c) => c.path.startsWith('/v1/auth/'))).toEqual([]);
+	await page.getByLabel('Email').focus();
+	if (await page.evaluate(async () => !!(await PublicKeyCredential.isConditionalMediationAvailable?.()))) {
+		await expect.poll(() => calls.filter((c) => c.path === '/v1/auth/passkey/options').length).toBe(1);
+	}
+});
+
 test('a used-up code offers a new one', async ({ page }) => {
 	let sent = 0;
 	await mockApi(page, {

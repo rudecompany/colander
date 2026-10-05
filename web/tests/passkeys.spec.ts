@@ -1,7 +1,7 @@
 // Passkeys, step-up and account data in the browser (docs/contracts.md 6.6), with a Chromium
 // virtual authenticator answering the WebAuthn prompts against mocked Worker answers.
 import { test, expect, virtualAuthenticator } from './fixtures.ts';
-import { ACCOUNT, CREATION_OPTIONS, CURATOR, CURATOR_NEW, PASSKEYS, PLUS_ACCOUNT, QUEUE, REQUEST_OPTIONS, STAFF, mockApi, reviewSource } from './mocks.ts';
+import { ACCOUNT, CREATION_OPTIONS, CURATOR, CURATOR_NEW, ME, PASSKEYS, PLUS_ACCOUNT, QUEUE, REQUEST_OPTIONS, STAFF, mockApi, reviewSource } from './mocks.ts';
 
 const err = (status: number, code: string, message: string) => ({ status, json: { error: { code, message } } });
 const WITH_PASSKEY = { ...ACCOUNT, passkey_count: 1 };
@@ -160,7 +160,31 @@ test('the cancel link cancels only when asked, so a mail scanner opening it chan
 	expect(calls.find((c) => c.path === '/v1/auth/cancel')!.body).toEqual({ secret: 's3cr3t' });
 });
 
-test('the console asks curators for a passkey sign-in first, and shows staff the way to the admin console', async ({ page }) => {
+test('a reviewer who signed in with a code confirms with their passkey before adding one, and a device that holds one already hears so plainly', async ({ page }) => {
+	const device = await virtualAuthenticator(page, { withPasskey: true });
+	const held = Buffer.from((await device.credentials())[0]!.credentialId, 'base64').toString('base64url');
+	const reviewer = { ...CURATOR, passkey_count: 1, session: { method: 'email' as const, authenticated_at: new Date().toISOString() } };
+	let stepped = false;
+	await mockApi(page, {
+		'GET /v1/account': { json: { account: reviewer } },
+		'GET /v1/account/passkeys': { json: { passkeys: PASSKEYS.slice(0, 1), current: null } },
+		// The server asks for the passkey (not an invite), and then excludes the one this device holds.
+		'POST /v1/account/passkeys/options': () =>
+			stepped
+				? { json: { options: { ...CREATION_OPTIONS, excludeCredentials: [{ type: 'public-key', id: held }] } } }
+				: err(403, 'passkey_required', 'Confirm it is you with a passkey to do this.'),
+		'POST /v1/auth/passkey/verify': () => ((stepped = true), { json: { account: { ...reviewer, session: { method: 'passkey', authenticated_at: new Date().toISOString() } } } })
+	});
+	await page.goto('/account');
+	await page.getByLabel('Name for the new passkey').fill('Phone');
+	await page.getByRole('button', { name: 'Add a passkey' }).click();
+	await page.getByRole('dialog', { name: 'Confirm it is you' }).getByRole('button', { name: 'Use my passkey' }).click();
+	await expect(page.getByText('This device already holds a passkey for your account.', { exact: false })).toBeVisible();
+	await expect(page.getByText('Something went wrong')).toHaveCount(0);
+	await expect(page.getByText('with an invite from an admin')).toHaveCount(0);
+});
+
+test('the console asks curators for a passkey sign-in first, and shows staff the way to the admin console', async ({ page, baseURL }) => {
 	await virtualAuthenticator(page, { withPasskey: true });
 	const review = {
 		'GET /v1/review/queue': { json: { items: QUEUE, next_cursor: null } },
@@ -182,9 +206,20 @@ test('the console asks curators for a passkey sign-in first, and shows staff the
 	await expect(fresh.getByText('Your account has no passkey yet')).toBeVisible();
 
 	const staff = await page.context().newPage();
-	await mockApi(staff, { 'GET /v1/account': { json: { account: STAFF } }, ...review });
+	await mockApi(staff, { 'GET /v1/account': { json: { account: STAFF } }, 'GET /v1/admin/me': { json: ME }, ...review });
 	await staff.goto('/console');
 	await expect(staff.getByText('You review as a curator here')).toBeVisible();
-	await expect(staff.getByRole('link', { name: 'admin console' })).toHaveAttribute('href', '/admin');
 	await expect(staff.getByText('Curator, Sam')).toBeVisible();
+	// The link leaves the site's router for the admin host, where Access signs staff in.
+	const admin = `${baseURL!.replace('//localhost', '//admin.localhost')}/admin`;
+	await expect(staff.getByRole('link', { name: 'admin console' })).toHaveAttribute('href', admin);
+	await staff.getByRole('link', { name: 'admin console' }).click();
+	await expect(staff).toHaveURL(admin);
+	await expect(staff.getByRole('navigation', { name: 'Admin console' })).toBeVisible();
+	// So does the account page's button. A staff account stays open, so the page offers no deletion.
+	await staff.goto(`${baseURL}/account`);
+	await expect(staff.getByText('Staff and admin accounts stay open until an admin lowers the role on the admin host.', { exact: false })).toBeVisible();
+	await expect(staff.getByRole('button', { name: 'Delete account' })).toHaveCount(0);
+	await staff.getByRole('link', { name: 'Open the admin console' }).click();
+	await expect(staff).toHaveURL(admin);
 });

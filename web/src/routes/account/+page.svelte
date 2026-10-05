@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { page } from '$app/state';
 	import type { Account, Plan } from '@colander/shared/api';
 	import Input from '@colander/shared/components/ui/input/input.svelte';
 	import LogOut from '@lucide/svelte/icons/log-out';
@@ -19,6 +20,7 @@
 	import { PageHeader, PLAN_COPY, PriceCard } from '@colander/shared';
 	import Button from '@colander/shared/components/ui/button/button.svelte';
 	import AuthCard from '#lib/components/AuthCard.svelte';
+	import { adminOrigin } from '#lib/site.ts';
 
 	let ext = $state<ExtensionState>({ kind: 'checking' });
 	let displayName = $state('');
@@ -214,7 +216,7 @@
 				<div class="row">
 					<Button variant="primary" size="xl" href="/console"><ListChecks size={16} aria-hidden="true" />Open the review console</Button>
 					{#if staff}
-						<Button variant="secondary" size="xl" href="/admin"><ShieldCheck size={16} aria-hidden="true" />Open the admin console</Button>
+						<Button variant="secondary" size="xl" href="{adminOrigin(page.url)}/admin"><ShieldCheck size={16} aria-hidden="true" />Open the admin console</Button>
 					{/if}
 					{#if ext.kind === 'installed'}
 						<Button variant="secondary" size="xl" onclick={connectReviewer} disabled={reviewer.kind === 'working'}>

@@ -12,6 +12,7 @@ more. Closing it gives up and the page shows the server's message.
 	import Button from '@colander/shared/components/ui/button/button.svelte';
 	import { api, errorText, type StepUpReason } from '#lib/api.ts';
 	import { session } from '#lib/session.svelte.ts';
+	import { Challenge } from '#lib/turnstile.ts';
 	import { PasskeyCancelled, passkeySignIn, passkeysSupported } from '#lib/webauthn.ts';
 	import CodeForm from './CodeForm.svelte';
 	import Notice from './Notice.svelte';
@@ -22,6 +23,8 @@ more. Closing it gives up and the page shows the server's message.
 	let busy = $state(false);
 	let error = $state('');
 	let settle: ((ok: boolean) => void) | undefined;
+	let challengeEl = $state<HTMLElement>();
+	const challenge = new Challenge();
 
 	const account = $derived(session.account);
 	/** A passkey is the way whenever the account holds one; otherwise an emailed code. */
@@ -44,6 +47,7 @@ more. Closing it gives up and the page shows the server's message.
 		const s = settle;
 		settle = undefined;
 		open = false;
+		challenge.remove();
 		s?.(ok);
 	}
 
@@ -58,8 +62,14 @@ more. Closing it gives up and the page shows the server's message.
 		busy = false;
 	}
 
+	/** Emails a code, with a fresh Turnstile token when the site uses Turnstile, as the sign-in form does. */
 	async function sendCode() {
-		await api('/v1/auth/code', { method: 'POST', body: { email: account?.email ?? '', next: location.pathname }, stepUp: false });
+		const turnstile = await challenge.token(challengeEl);
+		await api('/v1/auth/code', {
+			method: 'POST',
+			body: { email: account?.email ?? '', next: location.pathname, ...(turnstile === undefined ? {} : { turnstile }) },
+			stepUp: false
+		});
 	}
 
 	async function code() {
@@ -105,6 +115,7 @@ more. Closing it gives up and the page shows the server's message.
 			<Button variant="primary" size="xl" block onclick={code} aria-disabled={busy || undefined}>{busy ? 'Sending' : 'Email me a code'}</Button>
 		{/if}
 		{#if error}<p class="field-error" role="alert">{error}</p>{/if}
+		<div class="challenge" bind:this={challengeEl}></div>
 	</div>
 </Dialog>
 
@@ -112,5 +123,8 @@ more. Closing it gives up and the page shows the server's message.
 	.step-up {
 		display: grid;
 		gap: var(--cl-s3);
+	}
+	.challenge:empty {
+		display: none;
 	}
 </style>

@@ -29,6 +29,8 @@ only confirmed by email code can ask anyway, and the request waits 72 hours.
 		email_change: 'Move the account to another email address'
 	};
 	const requests = $derived(account.requests ?? []);
+	/** Staff and admin accounts are never deleted: an admin lowers the role first (contracts 6.6). */
+	const keeps = $derived(account.role === 'staff' || account.role === 'admin');
 
 	async function download() {
 		notice = null;
@@ -90,8 +92,11 @@ only confirmed by email code can ask anyway, and the request waits 72 hours.
 	</p>
 	<div class="row">
 		<Button variant="secondary" size="xl" onclick={download}><Download size={16} aria-hidden="true" />Download my data</Button>
-		<Button variant="quiet" size="xl" onclick={() => (confirming = true)}>Delete account</Button>
+		{#if !keeps}<Button variant="quiet" size="xl" onclick={() => (confirming = true)}>Delete account</Button>{/if}
 	</div>
+	{#if keeps}
+		<p class="cl-caption cl-muted">Staff and admin accounts stay open until an admin lowers the role on the admin host. Then you can delete it here.</p>
+	{/if}
 
 	{#if blocked}
 		<Notice title="This needs your passkey">
@@ -130,6 +135,7 @@ only confirmed by email code can ask anyway, and the request waits 72 hours.
 >
 	<ul class="effects cl-body">
 		<li>We erase your email, display name, passkeys, sessions and synced settings.</li>
+		<li>Our 400-day security record keeps what happened to the account under its ID only, never your email.</li>
 		{#if account.plan && account.plan.status !== 'canceled'}
 			<li>Plus ends now{account.plan.refundable ? ', and your last charge is refunded' : ''}.</li>
 		{/if}

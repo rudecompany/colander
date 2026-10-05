@@ -51,6 +51,9 @@ const COMMON = /[\\/](packages[\\/]shared[\\/]src|@lucide[\\/]svelte|web[\\/]src
 const ACCOUNT_UI =
 	/[\\/](web[\\/]src[\\/]lib[\\/](components[\\/]((SignIn|CodeForm|StepUp|AccountSecurity|AccountData)\.svelte|console[\\/])|webauthn\.ts|turnstile\.ts|admin\.svelte\.ts)|packages[\\/]shared[\\/]src[\\/]components[\\/]ui[\\/]dialog[\\/])/;
 
+/** Where the build goes: build/, or WEB_OUT. */
+const out = process.env.WEB_OUT || 'build';
+
 /** Turnstile on the sign-in form loads from challenges.cloudflare.com, only when a site key is set. */
 const turnstile: `https://${string}.${string}`[] = process.env.PUBLIC_TURNSTILE_SITE_KEY ? ['https://challenges.cloudflare.com'] : [];
 
@@ -72,7 +75,8 @@ export default defineConfig(async () => {
 				}
 			},
 			sveltekit({
-				adapter: adapter({ pages: 'build', assets: 'build', fallback: '200.html' }),
+				// WEB_OUT moves the output, so the tests can serve a second build with a Turnstile test key.
+				adapter: adapter({ pages: out, assets: out, fallback: '200.html' }),
 				csp: {
 					mode: 'hash',
 					directives: {

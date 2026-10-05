@@ -4,7 +4,10 @@
 // step-up dialog (StepUp.svelte) asks for a passkey or a code, and the request runs once more.
 import type { ApiError as ApiErrorBody } from '@colander/shared/api';
 
-export class ApiError extends Error {
+/** An error whose message is written for the person, so the page shows it as it is. */
+export class PlainError extends Error {}
+
+export class ApiError extends PlainError {
 	constructor(
 		readonly status: number,
 		readonly code: string,
@@ -82,5 +85,5 @@ async function request<T>(path: string, init: Init): Promise<T> {
 
 /** The plain message to show for any thrown value. */
 export function errorText(e: unknown): string {
-	return e instanceof ApiError ? e.message : FALLBACK_MESSAGE;
+	return e instanceof PlainError ? e.message : FALLBACK_MESSAGE;
 }

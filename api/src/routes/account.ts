@@ -665,7 +665,7 @@ function exportAccount(s: Store, request: Request): Response {
 
 /** Staff and admin accounts are never deleted here (erase.ts StaffAccountError). */
 const staffAccount = () =>
-	jsonError(403, 'staff_account', 'Staff and admin accounts cannot be deleted. An admin lowers the role on the admin host first.');
+	jsonError(403, 'staff_account', 'Staff and admin accounts stay open until an admin lowers the role on the admin host. Then you can delete it.');
 
 /**
  * DELETE /v1/account: needs a recent sign-in, with a passkey when the account holds one. Ends

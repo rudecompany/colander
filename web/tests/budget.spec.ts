@@ -53,9 +53,10 @@ test('/ stays within its request, image and transfer budget', async ({ page }) =
 });
 
 for (const [path, mocks] of PAGES) {
-	test(`${path} loads at most 110 KB of JavaScript`, async ({ page }) => {
+	test(`${path} loads at most 110 KB of JavaScript`, async ({ page, baseURL }) => {
 		await mockApi(page, mocks);
-		const files = await load(page, path);
+		// The admin console is opened on the admin host, as staff reach it.
+		const files = await load(page, path.startsWith('/admin') ? baseURL!.replace('//localhost', '//admin.localhost') + path : path);
 		const js = files.filter((f) => f.url.pathname.endsWith('.js')).reduce((n, f) => n + gz(f.body), 0);
 		expect(js, `JS gzip on ${path}`).toBeLessThanOrEqual(110 * KB);
 	});

@@ -6,6 +6,7 @@ sources, appeals and people happens in the admin console on the admin host.
 -->
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { page } from '$app/state';
 	import KeyRound from '@lucide/svelte/icons/key-round';
 	import Lock from '@lucide/svelte/icons/lock';
 	import ShieldCheck from '@lucide/svelte/icons/shield-check';
@@ -15,6 +16,7 @@ sources, appeals and people happens in the admin console on the admin host.
 	import Loading from '#lib/components/Loading.svelte';
 	import Notice from '#lib/components/Notice.svelte';
 	import SignIn from '#lib/components/SignIn.svelte';
+	import { adminOrigin } from '#lib/site.ts';
 	import { errorText } from '#lib/api.ts';
 	import { loadAccount, session } from '#lib/session.svelte.ts';
 	import { PasskeyCancelled, passkeySignIn, passkeysSupported } from '#lib/webauthn.ts';
@@ -87,14 +89,14 @@ sources, appeals and people happens in the admin console on the admin host.
 		{/if}
 		{#if error}<p class="field-error" role="alert">{error}</p>{/if}
 		{#if staff}
-			<Button variant="quiet" size="xl" href="/admin"><ShieldCheck size={16} aria-hidden="true" />Open the admin console</Button>
+			<Button variant="quiet" size="xl" href="{adminOrigin(page.url)}/admin"><ShieldCheck size={16} aria-hidden="true" />Open the admin console</Button>
 		{/if}
 	</AuthCard>
 {:else}
 	{#if staff}
 		<div class="cl-container staff-note">
 			<Notice title="You review as a curator here">
-				<p>Large sources, appeals and people are in the <a href="/admin">admin console</a>, which signs you in through your staff identity.</p>
+				<p>Large sources, appeals and people are in the <a href="{adminOrigin(page.url)}/admin">admin console</a>, which signs you in through your staff identity.</p>
 			</Notice>
 		</div>
 	{/if}

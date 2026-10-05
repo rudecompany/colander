@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { PUBLIC_TURNSTILE_SITE_KEY } from '$app/env/public';
 	import { PageHeader, PermissionsTable, PRIVACY_INSTALL_ID, PrivacyFacts } from '@colander/shared';
 
 	const toc = [
@@ -109,10 +110,14 @@
 		<section id="website" class="prose">
 			<h2>The website</h2>
 			<ul class="dots-list">
-				<li>Pages load no third-party scripts, fonts or images. There are no analytics and no trackers.</li>
 				<li>
-					This site sets no cookies until you start signing in, so there is no banner. A short sign-in cookie holds your place for 10
-					minutes while you enter the code; the session cookie lasts 30 days.
+					Pages load no third-party scripts, fonts or images. There are no analytics and no trackers.
+					{#if PUBLIC_TURNSTILE_SITE_KEY}The one exception: once you start signing in, the form loads Cloudflare Turnstile, a check that
+						a person is asking for the code.{/if}
+				</li>
+				<li>
+					This site sets no cookies until you start signing in, so there is no banner. Then a short cookie holds your place: 10 minutes
+					while you enter an emailed code, or 5 minutes for a passkey check. The session cookie lasts 30 days.
 				</li>
 				<li>
 					You sign in with a 6-digit code we email you, which works once for 10 minutes, or with a passkey. We do not use passwords. If
@@ -144,7 +149,8 @@
 				</li>
 				<li>
 					We keep a record of sign-ins, passkey and role changes, and staff actions for 400 days, to investigate misuse. It holds what
-					happened and when, never codes, passkeys or the pages you visit.
+					happened, when, and to which account ID, never codes, passkeys, your email address or the pages you visit. Deleting your
+					account leaves these entries, still under the ID only.
 				</li>
 			</ul>
 		</section>
@@ -173,7 +179,7 @@
 				<li>Server logs never record request paths that contain item or source IDs together with an install hash.</li>
 				<li>Unverified appeals expire after 14 days. An appeal's email address is erased 30 days after the appeal closes.</li>
 				<li>Sign-in codes and passkey challenges last 10 and 5 minutes. Sessions end after 30 days, and a side panel connection after 7.</li>
-				<li>The record of sign-ins and account changes is kept 400 days.</li>
+				<li>The record of sign-ins and account changes is kept 400 days, whether or not the account still exists. It names accounts by ID, never by email address.</li>
 				<li>Account data is kept until you delete the account, apart from billing records the law requires us to keep.</li>
 			</ul>
 		</section>

@@ -40,7 +40,8 @@ changes, staff and ops actions and reads of personal data, newest first. Reading
 	}
 
 	const who = (e: AuditEntry) => e.actor_email ?? e.actor_sub ?? e.actor_id ?? (e.host === 'job' ? 'Colander' : 'the account itself');
-	const change = (e: AuditEntry) => [e.before, e.after].filter(Boolean).join(' to ');
+	const what = (e: AuditEntry) => e.action.replaceAll('_', ' ');
+	const detail = (e: AuditEntry) => [[e.before, e.after].filter(Boolean).join(' to '), e.reason].filter(Boolean).join('; ');
 </script>
 
 <svelte:head>
@@ -66,7 +67,8 @@ changes, staff and ops actions and reads of personal data, newest first. Reading
 		{:else if entries.length === 0}
 			<p class="cl-body cl-muted">Nothing recorded.</p>
 		{:else}
-			<div class="scroll">
+			<!-- A table where five columns fit; on a phone, one entry under the other. -->
+			<div class="scroll wide">
 				<table class="plain">
 					<thead>
 						<tr><th scope="col">When</th><th scope="col">What</th><th scope="col">Who</th><th scope="col">Account</th><th scope="col">Detail</th></tr>
@@ -74,16 +76,29 @@ changes, staff and ops actions and reads of personal data, newest first. Reading
 					<tbody>
 						{#each entries as e (e.id)}
 							<tr>
-								<td class="cl-figure">{fmtDateTime(e.at)}</td>
-								<td>{e.action.replaceAll('_', ' ')}</td>
-								<td class="wrap">{who(e)} <span class="cl-muted">({e.host})</span></td>
-								<td class="cl-figure wrap">{e.target ?? ''}</td>
-								<td class="wrap">{[change(e), e.reason].filter(Boolean).join('; ')}</td>
+								<td class="cl-figure nowrap">{fmtDateTime(e.at)}</td>
+								<td>{what(e)}</td>
+								<td><span class="nowrap">{who(e)}</span> <span class="cl-muted nowrap">({e.host})</span></td>
+								<td class="cl-figure nowrap">{e.target ?? ''}</td>
+								<td class="detail">{detail(e)}</td>
 							</tr>
 						{/each}
 					</tbody>
 				</table>
 			</div>
+			<ol class="entries narrow">
+				{#each entries as e (e.id)}
+					<li>
+						<p class="head"><span class="what">{what(e)}</span><span class="cl-caption cl-muted cl-figure">{fmtDateTime(e.at)}</span></p>
+						<dl>
+							<dt>Who</dt>
+							<dd>{who(e)} <span class="cl-muted">({e.host})</span></dd>
+							{#if e.target}<dt>Account</dt><dd class="cl-figure">{e.target}</dd>{/if}
+							{#if detail(e)}<dt>Detail</dt><dd>{detail(e)}</dd>{/if}
+						</dl>
+					</li>
+				{/each}
+			</ol>
 			{#if cursor}<Button variant="secondary" size="lg" onclick={() => load(true)}>Load older</Button>{/if}
 		{/if}
 	{/if}
@@ -105,7 +120,62 @@ changes, staff and ops actions and reads of personal data, newest first. Reading
 	.scroll {
 		overflow-x: auto;
 	}
-	.wrap {
-		overflow-wrap: anywhere;
+	/* Times, addresses and IDs stay whole; the table scrolls sideways before it splits them. */
+	.nowrap {
+		white-space: nowrap;
+	}
+	.detail {
+		min-width: 16ch;
+		overflow-wrap: break-word;
+	}
+	.entries {
+		display: grid;
+		margin: 0;
+		padding: 0;
+		list-style: none;
+		border-top: 1px solid var(--cl-border);
+	}
+	.entries li {
+		display: grid;
+		gap: var(--cl-s1);
+		padding: var(--cl-s3) 0;
+		border-bottom: 1px solid var(--cl-border);
+	}
+	.head {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: baseline;
+		justify-content: space-between;
+		gap: 0 var(--cl-s3);
+		margin: 0;
+	}
+	.what {
+		font: var(--cl-body);
+		font-weight: 600;
+	}
+	dl {
+		display: grid;
+		grid-template-columns: max-content minmax(0, 1fr);
+		gap: var(--cl-s1) var(--cl-s3);
+		margin: 0;
+		font: var(--cl-body);
+	}
+	dt {
+		color: var(--cl-text-muted);
+	}
+	dd {
+		margin: 0;
+		overflow-wrap: break-word;
+	}
+	.narrow {
+		display: none;
+	}
+	@media (max-width: 639px) {
+		.wide {
+			display: none;
+		}
+		.narrow {
+			display: grid;
+		}
 	}
 </style>

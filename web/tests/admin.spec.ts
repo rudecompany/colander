@@ -1,12 +1,15 @@
 // The admin console on the admin host (docs/contracts.md 6.9) against mocked answers: who is signed
 // in, the review queue with staff authority, people and roles, invites and the audit log.
-import { test, expect } from './fixtures.ts';
+import { test, expect, layoutSpills } from './fixtures.ts';
 import { AUDIT, ME, PEOPLE, QUEUE, mockApi, reviewSource } from './mocks.ts';
+
+/** The admin host of the test server: admin.localhost on the same port, as in dev. */
+const adminHost = (baseURL: string | undefined) => baseURL!.replace('//localhost', '//admin.localhost');
 
 const STAFF_ME = { ...ME, account: { ...ME.account, role: 'staff' }, authority: 'staff', permissions: ['review', 'review.staff', 'people.read', 'role.set', 'invite.issue'] };
 
-test('reviews with full authority: staff decide large sources here', async ({ page }) => {
-	await mockApi(page, {
+test('reviews with full authority: staff decide large sources here', async ({ page, baseURL }) => {
+	const calls = await mockApi(page, {
 		'GET /v1/admin/me': { json: STAFF_ME },
 		'GET /v1/review/queue': { json: { items: QUEUE, next_cursor: null } },
 		'GET /v1/review/sources/*': (c) => {
@@ -14,13 +17,24 @@ test('reviews with full authority: staff decide large sources here', async ({ pa
 			return { json: reviewSource(`${p}:${decodeURIComponent(id!)}`) };
 		}
 	});
-	await page.goto('/admin');
+	await page.goto(`${adminHost(baseURL)}/admin`);
 	await expect(page.getByText('Staff, Rae')).toBeVisible();
 	await page.getByRole('button', { name: /Ancient Facts Daily/ }).click();
 	await expect(page.getByRole('heading', { level: 2, name: 'Ancient Facts Daily' })).toBeVisible();
 	// A large source: no staff-only lock here.
 	await expect(page.getByText('Staff decision needed')).toHaveCount(0);
 	await expect(page.getByRole('navigation', { name: 'Admin console' }).getByRole('link')).toHaveText(['Review', 'People']);
+	// The public page lives on the main host, which has the verdict; the admin host serves no public API.
+	await expect(page.getByRole('link', { name: 'Public source page' })).toHaveAttribute('href', new RegExp(`^${baseURL}/s/`));
+	await page.waitForLoadState('networkidle');
+	expect(calls.filter((c) => c.path === '/v1/stats' || c.path === '/v1/log')).toEqual([]);
+});
+
+test('a client-side route to /admin on the main host goes on to the admin host', async ({ page, baseURL }) => {
+	await mockApi(page, { 'GET /v1/admin/me': { json: ME } });
+	await page.goto('/admin/people');
+	await expect(page).toHaveURL(`${adminHost(baseURL)}/admin/people`);
+	await expect(page.getByRole('heading', { level: 1, name: 'People' })).toBeVisible();
 });
 
 test('says plainly when the Access identity is not staff', async ({ page }) => {
@@ -83,4 +97,20 @@ test('admins read the audit log, newest first', async ({ page }) => {
 	await expect(page.getByRole('row')).toHaveCount(AUDIT.length + 1);
 	await expect(page.getByRole('row').nth(1)).toContainText('invite issued');
 	await expect(page.getByRole('row').nth(3)).toContainText('github:slantview');
+});
+
+test('on a phone the audit log is one entry under the other, with addresses and IDs whole', async ({ page }) => {
+	await page.setViewportSize({ width: 390, height: 844 });
+	await mockApi(page, { 'GET /v1/admin/me': { json: ME }, 'GET /v1/admin/audit': { json: { entries: AUDIT, next_cursor: null } } });
+	await page.goto('/admin/audit');
+	const entries = page.locator('ol.entries > li');
+	await expect(entries).toHaveCount(AUDIT.length);
+	await expect(page.getByRole('table')).toBeHidden();
+	await expect(entries.first()).toContainText('invite issued');
+	// Each address and ID sits on one line.
+	for (const text of ['rae@example.com (admin)', 'acc_lee']) {
+		const box = (await entries.first().getByText(text, { exact: true }).boundingBox())!;
+		expect(box.height, text).toBeLessThan(30);
+	}
+	expect(await layoutSpills(page)).toEqual([]);
 });

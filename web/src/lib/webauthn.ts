@@ -2,7 +2,7 @@
 // and toJSON), so no WebAuthn library ships to the page. Every supported browser has them; one
 // without them simply does not offer passkeys and keeps email codes.
 import type { Account } from '@colander/shared/api';
-import { api } from './api';
+import { api, PlainError } from './api';
 
 type Json = Record<string, unknown>;
 
@@ -39,7 +39,7 @@ const asJson = (cred: Credential | null): Json => {
 /** Runs navigator.credentials.get for the server's options and returns the credential as JSON. */
 export async function getCredential(options: Json, opts: { mediation?: CredentialMediationRequirement; signal?: AbortSignal } = {}): Promise<Json> {
 	const P = pkc();
-	if (!P) throw new Error('This browser cannot use passkeys.');
+	if (!P) throw new PlainError('This browser cannot use passkeys.');
 	try {
 		return asJson(await navigator.credentials.get({ publicKey: P.parseRequestOptionsFromJSON(options as unknown as PublicKeyCredentialRequestOptionsJSON), mediation: opts.mediation, signal: opts.signal }));
 	} catch (e) {
@@ -51,12 +51,15 @@ export async function getCredential(options: Json, opts: { mediation?: Credentia
 /** Runs navigator.credentials.create for the server's options and returns the credential as JSON. */
 export async function createCredential(options: Json): Promise<Json> {
 	const P = pkc();
-	if (!P) throw new Error('This browser cannot use passkeys.');
+	if (!P) throw new PlainError('This browser cannot use passkeys.');
 	try {
 		return asJson(await navigator.credentials.create({ publicKey: P.parseCreationOptionsFromJSON(options as unknown as PublicKeyCredentialCreationOptionsJSON) }));
 	} catch (e) {
 		if (e instanceof DOMException && e.name === 'NotAllowedError') throw new PasskeyCancelled();
-		if (e instanceof DOMException && e.name === 'InvalidStateError') throw new Error('This passkey is already on your account.');
+		// The device already holds a passkey for this account: a normal situation, not a fault.
+		if (e instanceof DOMException && e.name === 'InvalidStateError') {
+			throw new PlainError('This device already holds a passkey for your account. Use it to sign in, or add one on another device.');
+		}
 		throw e;
 	}
 }
