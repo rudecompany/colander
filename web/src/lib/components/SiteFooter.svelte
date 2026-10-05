@@ -81,7 +81,7 @@ while their case is open.
 		<div class="base">
 			<span class="brand"><ColanderMark size={20} /><span class="word">Colander</span></span>
 			<LiveBadge sequence={live.stats?.list_sequence} updatedAt={live.stats?.list_updated_at} now={live.now ?? undefined} />
-			<span class="note">No cookies, so no banner.</span>
+			<span class="note">No cookies until you sign in, so no banner.</span>
 			<span class="who"><ArrowLink href="{site}/transparency" size="sm">Who runs Colander and how it is funded</ArrowLink></span>
 		</div>
 	</div>

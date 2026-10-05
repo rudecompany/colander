@@ -107,6 +107,11 @@ const shots: Shot[] = [
 	},
 	{ name: 'admin-people', path: '/admin/people', setup: { 'GET /v1/admin/me': { json: ME }, 'GET /v1/admin/people': { json: { people: PEOPLE } } } },
 	{ name: 'admin-audit', path: '/admin/audit', setup: { 'GET /v1/admin/me': { json: ME }, 'GET /v1/admin/audit': { json: { entries: AUDIT, next_cursor: null } } } },
+	{
+		name: 'admin-not-staff',
+		path: '/admin',
+		setup: { 'GET /v1/admin/me': { status: 403, json: { error: { code: 'not_staff', message: 'This Access identity is not a Colander staff account.' } } } }
+	},
 	{ name: 'privacy', path: '/privacy' },
 	{ name: 'terms', path: '/terms' },
 	{ name: 'not-found', path: '/no-such-page' }

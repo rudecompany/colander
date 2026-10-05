@@ -89,11 +89,11 @@ changes, staff and ops actions and reads of personal data, newest first. Reading
 			<ol class="entries narrow">
 				{#each entries as e (e.id)}
 					<li>
-						<p class="head"><span class="what">{what(e)}</span><span class="cl-caption cl-muted cl-figure">{fmtDateTime(e.at)}</span></p>
+						<p class="head"><span class="what">{what(e)}</span><span class="cl-figure cl-muted">{fmtDateTime(e.at)}</span></p>
 						<dl>
 							<dt>Who</dt>
 							<dd>{who(e)} <span class="cl-muted">({e.host})</span></dd>
-							{#if e.target}<dt>Account</dt><dd class="cl-figure">{e.target}</dd>{/if}
+							{#if e.target}<dt>Account</dt><dd>{e.target}</dd>{/if}
 							{#if detail(e)}<dt>Detail</dt><dd>{detail(e)}</dd>{/if}
 						</dl>
 					</li>
@@ -119,6 +119,10 @@ changes, staff and ops actions and reads of personal data, newest first. Reading
 	}
 	.scroll {
 		overflow-x: auto;
+	}
+	/* Figures are smaller than the words beside them: the cells share a baseline, not a top. */
+	td {
+		vertical-align: baseline;
 	}
 	/* Times, addresses and IDs stay whole; the table scrolls sideways before it splits them. */
 	.nowrap {
@@ -155,7 +159,8 @@ changes, staff and ops actions and reads of personal data, newest first. Reading
 	}
 	dl {
 		display: grid;
-		grid-template-columns: max-content minmax(0, 1fr);
+		/* One label column for every entry, so the values line up down the list. */
+		grid-template-columns: 5rem minmax(0, 1fr);
 		gap: var(--cl-s1) var(--cl-s3);
 		margin: 0;
 		font: var(--cl-body);
