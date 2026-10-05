@@ -173,7 +173,7 @@ async function changeEmail(s: Store, publicUrl: string, request: Request, id: st
 	});
 	s.jobs.schedule('requests', due * 1000);
 	await sendQuietly(s, target.email, emailChangeHeld(email, 7, `${publicUrl}/account/cancel#${cancel.raw}`));
-	return json(202, { due_at: rfc3339(due) });
+	return json(200, { due_at: rfc3339(due) });
 }
 
 /** POST /v1/admin/donations/{id}/credit {"credit_name"}: replaces or clears ("") a donor's supporter credit, by Checkout Session ID. */

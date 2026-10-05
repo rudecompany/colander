@@ -157,7 +157,7 @@ describe('passkeys', () => {
 
 		h.mail = '';
 		await expectStatus(await h.do('DELETE', `/v1/account/passkeys/${list.passkeys[9]!.id}`, undefined, ...CSRF, 'Cookie', cookie), 204);
-		expect(h.mail).toContain('Subject: Colander account: a passkey was removed from your account');
+		expect(h.mail).toContain('Subject: Colander account: a passkey was taken off your account');
 		// The next registration excludes every passkey the account still holds.
 		const next = await h.do('POST', '/v1/account/passkeys/options', undefined, ...CSRF, 'Cookie', cookie);
 		const excluded = ((await next.json()) as { options: { excludeCredentials: { id: string }[] } }).options.excludeCredentials.map((c) => c.id);
@@ -181,7 +181,7 @@ describe('passkeys', () => {
 		await expectStatus(await h.do('POST', '/v1/auth/logout', { everywhere: true }, ...CSRF, 'Cookie', owner), 204);
 		for (const c of [elsewhere, pk, owner]) await expectStatus(await h.do('GET', '/v1/account', undefined, 'Cookie', c), 401);
 		expect(await h.run((store) => store.db.all('SELECT credential_id FROM passkeys'))).toEqual([{ credential_id: mine.id }]);
-		expect(h.mail).toContain('every other passkey was removed');
+		expect(h.mail).toContain('every other passkey was taken off');
 		expect(await errorCode(await passkeySignIn(h, intruder))).toBe('passkey_invalid');
 	});
 });
@@ -397,7 +397,7 @@ describe('account data', () => {
 		await expectStatus(await h.do('DELETE', '/v1/account', undefined, ...CSRF, 'Cookie', cookie), 204);
 		expect(f.recorded('POST', '/v1/refunds')).toHaveLength(1);
 		expect(f.recorded('DELETE').map((r) => r.path.split('/').slice(0, 3).join('/'))).toEqual(['/v1/subscriptions', '/v1/customers']);
-		expect(h.mail).toContain('Subject: Your Colander account is deleted');
+		expect(h.mail).toContain('Subject: Your Colander account is erased');
 		expect(
 			await h.run((store) => [
 				store.db.get<{ n: number }>('SELECT count(*) AS n FROM accounts')!.n,

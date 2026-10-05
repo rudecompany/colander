@@ -6,7 +6,7 @@
 	import { loadAccount, session } from '#lib/session.svelte.ts';
 	import AuthCard from '#lib/components/AuthCard.svelte';
 	import ConnectBrowser from '#lib/components/ConnectBrowser.svelte';
-	import EmailSignIn from '#lib/components/EmailSignIn.svelte';
+	import SignIn from '#lib/components/SignIn.svelte';
 	import Loading from '#lib/components/Loading.svelte';
 	import Notice from '#lib/components/Notice.svelte';
 	import { PageHeader } from '@colander/shared';
@@ -22,29 +22,34 @@
 	const plan = $derived(session.account?.plan && session.account.plan.status !== 'canceled' ? session.account.plan : null);
 	const live = (a: Account | null) => !!a?.plan && a.plan.status !== 'canceled';
 
-	onMount(() => {
-		let stopped = false;
-		detectExtension().then((state) => (ext = state));
-		(async () => {
-			const giveUp = Date.now() + GIVE_UP_MS;
-			while (!stopped) {
-				const account = await loadAccount();
-				if (stopped) return;
-				if (live(account)) {
-					phase = 'ready';
-					return;
-				}
-				if (!account && session.status === 'ready') {
-					phase = 'signed_out';
-					return;
-				}
-				if (Date.now() > giveUp) {
-					phase = 'slow';
-					return;
-				}
-				await new Promise((r) => setTimeout(r, POLL_MS));
+	let stopped = false;
+
+	/** Checks the account until Plus shows up, the person turns out signed out, or a minute passes. */
+	async function watch() {
+		phase = 'confirming';
+		const giveUp = Date.now() + GIVE_UP_MS;
+		while (!stopped) {
+			const account = await loadAccount();
+			if (stopped) return;
+			if (live(account)) {
+				phase = 'ready';
+				return;
 			}
-		})();
+			if (!account && session.status === 'ready') {
+				phase = 'signed_out';
+				return;
+			}
+			if (Date.now() > giveUp) {
+				phase = 'slow';
+				return;
+			}
+			await new Promise((r) => setTimeout(r, POLL_MS));
+		}
+	}
+
+	onMount(() => {
+		detectExtension().then((state) => (ext = state));
+		watch();
 		return () => (stopped = true);
 	});
 
@@ -66,7 +71,7 @@
 		title="Sign in to finish"
 		lede="Your payment went through. Sign in with the email you used at checkout to connect Plus to this browser."
 	>
-		<EmailSignIn next="/plans/welcome" block />
+		<SignIn next="/plans/welcome" block onsignedin={watch} />
 	</AuthCard>
 {:else}
 <div class="cl-container page-top">

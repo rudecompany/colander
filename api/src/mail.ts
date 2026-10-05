@@ -104,8 +104,8 @@ export function heldRequest(what: string, days: number, cancelLink: string): [su
 /** Confirms that an account and its data are deleted. */
 export function accountDeleted(): [subject: string, body: string] {
 	return [
-		'Your Colander account is deleted',
-		'We deleted your Colander account as you asked: your email, passkeys, sessions, plan and synced settings are gone.\n' +
+		'Your Colander account is erased',
+		'We erased your Colander account as you asked: your email, passkeys, sessions, plan and synced settings are gone.\n' +
 			'Decisions you made as a reviewer stay in the public decision log without your name.\n' +
 			'Blocking, tagging, reporting and appeals stay free on every platform, with no account.\n\nColander'
 	];

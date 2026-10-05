@@ -1,3 +1,7 @@
+<!--
+Sign-in links mailed before Colander moved to 6-digit codes finish here for one more release; they
+expire 20 minutes after they were sent. New sign-ins use a code on the page that asked for it.
+-->
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
@@ -27,7 +31,7 @@
 		} catch (e) {
 			error =
 				e instanceof ApiError && e.status >= 400 && e.status < 500
-					? 'This sign-in link has expired or was already used. Links work once, for 20 minutes. Ask for a new one below.'
+					? 'This sign-in link has expired or was already used. Colander now signs you in with a 6-digit code instead.'
 					: errorText(e);
 		}
 	});
@@ -41,7 +45,7 @@
 <AuthCard title={error ? 'That link did not work' : 'Signing you in'}>
 	{#if error}
 		<Notice tone="error" title="Not signed in"><p>{error}</p></Notice>
-		<Button variant="primary" size="xl" block href="/account">Get a new sign-in link</Button>
+		<Button variant="primary" size="xl" block href="/account">Sign in with a code</Button>
 	{:else}
 		<Loading label="Checking your sign-in link" />
 	{/if}

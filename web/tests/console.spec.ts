@@ -1,8 +1,13 @@
 import { test, expect } from './fixtures.ts';
-import { APPEAL, CURATOR, QUEUE, STAFF, mockApi, reviewSource } from './mocks.ts';
+import { APPEAL, CURATOR, ME, QUEUE, STAFF, mockApi, reviewSource } from './mocks.ts';
+
+/** Staff review in the admin console on the admin host, curators in /console on the main host. */
+const consolePath = (account: typeof STAFF) => (account.role === 'staff' ? '/admin' : '/console');
+const STAFF_ME = { ...ME, account: { ...ME.account, id: 'acc_sam', email: 'sam@example.com', display_name: 'Sam', role: 'staff' }, authority: 'staff' };
 
 const review = (account: typeof STAFF, extra: Parameters<typeof mockApi>[1] = {}) => ({
 	'GET /v1/account': { json: { account } },
+	'GET /v1/admin/me': { json: STAFF_ME },
 	'GET /v1/review/queue': { json: { items: QUEUE, next_cursor: null } },
 	'GET /v1/review/sources/*': (c: { path: string }) => {
 		const [, , , , p, id] = c.path.split('/');
@@ -13,7 +18,7 @@ const review = (account: typeof STAFF, extra: Parameters<typeof mockApi>[1] = {}
 
 test('staff move through the queue by keyboard, read the evidence and write a decision', async ({ page }) => {
 	const calls = await mockApi(page, review(STAFF, { 'POST /v1/review/sources/*/decision': { json: {} } }));
-	await page.goto('/console');
+	await page.goto(consolePath(STAFF));
 	await expect(page.getByRole('button', { name: /Ancient Facts Daily/ })).toBeVisible();
 
 	await page.locator('body').click({ position: { x: 5, y: 300 } });
@@ -115,7 +120,7 @@ test('Slop and Likely slop wait for AI evidence, and the server answer is shown'
 			}
 		})
 	);
-	await page.goto('/console');
+	await page.goto(consolePath(STAFF));
 	await page.getByRole('button', { name: /History Bites/ }).click();
 
 	const slop = page.getByRole('radio', { name: 'Slop', exact: true });
@@ -145,7 +150,7 @@ for (const width of [800, 1024, 1199]) {
 	test(`the queue tabs fit their column at ${width} px`, async ({ page }) => {
 		await page.setViewportSize({ width, height: 900 });
 		await mockApi(page, review(STAFF));
-		await page.goto('/console');
+		await page.goto(consolePath(STAFF));
 		const tabs = page.getByRole('tablist', { name: 'Queue kind' });
 		await expect(tabs.getByRole('tab', { name: /Escalated/ })).toBeVisible();
 		const { scroll, client } = await tabs.evaluate((el) => ({ scroll: el.scrollWidth, client: el.clientWidth }));

@@ -14,7 +14,8 @@ Escape closes it and focus returns to Menu.
 	import Button from '@colander/shared/components/ui/button/button.svelte';
 	import SendToComputer from './SendToComputer.svelte';
 
-	let { app = false }: { app?: boolean } = $props();
+	/** The app title in place of the site navigation: the review or admin console. */
+	let { app = '' }: { app?: string } = $props();
 
 	const links = [
 		{ href: '/definition', label: 'How it decides' },
@@ -32,7 +33,7 @@ Escape closes it and focus returns to Menu.
 <header class="site-header" class:app>
 	<div class="cl-container bar">
 		<a class="home" href="/"><ColanderMark size={24} /><span class="word">Colander</span></a>
-		{#if app}<span class="app-title">Review console</span>{/if}
+		{#if app}<span class="app-title">{app}</span>{/if}
 
 		{#if !app}
 			<nav class="main" aria-label="Main">

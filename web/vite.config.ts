@@ -42,6 +42,18 @@ async function live(): Promise<{ stats: unknown; log: unknown[]; asOf: string } 
 	}
 }
 
+/** Modules 2 or more pages share, which travel in one chunk. */
+const COMMON = /[\\/](packages[\\/]shared[\\/]src|@lucide[\\/]svelte|web[\\/]src[\\/]lib)[\\/]/;
+/**
+ * Sign-in, the account, admin and review console pieces, and the dialog they open stay out of it,
+ * so pages without them (the landing page first) never load them.
+ */
+const ACCOUNT_UI =
+	/[\\/](web[\\/]src[\\/]lib[\\/](components[\\/]((SignIn|CodeForm|StepUp|AccountSecurity|AccountData)\.svelte|console[\\/])|webauthn\.ts|turnstile\.ts|admin\.svelte\.ts)|packages[\\/]shared[\\/]src[\\/]components[\\/]ui[\\/]dialog[\\/])/;
+
+/** Turnstile on the sign-in form loads from challenges.cloudflare.com, only when a site key is set. */
+const turnstile: `https://${string}.${string}`[] = process.env.PUBLIC_TURNSTILE_SITE_KEY ? ['https://challenges.cloudflare.com'] : [];
+
 export default defineConfig(async () => {
 	const numbers = await live();
 	let warned = false;
@@ -65,12 +77,13 @@ export default defineConfig(async () => {
 					mode: 'hash',
 					directives: {
 						'default-src': ['self'],
-						'script-src': ['self'],
+						'script-src': ['self', ...turnstile],
+						'frame-src': turnstile.length ? turnstile : ['none' as const],
 						// Svelte writes style attributes; scripts stay hash-locked.
 						'style-src': ['self', 'unsafe-inline'],
 						'img-src': ['self', 'data:'],
 						'font-src': ['self'],
-						'connect-src': ['self'],
+						'connect-src': ['self', ...turnstile],
 						'form-action': ['self'],
 						'base-uri': ['self'],
 						'object-src': ['none']
@@ -91,7 +104,7 @@ export default defineConfig(async () => {
 			rolldownOptions: {
 				output: {
 					codeSplitting: {
-						groups: [{ name: 'common', test: /[\\/](packages[\\/]shared[\\/]src|@lucide[\\/]svelte|web[\\/]src[\\/]lib)[\\/]/, minShareCount: 2 }]
+						groups: [{ name: 'common', test: (id: string) => COMMON.test(id) && !ACCOUNT_UI.test(id), minShareCount: 2 }]
 					}
 				}
 			}

@@ -502,7 +502,7 @@ async function authLogout(s: Store, request: Request): Promise<Response> {
 			audit(s.db, { ...main(request, ses.account.id), action: 'signed_out_everywhere', target: ses.account.id }, now);
 			return n;
 		});
-		if (removed > 0) await sendQuietly(s, ses.account.email, securityNotice('Every other passkey was removed from your account'));
+		if (removed > 0) await sendQuietly(s, ses.account.email, securityNotice('Every other passkey was taken off your account'));
 		return new Response(null, { status: 204, headers: { 'Set-Cookie': s.auth.cookie(s.auth.names.session, '', 0) } });
 	}
 	return new Response(null, { status: 204, headers: { 'Set-Cookie': s.auth.signOut(request) } });
@@ -599,7 +599,7 @@ async function removePasskey(s: Store, request: Request, id: string): Promise<Re
 		return true;
 	});
 	if (!ok) return jsonError(404, 'not_found', 'This account has no such passkey.');
-	await sendQuietly(s, ses.account.email, securityNotice('A passkey was removed from your account'));
+	await sendQuietly(s, ses.account.email, securityNotice('A passkey was taken off your account'));
 	return new Response(null, { status: 204 });
 }
 
@@ -670,11 +670,11 @@ async function deleteAccountRoute(s: Store, request: Request): Promise<Response>
 		await eraseAccount(s, ses.account.id, main(request, ses.account.id));
 	} catch (err) {
 		if (err instanceof UnavailableError) {
-			return jsonError(503, 'billing_unavailable', 'We could not end your Plus plan right now, so nothing was deleted. Please try again later.');
+			return jsonError(503, 'billing_unavailable', 'We could not end your Plus plan right now, so your account is unchanged. Please try again later.');
 		}
 		if (err instanceof StripeError) {
 			console.error(JSON.stringify({ message: 'stripe call failed', route: 'DELETE /v1/account', error: err.message }));
-			return jsonError(502, 'payment_provider_error', 'Our payment provider did not answer, so nothing was deleted. Please try again in a moment.');
+			return jsonError(502, 'payment_provider_error', 'Our payment provider did not answer, so your account is unchanged. Please try again in a moment.');
 		}
 		throw err;
 	}
