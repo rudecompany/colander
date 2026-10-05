@@ -1,2 +1,4 @@
 # The extension's dev manifest key is the PUBLIC half of an RSA key; it only pins the unpacked extension ID.
 08bbee6f06e4a3f6a8e7440ab7ab538a612982de:extension/wxt.config.ts:generic-api-key:9
+# A made-up plan token in a test of a token that does not verify; the test now uses a plainer value.
+b2adc676a58ee52991c6a375bd5dc1b4e08c6860:extension/tests/e2e/pairing.spec.ts:generic-api-key:47

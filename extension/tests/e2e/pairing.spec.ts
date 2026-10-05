@@ -44,7 +44,7 @@ test('a wrong, used or limited code says so, and a plan that does not verify is 
 	await expect(opts.getByRole('alert')).toHaveText('Too many requests. Please wait a moment and try again.');
 
 	// A token the trusted keys do not sign is never stored.
-	ext.api.pair = { kind: 'plan', token: 'eyJ2IjoxfQ.forged' };
+	ext.api.pair = { kind: 'plan', token: 'unsigned.plan' };
 	await connect.click();
 	await expect(opts.getByRole('alert')).toHaveText('Colander could not verify this plan. Update Colander, then make a new code.');
 	expect(await ext.storage('planToken')).toBeUndefined();
