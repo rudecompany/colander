@@ -5,8 +5,9 @@
 #
 # It reads the R2 bucket bindings of both environments from api/wrangler.jsonc, then for each
 # bucket: creates it with the enam location hint if it is missing, sets its lifecycle rules, and
-# for the backup buckets sets a 7-day bucket lock. Lifecycle and lock rules are replaced as a
-# whole, so running the script again changes nothing that is already right.
+# for the backup buckets sets a 7-day bucket lock, and a 400-day one on the audit log's daily
+# copies. Lifecycle and lock rules are replaced as a whole, so running the script again changes
+# nothing that is already right.
 # Last, it prints every Worker secret to set, per environment, as exact commands.
 set -euo pipefail
 
@@ -48,15 +49,26 @@ cat >"$tmp/lists-lifecycle.json" <<'JSON'
 {"rules": [{"id": "abort-multipart-1d", "enabled": true, "conditions": {"prefix": ""},
   "abortMultipartUploadsTransition": {"condition": {"type": "Age", "maxAge": 86400}}}]}
 JSON
-# Backups expire after 90 days.
+# Dumps, restore bookmarks and seed lists expire after 90 days. Erasure records of deleted accounts
+# outlive every dump that could bring an account back, by 30 days. The audit log's daily copies
+# stay 400 days.
 cat >"$tmp/backups-lifecycle.json" <<'JSON'
-{"rules": [{"id": "expire-90d", "enabled": true, "conditions": {"prefix": ""},
-  "deleteObjectsTransition": {"condition": {"type": "Age", "maxAge": 7776000}},
-  "abortMultipartUploadsTransition": {"condition": {"type": "Age", "maxAge": 86400}}}]}
+{"rules": [
+  {"id": "dumps-90d", "enabled": true, "conditions": {"prefix": "dumps/"}, "deleteObjectsTransition": {"condition": {"type": "Age", "maxAge": 7776000}}},
+  {"id": "pitr-90d", "enabled": true, "conditions": {"prefix": "pitr/"}, "deleteObjectsTransition": {"condition": {"type": "Age", "maxAge": 7776000}}},
+  {"id": "seeds-90d", "enabled": true, "conditions": {"prefix": "seeds/"}, "deleteObjectsTransition": {"condition": {"type": "Age", "maxAge": 7776000}}},
+  {"id": "erasures-120d", "enabled": true, "conditions": {"prefix": "erasures/"}, "deleteObjectsTransition": {"condition": {"type": "Age", "maxAge": 10368000}}},
+  {"id": "audit-400d", "enabled": true, "conditions": {"prefix": "audit/"}, "deleteObjectsTransition": {"condition": {"type": "Age", "maxAge": 34560000}}},
+  {"id": "abort-multipart-1d", "enabled": true, "conditions": {"prefix": ""}, "abortMultipartUploadsTransition": {"condition": {"type": "Age", "maxAge": 86400}}}
+]}
 JSON
-# No backup can be deleted or overwritten for 7 days after it is written, not even by this account.
+# No backup can be deleted or overwritten for 7 days after it is written, not even by this account,
+# and no copy of the audit log for 400 days.
 cat >"$tmp/backups-lock.json" <<'JSON'
-{"rules": [{"id": "retain-7d", "enabled": true, "condition": {"type": "Age", "maxAgeSeconds": 604800}}]}
+{"rules": [
+  {"id": "retain-7d", "enabled": true, "condition": {"type": "Age", "maxAgeSeconds": 604800}},
+  {"id": "audit-400d", "enabled": true, "prefix": "audit/", "condition": {"type": "Age", "maxAgeSeconds": 34560000}}
+]}
 JSON
 
 while read -r env worker binding bucket; do
@@ -94,13 +106,10 @@ Production (Worker $prod_worker):
   pnpm -C api exec wrangler secret put RESEND_API_KEY            # Resend key, the automatic mail fallback
   pnpm -C api exec wrangler secret put CF_ANALYTICS_TOKEN        # API token with Zone > Analytics > Read on getcolander.com
   openssl rand -base64 32 | pnpm -C api exec wrangler secret put IP_SALT
-  ops=\$(openssl rand -hex 32)
-  printf %s "\$ops" | pnpm -C api exec wrangler secret put OPS_TOKEN
-  printf %s "\$ops" | gh secret set OPS_TOKEN --env production --repo rudecompany/colander
-  unset ops
+  pnpm -C api exec wrangler secret put TURNSTILE_SECRET_KEY      # optional: Turnstile secret for the sign-in code form
 
-Staging (Worker $staging_worker): the same names with --env staging, a separate test signing key,
-Stripe test mode, and its own OPS_TOKEN.
+Staging (Worker $staging_worker): the same names with --env staging, a separate test signing key
+and Stripe test mode.
   pnpm -C api exec wrangler secret put COLANDER_SIGNING_KEY --env staging < /path/to/staging-signing.key
   pnpm -C api exec wrangler secret put STRIPE_SECRET_KEY --env staging      # sk_test_...
   pnpm -C api exec wrangler secret put STRIPE_WEBHOOK_SECRET --env staging  # test-mode webhook secret
@@ -108,10 +117,12 @@ Stripe test mode, and its own OPS_TOKEN.
   pnpm -C api exec wrangler secret put RESEND_API_KEY --env staging
   pnpm -C api exec wrangler secret put CF_ANALYTICS_TOKEN --env staging     # same token works for both
   openssl rand -base64 32 | pnpm -C api exec wrangler secret put IP_SALT --env staging
-  ops=\$(openssl rand -hex 32)
-  printf %s "\$ops" | pnpm -C api exec wrangler secret put OPS_TOKEN --env staging
-  printf %s "\$ops" | gh secret set OPS_TOKEN --env staging --repo rudecompany/colander
-  unset ops
+  pnpm -C api exec wrangler secret put TURNSTILE_SECRET_KEY --env staging   # optional
+
+The ops channel has no secret: GitHub workflows on main prove themselves with OIDC tokens.
+If an OPS_TOKEN secret exists from before, delete it everywhere:
+  pnpm -C api exec wrangler secret delete OPS_TOKEN; pnpm -C api exec wrangler secret delete OPS_TOKEN --env staging
+  gh secret delete OPS_TOKEN --env production --repo rudecompany/colander; gh secret delete OPS_TOKEN --env staging --repo rudecompany/colander
 
 Check the result with: pnpm -C api exec wrangler secret list [--env staging]
 EOF

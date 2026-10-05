@@ -1,6 +1,8 @@
 # The authenticated ops channel (hosting plan section 2, flow 13; contract in docs/deploy.md).
-# It posts one command to /ops/<command> with the environment's OPS_TOKEN. This run log is the
-# audit trail: who ran what, with which arguments, and what the Worker answered.
+# It posts one command to /ops/<command> with a GitHub Actions OIDC token, which the Worker takes
+# only from a workflow of this repository on main, in the GitHub environment of the Worker it calls.
+# There is no static token. This run log and the Worker's audit log are the audit trail: who ran
+# what, with which arguments, and what the Worker answered.
 name: Ops
 
 on:
@@ -16,7 +18,7 @@ on:
         type: choice
         options: [status, grant-role, import-seed, sign-config, drill, purge-cache, restore-dump, pitr-restore]
       args:
-        description: 'Arguments as a JSON object, for example {"email": "sam@example.com", "role": "curator"}'
+        description: 'Arguments as a JSON object, for example {"email": "sam@example.com", "role": "curator"}. Staff and admin only while no admin exists.'
         default: '{}'
       file:
         description: Optional repository path whose text becomes the "file" argument (sign-config only)
@@ -27,6 +29,8 @@ on:
 
 permissions:
   contents: read
+  # The OIDC token the Worker checks: repository, main, workflow file and environment.
+  id-token: write
 
 concurrency:
   group: ops-${{ inputs.environment }}
@@ -47,7 +51,7 @@ jobs:
       CONFIRM: ${{ inputs.confirm }}
       BASE: ${{ inputs.environment == 'staging' && 'https://staging.getcolander.com' || 'https://getcolander.com' }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - name: Build the request
         run: |
           if ! jq -e 'type == "object"' <<<"$ARGS" >/dev/null 2>&1; then
@@ -78,16 +82,19 @@ jobs:
           jq 'if has("file") then .file = "(\(.file | length) characters)" else . end' "$RUNNER_TEMP/body.json"
       - name: Run the command
         env:
-          OPS_TOKEN: ${{ secrets.OPS_TOKEN }}
           CF_ACCESS_CLIENT_ID: ${{ secrets.CF_ACCESS_CLIENT_ID }}
           CF_ACCESS_CLIENT_SECRET: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}
         run: |
+          # A GitHub Actions OIDC token for this origin; it lives a few minutes.
+          token=$(curl -sS --fail -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=$BASE" | jq -r .value)
+          echo "::add-mask::$token"
           access=()
           if [ -n "$CF_ACCESS_CLIENT_ID" ]; then
             access=(-H "CF-Access-Client-Id: $CF_ACCESS_CLIENT_ID" -H "CF-Access-Client-Secret: $CF_ACCESS_CLIENT_SECRET")
           fi
           status=$(curl -sS -o "$RUNNER_TEMP/out.json" -w '%{http_code}' -X POST "$BASE/ops/$COMMAND" \
-            -H "Authorization: Bearer $OPS_TOKEN" -H 'Content-Type: application/json' "${access[@]}" \
+            -H "Authorization: Bearer $token" -H 'Content-Type: application/json' "${access[@]}" \
             --data-binary "@$RUNNER_TEMP/body.json")
           echo "HTTP $status"
           jq . "$RUNNER_TEMP/out.json" 2>/dev/null || cat "$RUNNER_TEMP/out.json"

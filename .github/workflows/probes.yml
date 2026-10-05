@@ -10,6 +10,8 @@ on:
 permissions:
   contents: read
   issues: write
+  # /ops/status takes a GitHub Actions OIDC token from this repository's main.
+  id-token: write
 
 concurrency:
   group: probes
@@ -26,8 +28,8 @@ jobs:
       name: production
       deployment: false
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           node-version: 24
           package-manager-cache: false
@@ -38,11 +40,12 @@ jobs:
           COLANDER_BASE_URL: https://getcolander.com
           COLANDER_PUBLIC_KEYS: ${{ vars.COLANDER_PUBLIC_KEYS }}
       - name: Store health from /ops/status
-        env:
-          OPS_TOKEN: ${{ secrets.OPS_TOKEN }}
         run: |
+          token=$(curl -sS --fail -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=https://getcolander.com" | jq -r .value)
+          echo "::add-mask::$token"
           status=$(curl -sS --fail-with-body -X POST https://getcolander.com/ops/status \
-            -H "Authorization: Bearer $OPS_TOKEN" -H 'Content-Type: application/json' -d '{}')
+            -H "Authorization: Bearer $token" -H 'Content-Type: application/json' -d '{}')
           echo "$status" | jq .
           # Scoring pass under 15 minutes old, newest dump under 7 hours, no verdict change waiting
           # longer than the 6-hour list update bound (spec P0-8).

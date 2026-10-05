@@ -16,6 +16,8 @@ on:
 permissions:
   contents: read
   issues: write
+  # The ops channel takes GitHub Actions OIDC tokens from this repository's main.
+  id-token: write
 
 jobs:
   dump:
@@ -30,16 +32,17 @@ jobs:
       group: ops-production
       cancel-in-progress: false
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       # The Worker loads the newest dump into the scratch object "drill", runs quick_check and
       # foreign_key_check, compares per-table counts with "primary", requires the dump to be under
       # 7 hours old, deletes the scratch data, and answers 2xx with "ok": true only if all passed.
       - name: Production dump drill
-        env:
-          OPS_TOKEN: ${{ secrets.OPS_TOKEN }}
         run: |
+          token=$(curl -sS --fail -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=https://getcolander.com" | jq -r .value)
+          echo "::add-mask::$token"
           result=$(curl -sS --fail-with-body --max-time 300 -X POST https://getcolander.com/ops/drill \
-            -H "Authorization: Bearer $OPS_TOKEN" -H 'Content-Type: application/json' -d '{}')
+            -H "Authorization: Bearer $token" -H 'Content-Type: application/json' -d '{}')
           echo "$result" | jq .
           jq -e '.ok == true' <<<"$result" >/dev/null
       - if: failure()
@@ -59,8 +62,8 @@ jobs:
       group: staging-drill
       cancel-in-progress: false
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           node-version: 24
           package-manager-cache: false
@@ -69,8 +72,6 @@ jobs:
         env:
           COLANDER_BASE_URL: https://staging.getcolander.com
           COLANDER_PUBLIC_KEYS: ${{ vars.STAGING_PUBLIC_KEYS }}
-          OPS_TOKEN: ${{ secrets.OPS_TOKEN }}
-          COLANDER_REVIEWER_TOKEN: ${{ secrets.STAGING_REVIEWER_TOKEN }}
           CF_ACCESS_CLIENT_ID: ${{ secrets.CF_ACCESS_CLIENT_ID }}
           CF_ACCESS_CLIENT_SECRET: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}
       - if: failure()
