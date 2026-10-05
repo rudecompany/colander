@@ -432,12 +432,13 @@ Approvals:
 - Required reviewers on the `production` environment work only if the repo is public, or on Enterprise ([environments](https://docs.github.com/en/actions/reference/workflows-and-actions/deployments-and-environments)).
   Add them if the repo is public.
 
-Chrome Web Store publishing:
+Store publishing:
 - `release-extension`:
-  - Build with the production API and keys.
-  - `pnpm -C extension zip`.
-  - `actions/attest-build-provenance`.
+  - Build the Chrome, Edge and Firefox packages with `extension/scripts/build-store.sh` from `extension/release.env`, which must hold the same keys as `COLANDER_PUBLIC_KEYS`.
+  - Check the manifests (`extension/scripts/check-packages.sh`) and run `web-ext lint`, then rebuild the Firefox package from its sources zip and require it byte for byte, as AMO's reviewers do.
+  - `actions/attest` over the three packages and the sources zip.
   - `gh release upload`, then publish the draft.
+- `submit-edge-add-ons` and `submit-amo` follow `submit-chrome-web-store` once their variables are set (`docs/deploy.md` steps 18 and 19): Edge's Publish API with an API key that expires every 72 days, and `web-ext sign --channel listed` with the sources zip.
 - `submit-chrome-web-store`, in environment `chrome-web-store`:
   - Authenticate with `google-github-actions/auth@v3` through keyless Workload Identity Federation (`token_format: access_token`, scope `https://www.googleapis.com/auth/chromewebstore`), so no JSON key is stored ([auth](https://github.com/google-github-actions/auth), [service accounts](https://developer.chrome.com/docs/webstore/service-accounts)).
   - Call API v2 `:upload`, then `:publish` with `publishType: STAGED_PUBLISH`, then poll `:fetchStatus` ([publish](https://developer.chrome.com/docs/webstore/api/reference/rest/v2/publishers.items/publish)).

@@ -10,7 +10,7 @@ Behavior described in `docs/product-requirements.md` (the spec) is not repeated 
 | Path | What | Stack |
 | --- | --- | --- |
 | `packages/shared` | `@colander/shared`: verdict enums and words, signals, glyphs, the Colander theme (`colander.css`), Mittsu components, API types, and the list format, Ed25519 signing and canonical IDs (client and server halves, WebCrypto only) | TypeScript, Svelte 5 |
-| `extension` | The Chrome MV3 extension | WXT, Svelte 5, TypeScript |
+| `extension` | The MV3 browser extension, one codebase for Chrome, Edge, Brave, Opera and Firefox | WXT, Svelte 5, TypeScript |
 | `api` | `@colander/api`: every backend service in one Cloudflare Worker (list, tag, scoring, review, appeals, public API, accounts, billing), with one SQLite Durable Object, `Store`, as the database and R2 for the signed list and the backups | TypeScript, Cloudflare Workers |
 | `web` | Public website, account pages and the review console, built static and served by the Worker as its static assets | SvelteKit (adapter-static), Svelte 5, Mittsu |
 
@@ -180,7 +180,7 @@ Rate-limited requests get `429` with `Retry-After` in seconds.
 Limits per IP count an IPv6 client by its /64.
 GETs that the edge caches by their full URL take only their canonical query and answer `400` to any other: `/v1/list/delta` exactly `?since=N` (section 3.2), `/v1/log` the parameters of 6.4 each at most once, non-empty and in the order `limit` (1 to 200), `platform`, `verdict`, `cursor` (as `next_cursor` gives it), and `/v1/list/snapshot`, `/v1/config/adapters`, `/v1/sources/*`, `/v1/stats` and `/v1/supporters` none (`invalid_query`).
 
-CORS: `/v1/list/*`, `/v1/config/*`, `/v1/tags`, `/v1/reports`, `/v1/trial`, `/v1/entitlement/refresh`, `/v1/sync`, `/v1/review/*` (bearer only) and `/v1/sources/*` answer any origin (`Access-Control-Allow-Origin: *`, no credentials), so the extension needs no host permission for the API.
+CORS: `/v1/list/*`, `/v1/config/*`, `/v1/tags`, `/v1/reports`, `/v1/trial`, `/v1/entitlement/refresh`, `/v1/pair/claim`, `/v1/sync`, `/v1/review/*` (bearer only) and `/v1/sources/*` answer any origin (`Access-Control-Allow-Origin: *`, no credentials), so the extension needs no host permission for the API.
 Cookie-authenticated routes are same-origin only and require the header `X-Colander-CSRF: 1` on every non-GET request.
 
 ### 6.1 Auth schemes
@@ -380,7 +380,7 @@ Appeal pages never show a support or donation link.
 | `POST /v1/auth/logout` | Clears the session |
 | `GET /v1/account` | `200` `{"account": Account}` or `401` |
 | `PATCH /v1/account` `{"display_name"}` | Updates the public name used in the decision log and supporters page |
-| `POST /v1/account/reviewer-token` | Curators and staff only. `200` `{"token": "..."}`. Replaces any earlier token. |
+| `POST /v1/account/reviewer-token` | Curators and staff only. `200` `{"token": "..."}`. Replaces any earlier token. The extension gets its reviewer token through a pairing code (section 7); this route is for scripts such as the staging smoke test. |
 
 ```json
 { "id": "acc_...", "email": "...", "display_name": "Sam", "role": "member", "plan": Plan | null, "created_at": "..." }
@@ -455,24 +455,39 @@ Refunded donations drop off the list, and amounts and emails are never shown.
 
 ## 7. Website and extension handoff
 
-The extension declares `externally_connectable.matches` for the website origin.
-The website finds the extension by its ID (build env `PUBLIC_EXTENSION_ID`) and sends:
+The website hands a plan token or a reviewer token to the extension with a pairing code, the same way in every browser.
+The website never talks to the extension directly, so nothing depends on an extension ID, a host permission or the browser.
+A code also works when the website is open in another browser or on another device.
 
-| Message | Reply |
-| --- | --- |
-| `{"type": "colander:ping"}` | `{"ok": true, "version": "1.0.0"}` |
-| `{"type": "colander:plan-token", "token": "..."}` | `{"ok": true}` after the extension verifies and stores the token |
-| `{"type": "colander:reviewer-token", "token": "..."}` | `{"ok": true}`; the side panel can now use the review API |
+| Request | Auth | Effect |
+| --- | --- | --- |
+| `POST /v1/pair` `{"kind": "plan" \| "reviewer"}` | Session | `201` `{"id", "code": "KXQ4-JP7M", "expires_at"}`. `plan` needs an active plan (`404 no_plan`); `reviewer` needs the curator or staff role (`403 forbidden`); any other kind is `400 invalid_kind`. A new code ends the account's earlier unused code of the same kind. 20 codes per account an hour. |
+| `GET /v1/pair/{id}` | Session | `200` `{"status": "pending" \| "claimed" \| "expired", "ext_version", "browser"}` for the account's own code, `404 not_found` for any other. The website checks every 2 seconds while the code is on screen. |
+| `POST /v1/pair/claim` `{"code", "ext_version", "browser"}` | none, any origin | `200` `{"kind", "token"}`: a plan token (section 5) minted now for the account, or a reviewer token that replaces the account's earlier one. `404 invalid_code` for a wrong, used or expired code; `404 no_plan` when the plan ended since the code was made; `403 forbidden` when the role went; these leave the code unused. 10 claims per IP per 10 minutes, wrong codes included (`429`). |
 
-A message the extension refuses answers `{"ok": false, "error": "<code>"}`, such as `invalid_token`, and the website shows that as an error, never as connected.
+A code is 8 Crockford base32 characters (40 bits), shown as two groups of 4.
+The server reads a typed code without regard to case, spaces or dashes, and reads I and L as 1 and O as 0.
+Codes are stored only as SHA-256, last 10 minutes and work once; the hourly prune deletes them an hour after they expire.
+`ext_version` is the extension's version and `browser` one of `chrome`, `edge`, `brave`, `opera`, `firefox`, `safari` and `chromium`, so the website can say "Connected Colander 1.4.0 in Firefox"; anything else is `400 invalid_field`.
 
-The dev build uses a fixed manifest `key` so the extension ID is stable across machines.
+The website shows the code and the extension takes it, never the reverse: a link the extension opened could be crafted by someone else (the device-code phishing pattern), while a code the person types into their own extension leaks only if they hand it over.
+The website says "Never share this code" beside it, with its countdown.
+The person types it in Options under Plan or in the review side panel; the extension stores a plan token only after it verifies it (section 5).
+
+Unpacked development builds of the Chrome extension carry a fixed manifest `key`, so the end-to-end tests can open its pages by ID; store packages never carry one.
 
 ## 8. Privacy rules for the network
 
-The extension makes exactly these requests: list snapshot and deltas, adapter configuration, tags, reports, report status, trial, entitlement refresh, settings sync (Plus) and the review API (reviewers only).
+The extension makes exactly these requests: list snapshot and deltas, adapter configuration, tags, reports, report status, trial, entitlement refresh, pairing claims, settings sync (Plus) and the review API (reviewers only).
 No request ever carries a page URL, the user's platform account name, or watch history.
 List downloads carry no identifier at all.
+A pairing claim carries the code, the extension version and the browser name, and never the install ID.
+
+Firefox asks before an add-on sends data, so the Firefox build declares no required data collection and two optional kinds, which Firefox grants only when the person allows each:
+- `websiteContent` for tags and reports, which carry what was seen on a page and the install ID. Until it is allowed, tags wait in the queue on the device and Options opens at Sharing, where one click allows it; a report is refused with that explanation.
+- `authenticationInfo` for the trial, the entitlement refresh, settings sync, pairing claims and the review API, which carry or fetch a plan or reviewer token. Start 14 days free and Connect ask for it from their click.
+
+List downloads and the adapter configuration need neither, because they carry no identifier.
 Server logs never record request paths that contain item or source IDs together with an install hash.
 
 ## 9. Scoring (normative for the server)
@@ -592,7 +607,10 @@ The bindings are `STORE` (the `Store` Durable Object), `LISTS` and `BACKUPS` (R2
 | --- | --- | --- |
 | `WXT_COLANDER_API` | `http://localhost:8787` | Server origin |
 | `WXT_COLANDER_PUBLIC_KEYS` | the dev key from `testdata/dev-signing.pub` | Trusted Ed25519 public keys |
-| `WXT_COLANDER_SITE` | same as the API | Website origin for links and `externally_connectable` |
+| `WXT_COLANDER_SITE` | same as the API | Website origin for links |
+| `WXT_COLANDER_STORE_BUILD` | unset | `1` leaves the development manifest `key` out; `extension/scripts/build-store.sh` sets it |
+
+Store packages are built by `extension/scripts/build-store.sh chrome|edge|firefox` from `extension/release.env`, which holds these values for production and is committed, so AMO's reviewers rebuild the Firefox package from its sources zip byte for byte.
 
 ## 12. Keys
 
