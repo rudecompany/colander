@@ -11,4 +11,6 @@ a live listing. Empty when there is nothing to say.
 	const sep = (i: number) => (i === 0 ? '' : i === others.length - 1 ? ' and ' : ', ');
 </script>
 
-{#if install.store.hint}{install.store.hint}{' '}{/if}{#if others.length}Also in {#each others as s, i (s.href)}{sep(i)}<a class="cl-link" href={s.href}>{s.store}</a>{/each}.{/if}
+<!-- Unkeyed: the list reorders when the page switches to this browser's store, and a keyed block
+     would move the links without the words between them. -->
+{#if install.store.hint}{install.store.hint}{' '}{/if}{#if others.length}Also in {#each others as s, i}{sep(i)}<a class="cl-link" href={s.href}>{s.store}</a>{/each}.{/if}
