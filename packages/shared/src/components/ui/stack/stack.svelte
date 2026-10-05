@@ -1,9 +1,9 @@
 <!--
-@component Stack — vertical flex column with token-driven gap.
+@component Stack - vertical flex column with token-driven gap.
 
 The default Wave-1 layout primitive: a `<div>` that lays its children
 out in a column, separated by one of the spacing tokens. Use it for
-form fields, sidebar lists, card bodies — anywhere you'd otherwise
+form fields, sidebar lists, card bodies - anywhere you'd otherwise
 write `display: flex; flex-direction: column; gap: …` by hand.
 
 `gap` (0–8) maps directly to `0` or `--uin-s-1` … `--uin-s-8`.

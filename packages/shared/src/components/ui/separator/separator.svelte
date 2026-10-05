@@ -1,11 +1,11 @@
 <!--
-@component Separator — horizontal or vertical rule.
+@component Separator - horizontal or vertical rule.
 
 `orientation="horizontal"` (default) gives a 1px line stretching to
 fill its parent's width. `vertical` gives a 1px column that
 self-stretches inside a flex/grid row.
 
-`dashed` swaps the solid line for a 1px dashed border — useful as a
+`dashed` swaps the solid line for a 1px dashed border - useful as a
 quieter divider inside cards.
 
 Renders as `<hr>` for horizontal, `<div role="separator">` for vertical

@@ -13,6 +13,7 @@ import {
 	dayKey,
 	isPlus,
 	K,
+	level,
 	withDefaults,
 	type Entitlement,
 	type MyListEntry,
@@ -22,7 +23,7 @@ import {
 	type Status
 } from '../lib/settings';
 import { CONFIG_CONTEXT, importKeys, verifyEnvelope, verifyPlanToken, type TrustedKey } from '@colander/shared/signing';
-import { setGlobalIcon, setTabIcon } from './icons';
+import { setGlobalIcon, setTabIcon, type PauseScope } from './icons';
 import { clearList, getStatus, setStatus, syncList } from './listsync';
 import { ApiError, installId, json, request } from './net';
 import { dueBatch, enqueue, nextDue, settle, type Outcome, type Queued } from './queue';
@@ -184,6 +185,18 @@ async function queueTag(req: TagRequest, hold: boolean): Promise<void> {
 	const { add, remove } = enqueue(queue, tag, key, Date.now() + (hold ? HOLD_MS : 0));
 	for (const id of remove) await db.del('tags', id);
 	await db.put('tags', add);
+}
+
+/** Undo: the own tag goes, and so does its queued tag while it is still held or waiting. */
+export async function removeTag(key: string): Promise<void> {
+	// A tag step like adding, so a flush that is sending cannot write the undone tag back.
+	await serialTags(async () => {
+		const own = { ...((await chrome.storage.local.get(K.ownTags))[K.ownTags] as Record<string, OwnTag> | undefined) };
+		delete own[key];
+		await chrome.storage.local.set({ [K.ownTags]: own });
+		for (const q of await db.all<Queued>('tags')) if (q.target === key) await db.del('tags', q.client_id);
+	});
+	await flushTags();
 }
 
 export function flushTags(): Promise<void> {
@@ -376,7 +389,20 @@ export function mergeRemote(local: Settings, remote: Partial<Settings>, preferLo
 		return [...m.values()];
 	};
 	const scalars = preferLocal ? {} : { strictness: remote.strictness ?? local.strictness, perPlatform: remote.perPlatform ?? local.perPlatform, topics: remote.topics ?? local.topics, plainChips: remote.plainChips ?? local.plainChips };
-	return { ...local, ...scalars, allows: union(local.allows, remote.allows), blocks: union(local.blocks, remote.blocks) };
+	// Through withDefaults, so a level another browser still syncs, such as the removed Strict, arrives as Standard.
+	return withDefaults({ ...local, ...scalars, allows: union(local.allows, remote.allows), blocks: union(local.blocks, remote.blocks) });
+}
+
+/**
+ * Once, after an update: levels an older version stored, such as the removed Strict, are rewritten
+ * as Standard, and the synced copy is marked to go out again, so other browsers get them too.
+ */
+export async function migrateSettings(): Promise<void> {
+	const raw = (await chrome.storage.local.get(K.settings))[K.settings] as Partial<Settings> | undefined;
+	if (!raw) return;
+	const levels = [raw.strictness, ...Object.values(raw.perPlatform ?? {}), ...(raw.topics ?? []).map((t) => t.strictness)];
+	if (levels.every((v) => v === undefined || level(v) === v)) return;
+	await chrome.storage.local.set({ [K.settings]: withDefaults(raw), [K.syncState]: { ...(await syncState()), dirty: true } });
 }
 
 export async function pullSettings(): Promise<void> {
@@ -415,10 +441,11 @@ async function tabs(): Promise<{ pausedTabs: number[]; tabInfo: Record<string, T
 	return { pausedTabs: (got.pausedTabs as number[]) ?? [], tabInfo: (got.tabInfo as Record<string, TabInfo>) ?? {} };
 }
 
-async function tabPaused(tabId: number, platform: Platform | undefined, s?: Settings): Promise<boolean> {
+/** Whether the tab is paused, and by what: the tab, or its site. */
+async function tabPaused(tabId: number, platform: Platform | undefined, s?: Settings): Promise<PauseScope> {
 	const { pausedTabs } = await tabs();
 	const settings = s ?? (await getSettings());
-	return pausedTabs.includes(tabId) || (!!platform && settings.pausedSites.includes(platform));
+	return pausedTabs.includes(tabId) ? 'tab' : !!platform && settings.pausedSites.includes(platform) ? 'site' : null;
 }
 
 export async function refreshIcons(): Promise<void> {
@@ -432,7 +459,7 @@ export async function refreshIcons(): Promise<void> {
 
 async function setCounts(tabId: number, platform: Platform, counts: PageCounts) {
 	const { tabInfo } = await tabs();
-	const count = counts.hidden + counts.collapsed;
+	const count = counts.hidden;
 	tabInfo[tabId] = { platform, count };
 	await chrome.storage.session.set({ tabInfo });
 	await setTabIcon(tabId, await tabPaused(tabId, platform), await getStatus(), count);
@@ -443,7 +470,8 @@ export async function setTabPause(tabId: number, paused: boolean): Promise<void>
 	const next = paused ? [...new Set([...pausedTabs, tabId])] : pausedTabs.filter((t) => t !== tabId);
 	await chrome.storage.session.set({ pausedTabs: next });
 	await chrome.tabs.sendMessage(tabId, { type: 'tab-paused', paused } satisfies ToPage).catch(() => undefined);
-	await setTabIcon(tabId, paused || (!!tabInfo[tabId] && (await getSettings()).pausedSites.includes(tabInfo[tabId]!.platform)), await getStatus(), tabInfo[tabId]?.count ?? 0);
+	const site = !!tabInfo[tabId] && (await getSettings()).pausedSites.includes(tabInfo[tabId]!.platform);
+	await setTabIcon(tabId, paused ? 'tab' : site ? 'site' : null, await getStatus(), tabInfo[tabId]?.count ?? 0);
 }
 
 async function logActivity(entries: ActivityEntry[]) {
@@ -451,10 +479,9 @@ async function logActivity(entries: ActivityEntry[]) {
 	await db.trim('activity', 1000);
 	const got = (await chrome.storage.local.get(K.stats))[K.stats] as Stats | undefined;
 	const stats: Stats = got ?? { firstRunAt: Date.now(), days: {} };
-	const day = (stats.days[dayKey()] ??= { hidden: 0, collapsed: 0, labeled: 0 });
+	const day = (stats.days[dayKey()] ??= { hidden: 0, labeled: 0 });
 	for (const e of entries) {
 		if (e.action === 'hide') day.hidden++;
-		else if (e.action === 'collapse') day.collapsed++;
 		else if (e.action === 'label') day.labeled++;
 	}
 	const keep = Object.keys(stats.days).sort().slice(-60);
@@ -477,6 +504,7 @@ async function ensureInstall() {
 export function startWorker(): void {
 	chrome.runtime.onInstalled.addListener(async ({ reason }) => {
 		await ensureInstall();
+		if (reason === 'update') await migrateSettings();
 		await chrome.alarms.create('sync', { periodInMinutes: 60, delayInMinutes: 60 });
 		if (reason === 'install') await chrome.tabs.create({ url: chrome.runtime.getURL('/welcome.html') });
 		await reconcileScripts();
@@ -575,6 +603,9 @@ async function handle(m: ToWorker, sender: chrome.runtime.MessageSender): Promis
 			return { ok: true };
 		case 'tag':
 			await addTag(m.tag, m.hold);
+			return { ok: true };
+		case 'untag':
+			await removeTag(m.key);
 			return { ok: true };
 		case 'report':
 			return submitReport(m.report);

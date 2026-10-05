@@ -20,15 +20,16 @@ export const test = base.extend<{ pageErrors: string[] }>({
 export { expect };
 
 /**
- * Layout spills: anything sticking out of the card it sits in, and any horizontal page scroll.
- * Content inside a clipping or scrolling box (a wide table) and floating layers are not counted.
+ * Layout spills: anything sticking out of the card it sits in (a source page's record and a stat
+ * cell count as cards), and any horizontal page scroll. Content inside a clipping or scrolling box
+ * (a wide table) and floating layers are not counted.
  */
 export function layoutSpills(page: Page): Promise<string[]> {
 	return page.evaluate(() => {
 		const out: string[] = [];
 		const root = document.documentElement;
 		if (root.scrollWidth > root.clientWidth + 0.5) out.push(`page scrolls sideways by ${root.scrollWidth - root.clientWidth}px`);
-		for (const card of document.querySelectorAll('.card')) {
+		for (const card of document.querySelectorAll('.card, .uin-card, .price, .facts, .cells > .cell')) {
 			const c = card.getBoundingClientRect();
 			for (const el of card.querySelectorAll('*')) {
 				const r = el.getBoundingClientRect();
@@ -45,4 +46,20 @@ export function layoutSpills(page: Page): Promise<string[]> {
 		}
 		return out;
 	});
+}
+
+/** SVG text renders at its font size times the drawing's scale: labels that end up below 12 px. */
+export function smallSvgText(page: Page): Promise<string[]> {
+	return page.evaluate(() =>
+		[...document.querySelectorAll('svg text')]
+			.filter((t) => t.getClientRects().length && !t.closest('.sr-only, [hidden]'))
+			.map((t) => {
+				const svg = t.closest('svg')!;
+				const vb = svg.viewBox.baseVal;
+				const scale = vb && vb.width ? svg.getBoundingClientRect().width / vb.width : 1;
+				return [(t.textContent ?? '').trim().slice(0, 30), parseFloat(getComputedStyle(t).fontSize) * scale] as const;
+			})
+			.filter(([, size]) => size < 11.95)
+			.map(([name, size]) => `"${name}" ${size.toFixed(1)}px`)
+	);
 }

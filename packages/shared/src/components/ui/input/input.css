@@ -1,4 +1,4 @@
-/* Input — see ./input.svelte. */
+/* Input, themed for Colander: 32 tall in the extension (md), 40 on the website (lg). */
 
 .uin-input {
   -webkit-app-region: no-drag;
@@ -10,24 +10,21 @@
 
 .uin-input-el {
   width: 100%;
-  background: var(--uin-mat-row);
-  border: 1px solid var(--uin-line);
-  color: var(--uin-fg);
-  font-family: var(--uin-font-ui);
-  font-size: 13px;
+  border: 1px solid var(--cl-border-strong);
+  border-radius: var(--cl-r-chip);
+  background: var(--cl-surface);
+  color: var(--cl-text);
+  font: var(--cl-body);
   text-overflow: ellipsis;
-  transition:
-    border-color var(--uin-dur-1) var(--uin-ease-standard),
-    background-color var(--uin-dur-1) var(--uin-ease-standard);
+  transition: border-color var(--cl-fast) var(--cl-ease);
 }
 .uin-input-el:focus {
   outline: none;
-  border-color: transparent;
   box-shadow: var(--uin-focus-ring);
-  background: var(--uin-bg-panel);
 }
 .uin-input-el::placeholder {
-  color: var(--uin-fg-dim);
+  color: var(--cl-text-muted);
+  opacity: 1;
 }
 .uin-input-el::-webkit-search-cancel-button,
 .uin-input-el::-webkit-search-decoration {
@@ -36,54 +33,48 @@
   display: none;
 }
 .uin-input-el:disabled {
-  opacity: 0.55;
+  opacity: 0.4;
   pointer-events: none;
 }
 
 /* Sizes */
+.uin-input-sm .uin-input-el {
+  height: 28px;
+  padding: 0 10px;
+  font: var(--cl-caption);
+}
 .uin-input-md .uin-input-el {
-  height: 30px;
+  height: 32px;
   padding: 0 12px;
 }
-.uin-input-sm .uin-input-el {
-  height: 24px;
-  padding: 0 10px;
-  font-size: 12px;
+.uin-input-lg .uin-input-el {
+  height: 40px;
+  padding: 0 12px;
+  font: var(--cl-body-lg);
 }
 
-/* Shapes */
-.uin-input-pill .uin-input-el {
-  border-radius: 999px;
-}
-.uin-input-rounded .uin-input-el {
-  border-radius: var(--uin-r-sm);
-}
+/* Shapes: every input is radius 6; the other shapes stay for compatibility. */
+.uin-input-pill .uin-input-el,
+.uin-input-rounded .uin-input-el,
 .uin-input-square .uin-input-el {
-  border-radius: 0;
+  border-radius: var(--cl-r-chip);
 }
 
-/* Adornment padding adjustments */
-.uin-input-has-leading.uin-input-md .uin-input-el {
+/* Adornments */
+.uin-input-has-leading .uin-input-el {
   padding-left: 36px;
 }
-.uin-input-has-leading.uin-input-sm .uin-input-el {
-  padding-left: 30px;
-}
-.uin-input-has-trailing.uin-input-md .uin-input-el {
+.uin-input-has-trailing .uin-input-el {
   padding-right: 56px;
 }
-.uin-input-has-trailing.uin-input-sm .uin-input-el {
-  padding-right: 44px;
-}
-
 .uin-input-leading,
 .uin-input-trailing {
   position: absolute;
   top: 50%;
-  transform: translateY(-50%);
   display: inline-flex;
   align-items: center;
-  color: var(--uin-fg-dim);
+  color: var(--cl-text-muted);
+  transform: translateY(-50%);
 }
 .uin-input-leading {
   left: 12px;
@@ -91,7 +82,4 @@
 }
 .uin-input-trailing {
   right: 8px;
-}
-.uin-input-sm .uin-input-leading {
-  left: 10px;
 }

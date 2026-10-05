@@ -1,7 +1,7 @@
 <!--
-@component Toggle — pressable button with persistent on/off state.
+@component Toggle - pressable button with persistent on/off state.
 
-A two-state button — `aria-pressed` flips between `true` and `false`.
+A two-state button - `aria-pressed` flips between `true` and `false`.
 Reach for it for *modal state on a single control*: bold/italic toggles
 in a text editor, "favorite" star, sidebar visibility.
 

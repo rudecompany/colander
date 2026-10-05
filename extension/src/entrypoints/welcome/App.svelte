@@ -1,14 +1,21 @@
 <!--
-@component First run: the definition of slop in two sentences, the four strictness levels with
-Standard preselected, and a platform picker. Chrome asks for site access only for the chosen
-platforms; finishing opens the first one.
+@component First run, in 3 steps: strictness on the recreated feed, the platforms (Chrome asks for
+site access to those only, straight from the Continue click), and pinning the toolbar icon. A
+sticky bar holds Back and Continue; Done opens the first platform.
 -->
 <script lang="ts">
-	import { ColanderMark } from '@colander/shared';
+	import { ColanderMark, DotField, FeedDemo, Lifecycle, StrictnessControl, type LifecycleStep } from '@colander/shared';
+	import { DEFINITION_PUBLIC, DEMO_THUMBS_NOTE, PLATFORM_SURFACES, TAGLINE } from '@colander/shared/copy';
+	import { TOOLBAR } from '@colander/shared/glyphs';
 	import Button from '@colander/shared/components/ui/button/button.svelte';
-	import { radioGroupKeydown } from '@colander/shared/components/ui/segmented-control/segmented-control.svelte';
-	import { PLATFORMS, PLATFORM_NAME, STRICTNESS, STRICTNESS_HINT, STRICTNESS_WORD, type Platform, type Strictness } from '@colander/shared/verdicts';
+	import { PLATFORMS, PLATFORM_NAME, type Platform, type Strictness } from '@colander/shared/verdicts';
+	import ArrowRight from '@lucide/svelte/icons/arrow-right';
 	import Check from '@lucide/svelte/icons/check';
+	import CircleAlert from '@lucide/svelte/icons/circle-alert';
+	import Pin from '@lucide/svelte/icons/pin';
+	import Puzzle from '@lucide/svelte/icons/puzzle';
+	import { MediaQuery } from 'svelte/reactivity';
+	import { fade } from 'svelte/transition';
 	import type { AdapterConfig } from '../../adapters/schema';
 	import { HOME, offered } from '../../lib/platforms';
 	import { isPlus, K, type Entitlement } from '../../lib/settings';
@@ -20,294 +27,389 @@ platforms; finishing opens the first one.
 	// Early access platforms are offered only with Plus.
 	const available = $derived(PLATFORMS.filter((p) => offered(p, config.value, isPlus(entitlement.value))));
 
+	const STEPS = ['Strictness', 'Platforms', 'Pin Colander'];
+	let step = $state(0);
 	let strictness = $state<Strictness>('standard');
 	let chosen = $state<Platform[]>(['yt']);
 	let error = $state('');
-	let done = $state(false);
 	let busy = $state(false);
-
-	const SURFACES: Record<Platform, string> = {
-		yt: 'Home, search, Shorts and more',
-		tt: 'For You, search and profiles',
-		ig: 'Feed, Reels and Explore',
-		fb: 'Feed, Reels and suggestions'
-	};
+	let done = $state(false);
+	const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+	// On a phone-width window (or at high zoom) the recreated feed is a list, as the website shows it there.
+	const phone = new MediaQuery('max-width: 639px');
+	const lifecycle = $derived<LifecycleStep[]>(STEPS.map((label, i) => ({ label, state: done || i < step ? 'done' : i === step ? 'current' : 'later' })));
 
 	function togglePlatform(p: Platform) {
 		chosen = chosen.includes(p) ? chosen.filter((x) => x !== p) : PLATFORMS.filter((x) => x === p || chosen.includes(x));
 		error = '';
 	}
 
-	async function finish() {
+	async function next() {
 		error = '';
-		chosen = chosen.filter((p) => available.includes(p));
-		if (!chosen.length) {
-			error = 'Choose at least one platform.';
-			return;
-		}
-		busy = true;
-		// The permission request must come first, straight from the click.
-		const ok = await enablePlatforms(chosen);
-		if (!ok) {
+		if (step === 0) {
+			await send({ type: 'settings', patch: { strictness } });
+			step = 1;
+		} else if (step === 1) {
+			chosen = chosen.filter((p) => available.includes(p));
+			if (!chosen.length) {
+				error = 'Choose at least one platform.';
+				return;
+			}
+			busy = true;
+			// The permission request must come first, straight from the click.
+			const ok = await enablePlatforms(chosen);
 			busy = false;
-			error = 'Chrome did not grant site access, so Colander cannot run there yet. Choose Start again to allow it.';
-			return;
+			if (!ok) {
+				error = 'Chrome did not grant site access, so Colander cannot run there yet. Choose Continue again to allow it.';
+				return;
+			}
+			step = 2;
+		} else {
+			busy = true;
+			await send({ type: 'settings', patch: { strictness, onboarded: true } });
+			busy = false;
+			done = true;
+			await chrome.tabs.create({ url: HOME[chosen[0] ?? 'yt'] });
 		}
-		await send({ type: 'settings', patch: { strictness, onboarded: true } });
-		busy = false;
-		done = true;
-		await chrome.tabs.create({ url: HOME[chosen[0]!] });
+		scrollTo({ top: 0 });
 	}
 </script>
 
 <div class="page">
-	<div class="drain dots" aria-hidden="true"></div>
-	<main>
-		<header class="hero">
-			<span class="mark"><ColanderMark size={56} /></span>
-			<p class="tag t-body-lg muted">Drain the slop. Keep the substance.</p>
-			<h1 class="t-display">Welcome to Colander</h1>
-			<p class="def t-body-lg">
-				AI slop is AI-made content that is mass-produced with little human effort to capture attention or money, and gives you little in return.
-				AI use alone never makes something slop.
-			</p>
-		</header>
+	<header class="hero">
+		<DotField class="field" mask="linear-gradient(to bottom, black, transparent)" />
+		<div class="col">
+			<ColanderMark size={48} />
+			<p class="cl-eyebrow">{TAGLINE.first} {TAGLINE.second}</p>
+			<h1 class="cl-display-lg">Set up Colander in 3 steps.</h1>
+			<!-- The same header on every step, so the progress strip and the step heading never move. -->
+			<p class="cl-lead def">{DEFINITION_PUBLIC}</p>
+		</div>
+	</header>
 
-		{#if done}
-			<section class="card done" aria-live="polite">
-				<span class="ok"><Check size={20} strokeWidth={1.75} /></span>
-				<div>
-					<h2 class="t-title">You are set</h2>
-					<p class="muted">Colander now runs on {chosen.map((p) => PLATFORM_NAME[p]).join(', ')}. The toolbar icon counts what it hides on each page, and every hidden item can be shown again.</p>
-					<p class="links"><a href="options.html#platforms">Change platforms</a> · <a href="options.html#strictness">Change strictness</a></p>
-				</div>
-			</section>
-		{:else}
-			<section class="card" aria-labelledby="s1">
-				<h2 id="s1" class="t-title"><span class="step">1</span>How strict should it be?</h2>
-				<div class="levels" role="radiogroup" aria-labelledby="s1">
-					{#each STRICTNESS as s (s)}
-						<button type="button" role="radio" aria-checked={strictness === s} tabindex={strictness === s ? 0 : -1} class="level" class:on={strictness === s} onclick={() => (strictness = s)} onkeydown={radioGroupKeydown}>
-							<span class="lh"><span class="lw">{STRICTNESS_WORD[s]}</span>{#if s === 'standard'}<span class="rec">Recommended</span>{/if}</span>
-							<span class="t-caption muted">{STRICTNESS_HINT[s]}</span>
-						</button>
-					{/each}
-				</div>
-				<p class="t-caption muted">You can change this any time from the toolbar.</p>
-			</section>
+	<main class="col">
+		<Lifecycle steps={lifecycle} direction="horizontal" label="Setup progress" />
 
-			<section class="card" aria-labelledby="s2">
-				<h2 id="s2" class="t-title"><span class="step">2</span>Where should it work?</h2>
-				<div class="platforms" role="group" aria-labelledby="s2">
-					{#each available as p (p)}
-						<button type="button" role="checkbox" aria-checked={chosen.includes(p)} class="platform" class:on={chosen.includes(p)} onclick={() => togglePlatform(p)}>
-							<span class="box" aria-hidden="true">{#if chosen.includes(p)}<Check size={14} strokeWidth={2.25} />{/if}</span>
-							<span class="pt"><span class="pw">{PLATFORM_NAME[p]}</span><span class="t-caption muted">{SURFACES[p]}</span></span>
-						</button>
-					{/each}
-				</div>
-				<p class="t-caption muted">Chrome will ask for access to the sites you choose, and only those. Nothing about what you watch leaves this device.</p>
-			</section>
-
-			<div class="finish">
-				{#if error}<p class="error" role="alert">{error}</p>{/if}
-				<Button variant="primary" onclick={finish} aria-busy={busy}>Start using Colander</Button>
+		{#key done ? 'done' : step}
+			<div class="step" in:fade={{ duration: reduced ? 0 : 200 }}>
+				{#if done}
+					<section class="card" aria-labelledby="done-title">
+						<h2 id="done-title" class="cl-title">You are set</h2>
+						<p class="muted">Colander now runs on {chosen.map((p) => PLATFORM_NAME[p]).join(', ')}. The toolbar icon counts what it hides on each page, and every hidden item can be shown again.</p>
+						<p class="links">
+							<a class="cl-link" href="options.html#platforms">Change platforms<ArrowRight size={16} aria-hidden="true" /></a>
+							<a class="cl-link" href="options.html#strictness">Change strictness<ArrowRight size={16} aria-hidden="true" /></a>
+						</p>
+					</section>
+				{:else if step === 0}
+					<section aria-labelledby="s1">
+						<h2 id="s1" class="cl-title">How strict should it be?</h2>
+						<p class="muted lede">Change the level and watch the recreated feed below. You can change it any time from the toolbar.</p>
+						<!-- The one control on the step comes first, so nobody moves on without seeing it. -->
+						<div class="control">
+							<StrictnessControl bind:value={strictness} size="xl" label="How strict should it be?" />
+							<span class="rec" aria-hidden="true"><span class="uin-badge uin-badge-md">Recommended</span></span>
+						</div>
+						<figure class="wide demo">
+							<!-- Two grid rows; the frame fades out below them, so a third row never reads as cut. -->
+							<FeedDemo variant="full" platform="yt" layout={phone.current ? 'list' : undefined} bind:level={strictness} popup={false} height={560} open={null} />
+							<figcaption class="caption">{DEMO_THUMBS_NOTE}</figcaption>
+						</figure>
+					</section>
+				{:else if step === 1}
+					<section aria-labelledby="s2">
+						<h2 id="s2" class="cl-title">Where should it work?</h2>
+						<div class="platforms" role="group" aria-labelledby="s2">
+							{#each available as p (p)}
+								{@const on = chosen.includes(p)}
+								<button type="button" role="checkbox" aria-checked={on} class="platform" class:on onclick={() => togglePlatform(p)}>
+									<span class="pt">
+										<span class="pw">{PLATFORM_NAME[p]}</span>
+										<span class="state" aria-hidden="true">{#if on}<Check size={16} />On{/if}</span>
+									</span>
+									<span class="caption">{PLATFORM_SURFACES[p]}</span>
+								</button>
+							{/each}
+						</div>
+						<p class="note">Chrome will ask for access to the sites you choose. Colander reads feed cards there and matches them on this device.</p>
+					</section>
+				{:else}
+					<section aria-labelledby="s3">
+						<h2 id="s3" class="cl-title">Pin Colander</h2>
+						<p class="muted lede">Pin Colander so you can see counts and pause.</p>
+						<div class="toolbar" role="img" aria-label="Chrome's toolbar: the puzzle piece opens Extensions, the pin keeps Colander in the toolbar">
+							<span class="address"></span>
+							<span class="tb"><Puzzle size={16} aria-hidden="true" /></span>
+							<span class="tb"><Pin size={16} aria-hidden="true" /></span>
+							<span class="tb" style:color={TOOLBAR.mark}><ColanderMark size={16} /></span>
+						</div>
+						<ol class="pin-steps">
+							<li><Puzzle size={16} aria-hidden="true" />Choose the puzzle piece in Chrome's toolbar.</li>
+							<li><Pin size={16} aria-hidden="true" />Choose the pin beside Colander.</li>
+						</ol>
+						<ul class="states" aria-label="The toolbar icon" style:--cl-paper={TOOLBAR.dot} style:--cl-ink={TOOLBAR.ring}>
+							<li><span class="ic" style:color={TOOLBAR.mark}><ColanderMark size={32} /></span>Active</li>
+							<li><span class="ic" style:color={TOOLBAR.paused}><ColanderMark size={32} outline /></span>Paused</li>
+							<li><span class="ic" style:color={TOOLBAR.mark}><ColanderMark size={32} attention /></span>Needs attention</li>
+						</ul>
+						<p class="links">
+							{#each chosen as p (p)}<a class="cl-link" href={HOME[p]} target="_blank" rel="noopener">Open {PLATFORM_NAME[p]}<ArrowRight size={16} aria-hidden="true" /></a>{/each}
+						</p>
+					</section>
+				{/if}
 			</div>
-		{/if}
+		{/key}
+		{#if error}<p class="error" role="alert"><CircleAlert size={16} aria-hidden="true" />{error}</p>{/if}
 	</main>
+
+	{#if !done}
+		<div class="bar">
+			<div class="bar-in">
+				<span class="cl-figure">Step {step + 1} of 3</span>
+				{#if step > 0}<Button variant="secondary" size="xxl" onclick={() => ((step -= 1), (error = ''))}>Back</Button>{/if}
+				<Button variant="primary" size="xxl" onclick={next} loading={busy}>{step === 2 ? 'Done' : 'Continue'}</Button>
+			</div>
+		</div>
+	{/if}
 </div>
 
 <style>
-	:global(body) {
-		background: var(--cl-paper);
+	:global(html) {
+		scroll-padding-bottom: 88px;
 	}
 	.page {
-		position: relative;
-		min-height: 100vh;
-		overflow: hidden;
-	}
-	.drain {
-		position: absolute;
-		inset: 0 0 auto 0;
-		height: 360px;
-		mask-image: linear-gradient(to bottom, rgb(0 0 0 / 0.9), transparent);
-		pointer-events: none;
-	}
-	main {
-		position: relative;
 		display: flex;
 		flex-direction: column;
-		gap: 24px;
-		max-width: 720px;
+		min-height: 100vh;
+	}
+	.col {
+		width: 100%;
+		max-width: calc(720px + 2 * 24px);
 		margin: 0 auto;
-		padding: 64px 24px 96px;
+		padding: 0 24px;
 	}
 	.hero {
-		display: flex;
-		flex-direction: column;
-		align-items: flex-start;
-		gap: 12px;
-		margin-bottom: 8px;
+		position: relative;
+		min-height: 200px;
+		padding: 48px 0 32px;
 	}
-	.mark {
+	.hero :global(.field) {
+		position: absolute;
+		inset: 0 0 auto;
+		height: 200px;
+	}
+	.hero .col {
+		position: relative;
 		display: grid;
-		place-items: center;
-		width: 88px;
-		height: 88px;
-		margin-bottom: 8px;
-		border-radius: 24px;
-		background: var(--cl-surface);
-		color: var(--cl-ink);
-		box-shadow: 0 0 0 1px var(--cl-border);
+		justify-items: start;
+		gap: 12px;
 	}
-	@media (prefers-color-scheme: dark) {
-		.mark {
-			color: var(--cl-text);
-		}
+	.hero h1 {
+		margin-top: 4px;
 	}
 	.def {
-		max-width: 60ch;
+		margin-top: 4px;
+		color: var(--cl-text-muted);
 	}
-	.card {
-		display: flex;
-		flex-direction: column;
+	main {
+		flex: 1;
+		display: grid;
+		align-content: start;
+		gap: 32px;
+		padding-bottom: 48px;
+	}
+	/* Step 1's frame is 960 wide, centered on the 720 column. */
+	.wide {
+		margin-inline: calc((min(720px, 100vw - 48px) - min(960px, 100vw - 48px)) / 2);
+	}
+	section {
+		display: grid;
 		gap: 16px;
-		padding: 24px;
-		border: 1px solid var(--cl-border);
-		border-radius: var(--cl-r-card);
-		background: var(--cl-surface);
 	}
-	h2 {
-		display: flex;
-		align-items: center;
+	.lede {
+		margin-top: -8px;
+	}
+	.muted,
+	.caption {
+		color: var(--cl-text-muted);
+	}
+	.caption {
+		font: var(--cl-caption);
+	}
+	/* One column as wide as the page, so the 560 px control and its badge row shrink with a narrow
+	   window instead of widening the page; centered inside it. */
+	.control {
+		display: grid;
+		grid-template-columns: minmax(0, 1fr);
+		gap: 8px;
+	}
+	.control :global(.sc) {
+		justify-items: center;
+	}
+	.control :global(.uin-seg) {
+		width: min(560px, 100%);
+	}
+	.rec {
+		display: grid;
+		grid-template-columns: repeat(3, minmax(0, 1fr));
+		justify-self: center;
+		order: -1;
+		width: min(560px, 100%);
+	}
+	.rec .uin-badge {
+		grid-column: 2;
+		justify-self: center;
+	}
+	.demo {
+		display: grid;
 		gap: 12px;
+		margin-top: 8px;
 	}
-	.step {
-		display: inline-grid;
-		place-items: center;
-		width: 28px;
-		height: 28px;
-		border-radius: 50%;
-		background: var(--cl-brand-tint);
-		color: var(--cl-brand);
-		font: var(--cl-body);
-		font-weight: 700;
+	.demo figcaption {
+		text-align: center;
 	}
-	.levels,
 	.platforms {
 		display: grid;
 		grid-template-columns: repeat(2, minmax(0, 1fr));
-		gap: 8px;
-	}
-	.level,
-	.platform {
-		display: flex;
 		gap: 12px;
-		min-height: 72px;
-		padding: 12px 16px;
+	}
+	.platform {
+		display: grid;
+		align-content: start;
+		gap: 4px;
+		min-height: 88px;
+		padding: 16px;
 		border: 1px solid var(--cl-border);
 		border-radius: var(--cl-r-card);
 		background: var(--cl-surface);
 		color: var(--cl-text);
 		text-align: left;
 		cursor: pointer;
-		transition: border-color var(--cl-fast) var(--cl-ease), background-color var(--cl-fast) var(--cl-ease);
+		transition: border-color var(--cl-fast) var(--cl-ease);
 	}
-	.level {
-		flex-direction: column;
-		gap: 4px;
+	.platform:hover:not(.on) {
+		border-color: var(--cl-border-strong);
 	}
-	.level:hover,
-	.platform:hover {
-		border-color: var(--uin-line-strong);
-	}
-	.level.on,
 	.platform.on {
 		border-color: var(--cl-brand);
-		background: var(--cl-brand-tint);
 		box-shadow: inset 0 0 0 1px var(--cl-brand);
-	}
-	.level:focus-visible,
-	.platform:focus-visible {
-		outline: 2px solid var(--cl-brand);
-		outline-offset: 2px;
-	}
-	.lh {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		gap: 8px;
-	}
-	.lw,
-	.pw {
-		font-weight: 600;
-	}
-	.rec {
-		padding: 2px 8px;
-		border-radius: var(--cl-r-full);
-		background: var(--cl-brand);
-		color: var(--cl-brand-fg);
-		font: var(--cl-chip);
-	}
-	.platform {
-		align-items: center;
-	}
-	.box {
-		display: grid;
-		place-items: center;
-		flex: none;
-		width: 20px;
-		height: 20px;
-		border: 1px solid var(--cl-text-muted);
-		border-radius: 4px;
-		background: var(--cl-surface);
-	}
-	.platform.on .box {
-		border-color: var(--cl-brand);
-		background: var(--cl-brand);
-		color: var(--cl-brand-fg);
 	}
 	.pt {
 		display: flex;
-		flex-direction: column;
+		align-items: center;
+		justify-content: space-between;
 	}
-	.finish {
+	.pw {
+		font: var(--cl-body-lg);
+		font-weight: 600;
+	}
+	.state {
+		display: inline-flex;
+		align-items: center;
+		gap: 4px;
+		color: var(--cl-brand);
+		font: var(--cl-body-strong);
+	}
+	.note {
+		padding: 12px 16px;
+		border: 1px solid var(--cl-border);
+		border-radius: var(--cl-r-card);
+		background: var(--cl-surface);
+	}
+	.card {
+		padding: 24px;
+		border: 1px solid var(--cl-border);
+		border-radius: var(--cl-r-card);
+		background: var(--cl-surface);
+	}
+	.toolbar {
 		display: flex;
 		align-items: center;
-		justify-content: flex-end;
-		gap: 16px;
+		gap: 4px;
+		height: 48px;
+		padding: 0 8px 0 12px;
+		border: 1px solid var(--cl-border);
+		border-radius: var(--cl-r-card);
+		background: var(--cl-surface-raised);
 	}
-	.finish :global(.uin-btn) {
-		height: 40px;
-		padding: 0 20px;
-		font-size: 16px;
+	.address {
+		flex: 1;
+		height: 28px;
+		margin-right: 8px;
+		border-radius: var(--cl-r-full);
+		background: var(--cl-surface);
 	}
-	.error {
-		color: var(--cl-slop);
-	}
-	.done {
-		flex-direction: row;
-		align-items: flex-start;
-	}
-	.ok {
+	.tb {
 		display: grid;
 		place-items: center;
-		flex: none;
-		width: 40px;
-		height: 40px;
+		width: 32px;
+		height: 32px;
 		border-radius: 50%;
-		background: var(--cl-clear-tint);
-		color: var(--cl-clear);
+		color: var(--cl-text-muted);
 	}
-	.done div {
-		display: flex;
-		flex-direction: column;
+	.pin-steps {
+		display: grid;
 		gap: 8px;
 	}
-	@media (max-width: 560px) {
-		.levels,
+	.pin-steps li {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+	}
+	.states {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 12px;
+	}
+	.states li {
+		display: flex;
+		align-items: center;
+		gap: 12px;
+		padding: 12px 16px;
+		border: 1px solid var(--cl-border);
+		border-radius: var(--cl-r-card);
+		background: var(--cl-surface);
+		font: var(--cl-body-strong);
+	}
+	.links {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 8px 24px;
+	}
+	.links .cl-link {
+		font: var(--cl-body-strong);
+	}
+	.error {
+		display: flex;
+		align-items: flex-start;
+		gap: 8px;
+	}
+	.error :global(svg) {
+		margin-top: 2px;
+	}
+	.bar {
+		position: sticky;
+		bottom: 0;
+		z-index: 5;
+		border-top: 1px solid var(--cl-border);
+		background: var(--cl-paper);
+	}
+	.bar-in {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		max-width: calc(720px + 2 * 24px);
+		height: 72px;
+		margin: 0 auto;
+		padding: 0 24px;
+	}
+	.bar-in .cl-figure {
+		margin-right: auto;
+		color: var(--cl-text-muted);
+	}
+	@media (max-width: 639px) {
 		.platforms {
-			grid-template-columns: 1fr;
+			grid-template-columns: minmax(0, 1fr);
 		}
 	}
 </style>

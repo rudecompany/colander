@@ -44,7 +44,7 @@ export default defineConfig({
 				],
 				test: {
 					name: 'workerd',
-					include: ['test/*.test.ts', '../packages/shared/test/*.test.ts'],
+					include: ['test/*.test.ts', '../packages/shared/test/{contract,ids}.test.ts'],
 					provide: { contract: contractFiles(), migrationSchema: migrationSchema() }
 				}
 			},

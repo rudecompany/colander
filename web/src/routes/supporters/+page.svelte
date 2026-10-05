@@ -2,12 +2,14 @@
 	import { onMount } from 'svelte';
 	import Heart from '@lucide/svelte/icons/heart';
 	import RefreshCw from '@lucide/svelte/icons/refresh-cw';
-	import { ColanderMark } from '@colander/shared';
+	import { PerforatedDisc } from '@colander/shared';
+	import Button from '@colander/shared/components/ui/button/button.svelte';
+	import ArrowLink from '#lib/components/ArrowLink.svelte';
 	import { api, errorText } from '#lib/api.ts';
-	import { fmtMonth } from '#lib/format.ts';
+	import { fmtMonthShort } from '@colander/shared';
 	import Loading from '#lib/components/Loading.svelte';
 	import Notice from '#lib/components/Notice.svelte';
-	import PageHead from '#lib/components/PageHead.svelte';
+	import { PageHeader } from '@colander/shared';
 
 	type Supporter = { name: string; since: string };
 	let supporters = $state<Supporter[] | null>(null);
@@ -29,61 +31,60 @@
 	<meta name="description" content="People who support Colander and chose to be credited." />
 </svelte:head>
 
-<PageHead
-	eyebrow="Supporters"
-	title="Thank you"
-	lede="These people support Colander and chose to be credited. Their support pays for review, upkeep and the servers that sign the lists, and it never changes a verdict."
-/>
+<div class="cl-container page-top">
+	<PageHeader
+		eyebrow="Supporters"
+		title="Thank you."
+		title2="Colander runs on people like these."
+		lede="These people support Colander and chose to be credited. Their support pays for review, upkeep and the servers that sign the lists, and it never changes a verdict."
+	/>
+</div>
 
-<div class="wrap page">
+<div class="cl-container page-body body">
 	{#if error}
 		<div class="error-box">
 			<Notice tone="error" title="The list could not load"><p>{error}</p></Notice>
-			<button type="button" class="uin-btn uin-btn-outline uin-btn-md" onclick={load}><RefreshCw size={16} strokeWidth={1.75} aria-hidden="true" /> Try again</button>
+			<Button variant="secondary" size="xl" onclick={load}><RefreshCw size={16} aria-hidden="true" />Try again</Button>
 		</div>
 	{:else if supporters === null}
-		<Loading label="Loading supporters" />
+		<Loading />
 	{:else if supporters.length === 0}
-		<div class="empty cl-dots">
-			<div class="empty-inner">
-				<ColanderMark size={40} />
-				<p class="t-title">No credited supporters yet</p>
-				<p class="t-body muted">The first names appear here once donations open.</p>
-			</div>
+		<div class="empty">
+			<PerforatedDisc size={160} mark={64} />
+			<p class="cl-title">No credited supporters yet.</p>
+			<ArrowLink href="/support">Support our work</ArrowLink>
 		</div>
 	{:else}
 		<ul class="names">
 			{#each supporters as s, i (s.name + i)}
-				<li><span class="name">{s.name}</span><span class="since">Since {fmtMonth(s.since)}</span></li>
+				<li><span class="name">{s.name}</span><span class="cl-figure since">Since {fmtMonthShort(s.since)}</span></li>
 			{/each}
 		</ul>
-	{/if}
-
-	<div class="cta card-raised">
-		<div>
-			<p class="t-title">Add your name</p>
-			<p class="t-body muted">Give once or monthly. Credit is optional, and amounts are never published.</p>
+		<div class="cta uin-card uin-card-lg uin-card-pad">
+			<div>
+				<p class="cl-title">Add your name</p>
+				<p class="cl-muted">Give once or monthly. Credit is optional, and amounts are never published.</p>
+			</div>
+			<Button variant="primary" size="xl" href="/support"><Heart size={16} aria-hidden="true" />Support our work</Button>
 		</div>
-		<a class="uin-btn uin-btn-primary btn-lg" href="/support"><Heart size={16} strokeWidth={1.75} aria-hidden="true" /> Support our work</a>
-	</div>
+	{/if}
 </div>
 
 <style>
-	.page {
+	.body {
 		display: grid;
-		gap: var(--cl-s6);
-		padding-top: var(--cl-s6);
+		gap: 48px;
 	}
 	.names {
-		list-style: none;
 		display: grid;
-		grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-		gap: 0 var(--cl-s5);
+		grid-template-columns: repeat(3, minmax(0, 1fr));
+		gap: 0 24px;
+		list-style: none;
 	}
 	.names li {
 		display: grid;
-		gap: 2px;
-		padding: var(--cl-s4) 0;
+		gap: 4px;
+		padding: 16px 0;
 		border-bottom: 1px solid var(--cl-border);
 	}
 	.name {
@@ -91,35 +92,36 @@
 		overflow-wrap: anywhere;
 	}
 	.since {
-		font: var(--cl-caption);
 		color: var(--cl-text-muted);
 	}
 	.empty {
 		display: grid;
-		place-items: center;
-		min-height: 280px;
-		border-radius: var(--cl-r-card);
-	}
-	.empty-inner {
-		display: grid;
 		justify-items: center;
-		gap: var(--cl-s2);
-		padding: var(--cl-s5) var(--cl-s6);
-		background: var(--cl-paper);
-		border-radius: var(--cl-r-card);
+		gap: 16px;
+		padding-block: 48px;
 		text-align: center;
 	}
 	.cta {
 		display: flex;
+		flex-wrap: wrap;
 		align-items: center;
 		justify-content: space-between;
-		flex-wrap: wrap;
-		gap: var(--cl-s4);
+		gap: 16px;
 	}
 	.error-box {
 		display: grid;
-		gap: var(--cl-s3);
 		justify-items: start;
+		gap: 12px;
 		max-width: 560px;
+	}
+	@media (max-width: 1023px) {
+		.names {
+			grid-template-columns: repeat(2, minmax(0, 1fr));
+		}
+	}
+	@media (max-width: 639px) {
+		.names {
+			grid-template-columns: 1fr;
+		}
 	}
 </style>

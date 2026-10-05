@@ -1,5 +1,5 @@
 <!--
-@component RadioGroup — single-select group of options.
+@component RadioGroup - single-select group of options.
 
 Uses native `<input type="radio">` per option (visually hidden but
 keyboard-focusable and accessible) wrapped in styled labels. Pass

@@ -18,6 +18,7 @@ test('early access platforms are offered and run only with Plus', async ({ ext }
 
 	const welcome = await ext.ctx.newPage();
 	await welcome.goto(`chrome-extension://${EXT_ID}/welcome.html`);
+	await welcome.getByRole('button', { name: 'Continue' }).click();
 	await expect(welcome.getByRole('checkbox', { name: /YouTube/ })).toBeVisible();
 	await expect(welcome.getByRole('checkbox', { name: /TikTok/ })).toHaveCount(0);
 	const opts = await ext.ctx.newPage();
@@ -42,32 +43,38 @@ test('early access platforms are offered and run only with Plus', async ({ ext }
 	await expect.poll(() => registered(ext)).toEqual(['cl-yt', 'cl-yt-bridge']);
 });
 
-test('the popup shows a weekly summary to Plus users, once a week', async ({ ext }) => {
+test('the popup shows the week once: every 30 days with Get Plus, weekly with Plus', async ({ ext }) => {
 	const day = (n: number) => {
 		const d = new Date(Date.now() - n * DAY);
 		return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 	};
-	const days = { [day(0)]: { hidden: 3, collapsed: 1, labeled: 2 }, [day(3)]: { hidden: 10, collapsed: 0, labeled: 5 }, [day(9)]: { hidden: 99, collapsed: 0, labeled: 0 } };
+	const days = { [day(0)]: { hidden: 4, labeled: 2 }, [day(3)]: { hidden: 10, labeled: 5 }, [day(9)]: { hidden: 99, labeled: 0 } };
 	await ext.ctl.evaluate((days) => chrome.storage.local.set({ stats: { firstRunAt: Date.now() - 10 * 86_400_000, days } }), days);
 	const popup = await ext.ctx.newPage();
-	const card = popup.locator('section', { has: popup.getByRole('heading', { name: 'Your week' }) });
+	const card = popup.getByText('Colander hid 14 items for you this week.');
 
-	// Free: the support card, no weekly summary.
+	// Free: the person's own numbers with Get Plus, at most once in 30 days.
 	await popup.goto(`chrome-extension://${EXT_ID}/popup.html`);
-	await expect(popup.getByText('Colander runs on support from people like you.', { exact: false })).toBeVisible();
+	await expect(card).toBeVisible();
+	await expect(popup.getByRole('button', { name: 'Get Plus' })).toBeVisible();
+	await popup.getByRole('button', { name: 'Dismiss' }).click();
+	await expect(card).toHaveCount(0);
+	await popup.reload();
+	await expect(popup.getByRole('radiogroup', { name: 'Strictness' })).toBeVisible();
 	await expect(card).toHaveCount(0);
 
+	// Plus: the weekly summary, with Support our work instead of Get Plus.
 	await ext.send({ type: 'start-trial' });
 	await popup.reload();
-	await expect(card).toContainText('In the last 7 days Colander hid or collapsed 14 items and labeled 7.');
-	await expect(popup.getByText('Colander runs on support', { exact: false })).toHaveCount(0);
+	await expect(card).toBeVisible();
+	await expect(popup.getByRole('button', { name: 'Get Plus' })).toHaveCount(0);
 	// It stays for the day it showed, until dismissed.
 	await popup.reload();
 	await expect(card).toBeVisible();
-	await card.getByRole('button', { name: 'Dismiss the weekly summary' }).click();
+	await popup.getByRole('button', { name: 'Dismiss' }).click();
 	await expect(card).toHaveCount(0);
 	await popup.reload();
-	await expect(popup.getByRole('heading', { name: 'On this page' })).toBeVisible();
+	await expect(popup.getByRole('radiogroup', { name: 'Strictness' })).toBeVisible();
 	await expect(card).toHaveCount(0);
 	// A week later it is back.
 	await ext.ctl.evaluate(() => chrome.storage.local.set({ weeklyCard: { shownAt: Date.now() - 8 * 86_400_000, dismissedAt: Date.now() - 8 * 86_400_000 } }));
@@ -83,6 +90,11 @@ test('a paid plan is checked daily, and a cancel or refund turns Plus off within
 	const exp = Math.floor(Date.now() / 1000) + 300 * 86400;
 	await site.evaluate(([id, token]) => chrome.runtime.sendMessage(id, { type: 'colander:plan-token', token }), [EXT_ID, planToken({ trial: false, exp })] as const);
 	await expect.poll(() => ext.storage('entitlement')).toEqual({ plus: true, trial: false, exp });
+
+	// Options says when it renews, as two sentences.
+	const opts = await ext.ctx.newPage();
+	await opts.goto(`chrome-extension://${EXT_ID}/options.html#plan`);
+	await expect(opts.locator('p', { hasText: 'Plus renews on' })).toHaveText(/^Plus renews on \d{1,2} \w+ \d{4}\. It is connected through your account on the website\.$/);
 
 	const refreshes = () => ext.api.posted('/v1/entitlement/refresh');
 	// The handed-over token is fresh from the server, so it counts as checked now.
@@ -105,7 +117,6 @@ test('a paid plan is checked daily, and a cancel or refund turns Plus off within
 	expect(refreshes()).toHaveLength(2);
 	expect(await ext.storage<{ plus: boolean }>('entitlement')).toMatchObject({ plus: false });
 	expect(await ext.storage('planToken')).toBeUndefined();
-	const opts = await ext.ctx.newPage();
 	await opts.goto(`chrome-extension://${EXT_ID}/options.html#plan`);
-	await expect(opts.getByRole('heading', { name: 'Free', level: 3 })).toBeVisible();
+	await expect(opts.getByRole('heading', { name: 'Current plan: Free' })).toBeVisible();
 });

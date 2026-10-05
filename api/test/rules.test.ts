@@ -2,6 +2,7 @@
 import { describe, expect, it } from 'vitest';
 import { signalsFromMask } from '@colander/shared/verdicts';
 import { Default, newInput, Sig, TestBit, type Input, type Vote } from '../src/scoring/rules';
+import { communityReason } from '../src/scoring/reason';
 
 const votes = (n: number, verdict: string, weight: number, tests: number): Vote[] =>
 	Array.from({ length: n }, () => ({ weight, verdict, slopType: '', tests, platformLabel: false }));
@@ -229,6 +230,15 @@ describe('rules', () => {
 		if (c.capped) expect(r.computed).toBe('slop');
 		expect(signalsFromMask(r.signals)).toEqual(expect.arrayContaining(signalsFromMask(c.signals ?? 0)));
 		expect(signalsFromMask(r.signals & (c.excluded ?? 0))).toEqual([]);
+	});
+});
+
+describe('reason', () => {
+	// AI-made-but-fine tags count against slop in a split too, so the reason never claims not-slop tags.
+	it('explains a split on slop and AI-made-but-fine tags without naming not slop', () => {
+		const r = Default.score(newInput({ votes: [...votes(3, 'slop', 1, 0), ...votes(3, 'ai_fine', 1, 0)], labelInstalls: 2 }));
+		expect({ verdict: r.verdict, rule: r.rule }).toEqual({ verdict: 'disputed', rule: 5 });
+		expect(communityReason(r)).toBe('Taggers are split on whether this is slop, so this shows as Disputed.');
 	});
 });
 

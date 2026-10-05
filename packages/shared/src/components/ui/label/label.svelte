@@ -1,5 +1,5 @@
 <!--
-@component Label — caption / eyebrow for form fields.
+@component Label - caption / eyebrow for form fields.
 
 Pair with Input/Textarea/Select. Tones: `eyebrow` (uppercase tracked,
 default) and `strong` (regular case). `required` adds a small accent

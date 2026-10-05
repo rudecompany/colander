@@ -1,0 +1,338 @@
+/*
+ * Component CSS shared by pages and the in-page shadow DOM, so a chip, a button, an evidence
+ * card and a toast are pixel-identical everywhere. Pages get it through colander.css. Host pages
+ * get a minified copy inside SHEET, written by scripts/gen-inpage-tokens.ts.
+ * Tokens only: no color values here.
+ */
+
+/* Verdict colors for anything marked data-v: color on light, tint, color on media. */
+[data-v='slop'] {
+	--v: var(--cl-slop);
+	--vt: var(--cl-slop-tint);
+	--vm: var(--cl-slop-media);
+}
+[data-v='likely_slop'] {
+	--v: var(--cl-likely);
+	--vt: var(--cl-likely-tint);
+	--vm: var(--cl-likely-media);
+}
+[data-v='ai_made'] {
+	--v: var(--cl-ai);
+	--vt: var(--cl-ai-tint);
+	--vm: var(--cl-ai-media);
+}
+[data-v='disputed'] {
+	--v: var(--cl-disputed);
+	--vt: var(--cl-disputed-tint);
+	--vm: var(--cl-disputed-media);
+}
+[data-v='clear'] {
+	--v: var(--cl-clear);
+	--vt: var(--cl-clear-tint);
+	--vm: var(--cl-clear-media);
+}
+.cl-glyph {
+	display: block;
+	flex: none;
+}
+
+/* Verdict chip: glyph and word, never truncated. sm 20, md 24, lg 28. */
+.cl-chip {
+	display: inline-flex;
+	flex: none;
+	align-items: center;
+	gap: 6px;
+	height: 24px;
+	margin: 0;
+	padding: 0 8px;
+	border: 0;
+	border-radius: var(--cl-r-chip);
+	font: var(--cl-chip);
+	white-space: nowrap;
+	vertical-align: middle;
+	text-decoration: none;
+}
+.cl-chip-sm {
+	gap: 4px;
+	height: 20px;
+	padding: 0 6px;
+}
+.cl-chip-lg {
+	height: 28px;
+	padding: 0 10px;
+	font: var(--cl-body-strong);
+}
+.cl-chip-tint {
+	background: var(--vt);
+	color: var(--cl-text);
+}
+.cl-chip-tint .cl-glyph {
+	color: var(--v);
+}
+.cl-chip-ink {
+	background: var(--cl-ink);
+	color: var(--cl-on-ink);
+}
+.cl-chip-ink .cl-glyph {
+	color: var(--vm);
+}
+/* No verdict yet: a dashed outline, so it differs by shape too. */
+.cl-chip-none {
+	border: 1px dashed var(--cl-border-strong);
+	color: var(--cl-text-muted);
+}
+
+/* Ink: toasts and the swipe cover. Controls inside take the on-ink colors. */
+.cl-ink {
+	--cl-text: var(--cl-on-ink);
+	--cl-text-muted: var(--cl-on-ink-muted);
+	--cl-brand: var(--cl-on-ink-brand);
+	--cl-brand-fill: var(--cl-on-ink-fill);
+	--cl-surface: var(--cl-ink);
+	--cl-border: var(--cl-band-line);
+	--cl-border-strong: var(--cl-on-ink-muted);
+	--uin-focus-ring: 0 0 0 2px var(--cl-ink), 0 0 0 4px var(--cl-on-ink-brand);
+	background: var(--cl-ink);
+	color: var(--cl-on-ink);
+}
+
+/* Buttons for in-page UI and the shared cards: the same sizes as the Mittsu button. */
+.cl-b {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	gap: 6px;
+	height: 32px;
+	margin: 0;
+	padding: 0 12px;
+	border: 1px solid transparent;
+	border-radius: var(--cl-r-chip);
+	background: transparent;
+	color: var(--cl-text);
+	font: var(--cl-body-strong);
+	white-space: nowrap;
+	text-decoration: none;
+	cursor: pointer;
+	transition:
+		background-color var(--cl-fast) var(--cl-ease),
+		border-color var(--cl-fast) var(--cl-ease);
+}
+.cl-b-sm {
+	gap: 4px;
+	height: 28px;
+	padding: 0 10px;
+	font: var(--cl-chip);
+}
+.cl-b-p {
+	background: var(--cl-brand-fill);
+	color: var(--cl-brand-fg);
+}
+.cl-b-p:hover {
+	background: color-mix(in srgb, var(--cl-brand-fill), var(--cl-text) 12%);
+}
+.cl-b-p:active {
+	background: color-mix(in srgb, var(--cl-brand-fill), var(--cl-text) 20%);
+}
+.cl-b-s {
+	border-color: var(--cl-border-strong);
+	background: var(--cl-surface);
+}
+.cl-b-s:hover {
+	background: color-mix(in srgb, var(--cl-text) 6%, var(--cl-surface));
+}
+.cl-b-q {
+	color: var(--cl-brand);
+}
+.cl-b-q:hover {
+	background: color-mix(in srgb, var(--cl-brand) 10%, transparent);
+}
+.cl-b:disabled,
+.cl-b[aria-disabled='true'] {
+	opacity: 0.4;
+	pointer-events: none;
+}
+.cl-b .lucide {
+	width: 16px;
+	height: 16px;
+}
+/* Icon-only close button: 32 square, named by aria-label. */
+.cl-x {
+	width: 32px;
+	padding: 0;
+	color: var(--cl-text-muted);
+}
+
+/* Links: 600 12/16 brand, ending in an arrow. */
+.cl-link {
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+	color: var(--cl-brand);
+	font: var(--cl-chip);
+	text-decoration: none;
+}
+.cl-link:hover {
+	text-decoration: underline;
+	text-underline-offset: 2px;
+}
+/* Where a link has no page to go to (the website's demo), its words stay, plain and muted. */
+.cl-link-inert {
+	color: var(--cl-text-muted);
+	font: var(--cl-caption);
+}
+
+/* Floating surface: popovers, menus, sheets. The one shadow. */
+.cl-pop {
+	width: 320px;
+	max-width: calc(100vw - 16px);
+	padding: 16px;
+	border: 1px solid var(--cl-border);
+	border-radius: var(--cl-r-card);
+	background: var(--cl-surface);
+	color: var(--cl-text);
+	box-shadow: var(--cl-shadow-pop);
+	font: var(--cl-body);
+}
+/* Drawn in place, not floating: no shadow, full width. */
+.cl-pop.cl-flat {
+	width: auto;
+	max-width: none;
+	box-shadow: none;
+}
+
+/* Evidence card: chip and title, up to 3 rows, the list line, actions and links. */
+.cl-ev-head {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+}
+.cl-ev-title {
+	margin: 0;
+	font: var(--cl-body-strong);
+}
+.cl-ev-rows {
+	display: grid;
+	gap: 4px;
+	margin: 12px 0 0;
+	padding: 0;
+	list-style: none;
+	font: var(--cl-caption);
+}
+.cl-ev-row {
+	display: flex;
+	align-items: baseline;
+	gap: 8px;
+}
+.cl-ev-row::before {
+	content: '';
+	flex: none;
+	width: 6px;
+	height: 6px;
+	border-radius: 50%;
+	background: var(--cl-text);
+	transform: translateY(-1px);
+}
+.cl-ev-row[data-agreed='false']::before {
+	background: transparent;
+	box-shadow: inset 0 0 0 1.5px var(--cl-text-muted);
+}
+.cl-ev-row b {
+	font-weight: 600;
+}
+.cl-ev-row > span {
+	text-wrap: pretty;
+}
+/* A term that must not break at its hyphen, such as "AI-made". */
+.cl-nw {
+	white-space: nowrap;
+}
+.cl-ev-list {
+	margin: 8px 0 0;
+	color: var(--cl-text-muted);
+	font: var(--cl-caption);
+}
+.cl-ev-rule {
+	height: 1px;
+	margin: 12px 0 8px;
+	border: 0;
+	background: var(--cl-border);
+}
+.cl-ev-actions {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 4px;
+	margin: 0 -10px;
+}
+.cl-ev-links {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 4px 12px;
+	margin: 8px 0 0;
+}
+
+/* Toast and skip notice: ink, 44 tall, a 4-dot countdown. A long confirmation keeps its text on
+   one line and moves the actions under it, never squeezing the words. The band-line edge keeps
+   the ink apart from dark surfaces. */
+.cl-toast {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 0 4px;
+	width: max-content;
+	max-width: min(448px, calc(100vw - 32px));
+	min-height: 44px;
+	padding: 3px 3px 3px 15px;
+	border: 1px solid var(--cl-band-line);
+	border-radius: var(--cl-r-card);
+	box-shadow: var(--cl-shadow-pop);
+	font: var(--cl-body);
+}
+.cl-toast > .cl-glyph {
+	margin-right: 4px;
+	color: var(--vm);
+}
+.cl-toast-t {
+	flex: 1 1 auto;
+	max-width: 100%;
+	margin-right: 4px;
+	text-wrap: pretty;
+}
+.cl-toast-end {
+	display: flex;
+	align-items: center;
+	gap: 4px;
+	margin-left: auto;
+}
+/* One dot drains per second; the toast closes when the first dot ends. Hover and focus pause it. */
+.cl-count {
+	display: inline-flex;
+	flex: none;
+	gap: 4px;
+	padding: 0 6px;
+}
+.cl-count > i {
+	width: 4px;
+	height: 4px;
+	border-radius: 50%;
+	background: var(--cl-on-ink);
+	animation: cl-drain 4s steps(1, end) forwards;
+}
+.cl-count > i:nth-child(2) {
+	animation-duration: 3s;
+}
+.cl-count > i:nth-child(3) {
+	animation-duration: 2s;
+}
+.cl-count > i:nth-child(4) {
+	animation-duration: 1s;
+}
+.cl-toast:hover .cl-count > i,
+.cl-toast:focus-within .cl-count > i,
+.cl-count[data-paused] > i {
+	animation-play-state: paused;
+}
+@keyframes cl-drain {
+	to {
+		opacity: 0.25;
+	}
+}

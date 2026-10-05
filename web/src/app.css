@@ -1,56 +1,24 @@
 /*
- * Website layer on top of the shared Colander theme (tokens.css + colander.css).
- * Paper background, one ink, brand blue for actions only, verdict colors on chips only.
+ * The website layer over the shared theme (tokens.css, then colander.css). Every color, type step,
+ * space and radius comes from colander.css; this file only resets the page and styles the long-form
+ * pieces the website alone has: prose, tables, key-value lists and form fields.
  */
 
-:root {
-	/* A hero size that sits above Display (32/40) on the same 8 px rhythm. */
-	--w-hero: 700 56px/64px var(--cl-font);
-	/* Lede: the Title size at regular weight; Body large on phones. */
-	--w-lede: 400 20px/28px var(--cl-font);
-	--w-max: 1120px;
-	--w-prose: 680px;
-	--w-gutter: 24px;
-	--w-section: 96px;
-	/* Control outlines must clear 3:1 against their surface (WCAG 1.4.11). */
-	--w-control-border: color-mix(in srgb, var(--cl-text-muted) 75%, var(--cl-surface));
-	--w-dot-strong: color-mix(in srgb, var(--cl-text-muted) 45%, var(--cl-paper));
-	--w-ink-soft: color-mix(in srgb, var(--cl-text) 8%, transparent);
-	scroll-padding-top: 24px;
+html {
+	/* The sticky header is 64 tall, so a focused or linked element never hides under it. */
+	scroll-padding-top: 80px;
+	font: var(--cl-body-lg);
+	font-synthesis: none;
 	-webkit-text-size-adjust: 100%;
 	text-size-adjust: 100%;
 }
 
-@media (max-width: 720px) {
-	:root {
-		--w-hero: 700 40px/48px var(--cl-font);
-		--w-lede: var(--cl-body-lg);
-		--w-gutter: 16px;
-		--w-section: 64px;
-	}
-}
-
-*,
-*::before,
-*::after {
-	box-sizing: border-box;
-}
-
-html {
-	background: var(--cl-paper);
-	color: var(--cl-text);
-	font: var(--cl-body-lg);
-	font-synthesis: none;
-	text-rendering: optimizeLegibility;
-	-webkit-font-smoothing: antialiased;
-}
-
 body {
-	margin: 0;
-	min-height: 100vh;
-	background: var(--cl-paper);
 	display: flex;
 	flex-direction: column;
+	min-height: 100vh;
+	margin: 0;
+	background: var(--cl-paper);
 }
 
 h1,
@@ -98,388 +66,157 @@ a:hover {
 	text-decoration-color: currentColor;
 }
 
-:focus-visible {
-	outline: 2px solid var(--cl-brand);
-	outline-offset: 2px;
-}
-
 ::selection {
 	background: color-mix(in srgb, var(--cl-brand) 22%, transparent);
-}
-
-/* ---------- Layout ---------- */
-
-.wrap {
-	width: 100%;
-	max-width: calc(var(--w-max) + 2 * var(--w-gutter));
-	margin-inline: auto;
-	padding-inline: var(--w-gutter);
-}
-.wrap-narrow {
-	max-width: calc(760px + 2 * var(--w-gutter));
-}
-/* The review console uses the full width of a desktop screen. */
-.wrap-wide {
-	max-width: calc(1440px + 2 * var(--w-gutter));
-}
-.section {
-	padding-block: var(--w-section);
-}
-.section + .section {
-	padding-top: 0;
-}
-.section:last-child {
-	padding-bottom: 0;
-}
-.stack > * + * {
-	margin-top: var(--cl-s4);
-}
-.prose {
-	max-width: var(--w-prose);
-}
-.prose > * + * {
-	margin-top: var(--cl-s4);
-}
-.prose h2 {
-	font: var(--cl-title);
-	margin-top: var(--cl-s6);
-}
-.prose h3 {
-	font: 600 16px/24px var(--cl-font);
-	margin-top: var(--cl-s5);
-}
-.prose ul,
-.prose ol {
-	padding-left: var(--cl-s5);
-}
-.prose li + li {
-	margin-top: var(--cl-s2);
-}
-.prose li::marker {
-	color: var(--cl-text-muted);
-}
-
-/* ---------- Type ---------- */
-
-.t-hero {
-	font: var(--w-hero);
-	letter-spacing: -0.022em;
-	text-wrap: balance;
-}
-.t-display {
-	font: var(--cl-display);
-	letter-spacing: -0.012em;
-	text-wrap: balance;
-}
-.t-title {
-	font: var(--cl-title);
-	text-wrap: balance;
-}
-.t-lede {
-	font: var(--w-lede);
-	color: var(--cl-text-muted);
-	text-wrap: pretty;
-}
-.t-body-lg {
-	font: var(--cl-body-lg);
-}
-.t-body {
-	font: var(--cl-body);
-}
-.t-caption {
-	font: var(--cl-caption);
-}
-.t-strong {
-	font-weight: 600;
-}
-.muted {
-	color: var(--cl-text-muted);
-}
-.mono {
-	font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
-	/* Monospace runs large, so it sits a little smaller than the text around it, but never below 12 px. */
-	font-size: max(12px, 0.92em);
-	overflow-wrap: anywhere;
-}
-
-/* A short line of perforations before a section label. Sentence case, never shouted. */
-.eyebrow {
-	display: inline-flex;
-	align-items: center;
-	gap: var(--cl-s2);
-	font: 600 14px/20px var(--cl-font);
-	color: var(--cl-text-muted);
-}
-.eyebrow::before {
-	content: '';
-	width: 22px;
-	height: 6px;
-	background-image: radial-gradient(circle, var(--cl-text-muted) 2px, transparent 2.4px);
-	background-size: 8px 6px;
-	background-position: left center;
-	flex: none;
-	opacity: 0.7;
-}
-
-.section-head {
-	display: grid;
-	gap: var(--cl-s3);
-	max-width: 760px;
-	margin-bottom: var(--cl-s6);
-}
-
-/* A perforated rule: the dot motif as a divider. */
-.dot-rule {
-	height: 6px;
-	border: 0;
-	margin: 0;
-	background-image: radial-gradient(circle, var(--w-dot-strong) 1.5px, transparent 1.9px);
-	background-size: 12px 6px;
-	background-position: left center;
-	opacity: 0.8;
-}
-
-/* ---------- Surfaces ---------- */
-
-.card {
-	background: var(--cl-surface);
-	border: 1px solid var(--cl-border);
-	border-radius: var(--cl-r-card);
-	padding: var(--cl-s5);
-}
-.card-raised {
-	background: var(--cl-surface-raised);
-	border: 1px solid var(--cl-border);
-	border-radius: var(--cl-r-card);
-	padding: var(--cl-s5);
-}
-.card-quiet {
-	border: 1px solid var(--cl-border);
-	border-radius: var(--cl-r-card);
-	padding: var(--cl-s5);
-}
-.pop {
-	background: var(--cl-surface);
-	border: 1px solid var(--cl-border);
-	border-radius: var(--cl-r-card);
-	box-shadow: var(--cl-shadow-pop);
-}
-
-/* ---------- Controls (Mittsu, sized for the web) ---------- */
-
-.uin-btn {
-	cursor: pointer;
-	font-weight: 600;
-	text-decoration: none;
-	white-space: nowrap;
-}
-a.uin-btn {
-	color: inherit;
-}
-a.uin-btn-primary {
-	color: var(--uin-accent-fg);
-}
-.uin-btn-md {
-	height: 36px;
-	padding: 0 var(--cl-s4);
-	font-size: 14px;
-}
-.uin-btn-sm {
-	height: 32px;
-	padding: 0 var(--cl-s3);
-	font-size: 14px;
-}
-.btn-lg.uin-btn {
-	height: 44px;
-	padding: 0 var(--cl-s5);
-	font-size: 16px;
-	gap: var(--cl-s2);
-}
-.uin-btn-primary {
-	box-shadow: none;
-}
-.uin-btn-primary:hover:not(:disabled) {
-	filter: none;
-	background: color-mix(in srgb, var(--cl-brand) 88%, var(--cl-text));
-}
-.uin-btn-outline {
-	background: var(--cl-surface);
-	border-color: var(--w-control-border);
-}
-.uin-btn-ghost {
-	color: var(--cl-text);
-}
-.uin-btn[aria-disabled='true'],
-.uin-btn:disabled {
-	opacity: 0.5;
-	pointer-events: none;
-}
-
-.uin-input-el,
-.uin-textarea,
-.uin-nselect-el {
-	background: var(--cl-surface);
-	border-color: var(--w-control-border);
-	font-size: 16px;
-}
-.uin-input-md .uin-input-el,
-.uin-nselect-md .uin-nselect-el {
-	height: 40px;
-	font-size: 16px;
-}
-.uin-nselect-sm .uin-nselect-el {
-	height: 32px;
-	font-size: 14px;
-}
-.uin-textarea {
-	line-height: 24px;
-	padding: var(--cl-s2) var(--cl-s3);
-}
-.uin-input-el:focus,
-.uin-textarea:focus {
-	border-color: var(--cl-brand);
-	background: var(--cl-surface);
-}
-.uin-input-el[aria-invalid='true'],
-.uin-textarea[aria-invalid='true'] {
-	border-color: var(--cl-slop);
-}
-
-.uin-checkbox {
-	position: relative;
-	font: var(--cl-body);
-	align-items: flex-start;
-	gap: var(--cl-s2);
-	/* A 32 px row for one line of 20 px text: the whole label is the hit target. Stack checkboxes with no gap. */
-	padding-block: 6px;
-}
-.uin-checkbox-md {
-	font-size: 14px;
-}
-.uin-checkbox-label {
-	line-height: 20px;
-}
-.uin-checkbox-box {
-	border-color: var(--w-control-border);
-	background: var(--cl-surface);
-	margin-top: 2px;
-}
-
-.uin-seg {
-	background: var(--cl-surface);
-	border-color: var(--w-control-border);
-	border-radius: var(--cl-r-chip);
-	padding: 2px;
-	gap: 2px;
-}
-.uin-seg-btn {
-	cursor: pointer;
-	/* Concentric with the 6 px control around it (2 px padding). */
-	border-radius: calc(var(--cl-r-chip) - 2px);
-	font-weight: 600;
-}
-.uin-seg-btn + .uin-seg-btn {
-	border-left: 0;
-}
-.uin-seg-md .uin-seg-btn {
-	min-height: 32px;
-	padding: var(--cl-s1) var(--cl-s4);
-	font-size: 14px;
-}
-.uin-seg-sm .uin-seg-btn {
-	min-height: 32px;
-	padding: var(--cl-s1) var(--cl-s3);
-	font-size: 14px;
-}
-.uin-seg-btn-active {
-	background: var(--cl-brand);
-	color: var(--cl-brand-fg);
-}
-.uin-seg-btn:hover:not(.uin-seg-btn-active):not(:disabled) {
-	color: var(--cl-text);
-}
-
-.field {
-	display: grid;
-	gap: var(--cl-s2);
-}
-.field-label {
-	font: 600 14px/20px var(--cl-font);
-}
-.field-hint {
-	font: var(--cl-caption);
-	color: var(--cl-text-muted);
-}
-.field-error {
-	font: var(--cl-body);
-	color: var(--cl-slop);
-}
-
-/* ---------- Small pieces ---------- */
-
-/* Same box as the verdict chip (2 px by 8 px inside a 1 px border), so the two line up side by side. */
-.chip-none {
-	display: inline-flex;
-	align-items: center;
-	gap: 6px;
-	padding: 2px 8px;
-	border-radius: var(--cl-r-chip);
-	border: 1px dashed var(--w-control-border);
-	color: var(--cl-text-muted);
-	font: var(--cl-chip);
-	white-space: nowrap;
-}
-
-.tag {
-	display: inline-flex;
-	align-items: center;
-	gap: 6px;
-	padding: 2px 8px;
-	border-radius: var(--cl-r-chip);
-	background: var(--w-ink-soft);
-	font: var(--cl-chip);
-	white-space: nowrap;
-}
-
-.icon-line {
-	display: inline-flex;
-	align-items: center;
-	gap: var(--cl-s2);
-}
-
-.link-quiet {
-	color: inherit;
-	text-decoration-color: color-mix(in srgb, currentColor 35%, transparent);
 }
 
 .sr-only {
 	position: absolute;
 	width: 1px;
 	height: 1px;
-	padding: 0;
 	margin: -1px;
 	overflow: hidden;
-	clip: rect(0, 0, 0, 0);
+	clip: rect(0 0 0 0);
 	white-space: nowrap;
 	border: 0;
 }
 
 .skip-link {
 	position: absolute;
-	left: 16px;
 	top: -100px;
+	left: 16px;
 	z-index: 100;
-	background: var(--cl-brand);
-	color: var(--cl-brand-fg);
-	padding: var(--cl-s2) var(--cl-s4);
+	padding: 8px 16px;
 	border-radius: var(--cl-r-chip);
-	font: 600 14px/20px var(--cl-font);
+	background: var(--cl-brand-fill);
+	color: var(--cl-brand-fg);
+	font: var(--cl-body-strong);
 	text-decoration: none;
 }
 .skip-link:focus {
 	top: 12px;
 }
 
+/* An inner page: the page header, then content 48 below it. */
+.page-top {
+	padding-block: var(--cl-s8) var(--cl-s7);
+}
+.page-body {
+	padding-bottom: var(--cl-s9);
+}
+@media (max-width: 639px) {
+	.page-top {
+		padding-block: var(--cl-s6);
+	}
+	.page-body {
+		padding-bottom: var(--cl-s8);
+	}
+}
+
+/* Long-form text. */
+.prose {
+	max-width: 680px;
+	font: var(--cl-body-lg);
+}
+.prose > * + * {
+	margin-top: var(--cl-s4);
+}
+.prose h2 {
+	margin-top: var(--cl-s7);
+	font: var(--cl-title-lg);
+	letter-spacing: -0.01em;
+}
+.prose h2:first-child {
+	margin-top: 0;
+}
+.prose h3 {
+	margin-top: var(--cl-s5);
+	font: var(--cl-title);
+}
+.prose > ul,
+.prose > ol {
+	padding-left: var(--cl-s5);
+}
+.prose > ul > li + li,
+.prose > ol > li + li {
+	margin-top: var(--cl-s2);
+}
+.prose li::marker {
+	color: var(--cl-dot-strong);
+}
+
+/* Long-form pages: a 240 table of contents beside a 680 measure. Below 1024 it becomes "On this page". */
+.longform {
+	display: grid;
+	grid-template-columns: 240px minmax(0, 680px);
+	gap: var(--cl-s7);
+	align-items: start;
+}
+.toc {
+	position: sticky;
+	top: 80px;
+}
+.toc-title {
+	margin-bottom: var(--cl-s3);
+	color: var(--cl-text-muted);
+	font: var(--cl-figure);
+	letter-spacing: 0.02em;
+}
+.toc ol {
+	display: grid;
+	gap: 2px;
+	list-style: none;
+	border-left: 1px solid var(--cl-border);
+}
+.toc a {
+	display: block;
+	padding: 6px 12px;
+	margin-left: -1px;
+	border-left: 2px solid transparent;
+	color: var(--cl-text-muted);
+	font: var(--cl-body);
+	text-decoration: none;
+}
+.toc a:hover {
+	color: var(--cl-text);
+	border-left-color: var(--cl-border-strong);
+}
+.toc-mobile {
+	display: none;
+}
+@media (max-width: 1023px) {
+	.longform {
+		grid-template-columns: minmax(0, 1fr);
+		gap: var(--cl-s5);
+	}
+	.toc {
+		display: none;
+	}
+	.toc-mobile {
+		display: block;
+		border: 1px solid var(--cl-border);
+		border-radius: var(--cl-r-card);
+		background: var(--cl-surface);
+	}
+	.toc-mobile summary {
+		display: flex;
+		align-items: center;
+		min-height: 44px;
+		padding: 0 16px;
+		font: var(--cl-body-strong);
+		cursor: pointer;
+	}
+	.toc-mobile ol {
+		display: grid;
+		padding: 0 16px 12px 32px;
+		font: var(--cl-body);
+	}
+	.toc-mobile li {
+		padding-block: 6px;
+	}
+}
+
+/* Key and value pairs. */
 .kv {
 	display: grid;
 	grid-template-columns: minmax(120px, max-content) 1fr;
@@ -490,6 +227,7 @@ a.uin-btn-primary {
 	color: var(--cl-text-muted);
 }
 
+/* Hairline tables. Cells carry data-label for the stacked phone layout. */
 table.plain {
 	width: 100%;
 	border-collapse: collapse;
@@ -497,96 +235,46 @@ table.plain {
 }
 table.plain th,
 table.plain td {
-	text-align: left;
-	vertical-align: top;
 	padding: 12px 16px 12px 0;
 	border-bottom: 1px solid var(--cl-border);
-}
-table.plain th {
-	font-weight: 600;
-	color: var(--cl-text-muted);
+	text-align: left;
+	vertical-align: top;
 }
 table.plain thead th {
-	font: 600 12px/16px var(--cl-font);
 	color: var(--cl-text-muted);
-	border-bottom-color: var(--w-control-border);
+	font: var(--cl-chip);
 }
-table.plain tr:last-child td,
-table.plain tr:last-child th {
+table.plain tbody th {
+	font: var(--cl-body-strong);
+}
+table.plain tr:last-child > * {
 	border-bottom: 0;
+}
+.table-card {
+	overflow-x: auto;
+	padding: 4px 24px;
+	border: 1px solid var(--cl-border);
+	border-radius: var(--cl-r-card);
+	background: var(--cl-surface);
 }
 .table-scroll {
 	overflow-x: auto;
 }
-
-/* Long-form policy pages */
-.doc {
-	max-width: 760px;
-	padding-top: var(--cl-s6);
-}
-.doc section + section {
-	margin-top: var(--cl-s6);
-}
-.doc section > * + * {
-	margin-top: var(--cl-s4);
-}
-.doc h2 {
-	margin-top: 0;
-}
-
-/* Mittsu pieces that need the web type ramp: nothing below 12 px. */
-.uin-kbd {
-	height: 20px;
-	padding: 0 var(--cl-s1);
-	font-size: 12px;
-	border-color: var(--w-control-border);
-	color: var(--cl-text);
-}
-.uin-dialog-overlay {
-	background: color-mix(in srgb, var(--cl-ink) 40%, transparent);
-	-webkit-backdrop-filter: none;
-	backdrop-filter: none;
-}
-.uin-dialog {
-	background: var(--cl-surface);
-	border-color: var(--cl-border);
-	box-shadow: var(--cl-shadow-pop);
-	-webkit-backdrop-filter: none;
-	backdrop-filter: none;
-}
-.uin-dialog-title {
-	font: var(--cl-title);
-}
-.uin-dialog-desc {
-	font: var(--cl-body);
-}
-.uin-dialog-body {
-	font: var(--cl-body);
-}
-.uin-dialog-close {
-	width: 32px;
-	height: 32px;
-}
-
-/* Tables that become stacked rows on a phone. Cells carry data-label for their column. */
-@media (max-width: 560px) {
+@media (max-width: 639px) {
 	table.stack-sm,
 	table.stack-sm tbody,
 	table.stack-sm tr,
 	table.stack-sm th,
 	table.stack-sm td {
 		display: block;
-		width: auto !important;
-	}
-	table.stack-sm {
-		min-width: 0 !important;
+		width: auto;
 	}
 	table.stack-sm thead {
 		position: absolute;
 		width: 1px;
 		height: 1px;
 		overflow: hidden;
-		clip: rect(0, 0, 0, 0);
+		clip: rect(0 0 0 0);
 	}
 	table.stack-sm tr {
 		padding: 12px 0;
@@ -597,16 +285,129 @@ table.plain tr:last-child th {
 	}
 	table.stack-sm th,
 	table.stack-sm td {
-		padding: 2px 0 !important;
-		border: 0 !important;
-		white-space: normal !important;
+		padding: 2px 0;
+		border: 0;
 	}
 	table.stack-sm th[scope='row'] {
 		margin-bottom: 4px;
 	}
 	table.stack-sm td[data-label]::before {
 		content: attr(data-label) ': ';
-		font-weight: 600;
 		color: var(--cl-text-muted);
+		font-weight: 600;
 	}
+	.table-card {
+		padding: 4px 16px;
+	}
+}
+
+/* Form fields on the website: 40 tall controls, a 600 14/20 label, errors in the text color. */
+.field {
+	display: grid;
+	gap: var(--cl-s2);
+}
+.field-label {
+	font: var(--cl-body-strong);
+}
+.field-hint {
+	color: var(--cl-text-muted);
+	font: var(--cl-caption);
+}
+.field-error {
+	display: flex;
+	align-items: flex-start;
+	gap: 6px;
+	color: var(--cl-text);
+	font: var(--cl-body);
+}
+.field-error :where(svg) {
+	flex: none;
+	margin-top: 2px;
+}
+.uin-textarea {
+	padding: 8px 12px;
+	font: var(--cl-body-lg);
+}
+
+/* A plain list with 6 px dot bullets. */
+.dots-list {
+	display: grid;
+	gap: var(--cl-s2);
+	list-style: none;
+}
+.dots-list > li {
+	position: relative;
+	padding-left: 18px;
+}
+.dots-list > li::before {
+	content: '';
+	position: absolute;
+	top: calc(0.5lh - 3px);
+	left: 0;
+	width: 6px;
+	height: 6px;
+	border-radius: 50%;
+	background: var(--cl-dot-strong);
+}
+
+/* An icon beside its word. */
+.icon-line {
+	display: inline-flex;
+	align-items: center;
+	gap: var(--cl-s2);
+}
+
+/* Page headers set a two-tone title's continuation on its own line, as landing sections do. */
+.page-top .cl-tone2 {
+	display: block;
+}
+.page-top .cl-display-lg {
+	max-width: 32ch;
+}
+
+/* Phones: a full-width button is a 44 px target, as the hero's. */
+@media (max-width: 639px) {
+	.uin-btn-block.uin-btn-xl {
+		height: 44px;
+		padding-inline: 20px;
+	}
+}
+
+/* Checkbox rows on the website: the whole 32 px row is the hit target. Stack them with no gap. */
+.uin-checkbox {
+	position: relative;
+	align-items: flex-start;
+	min-height: 32px;
+	padding-block: 6px;
+}
+.uin-checkbox .uin-checkbox-box {
+	margin-top: 2px;
+}
+
+@media (max-width: 639px) {
+	.kv {
+		grid-template-columns: minmax(0, 1fr);
+		gap: 2px;
+	}
+	.kv dd + dt {
+		margin-top: 10px;
+	}
+	.kv dd {
+		overflow-wrap: anywhere;
+	}
+}
+
+/* The shared permissions table's stacked "Why:" and "Never:" labels need a space after them. */
+.perms .k {
+	margin-right: 0.3em;
+}
+
+/* The shared perforated disc: a plain disc behind the mark keeps the holes clear of its rim. */
+.disc .mark {
+	padding: 10%;
+	border-radius: 50%;
+	background: var(--disc-bg, var(--cl-paper));
+}
+.uin-card {
+	--disc-bg: var(--cl-surface);
 }

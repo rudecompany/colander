@@ -3,21 +3,23 @@
 	import { PLATFORMS, PLATFORM_NAME, type Platform } from '@colander/shared';
 	import type { ItemSummary, QueueItem, ReviewSourceResponse } from '@colander/shared/api';
 	import NativeSelect from '@colander/shared/components/ui/native-select/native-select.svelte';
-	import SegmentedControl from '@colander/shared/components/ui/segmented-control/segmented-control.svelte';
+	import Button from '@colander/shared/components/ui/button/button.svelte';
+	import Tabs from '@colander/shared/components/ui/tabs/tabs.svelte';
 	import Kbd from '@colander/shared/components/ui/kbd/kbd.svelte';
 	import '@colander/shared/components/ui/dialog/dialog.css';
 	import Lock from '@lucide/svelte/icons/lock';
 	import RefreshCw from '@lucide/svelte/icons/refresh-cw';
-	import { ColanderMark } from '@colander/shared';
+	import { PerforatedDisc, PlatformTag, fmtAgo } from '@colander/shared';
+	import AuthCard from '#lib/components/AuthCard.svelte';
 	import { api, errorText } from '#lib/api.ts';
-	import { fmtDateTime } from '#lib/format.ts';
+	import { fmtDateTime } from '@colander/shared';
 	import { loadAccount, session } from '#lib/session.svelte.ts';
 	import DecisionForm, { type Target } from '#lib/components/console/DecisionForm.svelte';
 	import Evidence from '#lib/components/console/Evidence.svelte';
 	import EmailSignIn from '#lib/components/EmailSignIn.svelte';
 	import Loading from '#lib/components/Loading.svelte';
 	import Notice from '#lib/components/Notice.svelte';
-	import VerdictOrNone from '#lib/components/VerdictOrNone.svelte';
+	import { VerdictChip } from '@colander/shared';
 
 	type Kind = 'all' | 'reports' | 'appeals' | 'escalations';
 	const KIND_WORD: Record<QueueItem['kind'], string> = { report: 'Report', appeal: 'Appeal', escalation: 'Escalation' };
@@ -37,7 +39,9 @@
 
 	const account = $derived(session.account);
 	const canReview = $derived(account?.role === 'curator' || account?.role === 'staff');
-	const shown = $derived(platform ? queue.filter((q) => q.platform === platform) : queue);
+	const KIND_OF: Record<Kind, QueueItem['kind'] | null> = { all: null, reports: 'report', appeals: 'appeal', escalations: 'escalation' };
+	const count = (k: Kind) => queue.filter((q) => !KIND_OF[k] || q.kind === KIND_OF[k]).length;
+	const shown = $derived(queue.filter((q) => (!platform || q.platform === platform) && (!KIND_OF[kind] || q.kind === KIND_OF[kind])));
 	const openItem = $derived(queue.find((q) => q.id === openId) ?? null);
 
 	onMount(async () => {
@@ -49,7 +53,7 @@
 		queueStatus = more ? 'more' : 'loading';
 		queueError = '';
 		try {
-			const q = new URLSearchParams({ kind });
+			const q = new URLSearchParams({ kind: 'all' });
 			if (more && cursor) q.set('cursor', cursor);
 			const res = await api<{ items: QueueItem[]; next_cursor: string | null }>(`/v1/review/queue?${q}`);
 			queue = more ? [...queue, ...res.items] : res.items;
@@ -113,10 +117,7 @@
 		}
 	}
 
-	const age = (iso: string) => {
-		const h = Math.max(0, Math.round((Date.now() - Date.parse(iso)) / 3_600_000));
-		return h < 1 ? 'Just now' : h < 48 ? `${h} h ago` : `${Math.round(h / 24)} days ago`;
-	};
+	const age = (iso: string) => fmtAgo(iso);
 </script>
 
 <svelte:window onkeydown={onKey} />
@@ -126,60 +127,51 @@
 	<meta name="robots" content="noindex" />
 </svelte:head>
 
-<div class="wrap wrap-wide console-wrap">
-	<header class="bar">
-		<div class="bar-title">
-			<h1 class="t-title">Review console</h1>
-			{#if account && canReview}
-				<span class="tag">{account.role === 'staff' ? 'Staff' : 'Curator'}{account.display_name ? `, ${account.display_name}` : ''}</span>
-			{/if}
-		</div>
-		{#if canReview}
-			<p class="keys t-caption muted" aria-hidden="true"><Kbd>J</Kbd><Kbd>K</Kbd> move <Kbd>Enter</Kbd> open</p>
-			<p class="sr-only">Keyboard: J and K move through the queue, Enter opens the highlighted item.</p>
-		{/if}
-	</header>
-
-	{#if session.status === 'idle' || session.status === 'loading'}
-		<Loading label="Checking your sign-in" />
-	{:else if !account}
-		<div class="gate card">
-			<h2 class="t-title">Sign in to review</h2>
-			<p class="t-body muted">The console is for curators and staff. Every decision you make here is published in the decision log.</p>
-			<EmailSignIn next="/console" />
-		</div>
-	{:else if !canReview}
-		<div class="gate card">
-			<h2 class="t-title icon-line"><Lock size={16} strokeWidth={1.75} aria-hidden="true" /> For curators and staff</h2>
-			<p class="t-body muted">
-				Your account is a member account. Curators are invited from the community of frequent, accurate taggers. Every
-				decision is public in the <a href="/log">decision log</a>.
+{#if session.status === 'idle' || session.status === 'loading'}
+	<AuthCard eyebrow="Review console" title="Review console"><Loading label="Checking your sign-in" /></AuthCard>
+{:else if !account}
+	<AuthCard eyebrow="Review console" title="Sign in to review" lede="The console is for curators and staff. Every decision you make here is published in the decision log.">
+		<EmailSignIn next="/console" block />
+	</AuthCard>
+{:else if !canReview}
+	<AuthCard eyebrow="Review console" title="Review console">
+		<div class="gate">
+			<h2 class="cl-title icon-line"><Lock size={16} aria-hidden="true" />For curators and staff</h2>
+			<p class="cl-muted">
+				Your account is a member account. Curators are invited from the community of frequent, accurate taggers. Every decision is public in
+				the <a href="/log">decision log</a>.
 			</p>
 		</div>
-	{:else}
-		<div class="console">
+	</AuthCard>
+{:else}
+	<div class="cl-container console-wrap">
+		<header class="bar">
+			<h1 class="cl-title">Review queue</h1>
+			<span class="uin-badge uin-badge-lg">{account.role === 'staff' ? 'Staff' : 'Curator'}{account.display_name ? `, ${account.display_name}` : ''}</span>
+			<p class="keys cl-caption cl-muted" aria-hidden="true"><Kbd>J</Kbd><Kbd>K</Kbd> move <Kbd>Enter</Kbd> open</p>
+			<p class="sr-only">Keyboard: J and K move through the queue, Enter opens the highlighted item.</p>
+		</header>
+
+		<div class="console" class:opened={detail.kind === 'ok'}>
 			<aside class="queue" aria-labelledby="queue-title">
 				<h2 class="sr-only" id="queue-title">Queue</h2>
-				<SegmentedControl
+				<Tabs
+					direction="horizontal"
 					ariaLabel="Queue kind"
-					size="sm"
-					value={kind}
-					onChange={(v) => {
-						kind = v;
-						loadQueue(false);
-					}}
-					options={[
-						{ value: 'all', label: 'All' },
-						{ value: 'reports', label: 'Reports' },
-						{ value: 'appeals', label: 'Appeals' },
-						{ value: 'escalations', label: 'Escalations' }
+					bind:value={kind}
+					onChange={() => (active = 0)}
+					tabs={[
+						{ value: 'all', label: 'All', count: count('all') },
+						{ value: 'reports', label: 'Reports', count: count('reports') },
+						{ value: 'appeals', label: 'Appeals', count: count('appeals') },
+						{ value: 'escalations', label: 'Escalated', count: count('escalations') }
 					]}
 				/>
 				<div class="field">
 					<label class="sr-only" for="queue-platform">Platform</label>
 					<NativeSelect
 						id="queue-platform"
-						size="sm"
+						size="md"
 						value={platform}
 						onchange={(e) => {
 							platform = e.currentTarget.value as Platform | '';
@@ -190,12 +182,12 @@
 				</div>
 
 				{#if queueStatus === 'loading'}
-					<Loading label="Loading the queue" />
+					<Loading />
 				{:else if queueStatus === 'error'}
 					<Notice tone="error" title="The queue could not load"><p>{queueError}</p></Notice>
-					<button type="button" class="uin-btn uin-btn-outline uin-btn-sm" onclick={() => loadQueue(false)}><RefreshCw size={14} strokeWidth={1.75} aria-hidden="true" /> Try again</button>
+					<Button variant="secondary" size="md" onclick={() => loadQueue(false)}><RefreshCw size={16} aria-hidden="true" />Try again</Button>
 				{:else if shown.length === 0}
-					<div class="queue-empty cl-dots"><p>The queue is empty.</p></div>
+					<div class="queue-empty"><PerforatedDisc size={64} /><p>The queue is empty.</p></div>
 				{:else}
 					<ol class="queue-list">
 						{#each shown as q, i (q.id)}
@@ -210,244 +202,224 @@
 									onclick={() => open(q)}
 								>
 									<span class="q-top">
+										<PlatformTag platform={q.platform} />
 										<span class="q-kind">{KIND_WORD[q.kind]}</span>
-										<span class="q-meta">{PLATFORM_NAME[q.platform]} · {age(q.created_at)}</span>
+										{#if q.report_count > 0}<span class="q-meta">{q.report_count} {q.report_count === 1 ? 'report' : 'reports'}</span>{/if}
+										{#if q.large}<span class="uin-badge uin-badge-md">Large source</span>{/if}
+										<span class="cl-figure q-age">{age(q.created_at)}</span>
 									</span>
-									<span class="q-name">{q.source_name ?? q.source_id}</span>
-									<span class="q-summary">{q.summary}</span>
-									<span class="q-chips">
-										<VerdictOrNone verdict={q.verdict} />
-										{#if q.computed_verdict !== q.verdict}<span class="arrow" aria-label="scoring says">to</span><VerdictOrNone verdict={q.computed_verdict} />{/if}
-										{#if q.large}<span class="q-flag"><Lock size={12} strokeWidth={1.75} aria-hidden="true" /> Large</span>{/if}
+									<span class="q-line">
+										<span class="q-name">{q.source_name ?? q.source_id}</span>
+										<VerdictChip verdict={q.verdict} size="sm" />
 									</span>
+									<span class="sr-only">{q.summary}</span>
 								</button>
 							</li>
 						{/each}
 					</ol>
 					{#if cursor}
-						<button type="button" class="uin-btn uin-btn-outline uin-btn-sm more" onclick={() => loadQueue(true)} disabled={queueStatus === 'more'}>Load more</button>
+						<Button variant="secondary" size="md" block onclick={() => loadQueue(true)} loading={queueStatus === 'more'}>Load more</Button>
 					{/if}
 				{/if}
 			</aside>
 
-			<section class="detail" aria-label="Evidence and decision">
-				{#if flash}<div class="flash"><Notice tone="success" title={flash} /></div>{/if}
-				{#if detail.kind === 'idle'}
-					<div class="detail-empty cl-dots">
-						<div>
-							<ColanderMark size={36} />
-							<p class="t-title">Choose an item from the queue</p>
-							<p class="t-body muted">Use J and K to move, and Enter to open. The evidence and the decision form appear here.</p>
+			{#if detail.kind === 'ok'}
+				<section class="detail" aria-label="Evidence">
+					{#if flash}<Notice tone="success" title={flash} />{/if}
+					<Evidence data={detail.data} queueItem={openItem} role={account.role} onDecideItem={decideItem} onChanged={changed} />
+				</section>
+				<aside class="decide uin-card uin-card-md uin-card-pad" aria-label="Decision">
+					<DecisionForm
+						data={detail.data}
+						{target}
+						role={account.role}
+						displayName={account.display_name}
+						onDone={changed}
+						onSourceTarget={() => (target = { kind: 'source' })}
+					/>
+				</aside>
+			{:else}
+				<section class="detail span" aria-label="Evidence and decision">
+					{#if flash}<Notice tone="success" title={flash} />{/if}
+					{#if detail.kind === 'idle'}
+						<div class="detail-empty">
+							<PerforatedDisc size={160} mark={64} />
+							<p class="cl-title">Choose an item from the queue</p>
+							<p class="cl-muted">Use J and K to move, and Enter to open. The evidence and the decision form appear here.</p>
 						</div>
-					</div>
-				{:else if detail.kind === 'loading'}
-					<Loading label="Loading the evidence" />
-				{:else if detail.kind === 'error'}
-					<Notice tone="error" title="The evidence could not load"><p>{detail.message}</p></Notice>
-				{:else}
-					<div class="detail-grid">
-						<Evidence data={detail.data} queueItem={openItem} role={account.role} onDecideItem={decideItem} onChanged={changed} />
-						<div class="decide card">
-							<DecisionForm
-								data={detail.data}
-								{target}
-								role={account.role}
-								displayName={account.display_name}
-								onDone={changed}
-								onSourceTarget={() => (target = { kind: 'source' })}
-							/>
-						</div>
-					</div>
-				{/if}
-			</section>
+					{:else if detail.kind === 'loading'}
+						<Loading />
+					{:else}
+						<Notice tone="error" title="The evidence could not load"><p>{detail.message}</p></Notice>
+					{/if}
+				</section>
+			{/if}
 		</div>
 		{#if openItem}<p class="sr-only" aria-live="polite">Opened {openItem.source_name ?? openItem.source_id}, created {fmtDateTime(openItem.created_at)}</p>{/if}
-	{/if}
-</div>
+	</div>
+{/if}
 
 <style>
 	.console-wrap {
-		padding-top: var(--cl-s5);
+		padding-block: 24px 64px;
 	}
 	.bar {
 		display: flex;
-		align-items: center;
-		justify-content: space-between;
 		flex-wrap: wrap;
-		gap: var(--cl-s2) var(--cl-s4);
-		padding-bottom: var(--cl-s4);
-		margin-bottom: var(--cl-s5);
-		border-bottom: 1px solid var(--cl-border);
-	}
-	.bar-title {
-		display: flex;
 		align-items: center;
-		gap: var(--cl-s3);
+		gap: 8px 12px;
+		padding-bottom: 16px;
+		margin-bottom: 24px;
+		border-bottom: 1px solid var(--cl-border);
 	}
 	.keys {
 		display: flex;
 		align-items: center;
-		gap: var(--cl-s1);
+		gap: 4px;
+		margin-left: auto;
 	}
 	.gate {
 		display: grid;
-		gap: var(--cl-s3);
-		max-width: 520px;
+		gap: 12px;
 	}
 	.console {
 		display: grid;
-		grid-template-columns: 320px minmax(0, 1fr);
-		gap: var(--cl-s5);
+		grid-template-columns: 360px minmax(0, 1fr) 360px;
+		gap: 24px;
 		align-items: start;
 	}
+	.span {
+		grid-column: 2 / -1;
+	}
 	.queue {
-		display: grid;
-		gap: var(--cl-s3);
 		position: sticky;
-		top: 16px;
-		max-height: calc(100vh - 32px);
+		top: 88px;
+		display: grid;
+		gap: 12px;
+		max-height: calc(100vh - 112px);
 		overflow-y: auto;
 		padding: 2px;
 	}
-	.queue :global(.uin-seg) {
-		width: 100%;
-	}
-	.queue :global(.uin-seg-btn) {
-		flex: 1;
-		justify-content: center;
-		padding-inline: 4px;
-	}
 	.queue-list {
-		list-style: none;
 		display: grid;
-		gap: var(--cl-s2);
+		list-style: none;
+		border-top: 1px solid var(--cl-border);
 	}
 	.q {
-		width: 100%;
 		display: grid;
-		gap: var(--cl-s1);
+		align-content: center;
+		gap: 6px;
+		width: 100%;
+		min-height: 64px;
+		padding: 8px 8px;
+		border: 0;
+		border-bottom: 1px solid var(--cl-border);
+		border-radius: 0;
+		background: transparent;
 		text-align: left;
-		padding: var(--cl-s3);
-		border-radius: var(--cl-r-card);
-		border: 1px solid var(--cl-border);
-		background: var(--cl-surface);
 		cursor: pointer;
 		font: var(--cl-body);
-		transition: border-color var(--cl-fast) var(--cl-ease);
+		transition: background-color var(--cl-fast) var(--cl-ease);
 	}
 	.q:hover {
-		border-color: var(--w-control-border);
+		background: color-mix(in srgb, var(--cl-text) 6%, transparent);
 	}
 	.q.active {
-		border-color: var(--cl-text);
+		box-shadow: inset 2px 0 0 var(--cl-text);
 	}
 	.q[aria-current='true'] {
-		border-color: var(--cl-brand);
-		box-shadow: inset 0 0 0 1px var(--cl-brand);
+		background: var(--cl-brand-tint);
+		box-shadow: inset 2px 0 0 var(--cl-brand);
 	}
-	.q-top {
+	.q-top,
+	.q-line {
 		display: flex;
-		justify-content: space-between;
+		align-items: center;
 		gap: 8px;
+		min-width: 0;
+	}
+	/* A busy row (kind, report count, Large source, date) wraps whole words instead of breaking "4 reports". */
+	.q-top {
+		flex-wrap: wrap;
+		row-gap: 4px;
 	}
 	.q-kind {
-		font: 600 12px/16px var(--cl-font);
+		font: var(--cl-chip);
 	}
 	.q-meta {
-		font: var(--cl-caption);
 		color: var(--cl-text-muted);
+		font: var(--cl-caption);
+		white-space: nowrap;
+	}
+	.q-age {
+		margin-left: auto;
+		color: var(--cl-text-muted);
+		white-space: nowrap;
 	}
 	.q-name {
-		font: 600 16px/24px var(--cl-font);
-		overflow-wrap: anywhere;
-	}
-	.q-summary {
-		font: var(--cl-caption);
-		color: var(--cl-text-muted);
-	}
-	.q-chips {
-		display: flex;
-		flex-wrap: wrap;
-		align-items: center;
-		gap: var(--cl-s2);
-		margin-top: var(--cl-s1);
-	}
-	.arrow {
-		font: var(--cl-caption);
-		color: var(--cl-text-muted);
-	}
-	.q-flag {
-		display: inline-flex;
-		align-items: center;
-		gap: 4px;
-		margin-left: auto;
-		font: 600 12px/16px var(--cl-font);
-		color: var(--cl-text-muted);
-	}
-	.more {
-		justify-self: center;
+		flex: 1;
+		min-width: 0;
+		overflow: hidden;
+		font: var(--cl-body-strong);
+		text-overflow: ellipsis;
+		white-space: nowrap;
 	}
 	.queue-empty {
-		min-height: 160px;
 		display: grid;
-		place-items: center;
-		border-radius: var(--cl-r-card);
-	}
-	.queue-empty p {
-		background: var(--cl-paper);
-		padding: var(--cl-s1) var(--cl-s3);
-		font: var(--cl-body);
+		justify-items: center;
+		gap: 12px;
+		padding: 32px 0;
 		color: var(--cl-text-muted);
 	}
 	.detail {
-		min-width: 0;
 		display: grid;
-		gap: var(--cl-s3);
+		gap: 16px;
+		min-width: 0;
 	}
 	.detail-empty {
-		min-height: 420px;
-		display: grid;
-		place-items: center;
-		border-radius: var(--cl-r-card);
-		border: 1px solid var(--cl-border);
-	}
-	.detail-empty > div {
 		display: grid;
 		justify-items: center;
-		gap: var(--cl-s2);
-		max-width: 340px;
-		padding: var(--cl-s5);
-		text-align: center;
-		background: var(--cl-paper);
+		gap: 12px;
+		min-height: 420px;
+		align-content: center;
+		padding: 32px;
+		border: 1px solid var(--cl-border);
 		border-radius: var(--cl-r-card);
+		background: var(--cl-surface);
+		text-align: center;
 	}
-	.detail-grid {
-		display: grid;
-		grid-template-columns: minmax(0, 1fr) 340px;
-		gap: var(--cl-s5);
-		align-items: start;
+	.detail-empty p:last-child {
+		max-width: 340px;
 	}
 	.decide {
 		position: sticky;
-		top: 16px;
-		max-height: calc(100vh - 32px);
+		top: 88px;
+		max-height: calc(100vh - 112px);
 		overflow-y: auto;
 	}
-	@media (max-width: 1180px) {
-		.detail-grid {
-			grid-template-columns: 1fr;
+	@media (max-width: 1199px) {
+		.console {
+			grid-template-columns: 360px minmax(0, 1fr);
+		}
+		.span {
+			grid-column: 2;
 		}
 		.decide {
+			grid-column: 2;
 			position: static;
 			max-height: none;
 		}
 	}
-	@media (max-width: 860px) {
+	@media (max-width: 799px) {
 		.keys {
 			display: none;
 		}
 		.console {
-			grid-template-columns: 1fr;
+			grid-template-columns: minmax(0, 1fr);
+		}
+		.span,
+		.decide {
+			grid-column: 1;
 		}
 		.queue {
 			position: static;

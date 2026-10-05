@@ -1,21 +1,43 @@
-/* Card — see ./card.svelte. */
+/* Card, themed for Colander. See ./card.svelte. */
 
 .uin-card {
-  border: 1px solid var(--uin-line);
-  border-radius: var(--uin-r-md);
-  background: var(--uin-mat-row);
-  color: var(--uin-fg);
+  border: 1px solid var(--cl-border);
+  border-radius: var(--cl-r-card);
+  background: var(--cl-surface);
+  color: var(--cl-text);
 }
-.uin-card-pad {
-  padding: var(--uin-s-3);
+.uin-card-pad.uin-card-md {
+  padding: 16px;
 }
-.uin-card-flat {
-  /* nothing extra */
+.uin-card-pad.uin-card-lg {
+  padding: 24px;
 }
 .uin-card-tinted {
-  background: linear-gradient(
-    180deg,
-    color-mix(in srgb, var(--uin-accent) 5%, transparent) 0%,
-    color-mix(in srgb, var(--uin-bg-panel) 65%, transparent) 100%
-  );
+  background: var(--cl-surface-raised);
+}
+.uin-card-interactive {
+  transition: border-color var(--cl-fast) var(--cl-ease);
+}
+.uin-card-interactive:hover {
+  border-color: var(--cl-border-strong);
+}
+.uin-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 32px;
+  margin-bottom: 12px;
+}
+.uin-card-title {
+  margin: 0;
+  font: var(--cl-body-strong);
+}
+.uin-card-lg .uin-card-title {
+  font: var(--cl-title);
+}
+.uin-card-aside {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }

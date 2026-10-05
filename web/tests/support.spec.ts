@@ -1,8 +1,8 @@
 import { test, expect } from './fixtures.ts';
 import { mockApi } from './mocks.ts';
 
-test('a monthly donation with credit goes to the hosted checkout', async ({ page }) => {
-	const calls = await mockApi(page, { 'POST /v1/billing/donate': { json: { url: 'http://localhost:4173/support/thanks' } } });
+test('a monthly donation with credit goes to the hosted checkout', async ({ page, baseURL }) => {
+	const calls = await mockApi(page, { 'POST /v1/billing/donate': { json: { url: `${baseURL}/support/thanks` } } });
 	await page.goto('/support');
 	await expect(page.getByRole('radio', { name: 'Monthly' })).toHaveAttribute('aria-checked', 'true');
 	await page.getByLabel('Name for the supporters page').fill('  Ana  ');
@@ -27,8 +27,10 @@ test('a custom one-time amount without credit, and the limits', async ({ page })
 	expect(calls.filter((c) => c.path === '/v1/billing/donate')).toHaveLength(0);
 
 	await page.getByLabel('Amount in US dollars').fill('12.50');
-	await page.getByRole('button', { name: 'Give $12.50' }).click();
+	// With the keyboard, the button keeps focus while checkout starts and after it fails.
+	await page.getByRole('button', { name: 'Give $12.50' }).press('Enter');
 	await expect(page.getByText('Donations are not open yet')).toBeVisible();
+	await expect(page.getByRole('button', { name: 'Give $12.50' })).toBeFocused();
 	expect(calls.find((c) => c.path === '/v1/billing/donate')!.body).toEqual({ amount_cents: 1250, recurring: false });
 });
 

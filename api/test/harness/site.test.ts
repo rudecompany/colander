@@ -51,15 +51,19 @@ describe('pages', () => {
 		expect(res.headers.get('location')).toBe('/definition');
 	});
 
-	it.each(['/s/yt/@x', '/s/tt/@someone', '/appeal/yt/@x', '/appeal/status/apl_123'])('%s gets the SPA shell with status 200', async (path) => {
+	it.each(['/s/yt/@x', '/s/tt/@someone', '/s/ig/someone', '/s/fb/100064', '/appeal/yt/@x', '/appeal/fb/100064', '/appeal/status/apl_123'])('%s gets the SPA shell with status 200', async (path) => {
 		const res = await server.fetch(path, { redirect: 'manual' });
 		expect(res.status).toBe(200);
 		expect(await res.text()).toBe(page('200.html'));
 		expectSecurityHeaders(res);
 	});
 
-	it('answers unknown paths with the 404 page and status 404', async () => {
-		const res = await server.fetch('/no-such-page');
+	// Only the client-rendered routes get the shell: an unknown platform or a wrong segment count is a
+	// real 404, not a soft one. Static Assets first answers an unmatched path holding "@" with a 307 to
+	// its percent-encoded form, which is then the 404.
+	// The shells themselves are files, not pages: /200 and /404 are not found either.
+	it.each(['/no-such-page', '/s/xx/@x', '/s/xx/x', '/s/yt', '/s/yt/@x/extra', '/appeal/yt/@x/extra', '/appeal/status', '/appeal/xx/@x', '/200', '/404'])('answers %s with the 404 page and status 404', async (path) => {
+		const res = await server.fetch(path);
 		expect(res.status).toBe(404);
 		expect(await res.text()).toBe(page('404.html'));
 		expect(page('404.html')).toBe(page('200.html'));

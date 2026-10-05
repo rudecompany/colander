@@ -1,5 +1,5 @@
 <!--
-@component Popover — anchored floating panel.
+@component Popover - anchored floating panel.
 
 Built on bits-ui's `Popover` primitive: positioning, focus management,
 ESC handling, and click-outside dismissal come from the headless layer.
@@ -30,7 +30,7 @@ CSS lives in `./popover.css`.
     sideOffset?: number;
     class?: string;
     /**
-     * Trigger snippet — receives bits-ui's wiring props you must spread
+     * Trigger snippet - receives bits-ui's wiring props you must spread
      * onto your own button element. This avoids nesting a `<button>`
      * inside bits-ui's default `<button>`.
      *

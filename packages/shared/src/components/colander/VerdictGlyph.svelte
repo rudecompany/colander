@@ -1,5 +1,7 @@
 <!--
-@component VerdictGlyph: the verdict's own shape, colored by currentColor. Decorative; always pair with the verdict word.
+@component VerdictGlyph: the verdict's own shape in currentColor. Decorative; always beside the word.
+12 in chips, 16 in rows, 20 in the evidence card header, 56 in the website specimen strip,
+32 in mobile specimen rows. Monochrome (the text color) outside chips.
 -->
 <script lang="ts">
 	import { GLYPHS, GLYPH_VIEWBOX } from '../../glyphs';
@@ -17,10 +19,3 @@
 		{/if}
 	{/each}
 </svg>
-
-<style>
-	.cl-glyph {
-		flex: none;
-		display: block;
-	}
-</style>

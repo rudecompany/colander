@@ -1,60 +1,94 @@
-<!-- @component Appearance: larger chips with plain-language words, for readers who want them. -->
+<!-- @component Appearance: larger plain-language chips, a Tag button that is always in view, and a notice when a swipe feed skips a hidden video. -->
 <script lang="ts">
-	import { VerdictChip } from '@colander/shared';
+	import { InPage, PageHeader, SettingRow } from '@colander/shared';
+	import { DEMO_THUMBS_NOTE } from '@colander/shared/copy';
+	import { chip, hyper, thumbSvg, THUMB_CSS, type InpageContext } from '@colander/shared/inpage';
+	import Card from '@colander/shared/components/ui/card/card.svelte';
 	import Switch from '@colander/shared/components/ui/switch/switch.svelte';
-	import { VERDICTS } from '@colander/shared/verdicts';
 	import { K, withDefaults, type Settings } from '../../lib/settings';
-	import Card from '../../ui/Card.svelte';
-	import Section from '../../ui/Section.svelte';
 	import { send, stored } from '../../ui/store.svelte';
 
 	const settingsStore = stored<Partial<Settings> | undefined>(K.settings, undefined);
 	const settings = $derived(withDefaults(settingsStore.value));
+
+	// The preview is drawn by the same builders the extension uses on YouTube, TikTok, Instagram and Facebook.
+	const PREVIEW_CSS =
+		THUMB_CSS +
+		`.pv{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;font:var(--cl-caption)}
+		.pv figure{margin:0;display:grid;gap:8px}
+		.th{position:relative;aspect-ratio:16/9;overflow:hidden;border-radius:10px}
+		.th>svg{width:100%;height:100%}
+		.on{position:absolute;top:8px;left:8px}
+		figcaption{display:flex;align-items:center;gap:8px;min-height:24px;color:var(--cl-text);font:var(--cl-body-strong)}
+		.cur{display:inline-flex;align-items:center;height:20px;padding:0 8px;border:1px solid var(--cl-border-strong);border-radius:var(--cl-r-full);font:var(--cl-chip)}`;
+
+	const preview = (plain: boolean) => (ctx: InpageContext) => {
+		const h = hyper(ctx.doc);
+		const fig = (isPlain: boolean, label: string) =>
+			h(
+				'figure',
+				{},
+				h('div', { class: 'th' }, thumbSvg(ctx.doc, 'tide-pool'), h('div', { class: 'on' }, chip(ctx, { verdict: 'ai_made', plain: isPlain }, { tone: 'ink' }))),
+				// Both captions in one style; the setting in use says so in words.
+				h('figcaption', {}, label, isPlain === plain ? h('span', { class: 'cur' }, 'Current') : null)
+			);
+		return h('div', { class: 'pv' }, fig(false, 'Default'), fig(true, 'Larger, plain-language'));
+	};
 </script>
 
-<Section id="appearance" title="Appearance" description="How labels look on YouTube, TikTok, Instagram and Facebook.">
+<PageHeader variant="app" eyebrow="Options" title="Appearance" lede="How labels and notices look on YouTube, TikTok, Instagram and Facebook." />
+
+<div class="cards">
 	<Card>
-		<div class="row">
-			<div>
-				<p id="plain-label" class="strong">Larger, plain-language chips</p>
-				<p class="muted t-caption">Bigger labels that spell out what each verdict means. Good for anyone who finds the short words unclear.</p>
+		<SettingRow title="Larger, plain-language chips" description="Bigger labels that spell out what each verdict means, for anyone who finds the short words unclear.">
+			{#snippet control({ labelledby, describedby })}
+				<Switch checked={settings.plainChips} aria-labelledby={labelledby} aria-describedby={describedby} onCheckedChange={(v) => send({ type: 'settings', patch: { plainChips: v } })} />
+			{/snippet}
+		</SettingRow>
+		<div class="preview">
+			<div role="img" aria-label="Preview: an AI-made chip on a thumbnail, in the default size and in the larger, plain-language size. {settings.plainChips ? 'The larger size' : 'The default size'} is in use.">
+				<InPage kind="preview" css={PREVIEW_CSS} build={preview(settings.plainChips)} />
 			</div>
-			<Switch checked={settings.plainChips} aria-labelledby="plain-label" onCheckedChange={(v) => send({ type: 'settings', patch: { plainChips: v } })} />
+			<p class="caption">{DEMO_THUMBS_NOTE}</p>
 		</div>
-		<div class="preview" aria-label="Preview">
-			<p class="t-caption muted">Preview on a thumbnail</p>
-			<div class="media">
-				{#each VERDICTS.filter((v) => v !== 'clear') as v (v)}
-					<VerdictChip verdict={v} tone="ink" plain={settings.plainChips} size={settings.plainChips ? 'lg' : 'md'} />
-				{/each}
-			</div>
-		</div>
+		<SettingRow title="Always show the Tag button" description="Off, the Tag button appears when you point at a card or move to it with the keyboard. It always shows in swipe feeds.">
+			{#snippet control({ labelledby, describedby })}
+				<Switch checked={settings.alwaysTag} aria-labelledby={labelledby} aria-describedby={describedby} onCheckedChange={(v) => send({ type: 'settings', patch: { alwaysTag: v } })} />
+			{/snippet}
+		</SettingRow>
+		<SettingRow
+			title="Say when a swipe feed skips a video"
+			description="Off, Shorts, TikTok and Reels move past hidden videos without a word, and the popup lists them. On, a short notice says what was skipped, with Undo and Why."
+		>
+			{#snippet control({ labelledby, describedby })}
+				<Switch checked={settings.skipNotice} aria-labelledby={labelledby} aria-describedby={describedby} onCheckedChange={(v) => send({ type: 'settings', patch: { skipNotice: v } })} />
+			{/snippet}
+		</SettingRow>
 	</Card>
-</Section>
+	<p class="caption">Colander follows your system's light or dark setting.</p>
+</div>
 
 <style>
-	.row {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		gap: 16px;
+	.cards {
+		display: grid;
+		grid-template-columns: minmax(0, 1fr);
+		gap: 24px;
+		margin-top: 32px;
 	}
-	.strong {
-		font-weight: 600;
+	.cards > :global(.uin-card) {
+		padding-block: 0;
 	}
 	.preview {
-		display: flex;
-		flex-direction: column;
-		gap: 8px;
-		padding-top: 12px;
-		border-top: 1px solid var(--cl-border);
+		display: grid;
+		gap: 12px;
+		padding: 4px 0 16px;
+		border-bottom: 1px solid var(--cl-border);
 	}
-	.media {
-		display: flex;
-		flex-wrap: wrap;
-		gap: 8px;
-		padding: 24px;
-		border-radius: var(--cl-r-chip);
-		background: linear-gradient(135deg, #8d6e63, #455a64);
+	.caption {
+		color: var(--cl-text-muted);
+		font: var(--cl-caption);
+	}
+	.cards > .caption {
+		margin-top: -12px;
 	}
 </style>

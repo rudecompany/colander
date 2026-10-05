@@ -28,6 +28,8 @@ test('staff move through the queue by keyboard, read the evidence and write a de
 	await expect(page.getByRole('heading', { level: 2, name: 'History Bites 24/7' })).toBeVisible();
 	await expect(page.getByText('6 slop tags from 9 installs, a share of 0.67. Consensus needs 0.7.')).toBeVisible();
 	await expect(page.getByText('Not met')).toBeVisible();
+	// The status keeps its 14 px icon when the layer name wraps beside it.
+	expect(await page.locator('.status').filter({ hasText: 'Not met' }).locator('svg').evaluate((s) => s.getBoundingClientRect().width)).toBe(14);
 	await expect(page.getByRole('link', { name: /7421983300112233445/ }).first()).toHaveAttribute('href', 'https://www.tiktok.com/@historybites247/video/7421983300112233445');
 
 	await page.locator('label.verdict-option').filter({ has: page.getByRole('radio', { name: 'Slop', exact: true }) }).click();
@@ -137,3 +139,16 @@ test('members are told the console is for curators and staff', async ({ page }) 
 	await page.goto('/console');
 	await expect(page.getByRole('heading', { name: 'For curators and staff' })).toBeVisible();
 });
+
+// Between the tablet and wide layouts the queue keeps room for all 4 kind tabs, counts included.
+for (const width of [800, 1024, 1199]) {
+	test(`the queue tabs fit their column at ${width} px`, async ({ page }) => {
+		await page.setViewportSize({ width, height: 900 });
+		await mockApi(page, review(STAFF));
+		await page.goto('/console');
+		const tabs = page.getByRole('tablist', { name: 'Queue kind' });
+		await expect(tabs.getByRole('tab', { name: /Escalated/ })).toBeVisible();
+		const { scroll, client } = await tabs.evaluate((el) => ({ scroll: el.scrollWidth, client: el.clientWidth }));
+		expect(scroll).toBeLessThanOrEqual(client);
+	});
+}

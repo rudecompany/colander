@@ -27,8 +27,8 @@ appeal in review (403 staff_required), and Slop or Likely slop needs AI evidence
 	import Textarea from '@colander/shared/components/ui/textarea/textarea.svelte';
 	import Lock from '@lucide/svelte/icons/lock';
 	import { api, ApiError, errorText } from '#lib/api.ts';
-	import { LAYER_KEYS, LAYER_SIGNALS, LAYER_WORD } from '#lib/layers.ts';
-	import LogEntryView from '../LogEntryView.svelte';
+	import { LAYER_KEYS, LAYER_SIGNALS, LAYER_WORD } from '@colander/shared';
+	import { LogRow } from '@colander/shared';
 	import Notice from '../Notice.svelte';
 
 	let {
@@ -166,10 +166,10 @@ appeal in review (403 staff_required), and Slop or Likely slop needs AI evidence
 
 <form class="decision" onsubmit={review} novalidate aria-labelledby="decision-title">
 	<div class="head">
-		<h2 class="t-title" id="decision-title">Decision</h2>
-		<p class="t-body muted">
+		<h2 class="cl-title" id="decision-title">Decision</h2>
+		<p class="cl-body cl-muted">
 			{#if target.kind === 'item'}
-				For item <span class="mono">{target.itemId}</span>.
+				For item <span class="cl-figure id">{target.itemId}</span>.
 				<button type="button" class="linkish" onclick={onSourceTarget}>Decide the source instead</button>
 			{:else}
 				For the whole source.
@@ -191,7 +191,7 @@ appeal in review (403 staff_required), and Slop or Likely slop needs AI evidence
 				<label class="verdict-option" class:on={verdict === o.value} class:locked>
 					<input type="radio" name="decision-verdict" value={o.value} bind:group={verdict} disabled={locked} />
 					{#if o.value === 'none'}
-						<span class="chip-none">No verdict</span>
+						<span class="uin-badge uin-badge-md">No verdict</span>
 					{:else}
 						<VerdictChip verdict={o.value} />
 					{/if}
@@ -257,7 +257,7 @@ appeal in review (403 staff_required), and Slop or Likely slop needs AI evidence
 			{#if role === 'staff'}
 				<Checkbox label="Large audience. A Slop verdict on it always needs staff." bind:checked={large} />
 			{:else}
-				<p class="t-body muted icon-line"><Lock size={14} strokeWidth={1.75} aria-hidden="true" /> Only staff can mark a source as large.</p>
+				<p class="cl-body cl-muted icon-line"><Lock size={16} aria-hidden="true" /> Only staff can mark a source as large.</p>
 			{/if}
 		</div>
 	{/if}
@@ -267,22 +267,25 @@ appeal in review (403 staff_required), and Slop or Likely slop needs AI evidence
 		<Notice tone="error" title={refused.title}><p>{refused.message}</p></Notice>
 	{/if}
 
-	<button type="submit" class="uin-btn uin-btn-primary btn-lg submit" disabled={!!needsStaff}>Review decision</button>
+	<button type="submit" class="uin-btn uin-btn-primary uin-btn-xl uin-btn-block submit" disabled={!!needsStaff}>Review decision</button>
 </form>
 
 <Dialog bind:open={confirming} title="Write this to the public log?" description="Anyone can read this entry. It takes effect at the next list publication, within a minute." size="lg">
 	<div class="preview">
-		<LogEntryView entry={preview} headingLevel={3} />
+		<LogRow entry={preview} />
 	</div>
 	{#snippet footer()}
-		<button type="button" class="uin-btn uin-btn-ghost uin-btn-md" onclick={() => (confirming = false)}>Go back</button>
-		<button type="button" class="uin-btn uin-btn-primary uin-btn-md" onclick={write} disabled={posting}>
+		<button type="button" class="uin-btn uin-btn-ghost uin-btn-xl" onclick={() => (confirming = false)}>Go back</button>
+		<button type="button" class="uin-btn uin-btn-primary uin-btn-xl" onclick={write} disabled={posting}>
 			{posting ? 'Writing' : 'Write to the log'}
 		</button>
 	{/snippet}
 </Dialog>
 
 <style>
+	.id {
+		overflow-wrap: anywhere;
+	}
 	.decision {
 		display: grid;
 		gap: var(--cl-s4);
@@ -335,13 +338,18 @@ appeal in review (403 staff_required), and Slop or Likely slop needs AI evidence
 		opacity: 0;
 		pointer-events: none;
 	}
-	.verdict-option:has(input:focus-visible) {
-		outline: 2px solid var(--cl-brand);
-		outline-offset: 2px;
-	}
 	.verdict-option.on {
 		border-color: var(--cl-brand);
 		box-shadow: inset 0 0 0 1px var(--cl-brand);
+	}
+	/* The one focus ring, drawn on the tile for its hidden radio. */
+	.verdict-option:has(input:focus-visible) {
+		outline: 2px solid transparent;
+		outline-offset: 2px;
+		box-shadow: var(--uin-focus-ring);
+	}
+	.verdict-option.on:has(input:focus-visible) {
+		box-shadow: inset 0 0 0 1px var(--cl-brand), var(--uin-focus-ring);
 	}
 	.verdict-option.locked {
 		opacity: 0.55;

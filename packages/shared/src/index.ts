@@ -1,6 +1,44 @@
+// @colander/shared: the one source for tokens, copy, formats, glyphs and the components both the
+// website and the extension render. In-page builders live in '@colander/shared/inpage'.
 export * from './verdicts';
 export * from './glyphs';
+export * from './copy';
+export * from './layers';
+export * from './utils/format';
 export type * from './api';
+
+export { default as BrowserFrame } from './components/colander/BrowserFrame.svelte';
+export { default as ColanderMark } from './components/colander/ColanderMark.svelte';
+export { default as CopyButton } from './components/colander/CopyButton.svelte';
+export { default as DotField } from './components/colander/DotField.svelte';
+export { default as DotMeter } from './components/colander/DotMeter.svelte';
+export { default as DotUnitChart } from './components/colander/DotUnitChart.svelte';
+export { default as EvidenceCard } from './components/colander/EvidenceCard.svelte';
+export { default as Eyebrow } from './components/colander/Eyebrow.svelte';
+export { default as FeedDemo } from './components/colander/FeedDemo.svelte';
+export { default as InPage } from './components/colander/InPage.svelte';
+export { default as Lifecycle, type LifecycleStep } from './components/colander/Lifecycle.svelte';
+export { default as LiveBadge } from './components/colander/LiveBadge.svelte';
+export { default as LogRow } from './components/colander/LogRow.svelte';
+export { default as Menu, type MenuItem } from './components/colander/Menu.svelte';
+export { default as PageHeader } from './components/colander/PageHeader.svelte';
+export { default as PerforatedDisc } from './components/colander/PerforatedDisc.svelte';
+export { default as PerforationRow } from './components/colander/PerforationRow.svelte';
+export { default as PermissionsTable } from './components/colander/PermissionsTable.svelte';
+export { default as PlatformTag } from './components/colander/PlatformTag.svelte';
+export { default as PlusTag } from './components/colander/PlusTag.svelte';
+export { default as PopupRows } from './components/colander/PopupRows.svelte';
+export { default as PopupView, type PopupActions, type PopupRow, type PopupState } from './components/colander/PopupView.svelte';
+export { default as PriceCard } from './components/colander/PriceCard.svelte';
+export { default as PrivacyFacts } from './components/colander/PrivacyFacts.svelte';
+export { default as SettingRow } from './components/colander/SettingRow.svelte';
+export { default as StatCell } from './components/colander/StatCell.svelte';
+export { default as StrictnessControl } from './components/colander/StrictnessControl.svelte';
+export { default as StrictnessTable } from './components/colander/StrictnessTable.svelte';
+export { default as TagTally } from './components/colander/TagTally.svelte';
+export { default as Thumb } from './components/colander/Thumb.svelte';
+export { default as Toast } from './components/colander/Toast.svelte';
 export { default as VerdictChip } from './components/colander/VerdictChip.svelte';
 export { default as VerdictGlyph } from './components/colander/VerdictGlyph.svelte';
-export { default as ColanderMark } from './components/colander/ColanderMark.svelte';
+export { default as VerdictTally } from './components/colander/VerdictTally.svelte';
+export { default as VerdictTransition } from './components/colander/VerdictTransition.svelte';

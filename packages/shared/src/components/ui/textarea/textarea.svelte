@@ -1,5 +1,5 @@
 <!--
-@component Textarea — multi-line text input.
+@component Textarea - multi-line text input.
 
 Mirrors `Input`'s look but renders a `<textarea>`. `autoResize` grows
 the box vertically to fit the content, capped by `maxRows` lines.

@@ -1,5 +1,5 @@
 <!--
-@component Field — labeled form-field wrapper.
+@component Field - labeled form-field wrapper.
 
 Lays out a `Label` + form control + optional description + optional
 error message in a token-spaced vertical stack, and wires up the ARIA
@@ -29,6 +29,7 @@ CSS lives in `./field.css`.
   import type {Snippet} from 'svelte';
   import type {HTMLAttributes} from 'svelte/elements';
   import {cn} from '../../../utils/cn';
+  import CircleAlert from '@lucide/svelte/icons/circle-alert';
   import Label from '../label/label.svelte';
 
   type ChildArgs = {
@@ -82,6 +83,6 @@ CSS lives in `./field.css`.
     <p id={descId} class="uin-field-desc">{description}</p>
   {/if}
   {#if error}
-    <p id={errId} class="uin-field-error" role="alert">{error}</p>
+    <p id={errId} class="uin-field-error" role="alert"><CircleAlert size={16} aria-hidden="true" /><span>{error}</span></p>
   {/if}
 </div>

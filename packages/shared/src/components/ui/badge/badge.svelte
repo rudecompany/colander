@@ -1,11 +1,10 @@
 <!--
-@component Badge — small label for status / count / tag.
+@component Badge: a non-verdict label, such as Default, Recommended, Plus, Your rule, Free,
+"14 days free, no card" or Large source. Always an outline pill: never brand-filled, never a
+verdict color. 20 tall (`md`, the extension) or 24 (`lg`, the website). Inside `.cl-band` the
+outline takes the band's hairline.
 
-Variants: `neutral` (default), `accent`, `success`, `warn`, `danger`,
-`outline`.
-Sizes: `sm` (for inline counts inside a button) and `md` (default).
-
-Renders a `<span>`; pass any text/inline content as children.
+`variant` is kept for older callers; every variant renders the same outline.
 
 CSS lives in `./badge.css`.
 -->
@@ -14,7 +13,7 @@ CSS lives in `./badge.css`.
   import {cn} from '../../../utils/cn';
 
   type Variant = 'neutral' | 'accent' | 'success' | 'warn' | 'danger' | 'outline';
-  type Size = 'sm' | 'md';
+  type Size = 'sm' | 'md' | 'lg';
 
   type Props = {
     variant?: Variant;
@@ -23,7 +22,7 @@ CSS lives in `./badge.css`.
     children: Snippet;
   };
 
-  let {variant = 'neutral', size = 'md', class: className, children}: Props = $props();
+  let {variant = 'outline', size = 'md', class: className, children}: Props = $props();
 </script>
 
 <span class={cn('uin-badge', `uin-badge-${variant}`, `uin-badge-${size}`, className)}>

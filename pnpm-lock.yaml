@@ -112,13 +112,22 @@ importers:
       '@fontsource-variable/atkinson-hyperlegible-next':
         specifier: ^5.3.0
         version: 5.3.0
+      '@lucide/svelte':
+        specifier: ^1.51.0
+        version: 1.51.0(svelte@5.57.1)
       bits-ui:
         specifier: ^2.0.0
         version: 2.19.5(@internationalized/date@3.12.4)(svelte@5.57.1)
+      lucide:
+        specifier: ^1.51.0
+        version: 1.51.0
     devDependencies:
       '@types/node':
         specifier: ^24.19.1
         version: 24.19.1
+      linkedom:
+        specifier: ^0.18.13
+        version: 0.18.13
       svelte:
         specifier: ^5.57.1
         version: 5.57.1
@@ -159,6 +168,9 @@ importers:
       '@types/node':
         specifier: ^24.19.1
         version: 24.19.1
+      linkedom:
+        specifier: ^0.18.13
+        version: 0.18.13
       svelte:
         specifier: ^5.57.1
         version: 5.57.1

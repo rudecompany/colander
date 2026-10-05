@@ -14,7 +14,7 @@
 </script>
 
 <div class="notice notice-{tone}" role={tone === 'error' ? 'alert' : 'status'}>
-	<span class="icon"><Icon size={16} strokeWidth={1.75} aria-hidden="true" /></span>
+	<span class="icon"><Icon size={16} aria-hidden="true" /></span>
 	<div class="content">
 		{#if title}<p class="title">{title}</p>{/if}
 		{#if children}<div class="body">{@render children()}</div>{/if}
@@ -28,12 +28,11 @@
 		padding: var(--cl-s3) var(--cl-s4);
 		border-radius: var(--cl-r-card);
 		border: 1px solid var(--cl-border);
-		background: var(--cl-surface-raised);
+		background: var(--cl-surface);
 		font: var(--cl-body);
 	}
 	.notice-error {
-		border-color: var(--w-control-border);
-		background: var(--cl-surface);
+		border-color: var(--cl-border-strong);
 	}
 	.icon {
 		flex: none;

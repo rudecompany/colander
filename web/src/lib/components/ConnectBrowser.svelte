@@ -4,8 +4,9 @@
 	import Plug from '@lucide/svelte/icons/plug';
 	import Plus from '@lucide/svelte/icons/plus';
 	import RefreshCw from '@lucide/svelte/icons/refresh-cw';
+	import Button from '@colander/shared/components/ui/button/button.svelte';
 	import { api, ApiError } from '#lib/api.ts';
-	import { sendToExtension, type ExtensionState } from '#lib/extension.ts';
+	import { ExtensionRefused, sendToExtension, type ExtensionState } from '#lib/extension.ts';
 	import Loading from './Loading.svelte';
 	import Notice from './Notice.svelte';
 
@@ -27,7 +28,9 @@
 						? e.code === 'no_plan'
 							? 'There is no active plan on this account to connect.'
 							: e.message
-						: 'Colander did not answer. Make sure it is installed and turned on in this browser, then try again.'
+						: e instanceof ExtensionRefused
+							? 'Colander could not verify this plan. Update Colander, then try again.'
+							: 'Colander did not answer. Make sure it is installed and turned on in this browser, then try again.'
 			};
 		}
 	}
@@ -44,19 +47,19 @@
 		<p>Add it from the Chrome Web Store, then come back to this page.</p>
 	</Notice>
 	<div class="row">
-		<a class="uin-btn uin-btn-primary uin-btn-md" href={PUBLIC_STORE_URL}><Plus size={16} strokeWidth={1.75} aria-hidden="true" /> Add to Chrome</a>
-		<button type="button" class="uin-btn uin-btn-outline uin-btn-md" onclick={onrecheck}><RefreshCw size={16} strokeWidth={1.75} aria-hidden="true" /> Check again</button>
+		<Button variant="primary" size="xl" href={PUBLIC_STORE_URL}><Plus size={16} aria-hidden="true" />Add to Chrome</Button>
+		<Button variant="secondary" size="xl" onclick={onrecheck}><RefreshCw size={16} aria-hidden="true" />Check again</Button>
 	</div>
 {:else}
-	<p class="t-body">Colander {ext.version} is installed here.</p>
+	<p class="cl-body">Colander {ext.version} is installed here.</p>
 	{#if canConnect}
 		<div class="row">
-			<button type="button" class="uin-btn uin-btn-primary uin-btn-md" onclick={connectBrowser} disabled={connect.kind === 'working'}>
-				<Plug size={16} strokeWidth={1.75} aria-hidden="true" /> {connect.kind === 'working' ? 'Connecting' : 'Connect this browser'}
-			</button>
+			<Button variant="primary" size="xl" onclick={connectBrowser} disabled={connect.kind === 'working'}>
+				<Plug size={16} aria-hidden="true" />{connect.kind === 'working' ? 'Connecting' : 'Connect this browser'}
+			</Button>
 		</div>
 	{:else}
-		<p class="t-body muted">Once you have Plus, connect this browser here.</p>
+		<p class="cl-body cl-muted">Once you have Plus, connect this browser here.</p>
 	{/if}
 {/if}
 {#if connect.kind === 'done'}<Notice tone="success" title={connect.message} />{/if}

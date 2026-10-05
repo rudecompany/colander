@@ -19,7 +19,10 @@
 		"html_handling": "auto-trailing-slash",
 		// Unknown paths get build/404.html (a copy of the SPA shell) with status 404.
 		"not_found_handling": "404-page",
-		"run_worker_first": ["/v1/*", "/ops/*", "/healthz", "/__dev/*"]
+		// /200 and /404 are the SPA shells, which html_handling would serve as pages with status 200;
+		// the Worker answers them as not found. The _redirects rewrites to /200 stay inside Static
+		// Assets, so source and appeal pages still get the shell.
+		"run_worker_first": ["/v1/*", "/ops/*", "/healthz", "/__dev/*", "/200", "/404"]
 	},
 	// Workers Cache in front of the list and public GETs. Responses carry explicit headers (src/http.ts).
 	"cache": { "enabled": true, "cross_version_cache": true },

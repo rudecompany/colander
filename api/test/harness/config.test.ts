@@ -44,7 +44,7 @@ describe.each([
 		expect(c.preview_urls).toBe(false);
 		expect(c.routes).toEqual([expect.objectContaining({ custom_domain: true })]);
 		expect(c.cache).toEqual({ enabled: true, cross_version_cache: true });
-		expect(c.assets?.run_worker_first).toEqual(['/v1/*', '/ops/*', '/healthz', '/__dev/*']);
+		expect(c.assets?.run_worker_first).toEqual(['/v1/*', '/ops/*', '/healthz', '/__dev/*', '/200', '/404']);
 	});
 });
 

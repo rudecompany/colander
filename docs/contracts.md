@@ -284,6 +284,7 @@ A report's status follows its source: it stays `under_review` until a reviewer d
     "slop_type": "filler",
     "tests": ["low_effort", "mass_produced"],
     "large": false,
+    "audience_known": false,
     "imported": false,
     "attribution": null,
     "appeal_open": false,
@@ -303,6 +304,8 @@ A report's status follows its source: it stays `under_review` until a reviewer d
 
 `verdict` is `null` when the source is known but not rated. Fields without data are `null`.
 A lookup by any alias returns the same source.
+`audience_known` is `true` once staff have recorded the source's size (the `large` decision field, 6.7), or, only with `YOUTUBE_DERIVED_USE` (9.7), when the YouTube Data API reported a subscriber count; `large` is then the recorded answer.
+While it is `false`, the size is not known and `large` is `false`.
 
 Public pages never name a data source, and never show YouTube Data API data:
 - `imported` is always `false` and `attribution` always `null`. Both stay in the wire format for older clients and are deprecated. Seed lists are review leads only (9.3), so nothing public depends on them. The review API fills both in for reviewers (6.7).
@@ -460,6 +463,8 @@ The website finds the extension by its ID (build env `PUBLIC_EXTENSION_ID`) and 
 | `{"type": "colander:ping"}` | `{"ok": true, "version": "1.0.0"}` |
 | `{"type": "colander:plan-token", "token": "..."}` | `{"ok": true}` after the extension verifies and stores the token |
 | `{"type": "colander:reviewer-token", "token": "..."}` | `{"ok": true}`; the side panel can now use the review API |
+
+A message the extension refuses answers `{"ok": false, "error": "<code>"}`, such as `invalid_token`, and the website shows that as an error, never as connected.
 
 The dev build uses a fixed manifest `key` so the extension ID is stable across machines.
 

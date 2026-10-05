@@ -1,34 +1,18 @@
 <!--
-@component The toolbar popup: pause, strictness, counts, what was acted on in this page with
-Show, Always allow and Not slop beside each (P0-12), Report this source, and the support card.
+@component The toolbar popup: the shared PopupView, fed from storage and the open page. The
+website hero renders the same component, so the two cannot drift. 360 wide, never over 600 tall.
 -->
 <script lang="ts">
-	import { ColanderMark, VerdictGlyph } from '@colander/shared';
-	import Button from '@colander/shared/components/ui/button/button.svelte';
-	import SegmentedControl from '@colander/shared/components/ui/segmented-control/segmented-control.svelte';
-	import Switch from '@colander/shared/components/ui/switch/switch.svelte';
-	import {
-		PLATFORM_NAME,
-		SOURCE_NOUN,
-		STRICTNESS,
-		STRICTNESS_HINT,
-		STRICTNESS_WORD,
-		VERDICT_WORD,
-		type Platform,
-		type Strictness
-	} from '@colander/shared/verdicts';
-	import Flag from '@lucide/svelte/icons/flag';
-	import Heart from '@lucide/svelte/icons/heart';
-	import Settings2 from '@lucide/svelte/icons/settings-2';
-	import SlidersHorizontal from '@lucide/svelte/icons/sliders-horizontal';
-	import X from '@lucide/svelte/icons/x';
-	import RefreshCw from '@lucide/svelte/icons/refresh-cw';
+	import { PopupView, type PopupActions, type PopupRow, type PopupState } from '@colander/shared';
+	import { ITEM_NOUN, PLATFORM_DOMAIN } from '@colander/shared/copy';
+	import { sourcePath } from '@colander/shared/format';
+	import { PLATFORM_NAME, STRICTNESS_WORD, type Platform, type Strictness } from '@colander/shared/verdicts';
 	import { SITE } from '../../lib/env';
 	import { targetKey } from '@colander/shared/ids';
 	import type { PageAction, PageState, ToPage } from '../../lib/messages';
 	import { ORIGINS } from '../../lib/platforms';
 	import { dayKey, isPlus, K, needsAttention, withDefaults, DEFAULT_STATUS, type Entitlement, type Settings, type Stats, type Status } from '../../lib/settings';
-	import { fmtNum, send, stored } from '../../ui/store.svelte';
+	import { send, stored } from '../../ui/store.svelte';
 
 	type CardTiming = { shownAt?: number; dismissedAt?: number };
 	const DAY = 86_400_000;
@@ -37,12 +21,6 @@ Show, Always allow and Not slop beside each (P0-12), Report this source, and the
 	function due(c: CardTiming, every: number, now = Date.now()): boolean {
 		if (c.dismissedAt && now - c.dismissedAt < every) return false;
 		return !c.shownAt || now - c.shownAt > every || dayKey(c.shownAt) === dayKey(now);
-	}
-	function markShown(key: string, c: CardTiming, every: number) {
-		if (!c.shownAt || Date.now() - c.shownAt > every) void chrome.storage.local.set({ [key]: { ...c, shownAt: Date.now() } });
-	}
-	function dismiss(key: string, c: CardTiming) {
-		void chrome.storage.local.set({ [key]: { ...c, dismissedAt: Date.now() } });
 	}
 
 	const settingsStore = stored<Partial<Settings> | undefined>(K.settings, undefined);
@@ -57,37 +35,35 @@ Show, Always allow and Not slop beside each (P0-12), Report this source, and the
 	let tabPlatform = $state<Platform | null>(null);
 	let page = $state<PageState | null>(null);
 	let loaded = $state(false);
-	let syncing = $state(false);
 
 	const platform = $derived(page?.platform ?? tabPlatform);
+	// A supported site whose platform is switched off has no content script: Colander is not running there.
+	const running = $derived(!!platform && (!!page || settings.platforms[platform]));
 	const sitePaused = $derived(!!platform && settings.pausedSites.includes(platform));
 	const tabPaused = $derived(page?.paused.tab ?? false);
 	const plus = $derived(isPlus(entitlement.value));
 	const override = $derived(plus && platform ? settings.perPlatform[platform] : undefined);
 	const today = $derived.by(() => {
 		const d = stats.value?.days[dayKey()];
-		return d ? d.hidden + d.collapsed : 0;
+		return d?.hidden ?? 0;
 	});
-	const onPage = $derived(page ? page.counts.hidden + page.counts.collapsed : 0);
-	const weekly = $derived.by(() => {
-		const w = { hidden: 0, collapsed: 0, labeled: 0 };
+	const week = $derived.by(() => {
+		let n = 0;
 		for (let i = 0; i < 7; i++) {
 			const d = stats.value?.days[dayKey(Date.now() - i * DAY)];
-			if (d) (w.hidden += d.hidden, w.collapsed += d.collapsed, w.labeled += d.labeled);
+			if (d) n += d.hidden;
 		}
-		return w;
+		return n;
 	});
-	const week = $derived(weekly.hidden + weekly.collapsed);
+	const syncFailed = $derived(needsAttention({ ...status.value, reportsUpdated: false }));
 	const firstWeekDone = $derived(!!stats.value?.firstRunAt && Date.now() - stats.value.firstRunAt >= 7 * DAY);
-	// Plus: the weekly summary, once a week. Everyone else: the support card, at most once in 30 days.
-	// Never both at once.
-	const showWeekly = $derived(plus && firstWeekDone && weeklyCard.ready && due(weeklyCard.value, 7 * DAY));
-	const showSupport = $derived(!showWeekly && firstWeekDone && week > 0 && supportCard.ready && due(supportCard.value, 30 * DAY));
+	// After the first week, one dismissible card with the person's own numbers: once a week with
+	// Plus (its weekly summary), otherwise at most once every 30 days, with Get Plus.
+	const card = $derived(plus ? { key: K.weeklyCard, store: weeklyCard, every: 7 * DAY } : { key: K.supportCard, store: supportCard, every: 30 * DAY });
+	const showWeekly = $derived(firstWeekDone && week > 0 && card.store.ready && due(card.store.value, card.every));
 	$effect(() => {
-		if (showWeekly) markShown(K.weeklyCard, weeklyCard.value, 7 * DAY);
-	});
-	$effect(() => {
-		if (showSupport) markShown(K.supportCard, supportCard.value, 30 * DAY);
+		const c = card.store.value;
+		if (showWeekly && (!c.shownAt || Date.now() - c.shownAt > card.every)) void chrome.storage.local.set({ [card.key]: { ...c, shownAt: Date.now() } });
 	});
 
 	async function load() {
@@ -110,420 +86,141 @@ Show, Always allow and Not slop beside each (P0-12), Report this source, and the
 	}
 	void load();
 
-	function setStrictness(next: Strictness) {
-		void send({ type: 'settings', patch: { strictness: next } });
-	}
+	const title = (a: PageAction) => a.title || a.sourceName || a.itemId || a.sourceId || '';
+	const byId = (r: PopupRow) => page?.actions.find((a) => a.id === r.id);
 
-	function toggleSite(on: boolean) {
-		if (!platform) return;
-		const rest = settings.pausedSites.filter((p) => p !== platform);
-		void send({ type: 'settings', patch: { pausedSites: on ? [...rest, platform] : rest } }).then(load);
-	}
-
-	function toggleTab(on: boolean) {
-		if (tabId === null) return;
-		void send({ type: 'pause-tab', tabId, paused: on }).then(load);
-	}
-
-	async function act(a: PageAction, what: 'show' | 'allow' | 'not_slop') {
-		if (tabId === null) return;
-		if (what === 'show') await chrome.tabs.sendMessage(tabId, { type: 'show', id: a.id } satisfies ToPage).catch(() => undefined);
-		else if (what === 'allow') {
-			const key = a.sourceId ? targetKey(a.platform, 'source', a.sourceId) : a.itemId ? targetKey(a.platform, 'item', a.itemId) : null;
-			if (key) await send({ type: 'allow', key, name: a.sourceName || undefined });
-		} else if (a.sourceId || a.itemId) {
-			// A source verdict is countered at the source; an item without a known source as an item alone.
-			const source = !!a.sourceId && (a.reason === 'source_list' || !a.itemId);
-			await send({
-				type: 'tag',
-				tag: {
-					platform: a.platform,
-					targetType: source ? 'source' : 'item',
-					targetId: source ? a.sourceId! : a.itemId!,
-					sourceId: source ? undefined : (a.sourceId ?? undefined),
-					verdict: 'not_slop',
-					platformLabel: a.signals.includes('platform_label'),
-					name: a.sourceName || a.title || undefined
-				}
-			});
-		}
-		setTimeout(load, 150);
-	}
-
-	async function report() {
-		if (tabId === null) return;
-		await chrome.tabs.sendMessage(tabId, { type: 'report-open' } satisfies ToPage).catch(() => undefined);
-		window.close();
-	}
-
-	async function syncNow() {
-		syncing = true;
-		await send({ type: 'sync-now' }).catch(() => undefined);
-		syncing = false;
-	}
+	const onPage = $derived(page?.counts.hidden ?? 0);
+	const popup = $derived<PopupState>({
+		status: !loaded ? 'loading' : !running ? 'unsupported' : sitePaused || tabPaused ? 'paused' : 'active',
+		domain: platform ? PLATFORM_DOMAIN[platform] : undefined,
+		pausedScope: sitePaused ? 'site' : 'tab',
+		plus,
+		strictness: settings.strictness,
+		strictnessNote: override && platform ? `${PLATFORM_NAME[platform]} uses ${STRICTNESS_WORD[override]}, set in Options.` : undefined,
+		// Today's count is written after the page's counts arrive, so it never reads lower than this page.
+		hiddenToday: Math.max(today, onPage),
+		onPage,
+		noun: platform ? ITEM_NOUN[platform] : undefined,
+		rows: page?.actions.map((a) => ({ id: a.id, verdict: a.verdict, title: title(a), action: a.action, shown: a.shown })) ?? [],
+		// One slot, by priority: a sync failure, a report verdict, the weekly card, else the footer.
+		slot: syncFailed ? { kind: 'sync' } : status.value.reportsUpdated ? { kind: 'report' } : showWeekly ? { kind: 'weekly', hidden: week } : null,
+		list: { sequence: status.value.listSequence || null, updatedAt: status.value.lastSyncAt },
+		canPauseTab: !!page
+	});
 
 	function openOptions(section?: string) {
 		void send({ type: 'open', page: 'options', section });
 		window.close();
 	}
+	const openSite = (path: string) => void chrome.tabs.create({ url: `${SITE}${path}` });
+	const toPage = (m: ToPage) => (tabId === null ? Promise.resolve() : chrome.tabs.sendMessage(tabId, m).catch(() => undefined));
 
-	const actionWord = (a: PageAction) => (a.shown ? 'Shown' : a.action === 'hide' ? 'Hidden' : a.action === 'collapse' ? 'Collapsed' : 'Labeled');
-	const options = STRICTNESS.map((s) => ({ value: s, label: STRICTNESS_WORD[s] }));
+	async function notSlop(a: PageAction) {
+		if (!a.sourceId && !a.itemId) return;
+		// A source verdict is countered at the source; an item without a known source as an item alone.
+		const source = !!a.sourceId && (a.reason === 'source_list' || !a.itemId);
+		await send({
+			type: 'tag',
+			tag: {
+				platform: a.platform,
+				targetType: source ? 'source' : 'item',
+				targetId: source ? a.sourceId! : a.itemId!,
+				sourceId: source ? undefined : (a.sourceId ?? undefined),
+				verdict: 'not_slop',
+				platformLabel: a.signals.includes('platform_label'),
+				name: a.sourceName || a.title || undefined
+			}
+		});
+	}
+
+	const actions: PopupActions = {
+		strictness: (level: Strictness) => void send({ type: 'settings', patch: { strictness: level } }),
+		pause: async (scope) => {
+			if (scope === 'tab' && tabId !== null) await send({ type: 'pause-tab', tabId, paused: true });
+			else if (scope === 'site' && platform) await send({ type: 'settings', patch: { pausedSites: [...settings.pausedSites.filter((p) => p !== platform), platform] } });
+			await load();
+		},
+		resume: async () => {
+			if (tabPaused && tabId !== null) await send({ type: 'pause-tab', tabId, paused: false });
+			if (sitePaused && platform) await send({ type: 'settings', patch: { pausedSites: settings.pausedSites.filter((p) => p !== platform) } });
+			await load();
+		},
+		// On a supported site that is switched off, Options opens on Platforms.
+		options: () => openOptions(tabPlatform && !running ? 'platforms' : undefined),
+		show: async (r) => {
+			await toPage({ type: 'show', id: Number(r.id) });
+			setTimeout(load, 150);
+		},
+		allow: async (r) => {
+			const a = byId(r);
+			const key = a?.sourceId ? targetKey(a.platform, 'source', a.sourceId) : a?.itemId ? targetKey(a.platform, 'item', a.itemId) : null;
+			if (key) await send({ type: 'allow', key, name: a!.sourceName || undefined });
+			setTimeout(load, 150);
+		},
+		notSlop: async (r) => {
+			const a = byId(r);
+			if (a) await notSlop(a);
+			setTimeout(load, 150);
+		},
+		why: async (r) => {
+			await toPage({ type: 'why', id: Number(r.id) });
+			window.close();
+		},
+		sourcePage: (r) => {
+			const a = byId(r);
+			if (a?.sourceId) openSite(sourcePath(a.platform, a.sourceId));
+		},
+		sync: () => void send({ type: 'sync-now' }),
+		reports: () => openOptions('reports'),
+		dismissWeekly: () => void chrome.storage.local.set({ [card.key]: { ...card.store.value, dismissedAt: Date.now() } }),
+		plus: () => openSite('/plans'),
+		support: () => openSite('/support'),
+		log: () => openSite('/log')
+	};
+
+	// Chrome's popup is at most 600 px of screen, so at 125% zoom it is 480 CSS px and the document
+	// would scroll. Once the content outgrows the window, the popup is capped to the window and only
+	// the list scrolls. Chrome sizes the popup to its content during layout, before these callbacks,
+	// so the window is only ever smaller than the content when it has reached its limit. Below 440
+	// (past about 135% zoom) the fixed cards alone fill the window, so the whole popup scrolls instead.
+	const fit = () => {
+		const root = document.documentElement;
+		if (root.scrollHeight <= innerHeight + 1 || innerHeight < 440) return;
+		root.style.setProperty('--popup-cap', `${innerHeight}px`);
+		root.dataset.capped = '';
+	};
+	addEventListener('resize', fit);
+	new ResizeObserver(fit).observe(document.documentElement);
 </script>
 
-<main class="popup">
-	<header class="head">
-		<span class="brand"><ColanderMark size={24} /> <span class="name">Colander</span></span>
-		{#if plus}<span class="uin-badge uin-badge-md uin-badge-accent">Plus</span>{/if}
-	</header>
-
-	{#if needsAttention(status.value) || status.value.reportsClosed}
-		<div class="note" class:calm={!needsAttention(status.value)} role="status">
-			{#if status.value.reportsUpdated}
-				<p>A report you sent has a verdict.</p>
-				<Button variant="ghost" onclick={() => openOptions('reports')}>My reports</Button>
-			{:else if needsAttention(status.value)}
-				<p>The list could not update. Blocking still works from the last copy.</p>
-				<Button variant="ghost" onclick={syncNow} aria-busy={syncing}><RefreshCw size={16} strokeWidth={1.75} />Sync now</Button>
-			{:else}
-				<p>A report you sent was closed.</p>
-				<Button variant="ghost" onclick={() => openOptions('reports')}>My reports</Button>
-			{/if}
-		</div>
-	{/if}
-
-	{#if platform}
-		<section class="block" aria-label="Pause">
-			{#if sitePaused || tabPaused}
-				<p class="paused" role="status">{sitePaused ? 'Paused on this site.' : 'Paused on this tab.'}</p>
-			{/if}
-			<!-- The whole row is the hit target (popup controls are at least 32 px). -->
-			<label class="row">
-				<span id="pause-site">Pause on this site</span>
-				<Switch checked={sitePaused} aria-labelledby="pause-site" onCheckedChange={toggleSite} />
-			</label>
-			<label class="row" class:off={!page}>
-				<span id="pause-tab">Pause on this tab</span>
-				<Switch checked={tabPaused} aria-labelledby="pause-tab" disabled={!page} onCheckedChange={toggleTab} />
-			</label>
-		</section>
-	{/if}
-
-	<section class="block" aria-labelledby="strict-title">
-		<h2 id="strict-title" class="label"><SlidersHorizontal size={16} strokeWidth={1.75} />Strictness</h2>
-		<SegmentedControl {options} value={settings.strictness} onChange={setStrictness} ariaLabel="Strictness" />
-		<p class="hint t-caption muted">{STRICTNESS_HINT[settings.strictness]}</p>
-		{#if override && platform}
-			<p class="hint t-caption muted">{PLATFORM_NAME[platform]} uses {STRICTNESS_WORD[override]}, set in Options.</p>
-		{/if}
-	</section>
-
-	<section class="counts" aria-label="Counts">
-		<div class="count"><span class="num cl-num">{today}</span><span class="t-caption muted">Hidden today</span></div>
-		<div class="count"><span class="num cl-num">{onPage}</span><span class="t-caption muted">Hidden on this page</span></div>
-	</section>
-
-	<section class="block actions-block" aria-labelledby="recent-title">
-		<h2 id="recent-title" class="label">On this page</h2>
-		{#if !loaded}
-			<p class="t-caption muted">Loading</p>
-		{:else if !page}
-			<div class="empty">
-				<div class="dots motif" aria-hidden="true"></div>
-				<p>Colander works on YouTube, TikTok, Instagram and Facebook.</p>
-				{#if tabPlatform && !settings.platforms[tabPlatform]}
-					<Button variant="outline" onclick={() => openOptions('platforms')}>Turn on {PLATFORM_NAME[tabPlatform]}</Button>
-				{/if}
-			</div>
-		{:else if page.actions.length === 0}
-			<div class="empty">
-				<div class="dots motif" aria-hidden="true"></div>
-				<p>Nothing hidden on this page.</p>
-			</div>
-		{:else}
-			<ul class="list">
-				{#each page.actions as a (a.id)}
-					<li class="item">
-						<div class="what">
-							{#if a.verdict}
-								<span class="v v-{a.verdict}"><VerdictGlyph verdict={a.verdict} size={12} /></span>
-								<span class="vw">{VERDICT_WORD[a.verdict]}</span>
-							{:else}
-								<span class="vw">Your rule</span>
-							{/if}
-							<span class="state t-caption muted">· {actionWord(a)}</span>
-						</div>
-						<p class="title" title={a.title}>{a.title || a.sourceName || a.itemId || a.sourceId}</p>
-						{#if a.sourceName && a.title}<p class="source t-caption muted">{a.sourceName}</p>{/if}
-						<div class="btns">
-							{#if (a.action === 'hide' || a.action === 'collapse') && !a.shown}
-								<Button variant="ghost" onclick={() => act(a, 'show')}>Show</Button>
-							{/if}
-							<Button variant="ghost" onclick={() => act(a, 'allow')}>Always allow</Button>
-							{#if a.verdict && (a.sourceId || a.itemId)}
-								<Button variant="ghost" onclick={() => act(a, 'not_slop')}>Not slop</Button>
-							{/if}
-						</div>
-					</li>
-				{/each}
-			</ul>
-		{/if}
-	</section>
-
-	{#if page?.source}
-		<section class="block">
-			<Button variant="outline" class="wide" onclick={report}><Flag size={16} strokeWidth={1.75} />Report this {SOURCE_NOUN[page.platform]}</Button>
-		</section>
-	{/if}
-
-	{#if showWeekly}
-		<section class="support" aria-labelledby="weekly-title">
-			<button class="dismiss" aria-label="Dismiss the weekly summary" onclick={() => dismiss(K.weeklyCard, weeklyCard.value)}>
-				<X size={16} strokeWidth={1.75} />
-			</button>
-			<h2 id="weekly-title" class="label">Your week</h2>
-			<p>In the last 7 days Colander hid or collapsed <strong class="cl-num">{fmtNum(week)}</strong> items and labeled <strong class="cl-num">{fmtNum(weekly.labeled)}</strong>.</p>
-			<div class="support-btns">
-				<Button variant="outline" onclick={() => openOptions('plus')}>See each day</Button>
-			</div>
-		</section>
-	{/if}
-
-	{#if showSupport}
-		<section class="support" aria-label="Support">
-			<button class="dismiss" aria-label="Dismiss" onclick={() => dismiss(K.supportCard, supportCard.value)}>
-				<X size={16} strokeWidth={1.75} />
-			</button>
-			<p>You skipped <strong class="cl-num">{week}</strong> slop items this week. Colander runs on support from people like you.</p>
-			<div class="support-btns">
-				{#if !plus}<Button variant="primary" onclick={() => chrome.tabs.create({ url: `${SITE}/plans` })}>Get Plus</Button>{/if}
-				<Button variant="outline" onclick={() => chrome.tabs.create({ url: `${SITE}/support` })}><Heart size={16} strokeWidth={1.75} />Support our work</Button>
-			</div>
-		</section>
-	{/if}
-
-	<footer class="foot">
-		<Button variant="ghost" class="quiet-muted" onclick={() => openOptions()}><Settings2 size={16} strokeWidth={1.75} />Options</Button>
-		<Button variant="ghost" class="quiet-muted" onclick={() => chrome.tabs.create({ url: `${SITE}/support` })}><Heart size={16} strokeWidth={1.75} />Support our work</Button>
-	</footer>
-</main>
+<PopupView state={popup} {actions} />
 
 <style>
 	:global(body) {
 		width: 360px;
+		margin: 0;
+		background: var(--cl-paper);
 	}
-	.popup {
-		display: flex;
-		flex-direction: column;
-		background: var(--cl-surface);
+	/* Chrome's popup window is at most 600 tall; PopupView grows with its content elsewhere. */
+	:global(.popup) {
+		max-height: 600px;
 	}
-	.head {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		height: 48px;
-		padding: 0 16px;
-		border-bottom: 1px solid var(--cl-border);
+	/* Capped by zoom: the On this page card gives way and its rows scroll, fading at the foot. */
+	:global(html[data-capped] .popup) {
+		max-height: var(--popup-cap);
 	}
-	.brand {
-		display: inline-flex;
-		align-items: center;
-		gap: 8px;
-		color: var(--cl-ink);
+	:global(html[data-capped] .popup .page) {
+		flex: 0 1 auto;
+		min-height: 0;
 	}
-	:global(:root[data-theme='dark']) .brand,
-	.brand {
-		color: var(--cl-text);
+	/* The tally repeats the chips in the list, which needs the room more. */
+	:global(html[data-capped] .popup .stats .tally) {
+		display: none;
 	}
-	.name {
-		font: var(--cl-title);
-		font-size: 16px;
-		line-height: 24px;
-	}
-	.note {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		gap: 8px;
-		padding: 8px 8px 8px 16px;
-		background: var(--cl-brand-tint);
-		font: var(--cl-caption);
-	}
-	.note.calm {
-		background: var(--cl-surface-raised);
-	}
-	.block {
-		display: flex;
-		flex-direction: column;
-		gap: 8px;
-		padding: 16px;
-		border-bottom: 1px solid var(--cl-border);
-	}
-	.label {
-		display: flex;
-		align-items: center;
-		gap: 8px;
-		font: var(--cl-body);
-		font-weight: 600;
-	}
-	.row {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		min-height: 36px;
-		margin: 0 -8px;
-		padding: 0 8px;
-		border-radius: var(--cl-r-chip);
-		cursor: pointer;
-	}
-	.row:hover {
-		background: var(--uin-mat-hover);
-	}
-	.row.off {
-		cursor: default;
-	}
-	.row.off:hover {
-		background: none;
-	}
-	.paused {
-		padding: 8px 12px;
-		border-radius: var(--cl-r-chip);
-		background: var(--cl-surface-raised);
-		font-weight: 600;
-	}
-	.hint {
-		margin-top: -2px;
-	}
-	.counts {
-		display: grid;
-		grid-template-columns: 1fr 1fr;
-		border-bottom: 1px solid var(--cl-border);
-	}
-	.count {
-		display: flex;
-		flex-direction: column;
-		gap: 0;
-		padding: 12px 16px;
-	}
-	.count + .count {
-		border-left: 1px solid var(--cl-border);
-	}
-	.num {
-		font: var(--cl-display);
-		font-size: 24px;
-		line-height: 32px;
-	}
-	.list {
-		display: flex;
-		flex-direction: column;
-		margin: 0 -16px;
-	}
-	.item {
-		display: flex;
-		flex-direction: column;
-		gap: 2px;
-		padding: 8px 16px;
-	}
-	.item + .item {
-		border-top: 1px solid var(--cl-border);
-	}
-	.what {
-		display: flex;
-		align-items: center;
-		gap: 6px;
-		font: var(--cl-chip);
-	}
-	.v {
-		display: inline-flex;
-	}
-	.v-slop {
-		color: var(--cl-slop);
-	}
-	.v-likely_slop {
-		color: var(--cl-likely);
-	}
-	.v-ai_made {
-		color: var(--cl-ai);
-	}
-	.v-disputed {
-		color: var(--cl-disputed);
-	}
-	.v-clear {
-		color: var(--cl-clear);
-	}
-	.state {
-		font-weight: 400;
-	}
-	.title {
-		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: nowrap;
-	}
-	.btns {
-		display: flex;
-		gap: 0;
-		margin: 2px -8px 0;
-	}
-	.empty {
-		display: flex;
-		flex-direction: column;
-		align-items: center;
-		gap: 12px;
-		padding: 16px 0 8px;
-		text-align: center;
-		color: var(--cl-text-muted);
-	}
-	.motif {
-		width: 96px;
-		height: 36px;
-		border-radius: var(--cl-r-chip);
-	}
-	:global(.wide) {
-		width: 100%;
-	}
-	.support {
-		position: relative;
-		display: flex;
-		flex-direction: column;
-		gap: 12px;
-		margin: 16px;
-		padding: 16px;
-		border-radius: var(--cl-r-card);
-		background: var(--cl-surface-raised);
-	}
-	.support p,
-	.support h2 {
-		padding-right: 24px;
-	}
-	.support-btns {
-		display: flex;
-		gap: 8px;
-	}
-	.dismiss {
-		position: absolute;
-		top: 8px;
-		right: 8px;
-		display: grid;
-		place-items: center;
-		width: 32px;
-		height: 32px;
-		border: 0;
-		border-radius: var(--cl-r-chip);
-		background: none;
-		color: var(--cl-text-muted);
-		cursor: pointer;
-	}
-	.dismiss:hover {
-		background: var(--uin-mat-hover);
-		color: var(--cl-text);
-	}
-	.dismiss:focus-visible {
-		outline: 2px solid var(--cl-brand);
-		outline-offset: 2px;
-	}
-	.foot {
-		display: flex;
-		justify-content: space-between;
-		padding: 8px;
+	:global(html[data-capped] .popup .rows) {
+		min-height: 0;
+		overflow-y: auto;
+		padding-bottom: 16px;
+		mask-image: linear-gradient(to bottom, black calc(100% - 16px), transparent);
 	}
 </style>

@@ -18,6 +18,12 @@ test('sign in by emailed link, then the account page shows the account', async (
 	await page.getByLabel('Email').fill('maya@example.com');
 	await page.getByRole('button', { name: 'Email me a sign-in link' }).click();
 	await expect(page.getByText('Check your inbox')).toBeVisible();
+	// Focus follows the form: to the notice once sent, back to the field for another address.
+	await expect(page.locator('.sent-note')).toBeFocused();
+	await page.getByRole('button', { name: 'Use a different address' }).click();
+	await expect(page.getByLabel('Email')).toBeFocused();
+	await page.getByRole('button', { name: 'Email me a sign-in link' }).click();
+	await expect(page.getByText('Check your inbox')).toBeVisible();
 	const send = calls.find((c) => c.path === '/v1/auth/email')!;
 	expect(send.body).toEqual({ email: 'maya@example.com', next: '/account' });
 	expect(send.headers['x-colander-csrf']).toBe('1');
@@ -103,6 +109,29 @@ test('one click cancels, keeps Plus until the period ends and still offers the r
 	await page.getByRole('button', { name: 'End now and refund' }).click();
 	await expect(page.getByText('Nothing was changed')).toBeVisible();
 	await expect(page.getByText('more than 30 days old', { exact: false })).toBeVisible();
+});
+
+test('a token the extension refuses is an error, never Connected', async ({ page }) => {
+	await page.addInitScript(() => {
+		(window as unknown as { chrome: unknown }).chrome = {
+			runtime: {
+				sendMessage(_id: string, message: { type: string }, reply: (r: unknown) => void) {
+					setTimeout(() => reply(message.type === 'colander:ping' ? { ok: true, version: '1.0.0' } : { ok: false, error: 'invalid_token' }), 0);
+				}
+			}
+		};
+	});
+	await mockApi(page, {
+		'GET /v1/account': { json: { account: { ...PLUS_ACCOUNT, role: 'staff' } } },
+		'POST /v1/entitlement': { json: { token: 'plan.token' } },
+		'POST /v1/account/reviewer-token': { json: { token: 'reviewer.token' } }
+	});
+	await page.goto('/account');
+	await page.getByRole('button', { name: 'Connect this browser' }).click();
+	await expect(page.getByText('Colander could not verify this plan. Update Colander, then try again.')).toBeVisible();
+	await page.getByRole('button', { name: 'Connect side panel' }).click();
+	await expect(page.getByText('Colander could not accept the reviewer token. Update Colander, then try again.')).toBeVisible();
+	await expect(page.getByText('Connected.', { exact: false })).toHaveCount(0);
 });
 
 test('without the extension the account page says so plainly', async ({ page }) => {

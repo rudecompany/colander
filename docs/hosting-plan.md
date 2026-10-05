@@ -123,7 +123,7 @@ Cost would be about $15-25 a month at 1,000 installs and $45-60 at 100,000.
 | Domain, DNS, TLS | Registrar + DNS zone getcolander.com; drainslop.com as a second zone with a Redirect Rule | One zone for DNS, TLS, Worker, cache and mail records; Bot Fight Mode off, because it can challenge extension API traffic and cannot be skipped ([Bot Fight Mode](https://developers.cloudflare.com/bots/get-started/bot-fight-mode/)) |
 | Edge Worker `colander` (new `api/` package) | Workers Paid, Custom Domain getcolander.com | Thin front: checks `since`, rate-limits cache misses, hashes the client IP, answers CORS preflights, serves snapshot misses from R2, guards /ops/*, runs crons, forwards the rest of /v1/* to the Store |
 | Website | Workers Static Assets in the same Worker | `html_handling: auto-trailing-slash` serves /name from name.html, matching today's Go lookup ([html handling](https://developers.cloudflare.com/workers/static-assets/routing/advanced/html-handling/)); asset requests become billable because cache is on ([billing](https://developers.cloudflare.com/workers/static-assets/billing-and-limitations/)) |
-| SPA fallback | `_redirects` proxy rules plus `not_found_handling: 404-page` | `/s/* /200 200` and `/appeal/* /200 200`; 404.html is a copy of 200.html so unknown paths return a real 404; built-in SPA mode is not used because it always serves /index.html ([SPA mode](https://developers.cloudflare.com/workers/static-assets/routing/single-page-application/), [redirects](https://developers.cloudflare.com/workers/static-assets/redirects/)) |
+| SPA fallback | `_redirects` proxy rules plus `not_found_handling: 404-page` | `/s/{platform}/:id /200 200`, `/appeal/{platform}/:id /200 200` and `/appeal/status/:id /200 200`, one rule per platform; 404.html is a copy of 200.html so unknown paths return a real 404; built-in SPA mode is not used because it always serves /index.html ([SPA mode](https://developers.cloudflare.com/workers/static-assets/routing/single-page-application/), [redirects](https://developers.cloudflare.com/workers/static-assets/redirects/)) |
 | Edge cache | Workers Cache (`cache.enabled`, `cross_version_cache: true`) | Tiered, with request collapsing, in front of snapshot, delta, adapter config and public GETs; hits run no code ([Workers Cache](https://developers.cloudflare.com/workers/cache/), [configuration](https://developers.cloudflare.com/workers/cache/configuration/)) |
 | System of record: `Store`, one instance "primary" | Durable Object with SQLite storage, location hint enam | All 25 tables, the ported API handlers, transactions, quotas, scoring, list publisher, and one alarm driving a small jobs table ([limits: 10 GB per object, CPU 30 s default and configurable](https://developers.cloudflare.com/durable-objects/platform/limits/)) |
 | Signed list file | R2 bucket `colander-lists` | `list/snapshot.bin` with `customMetadata.seq` and `created`; serves every snapshot miss and survives a Store outage |
@@ -195,7 +195,8 @@ Cache headers set by the Store:
     PUT /v1/sync is a compare-and-set on `version` inside a transaction, and a mismatch returns 409.
 11. **Website.**
     Prerendered pages are free asset requests.
-    `/s/*` and `/appeal/*` are rewritten to the 200.html shell, and unknown paths get 404.html with status 404.
+    `/s/{platform}/{id}`, `/appeal/{platform}/{id}` and `/appeal/status/{id}` are rewritten to the 200.html shell, and every other unknown path gets 404.html with status 404.
+    The shell's own paths `/200` and `/404` run the Worker first (`run_worker_first`), which answers them with the 404 page too, so they are not soft 404s.
     The SPA calls same-origin /v1 routes, which are cached for 60 s where that is safe.
 12. **Publication.**
     The publish job runs one `transactionSync`.
@@ -352,7 +353,8 @@ All work happens in a fresh linked worktree on a new branch, following the repo 
   The code stays in git history.
 
 **web/:**
-- `static/_redirects`: `/s/* /200 200` and `/appeal/* /200 200`.
+- `static/_redirects`: `/s/yt/:id /200 200` and its siblings, one rule per platform for `/s/` and `/appeal/`, and `/appeal/status/:id /200 200`.
+  A placeholder matches one path segment, so an unknown platform or an extra segment is a real 404.
   The target is /200, because /200.html redirects with a 307.
 - `static/_headers`:
   - HSTS, nosniff, Referrer-Policy, X-Frame-Options DENY.
@@ -373,7 +375,7 @@ All work happens in a fresh linked worktree on a new branch, following the repo 
 - `global-setup.ts` starts `wrangler dev --test-scheduled --persist-to e2e/.run/state` with `COLANDER_DEV=1` and a dev key in `.dev.vars`.
   It seeds through a dev-only `/__dev/seed` route and drives crons through `/cdn-cgi/local/scheduled` ([cron testing](https://developers.cloudflare.com/workers/configuration/cron-triggers/)).
 - New specs:
-  - The `/s/*` and `/appeal/*` rewrites return 200.
+  - The source and appeal page rewrites return 200.
   - Unknown paths return 404.
   - `_headers` are present.
   - Cache-Control is correct on 200, 204 and 410.

@@ -1,26 +1,33 @@
 <!-- @component Lists: the signed core list and My list (blocks and allows), with import and export. -->
 <script lang="ts">
+	import { PageHeader, PlatformTag } from '@colander/shared';
+	import { fmtAgo, fmtListVersion, fmtNum, fmtShortDate } from '@colander/shared/format';
 	import Button from '@colander/shared/components/ui/button/button.svelte';
+	import Card from '@colander/shared/components/ui/card/card.svelte';
 	import Input from '@colander/shared/components/ui/input/input.svelte';
-	import { PLATFORM_NAME, type Platform } from '@colander/shared/verdicts';
-	import RefreshCw from '@lucide/svelte/icons/refresh-cw';
+	import SegmentedControl from '@colander/shared/components/ui/segmented-control/segmented-control.svelte';
+	import type { Platform } from '@colander/shared/verdicts';
+	import CircleAlert from '@lucide/svelte/icons/circle-alert';
 	import Download from '@lucide/svelte/icons/download';
+	import RefreshCw from '@lucide/svelte/icons/refresh-cw';
 	import Upload from '@lucide/svelte/icons/upload';
-	import Trash2 from '@lucide/svelte/icons/trash-2';
 	import { itemFromUrl, parseTargetKey, sourceFromUrl, targetKey } from '@colander/shared/ids';
 	import { ORIGINS } from '../../lib/platforms';
 	import { DEFAULT_STATUS, K, withDefaults, type MyListEntry, type Settings, type Status } from '../../lib/settings';
-	import Card from '../../ui/Card.svelte';
-	import Section from '../../ui/Section.svelte';
-	import { ago, fmtDate, fmtNum, send, stored } from '../../ui/store.svelte';
+	import { send, stored } from '../../ui/store.svelte';
 
 	const status = stored<Status>(K.status, DEFAULT_STATUS);
 	const settingsStore = stored<Partial<Settings> | undefined>(K.settings, undefined);
 	const settings = $derived(withDefaults(settingsStore.value));
 	let syncing = $state(false);
 	let link = $state('');
+	let which = $state<'blocks' | 'allows'>('blocks');
 	let linkError = $state('');
 	let importNote = $state('');
+
+	const entries = $derived(
+		[...settings.blocks.map((e) => ({ ...e, list: 'blocks' as const })), ...settings.allows.map((e) => ({ ...e, list: 'allows' as const }))].sort((a, b) => b.at - a.at)
+	);
 
 	async function syncNow() {
 		syncing = true;
@@ -28,13 +35,7 @@
 		syncing = false;
 	}
 
-	function describe(key: string, name?: string) {
-		const t = parseTargetKey(key);
-		if (!t) return { title: name ?? key, sub: '' };
-		return { title: name || t.id, sub: `${PLATFORM_NAME[t.platform]} ${t.type === 'source' ? 'source' : 'item'} · ${t.id}` };
-	}
-
-	function parseLink(text: string): { key: string } | null {
+	function parseLink(text: string): string | null {
 		let url: URL;
 		try {
 			url = new URL(text.trim());
@@ -43,22 +44,22 @@
 		}
 		const platform = (Object.keys(ORIGINS) as Platform[]).find((p) => ORIGINS[p].some((o) => o.split('/')[2] === url.hostname));
 		if (!platform) return null;
-		const source = sourceFromUrl(platform, url.href);
+		// A link to a video or post lists that item; a link to a channel, profile or page lists the source.
 		const item = itemFromUrl(platform, url.href);
-		// A link to a video or post blocks that item; a link to a channel, profile or page blocks the source.
-		if (item) return { key: targetKey(platform, 'item', item) };
-		if (source) return { key: targetKey(platform, 'source', source) };
-		return null;
+		if (item) return targetKey(platform, 'item', item);
+		const source = sourceFromUrl(platform, url.href);
+		return source ? targetKey(platform, 'source', source) : null;
 	}
 
-	async function add(list: 'blocks' | 'allows') {
+	async function add(e: Event) {
+		e.preventDefault();
 		linkError = '';
-		const parsed = parseLink(link);
-		if (!parsed) {
+		const key = parseLink(link);
+		if (!key) {
 			linkError = 'Paste a link to a channel, profile, page, video or post on YouTube, TikTok, Instagram or Facebook.';
 			return;
 		}
-		await send({ type: list === 'blocks' ? 'block' : 'allow', key: parsed.key });
+		await send({ type: which === 'blocks' ? 'block' : 'allow', key });
 		link = '';
 	}
 
@@ -80,9 +81,12 @@
 			const data = JSON.parse(await file.text()) as { colander?: string; allows?: MyListEntry[]; blocks?: MyListEntry[] };
 			if (data.colander !== 'my-list') throw new Error();
 			const clean = (l: MyListEntry[] | undefined) =>
-				(l ?? []).filter((e) => e && typeof e.key === 'string' && parseTargetKey(e.key)).map((e) => ({ key: e.key, name: typeof e.name === 'string' ? e.name.slice(0, 120) : undefined, at: Number(e.at) || Date.now() }));
-			const merge = (a: MyListEntry[], b: MyListEntry[]) => [...new Map([...a, ...b].map((e) => [e.key, e])).values()];
-			const allows = clean(data.allows), blocks = clean(data.blocks);
+				(l ?? [])
+					.filter((x) => x && typeof x.key === 'string' && parseTargetKey(x.key))
+					.map((x) => ({ key: x.key, name: typeof x.name === 'string' ? x.name.slice(0, 120) : undefined, at: Number(x.at) || Date.now() }));
+			const merge = (a: MyListEntry[], b: MyListEntry[]) => [...new Map([...a, ...b].map((x) => [x.key, x])).values()];
+			const allows = clean(data.allows);
+			const blocks = clean(data.blocks);
 			await send({ type: 'settings', patch: { allows: merge(settings.allows, allows), blocks: merge(settings.blocks, blocks) } });
 			importNote = `Imported ${allows.length} allows and ${blocks.length} blocks.`;
 		} catch {
@@ -91,83 +95,112 @@
 	}
 </script>
 
-<Section id="lists" title="Lists" description="Colander matches pages against lists on this device. Nothing about what you watch is sent to check them.">
-	<Card title="Core list">
-		{#snippet aside()}
-			<Button variant="outline" onclick={syncNow} aria-busy={syncing}><RefreshCw size={16} strokeWidth={1.75} />{syncing ? 'Syncing' : 'Sync now'}</Button>
-		{/snippet}
+<PageHeader variant="app" eyebrow="Options" title="Lists" lede="Colander matches pages against lists on this device. Nothing about what you watch is sent to check them." />
+
+<div class="cards">
+	<Card title="Core list" headingLevel={2}>
 		<p class="muted">The shared, signed list every install uses. It updates every hour, and blocking keeps working offline from the last copy.</p>
 		<dl class="facts">
-			<div><dt>Version</dt><dd class="cl-num">{status.value.listSequence ? String(status.value.listSequence) : 'Not downloaded yet'}</dd></div>
+			<div><dt>Version</dt><dd class="cl-figure">{status.value.listSequence ? fmtListVersion(status.value.listSequence) : 'Not downloaded yet'}</dd></div>
 			<div><dt>Entries</dt><dd class="cl-num">{fmtNum(status.value.listCount)}</dd></div>
-			<div><dt>Published</dt><dd>{status.value.listCreated ? fmtDate(status.value.listCreated * 1000) : 'Not yet'}</dd></div>
-			<div><dt>Last sync</dt><dd>{ago(status.value.lastSyncAt)}</dd></div>
+			<div><dt>Published</dt><dd>{status.value.listCreated ? fmtShortDate(status.value.listCreated * 1000) : 'Not yet'}</dd></div>
+			<div>
+				<dt>Last sync</dt>
+				<dd class="sync">
+					<span>{status.value.lastSyncAt ? fmtAgo(status.value.lastSyncAt) : 'Never'}</span>
+					<Button variant="quiet" onclick={syncNow} loading={syncing}><RefreshCw size={16} aria-hidden="true" />Sync now</Button>
+				</dd>
+			</div>
 		</dl>
 		{#if status.value.lastError}
-			<p class="warn" role="status">The last update failed: {status.value.lastError}. Colander keeps using the last good copy.</p>
+			<p class="note" role="status"><CircleAlert size={16} aria-hidden="true" />The last update failed: {status.value.lastError}. Colander keeps using the last good copy.</p>
 		{/if}
 	</Card>
 
-	<Card title="My list">
+	<Card title="My list" headingLevel={2}>
 		{#snippet aside()}
-			<Button variant="outline" onclick={exportList}><Download size={16} strokeWidth={1.75} />Export</Button>
+			<Button variant="secondary" onclick={exportList}><Download size={16} aria-hidden="true" />Export</Button>
 			<label class="uin-btn uin-btn-outline uin-btn-md file">
-				<Upload size={16} strokeWidth={1.75} />Import
-				<input type="file" accept="application/json,.json" class="sr-only" onchange={importList} />
+				<Upload size={16} aria-hidden="true" />Import
+				<input type="file" accept="application/json,.json" class="cl-sr-only" onchange={importList} />
 			</label>
 		{/snippet}
 		<p class="muted">Your own blocks and allows. They apply only for you, and Always allow overrides every list.</p>
-		<form class="add" onsubmit={(e) => (e.preventDefault(), add('blocks'))}>
-			<label for="add-link" class="sr-only">Link to a channel, profile, page, video or post</label>
-			<Input id="add-link" bind:value={link} placeholder="Paste a link to a channel, profile, page, video or post" aria-invalid={!!linkError} aria-describedby={linkError ? 'add-error' : undefined} />
-			<Button variant="outline" type="submit">Block</Button>
-			<Button variant="outline" onclick={() => add('allows')}>Allow</Button>
+		<form class="add" onsubmit={add}>
+			<label for="add-link" class="label">Link to a channel, profile, page, video or post</label>
+			<div class="row">
+				<Input id="add-link" class="grow" bind:value={link} placeholder="https://www.youtube.com/@channel" aria-invalid={!!linkError} aria-describedby={linkError ? 'add-error' : undefined} />
+				<SegmentedControl options={[{ value: 'blocks', label: 'Block' }, { value: 'allows', label: 'Allow' }]} bind:value={which} ariaLabel="Block or allow" />
+				<Button variant="primary" type="submit">Add</Button>
+			</div>
+			{#if linkError}<p id="add-error" class="note" role="alert"><CircleAlert size={16} aria-hidden="true" />{linkError}</p>{/if}
 		</form>
-		{#if linkError}<p id="add-error" class="warn" role="alert">{linkError}</p>{/if}
 		{#if importNote}<p class="muted" role="status">{importNote}</p>{/if}
 
-		{#each [{ id: 'blocks', label: 'Blocks', items: settings.blocks, empty: 'No blocks yet.' }, { id: 'allows', label: 'Allows', items: settings.allows, empty: 'No allows yet. Use Always allow on any hidden item.' }] as group (group.id)}
-			<h4 class="group">{group.label} <span class="muted cl-num">{group.items.length}</span></h4>
-			{#if group.items.length === 0}
-				<p class="muted t-caption">{group.empty}</p>
-			{:else}
-				<ul class="entries">
-					{#each [...group.items].sort((a, b) => b.at - a.at) as e (e.key)}
-						{@const d = describe(e.key, e.name)}
-						<li>
-							<div class="who"><span class="name">{d.title}</span><span class="t-caption muted">{d.sub}</span></div>
-							<Button variant="ghost" class="quiet-muted" aria-label="Remove {d.title}" onclick={() => send({ type: 'unlist', list: group.id as 'blocks' | 'allows', key: e.key })}>
-								<Trash2 size={16} strokeWidth={1.75} />Remove
-							</Button>
-						</li>
-					{/each}
-				</ul>
-			{/if}
-		{/each}
+		{#if entries.length === 0}
+			<p class="empty"><span class="three" aria-hidden="true"><i></i><i></i><i></i></span>No blocks or allows yet. Use Always allow on any hidden item.</p>
+		{:else}
+			<ul class="entries">
+				{#each entries as e (e.key)}
+					{@const t = parseTargetKey(e.key)}
+					<li>
+						{#if t}<PlatformTag platform={t.platform} />{/if}
+						<span class="name" title={t?.id}>{e.name || t?.id || e.key}</span>
+						<span class="uin-badge uin-badge-md">{e.list === 'blocks' ? 'Block' : 'Allow'}</span>
+						<Button variant="quiet" aria-label="Remove {e.name || t?.id || e.key}" onclick={() => send({ type: 'unlist', list: e.list, key: e.key })}>Remove</Button>
+					</li>
+				{/each}
+			</ul>
+		{/if}
 	</Card>
-</Section>
+</div>
 
 <style>
+	.cards {
+		display: grid;
+		grid-template-columns: minmax(0, 1fr);
+		gap: 24px;
+		margin-top: 32px;
+	}
+	.muted {
+		color: var(--cl-text-muted);
+	}
+	/* 4 across, 2 or 3 on a narrow screen, so Sync now stays inside the card. */
 	.facts {
 		display: grid;
-		grid-template-columns: repeat(4, minmax(0, 1fr));
+		grid-template-columns: repeat(auto-fit, minmax(112px, 1fr));
 		gap: 16px;
-		padding: 12px 0 4px;
+		margin-top: 16px;
+		padding-top: 16px;
 		border-top: 1px solid var(--cl-border);
 	}
 	.facts div {
-		display: flex;
-		flex-direction: column;
+		display: grid;
+		align-content: start;
+		gap: 4px;
 	}
 	dt {
-		font: var(--cl-caption);
 		color: var(--cl-text-muted);
+		font: var(--cl-caption);
 	}
 	dd {
-		font-weight: 600;
+		font: var(--cl-body-strong);
 	}
-	.warn {
-		color: var(--cl-slop);
+	.sync {
+		display: grid;
+		justify-items: start;
+	}
+	.sync :global(.uin-btn) {
+		margin-left: -12px;
+	}
+	.note {
+		display: flex;
+		align-items: flex-start;
+		gap: 8px;
+		margin-top: 12px;
+	}
+	.note :global(svg) {
+		margin-top: 2px;
 	}
 	.file {
 		cursor: pointer;
@@ -176,38 +209,49 @@
 		box-shadow: var(--uin-focus-ring);
 	}
 	.add {
+		display: grid;
+		gap: 8px;
+		margin-top: 16px;
+	}
+	.label {
+		font: var(--cl-body-strong);
+	}
+	/* Narrow, the link takes a line of its own, with Block or Allow and Add under it. */
+	.row {
 		display: flex;
+		flex-wrap: wrap;
 		gap: 8px;
 	}
-	.group {
-		display: flex;
-		gap: 8px;
-		margin-top: 8px;
-		font-weight: 600;
-	}
-	.entries {
-		display: flex;
-		flex-direction: column;
-		border: 1px solid var(--cl-border);
-		border-radius: var(--cl-r-chip);
-	}
-	.entries li {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		gap: 12px;
-		padding: 8px 8px 8px 12px;
-	}
-	.entries li + li {
-		border-top: 1px solid var(--cl-border);
-	}
-	.who {
-		display: flex;
-		flex-direction: column;
+	.row :global(.grow) {
+		flex: 1 1 240px;
 		min-width: 0;
 	}
+	.empty {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		margin-top: 16px;
+		color: var(--cl-text-muted);
+	}
+	.entries {
+		margin-top: 16px;
+		border-top: 1px solid var(--cl-border);
+	}
+	/* Narrow, the badge and Remove move under the name rather than cutting it short. */
+	.entries li {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 4px 12px;
+		min-height: 48px;
+		padding-block: 4px;
+		border-bottom: 1px solid var(--cl-border);
+	}
 	.name {
+		flex: 1 1 120px;
+		min-width: 0;
 		overflow: hidden;
+		font: var(--cl-body-strong);
 		text-overflow: ellipsis;
 		white-space: nowrap;
 	}

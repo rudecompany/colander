@@ -1,5 +1,7 @@
-/* Stand-in layout for TikTok fixtures. Only for screenshots. */
-body { margin: 0; background: #121212; color: #fff; font: 15px/21px 'TikTok Sans', Arial, sans-serif; }
+/* Stand-in layout for TikTok fixtures. Only for screenshots. html[dark] is TikTok's dark mode. */
+html { --bg: #fff; --fg: #161823; --btn: #f1f1f2; }
+html[dark] { --bg: #121212; --fg: #fff; --btn: #2f2f2f; }
+body { margin: 0; background: var(--bg); color: var(--fg); font: 15px/21px 'TikTok Sans', Arial, sans-serif; }
 a { color: inherit; text-decoration: none; }
 img, canvas, svg { display: none; }
 #app, [data-e2e='user-page'] { display: block; }
@@ -9,7 +11,7 @@ article[data-e2e='recommend-list-item-container'] > div { display: flex; gap: 16
 section[data-e2e='feed-video'] { position: relative; width: min(56vh, 420px); height: calc(100vh - 32px); border-radius: 16px; overflow: hidden; background: linear-gradient(160deg, #3a3a3a, #111); }
 article:nth-of-type(2n) section[data-e2e='feed-video'] { background: linear-gradient(160deg, #24344d, #0b1220); }
 section[data-e2e='feed-video'] video { position: absolute; inset: 0; width: 100%; height: 100%; }
-[class*='DivMediaCardOverlayBottom'] { position: absolute; left: 0; right: 0; bottom: 0; padding: 16px; }
+[class*='DivMediaCardOverlayBottom'] { position: absolute; left: 0; right: 0; bottom: 0; padding: 16px; color: #fff; }
 [class*='CreatorInfoContainer'] { display: flex; align-items: center; flex-wrap: wrap; gap: 4px; font-weight: 600; }
 [class*='CreatorInfoContainer'] p { margin: 0; font-size: 17px; }
 [data-e2e='video-desc'] { margin-top: 4px; font-size: 14px; }
@@ -18,18 +20,20 @@ section[data-e2e='feed-video'] video { position: absolute; inset: 0; width: 100%
 [class*='DivMediaCardOverlayTop'], [class*='VideoProgressContainer'], button.TUXButton { display: none; }
 section[class*='SectionActionBarContainer'] { display: flex; flex-direction: column; justify-content: flex-end; gap: 12px; padding-bottom: 16px; }
 [data-e2e='video-author-avatar'] { display: block; width: 48px; height: 48px; border-radius: 50%; background: #555; }
-[role='button'][data-e2e$='-icon'] { display: grid; place-items: center; width: 48px; height: 48px; border-radius: 50%; background: #2f2f2f; font-size: 0; }
+[role='button'][data-e2e$='-icon'] { display: grid; place-items: center; width: 48px; height: 48px; border-radius: 50%; background: var(--btn); font-size: 0; }
 [role='button'][data-e2e$='-icon'] > *, [data-e2e='feed-follow'] { display: none; }
 strong[data-e2e$='-count'] { font-size: 12px; text-align: center; display: block; }
 /* Profile */
 [data-e2e='user-page'] { padding: 32px; }
 [data-e2e='user-title'] { font-size: 28px; font-weight: 700; margin: 0; }
 [data-e2e='user-subtitle'] { margin: 4px 0 16px; opacity: 0.8; }
-[data-e2e='user-more'] { display: inline-grid; width: 40px; height: 40px; border-radius: 8px; background: #2f2f2f; }
+/* The profile header lays its buttons out in a row, centered on each other. */
+[class*='DivButtonPanelWrapper'] { display: flex; align-items: center; }
+[data-e2e='user-more'] { display: inline-grid; width: 40px; height: 40px; border-radius: 8px; background: var(--btn); }
 [data-e2e='user-post-item-list'] { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 16px; margin-top: 24px; }
 [data-e2e='user-post-item'] { position: relative; aspect-ratio: 3 / 4; border-radius: 8px; overflow: hidden; background: linear-gradient(160deg, #3a3a3a, #161616); }
 [data-e2e='user-post-item'] > div { position: absolute !important; inset: 0; padding: 0 !important; }
-[data-e2e='video-views'] { position: absolute; left: 8px; bottom: 8px; font-size: 14px; }
+[data-e2e='video-views'] { position: absolute; left: 8px; bottom: 8px; color: #fff; font-size: 14px; }
 /* Search */
 .search-main { padding: 32px; }
 .search-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 24px 16px; }
@@ -37,4 +41,4 @@ strong[data-e2e$='-count'] { font-size: 12px; text-align: center; display: block
 [data-e2e='search-card-desc'] { padding-top: 8px; font-size: 14px; }
 [data-e2e='search-card-user-info'] { margin-top: 4px; opacity: 0.8; }
 [data-e2e='search-card-user-info'] p { margin: 0; }
-[class*='AigcLabel'] span { display: inline-block; margin-top: 4px; padding: 2px 6px; border-radius: 4px; background: #2f2f2f; font-size: 12px; }
+[class*='AigcLabel'] span { display: inline-block; margin-top: 4px; padding: 2px 6px; border-radius: 4px; background: var(--btn); font-size: 12px; }

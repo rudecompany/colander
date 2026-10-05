@@ -91,6 +91,8 @@ jobs:
       - run: pnpm exec playwright install --with-deps chromium
         working-directory: web
       - run: pnpm -r check
+      # The in-page builders, formats and generated tokens in Node; the list and ID tests also run in the api job.
+      - run: pnpm -C packages/shared test
       - run: pnpm -C web test
       - run: pnpm -C extension build
       - run: pnpm -C extension test

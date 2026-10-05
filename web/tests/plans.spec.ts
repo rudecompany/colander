@@ -28,6 +28,9 @@ test('signed out, Get Plus asks for a sign-in that returns to checkout', async (
 	for (const width of [1280, 1920]) {
 		await page.setViewportSize({ width, height: 900 });
 		expect(await layoutSpills(page), `layout spills at ${width}px`).toEqual([]);
+		// The sign-in card takes a row of its own under Plus: the Free card keeps the Plus card's height.
+		const [free, plus] = await page.locator('.prices article.price').evaluateAll((els) => els.map((e) => e.getBoundingClientRect().height));
+		expect(free, `Free card height at ${width}px`).toBe(plus);
 	}
 	await page.getByRole('button', { name: 'Email me a link' }).click();
 	await expect(page.getByText('Check your inbox')).toBeVisible();
@@ -35,20 +38,20 @@ test('signed out, Get Plus asks for a sign-in that returns to checkout', async (
 	expect(calls.find((c) => c.path === '/v1/auth/email')!.body).toEqual({ email: 'maya@example.com', next: '/plans?checkout=plus_yearly' });
 });
 
-test('checkout redirects to the hosted page', async ({ page }) => {
+test('checkout redirects to the hosted page', async ({ page, baseURL }) => {
 	await mockApi(page, {
 		'GET /v1/account': { json: { account: ACCOUNT } },
-		'POST /v1/billing/checkout': { json: { url: 'http://localhost:4173/terms?checkout=done' } }
+		'POST /v1/billing/checkout': { json: { url: `${baseURL}/terms?checkout=done` } }
 	});
 	await page.goto('/plans?checkout=plus_yearly');
 	await page.getByRole('button', { name: 'Continue to checkout' }).click();
 	await expect(page).toHaveURL(/\/terms\?checkout=done$/);
 });
 
-test('a cancelled checkout comes back calmly and can continue', async ({ page }) => {
+test('a cancelled checkout comes back calmly and can continue', async ({ page, baseURL }) => {
 	const calls = await mockApi(page, {
 		'GET /v1/account': { json: { account: ACCOUNT } },
-		'POST /v1/billing/checkout': { json: { url: 'http://localhost:4173/terms?checkout=again' } }
+		'POST /v1/billing/checkout': { json: { url: `${baseURL}/terms?checkout=again` } }
 	});
 	await page.goto('/plans?checkout=plus_monthly&cancelled=1');
 	await expect(page.getByText('Checkout closed before payment')).toBeVisible();
@@ -106,5 +109,9 @@ test('the welcome page asks a signed-out buyer to sign in', async ({ page }) => 
 	await mockApi(page);
 	await page.goto('/plans/welcome');
 	await expect(page.getByText('Sign in to finish')).toBeVisible();
-	await expect(page.getByRole('button', { name: 'Email me a sign-in link' })).toBeVisible();
+	// Full width in its card, as on /account and /console.
+	const button = page.getByRole('button', { name: 'Email me a sign-in link' });
+	await expect(button).toBeVisible();
+	const width = await page.locator('form.signin').evaluate((f) => f.getBoundingClientRect().width);
+	expect((await button.boundingBox())!.width).toBe(width);
 });

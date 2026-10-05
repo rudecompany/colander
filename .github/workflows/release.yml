@@ -111,6 +111,9 @@ jobs:
         env:
           PUBLIC_EXTENSION_ID: ${{ vars.CWS_ITEM_ID }}
           PUBLIC_STORE_URL: https://chromewebstore.google.com/detail/${{ vars.CWS_ITEM_ID }}
+          # Pages prerender with the live numbers and latest decisions, read from the production Worker
+          # that is still serving. A failed read falls back to empty pages with a build warning.
+          COLANDER_BUILD_API: https://getcolander.com
       - name: Record the live version and list head
         id: before
         env:

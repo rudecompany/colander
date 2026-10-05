@@ -1,37 +1,53 @@
 <script lang="ts">
 	import { page } from '$app/state';
 	import {
+		ACTION_DONE_WORD,
 		ACTION_TABLE,
+		CopyButton,
+		DotMeter,
+		EVIDENCE_TITLE,
+		EvidenceCard,
+		Lifecycle,
+		LiveBadge,
+		LogRow,
+		PerforatedDisc,
+		PlatformTag,
 		PLATFORM_NAME,
-		SIGNAL_TEXT,
 		SLOP_TYPE_HINT,
 		SLOP_TYPE_WORD,
 		SOURCE_NOUN,
 		STRICTNESS,
+		TagTally,
 		STRICTNESS_WORD,
 		TEST_HINT,
 		TEST_WORD,
+		VerdictChip,
 		VERDICT_PLAIN,
-		type Action,
+		appealPath,
+		canAppeal,
+		fmtNum,
+		fmtPct,
+		fmtShortDate,
+		middleTruncate,
+		platformSourceUrl,
+		plural,
 		type Platform,
 		type Verdict
 	} from '@colander/shared';
+	import { evidence } from '@colander/shared/inpage/evidence.ts';
 	import type { SourceResponse } from '@colander/shared/api';
-	import Scale from '@lucide/svelte/icons/scale';
+	import Button from '@colander/shared/components/ui/button/button.svelte';
 	import ExternalLink from '@lucide/svelte/icons/external-link';
-	import EyeOff from '@lucide/svelte/icons/eye-off';
 	import Eye from '@lucide/svelte/icons/eye';
-	import ChevronsDownUp from '@lucide/svelte/icons/chevrons-down-up';
-	import Tag from '@lucide/svelte/icons/tag';
+	import EyeOff from '@lucide/svelte/icons/eye-off';
 	import RefreshCw from '@lucide/svelte/icons/refresh-cw';
-	import { ColanderMark } from '@colander/shared';
+	import Scale from '@lucide/svelte/icons/scale';
+	import Tag from '@lucide/svelte/icons/tag';
 	import { api, ApiError, errorText } from '#lib/api.ts';
-	import { appealPath, canAppeal, fmtDate, fmtNum, fmtPct, platformSourceUrl, plural } from '#lib/format.ts';
-	import { groupSignals } from '#lib/layers.ts';
+	import { live } from '#lib/live.svelte.ts';
+	import ArrowLink from '#lib/components/ArrowLink.svelte';
 	import Loading from '#lib/components/Loading.svelte';
 	import Notice from '#lib/components/Notice.svelte';
-	import VerdictOrNone from '#lib/components/VerdictOrNone.svelte';
-	import LogEntryView from '#lib/components/LogEntryView.svelte';
 
 	const platform = $derived(page.params.platform as Platform);
 	const id = $derived(page.params.id ?? '');
@@ -59,28 +75,29 @@
 	const verdict = $derived(source?.verdict ?? null);
 	const name = $derived(source?.name ?? id);
 	const appealable = $derived(canAppeal(source));
+	const ACTION_ICON = { hide: EyeOff, label: Tag, allow: Eye };
 
-	const ACTION_WORD: Record<Action, string> = { hide: 'Hidden', collapse: 'Collapsed', label: 'Labeled', allow: 'Allowed' };
-	const ACTION_ICON = { hide: EyeOff, collapse: ChevronsDownUp, label: Tag, allow: Eye };
+	/** What Standard, the default, does with this source, from the strictness table. */
+	function summary(v: Verdict): string {
+		const a = ACTION_TABLE.standard[v];
+		if (v === 'disputed') return 'Shown to everyone, with a disputed mark.';
+		if (v === 'clear') return 'Allowed for everyone, at every strictness level.';
+		if (a === 'label') return 'Labeled AI-made for people on Standard, the default level.';
+		return `${ACTION_DONE_WORD[a]} for people on Standard, the default level.`;
+	}
 
-	const SUMMARY: Record<Verdict, string> = {
-		slop: 'Hidden for people on Standard, the default level.',
-		likely_slop: 'Collapsed to one line for people on Standard, with the reason shown.',
-		ai_made: 'Labeled AI-made. Nothing from it is hidden on Standard.',
-		disputed: 'Shown to everyone, with a disputed mark.',
-		clear: 'Allowed for everyone, at every strictness level.'
-	};
-
-	const evidenceLine = $derived.by(() => {
-		if (!source) return '';
-		const e = source.evidence;
-		const parts: string[] = [];
-		if (e.taggers > 0) parts.push(plural(e.taggers, 'tagger'));
-		if (e.items_seen > 0) parts.push(plural(e.items_seen, 'recent item'));
-		return parts.length ? `Based on ${parts.join(' and ')}.` : '';
-	});
-
-	const tagTotal = $derived(source ? source.evidence.tags.slop + source.evidence.tags.ai_fine + source.evidence.tags.not_slop : 0);
+	const why = $derived(
+		source
+			? {
+					...evidence({ verdict: source.verdict, hidden: false, signals: source.signals }),
+					title: EVIDENCE_TITLE
+				}
+			: null
+	);
+	/** History without entries where nothing changed. */
+	const history = $derived(state.kind === 'ok' ? state.data.history.filter((e) => e.from !== e.to) : []);
+	const tags = $derived(source?.evidence.tags);
+	const tagTotal = $derived(tags ? tags.slop + tags.ai_fine + tags.not_slop : 0);
 </script>
 
 <svelte:head>
@@ -88,126 +105,100 @@
 	<meta name="description" content="The Colander verdict for {name} on {PLATFORM_NAME[platform]}, with its evidence and decision history." />
 </svelte:head>
 
-<div class="wrap">
-	<header class="head">
-		<p class="eyebrow">{PLATFORM_NAME[platform]} {noun}</p>
-		<h1 class="t-display">{name}</h1>
-		{#if source && (source.aliases.length > 1 || source.aliases[0] !== name)}
-			<p class="ids">
-				{#each source.aliases as a (a)}<span class="mono">{a}</span>{/each}
-			</p>
-		{/if}
-	</header>
+<div class="cl-container page-top head">
+	<p class="eyebrow"><PlatformTag {platform} size="lg" /><span>{PLATFORM_NAME[platform]} {noun}</span></p>
+	<h1 class="cl-display">{name}</h1>
+	<p class="raw">
+		<span class="cl-figure cl-muted" title={source?.id ?? id}>{middleTruncate(source?.id ?? id, 28)}</span>
+		<CopyButton text={source?.id ?? id} label="Copy" />
+	</p>
+</div>
 
+<div class="cl-container page-body">
 	{#if state.kind === 'loading'}
-		<Loading label="Loading this {noun}'s record" />
+		<Loading />
 	{:else if state.kind === 'error'}
 		<div class="error-box">
-			<Notice tone="error" title="This page could not load">
-				<p>{state.message}</p>
-			</Notice>
-			<button type="button" class="uin-btn uin-btn-outline uin-btn-md" onclick={() => load(platform, id)}>
-				<RefreshCw size={16} strokeWidth={1.75} aria-hidden="true" /> Try again
-			</button>
+			<Notice tone="error" title="This page could not load"><p>{state.message}</p></Notice>
+			<Button variant="secondary" size="xl" onclick={() => load(platform, id)}><RefreshCw size={16} aria-hidden="true" />Try again</Button>
 		</div>
 	{:else if state.kind === 'not_rated' || !verdict}
-		<section class="banner not-rated" aria-labelledby="status-title">
+		<section class="banner uin-card uin-card-lg uin-card-pad not-rated" aria-labelledby="status-title">
 			<div class="banner-main">
 				<h2 class="sr-only" id="status-title">Status</h2>
-				<p><VerdictOrNone verdict={null} size="lg" /></p>
-				<p class="t-title">Colander has no verdict for this {noun}.</p>
-				<p class="t-body muted">
-					Nothing from it is hidden, collapsed or labeled by the shared list. Verdicts need AI evidence first, and two layers
-					of evidence must agree before anything is hidden.
+				<VerdictChip verdict={null} size="lg" />
+				<p class="cl-title">Colander has no verdict for this {noun}.</p>
+				<p class="cl-muted">
+					Nothing from it is hidden or labeled by the shared list. Verdicts need AI evidence first, and two layers of
+					evidence must agree before anything is hidden.
 				</p>
-				{#if source?.imported}
-					<p class="t-body muted">Imported from {source.attribution ?? 'a seed list'}.</p>
-				{/if}
 				<p class="links">
-					<a href={platformSourceUrl(platform, id)} rel="noreferrer" class="icon-line">
-						View on {PLATFORM_NAME[platform]} <ExternalLink size={14} strokeWidth={1.75} aria-hidden="true" />
-					</a>
-					<a href="/definition">How verdicts are made</a>
+					<a href={platformSourceUrl(platform, id)} rel="noreferrer" class="icon-line">View on {PLATFORM_NAME[platform]}<ExternalLink size={16} aria-hidden="true" /></a>
+					<ArrowLink href="/definition">How verdicts are made</ArrowLink>
 				</p>
 			</div>
-			<div class="banner-art cl-dots" aria-hidden="true">
-				<span class="art-mark"><ColanderMark size={40} outline /></span>
-			</div>
+			<PerforatedDisc size={160} mark={64} />
 		</section>
-		{#if state.kind === 'ok' && state.data.history.length}
-			<section class="block history" aria-labelledby="history-title">
-				<h2 class="t-title" id="history-title">Decision history</h2>
-				<ol class="timeline">
-					{#each state.data.history as e (e.id)}<li><LogEntryView entry={e} showSource={false} /></li>{/each}
-				</ol>
+		{#if history.length}
+			<section class="block" aria-labelledby="history-title">
+				<h2 class="cl-title" id="history-title">History</h2>
+				<div class="rows">{#each history as e (e.id)}<LogRow entry={e} time="date" full />{/each}</div>
 			</section>
 		{/if}
-	{:else if source && state.kind === 'ok'}
-		<section class="banner" aria-labelledby="status-title">
-			<div class="banner-main">
-				<h2 class="sr-only" id="status-title">Verdict</h2>
-				<p class="chip-line"><VerdictOrNone {verdict} size="lg" /><span class="plain muted">{VERDICT_PLAIN[verdict]}</span></p>
-				<p class="t-title">{SUMMARY[verdict]}</p>
-				{#if evidenceLine}<p class="t-body muted cl-num">{evidenceLine} Verdict since {source.updated_at ? fmtDate(source.updated_at) : 'an earlier list'}.</p>{/if}
-			</div>
-			<div class="banner-actions">
-				{#if appealable}
-					<a class="uin-btn uin-btn-primary btn-lg" href={appealPath(platform, id)}>
-						<Scale size={16} strokeWidth={1.75} aria-hidden="true" /> Appeal
-					</a>
-				{/if}
-				<a class="icon-line ext" href={platformSourceUrl(platform, source.id)} rel="noreferrer">
-					View on {PLATFORM_NAME[platform]} <ExternalLink size={14} strokeWidth={1.75} aria-hidden="true" />
-				</a>
-			</div>
-		</section>
-
-		{#if source.appeal_open}
-			<div class="notice-wrap">
-				<Notice title="An appeal is open">
-					<p>
-						The {noun} is shown to everyone while staff review it, and nothing from it is hidden. If you started the appeal,
-						follow it from the link in your email. The outcome is published in the decision log.
-					</p>
-				</Notice>
-			</div>
-		{/if}
-
-		<div class="grid">
+	{:else if source && why}
+		<div class="layout">
 			<div class="main">
-				<section class="block" aria-labelledby="effect-title">
-					<h2 class="t-title" id="effect-title">What the extension does with it</h2>
-					<ul class="effects">
+				<section class="banner uin-card uin-card-lg uin-card-pad" aria-labelledby="status-title">
+					<div class="banner-main">
+						<h2 class="sr-only" id="status-title">Verdict</h2>
+						<p class="chip-line"><VerdictChip {verdict} size="lg" /><span class="cl-muted">{VERDICT_PLAIN[verdict]}</span></p>
+						<p class="cl-title">{summary(verdict)}</p>
+						{#if source.appeal_open}
+							<p class="open">Unhidden while staff review</p>
+							<Lifecycle
+								direction="horizontal"
+								label="Appeal"
+								steps={[
+									{ label: 'Code', state: 'done' },
+									{ label: 'Verify', state: 'done' },
+									{ label: 'Under review', state: 'current' },
+									{ label: 'Decision', state: 'later' }
+								]}
+							/>
+							<p class="cl-muted small">
+								The {noun} is shown to everyone while staff review the appeal, and nothing from it is hidden. The outcome is published in the
+								decision log.
+							</p>
+						{/if}
+					</div>
+					<div class="banner-actions">
+						{#if appealable}
+							<Button variant="primary" size="xl" href={appealPath(platform, id)}><Scale size={16} aria-hidden="true" />Appeal this verdict</Button>
+						{/if}
+						<a class="icon-line ext" href={platformSourceUrl(platform, source.id)} rel="noreferrer">View on {PLATFORM_NAME[platform]}<ExternalLink size={16} aria-hidden="true" /></a>
+					</div>
+				</section>
+
+				<section class="block" aria-labelledby="levels-title">
+					<h2 class="cl-title" id="levels-title">At each strictness level</h2>
+					<ul class="levels">
 						{#each STRICTNESS as s (s)}
 							{@const a = ACTION_TABLE[s][verdict]}
 							{@const Icon = ACTION_ICON[a]}
 							<li class:current={s === 'standard'}>
-								<span class="lvl">{STRICTNESS_WORD[s]}{s === 'standard' ? ' (default)' : ''}</span>
-								<span class="icon-line act"><Icon size={14} strokeWidth={1.75} aria-hidden="true" /> {ACTION_WORD[a]}</span>
+								<span class="lvl">{STRICTNESS_WORD[s]}{#if s === 'standard'}<span class="uin-badge uin-badge-md">Default</span>{/if}</span>
+								<span class="act"><Icon size={16} aria-hidden="true" />{ACTION_DONE_WORD[a]}</span>
 							</li>
 						{/each}
 					</ul>
-					<p class="t-body muted">Viewers choose their own level, and can show any item or always allow this {noun}.</p>
+					<p class="cl-muted small">People choose their own level, and can show any item or always allow this {noun}.</p>
 				</section>
 
-				<section class="block" aria-labelledby="signals-title">
-					<h2 class="t-title" id="signals-title">Signals, in plain words</h2>
-					{#if source.signals.length}
-						<div class="signal-groups">
-							{#each groupSignals(source.signals) as g (g.key)}
-								<div class="signal-group">
-									<h3>{g.word}</h3>
-									<ul>
-										{#each g.signals as s (s)}<li>{SIGNAL_TEXT[s]}</li>{/each}
-									</ul>
-								</div>
-							{/each}
-						</div>
-					{:else}
-						<p class="t-body muted">No signals are recorded for this {noun}.</p>
-					{/if}
+				<section class="block" aria-labelledby="evidence-title">
+					<h2 class="sr-only" id="evidence-title">Evidence</h2>
+					<EvidenceCard evidence={why} variant="full" headingLevel={2} />
 					{#if source.slop_type || source.tests.length}
-						<dl class="kv type-tests">
+						<dl class="kv">
 							{#if source.slop_type}
 								<dt>Type</dt>
 								<dd><strong>{SLOP_TYPE_WORD[source.slop_type]}.</strong> {SLOP_TYPE_HINT[source.slop_type]}.</dd>
@@ -215,7 +206,7 @@
 							{#if source.tests.length}
 								<dt>Tests met</dt>
 								<dd>
-									<ul class="tests">
+									<ul class="dots-list">
 										{#each source.tests as t (t)}<li><strong>{TEST_WORD[t]}.</strong> {TEST_HINT[t]}.</li>{/each}
 									</ul>
 								</dd>
@@ -224,107 +215,66 @@
 					{/if}
 				</section>
 
-				<section class="block" aria-labelledby="evidence-title">
-					<h2 class="t-title" id="evidence-title">Evidence</h2>
-
-					<div class="evidence">
-						<h3>Community tags</h3>
-						{#if tagTotal > 0}
-							{@const t = source.evidence.tags}
-							<div class="stack-bar" aria-hidden="true">
-								<span class="seg seg-slop" style:flex-grow={t.slop}></span>
-								<span class="seg seg-fine" style:flex-grow={t.ai_fine}></span>
-								<span class="seg seg-not" style:flex-grow={t.not_slop}></span>
-							</div>
-							<ul class="legend">
-								<li><span class="key key-slop" aria-hidden="true"></span>Slop <strong class="cl-num">{fmtNum(t.slop)}</strong></li>
-								<li><span class="key key-fine" aria-hidden="true"></span>AI-made but fine <strong class="cl-num">{fmtNum(t.ai_fine)}</strong></li>
-								<li><span class="key key-not" aria-hidden="true"></span>Not slop <strong class="cl-num">{fmtNum(t.not_slop)}</strong></li>
-							</ul>
-							<p class="t-caption muted cl-num">From {plural(source.evidence.taggers, 'tagger')}, each weighted by their track record. Only each tagger's latest tag counts.</p>
-						{:else}
-							<p class="t-body muted">No community tags yet.</p>
-						{/if}
-					</div>
-
-					<div class="evidence">
-						<h3>Share of recent items with AI evidence</h3>
-						{#if source.evidence.ai_item_share !== null && source.evidence.items_seen > 0}
-							{@const share = source.evidence.ai_item_share}
-							<div class="meter" aria-hidden="true">
-								<span class="meter-fill" style:width={fmtPct(share)}></span>
-								<span class="meter-bar"><span class="meter-bar-label">80%</span></span>
-							</div>
-							<p class="t-body cl-num">
-								<strong>{fmtPct(share)}</strong> of {plural(source.evidence.items_seen, 'recent item')} carry AI evidence.
-								{share >= 0.8 ? 'That is above' : 'That is below'} the 80% bar for a source that is mostly AI.
-								{#if share < 0.8 && source.evidence.items_seen >= 5}A mixed source is never hidden as a whole.{/if}
-							</p>
-						{:else}
-							<p class="t-body muted">Not enough items seen yet.</p>
-						{/if}
-					</div>
-
-					<div class="evidence">
-						<h3>Posting volume</h3>
-						{#if source.evidence.uploads_per_day !== null}
-							<p class="t-body"><strong class="cl-num">{source.evidence.uploads_per_day}</strong> uploads a day, from public channel data.</p>
-						{:else}
-							<p class="t-body muted">No upload data for this {noun}. Volume data comes from YouTube's public channel data only.</p>
-						{/if}
+				<section class="block" aria-labelledby="numbers-title">
+					<h2 class="cl-title" id="numbers-title">The numbers behind it</h2>
+					<div class="numbers uin-card uin-card-lg uin-card-pad">
+						<div class="num">
+							<h3>Community tags</h3>
+							{#if tags && tagTotal > 0}
+								<TagTally {tags} />
+								<p class="cl-caption cl-muted">From {plural(source.evidence.taggers, 'tagger')}, each weighted by their track record.</p>
+							{:else}
+								<p class="cl-muted small">No community tags yet.</p>
+							{/if}
+						</div>
+						<div class="num">
+							<h3>Recent items with AI evidence</h3>
+							{#if source.evidence.ai_item_share !== null && source.evidence.items_seen > 0}
+								{@const share = source.evidence.ai_item_share}
+								<DotMeter value={Math.round(share * 100)} max={100} />
+								<p class="small">
+									<strong>{fmtPct(share)}</strong> of {plural(source.evidence.items_seen, 'recent item')}. {share >= 0.8 ? 'Above' : 'Below'} the 80% bar
+									for a source that is mostly AI.{#if share < 0.8 && source.evidence.items_seen >= 5}{' '}A mixed source is never hidden as a whole.{/if}
+								</p>
+							{:else}
+								<p class="cl-muted small">Not enough items seen yet.</p>
+							{/if}
+						</div>
+						<div class="num">
+							<h3>Audience size</h3>
+							{#if source.large}
+								<p class="small"><strong>Large.</strong> A Slop verdict on it needs staff review.</p>
+							{:else if source.audience_known}
+								<p class="small"><strong>Not large,</strong> as recorded by staff.</p>
+							{:else}
+								<p class="cl-muted small">Not known. A large {noun} needs staff review before a Slop verdict.</p>
+							{/if}
+						</div>
 					</div>
 				</section>
 
-				<section class="block history" aria-labelledby="history-title">
-					<h2 class="t-title" id="history-title">Decision history</h2>
-					{#if state.data.history.length}
-						<ol class="timeline">
-							{#each state.data.history as e (e.id)}<li><LogEntryView entry={e} showSource={false} /></li>{/each}
-						</ol>
+				<section class="block" aria-labelledby="history-title">
+					<h2 class="cl-title" id="history-title">History</h2>
+					{#if history.length}
+						<div class="rows">{#each history as e (e.id)}<LogRow entry={e} time="date" full />{/each}</div>
 					{:else}
-						<p class="t-body muted">No decisions are logged for this {noun} yet.</p>
+						<p class="cl-muted small">No decisions are logged for this {noun} yet.</p>
 					{/if}
 				</section>
 			</div>
 
-			<aside class="side">
-				{#if appealable}
-					<section class="card appeal-card" aria-labelledby="appeal-title">
-						<h2 class="t-title" id="appeal-title">Is this your {noun}? Appeal this verdict.</h2>
-						<p class="t-body muted">
-							Prove the {noun} is yours with a short code, and tell us why the verdict is wrong. Nothing from it is hidden
-							while staff review, and the outcome is published in the decision log.
-						</p>
-						<a class="uin-btn uin-btn-outline uin-btn-md" href={appealPath(platform, id)}>
-							<Scale size={16} strokeWidth={1.75} aria-hidden="true" /> Start an appeal
-						</a>
-					</section>
-				{:else if verdict === 'clear'}
-					<section class="card appeal-card" aria-labelledby="appeal-title">
-						<h2 class="t-title" id="appeal-title">Nothing to appeal</h2>
-						<p class="t-body muted">Appeals are for verdicts that hide, collapse or label a {noun}. Clear does none of those.</p>
-					</section>
-				{/if}
-
-				<section class="card" aria-labelledby="facts-title">
-					<h2 class="facts-title" id="facts-title">Record</h2>
-					<dl class="facts">
-						<div><dt>Verdict</dt><dd><VerdictOrNone {verdict} /></dd></div>
-						{#if source.updated_at}<div><dt>Since</dt><dd>{fmtDate(source.updated_at)}</dd></div>{/if}
-						{#if source.rescore_at}<div><dt>Re-scored by</dt><dd>{fmtDate(source.rescore_at)}, or at once if an appeal opens</dd></div>{/if}
-						<div><dt>Large audience</dt><dd>{source.large ? 'Yes. A Slop verdict needs staff review.' : 'No'}</dd></div>
-						{#if source.imported}<div><dt>Origin</dt><dd>Imported from {source.attribution ?? 'a seed list'}. {source.signals.includes('staff_review') ? 'Reviewed since.' : 'Until reviewed, it can be Likely slop at most.'}</dd></div>{/if}
-					</dl>
-				</section>
-
-				{#if verdict !== 'clear' && verdict !== 'disputed'}
-					<section class="card-quiet" aria-labelledby="wrong-title">
-						<h2 class="facts-title" id="wrong-title">Not the creator?</h2>
-						<p class="t-body muted">
-							If you think this is wrong, tag an item Not slop in the extension. Enough counter-tags move a verdict to Disputed.
-						</p>
-					</section>
-				{/if}
+			<aside class="side" aria-label="Record">
+				<dl class="facts">
+					{#if source.updated_at}<div><dt>Verdict since</dt><dd>{fmtShortDate(source.updated_at)}</dd></div>{/if}
+					<div>
+						<dt>Re-scoring</dt>
+						<dd>Re-scored every 90 days.{#if source.rescore_at}{' '}Next: {fmtShortDate(source.rescore_at)}{/if}</dd>
+					</div>
+					{#if source.aliases.length > 1}
+						<div><dt>Also known as</dt><dd>{#each source.aliases.filter((a) => a !== source.id) as a (a)}<span class="cl-figure alias">{a}</span>{/each}</dd></div>
+					{/if}
+					{#if live.stats}<div><dt>List</dt><dd><LiveBadge sequence={live.stats.list_sequence} updatedAt={live.stats.list_updated_at} now={live.now ?? undefined} /></dd></div>{/if}
+				</dl>
 			</aside>
 		</div>
 	{/if}
@@ -333,342 +283,200 @@
 <style>
 	.head {
 		display: grid;
-		gap: var(--cl-s2);
-		padding: 64px 0 var(--cl-s5);
+		justify-items: start;
+		gap: 12px;
 	}
-	.head .t-display {
+	.eyebrow {
+		display: inline-flex;
+		align-items: center;
+		gap: 8px;
+		color: var(--cl-text-muted);
+		font: var(--cl-chip);
+	}
+	h1 {
+		max-width: 100%;
 		overflow-wrap: anywhere;
 	}
-	.ids {
+	.raw {
 		display: flex;
 		flex-wrap: wrap;
-		gap: 4px 16px;
-		color: var(--cl-text-muted);
-		font: var(--cl-body);
-	}
-	.banner {
-		display: flex;
-		justify-content: space-between;
 		align-items: center;
-		gap: var(--cl-s5);
-		padding: var(--cl-s5);
-		background: var(--cl-surface);
-		border: 1px solid var(--cl-border);
-		border-radius: var(--cl-r-card);
+		gap: 12px;
 	}
-	.banner-main {
+	.layout {
 		display: grid;
-		gap: var(--cl-s2);
-		max-width: 680px;
-	}
-	.chip-line {
-		display: flex;
-		align-items: center;
-		flex-wrap: wrap;
-		gap: 4px 12px;
-		margin-bottom: 4px;
-	}
-	.plain {
-		font: var(--cl-body);
-	}
-	.banner-actions {
-		display: grid;
-		justify-items: end;
-		gap: var(--cl-s3);
-		flex: none;
-	}
-	.ext {
-		font: 600 14px/20px var(--cl-font);
-	}
-	.not-rated {
-		align-items: stretch;
-		padding: 0;
-		overflow: hidden;
-	}
-	.not-rated .banner-main {
-		padding: var(--cl-s5);
-	}
-	.banner-art {
-		flex: 0 0 280px;
-		display: grid;
-		place-items: center;
-		border-left: 1px solid var(--cl-border);
-		background-color: var(--cl-paper);
-	}
-	.art-mark {
-		display: grid;
-		place-items: center;
-		width: 88px;
-		height: 88px;
-		border-radius: 50%;
-		background: var(--cl-paper);
-		color: var(--cl-text);
-	}
-	.links {
-		display: flex;
-		flex-wrap: wrap;
-		gap: var(--cl-s2) var(--cl-s5);
-		margin-top: var(--cl-s2);
-		font: 600 14px/20px var(--cl-font);
-	}
-	.notice-wrap {
-		margin-top: var(--cl-s3);
-	}
-	.error-box {
-		display: grid;
-		gap: var(--cl-s3);
-		justify-items: start;
-		max-width: 560px;
-	}
-	.grid {
-		display: grid;
-		grid-template-columns: minmax(0, 1fr) 340px;
-		gap: var(--cl-s6);
-		margin-top: var(--cl-s6);
+		grid-template-columns: minmax(0, 1fr) 280px;
+		gap: 48px;
 		align-items: start;
 	}
 	.main {
 		display: grid;
-		gap: var(--cl-s6);
+		gap: 48px;
+		min-width: 0;
 	}
 	.block {
 		display: grid;
-		gap: var(--cl-s4);
+		gap: 16px;
 	}
-	.history {
-		margin-top: var(--cl-s6);
-	}
-	.main .history {
-		margin-top: 0;
-	}
-	.effects {
-		list-style: none;
-		display: grid;
-		grid-template-columns: repeat(4, minmax(0, 1fr));
-		border: 1px solid var(--cl-border);
-		border-radius: var(--cl-r-card);
-		background: var(--cl-surface);
-		overflow: hidden;
-	}
-	.effects li {
-		display: grid;
-		gap: var(--cl-s1);
-		padding: var(--cl-s3) var(--cl-s4);
-		font: var(--cl-body);
-	}
-	.effects li + li {
-		border-left: 1px solid var(--cl-border);
-	}
-	.effects li.current {
-		background: var(--cl-surface-raised);
-	}
-	.lvl {
-		font: var(--cl-caption);
-		color: var(--cl-text-muted);
-	}
-	.act {
-		font-weight: 600;
-	}
-	.signal-groups {
-		display: grid;
-		grid-template-columns: 1fr 1fr;
-		gap: var(--cl-s4);
-	}
-	.signal-group h3,
-	.evidence h3 {
-		font: 600 14px/20px var(--cl-font);
-		color: var(--cl-text-muted);
-		margin-bottom: var(--cl-s2);
-	}
-	.signal-group ul {
-		padding-left: var(--cl-s4);
-		font: var(--cl-body);
-		display: grid;
-		gap: 4px;
-	}
-	.type-tests {
-		padding-top: var(--cl-s4);
-		border-top: 1px solid var(--cl-border);
-	}
-	.type-tests dd {
-		font: var(--cl-body);
-	}
-	.tests {
-		list-style: none;
-		display: grid;
-		gap: 4px;
-	}
-	.evidence {
-		padding: var(--cl-s4) var(--cl-s5);
-		background: var(--cl-surface);
-		border: 1px solid var(--cl-border);
-		border-radius: var(--cl-r-card);
-		display: grid;
-		gap: var(--cl-s2);
-	}
-	.stack-bar {
-		display: flex;
-		gap: 2px;
-		height: 14px;
-		border-radius: 3px;
-		overflow: hidden;
-	}
-	.seg {
-		flex-basis: 0;
-		min-width: 3px;
-	}
-	.seg-slop,
-	.key-slop {
-		background: var(--cl-text);
-	}
-	.seg-fine,
-	.key-fine {
-		background: color-mix(in srgb, var(--cl-text-muted) 55%, var(--cl-surface));
-	}
-	.seg-not,
-	.key-not {
-		background: var(--cl-surface);
-		box-shadow: inset 0 0 0 1.5px var(--cl-text-muted);
-	}
-	.seg[style*='flex-grow: 0'] {
-		display: none;
-	}
-	.legend {
-		list-style: none;
+	.banner {
 		display: flex;
 		flex-wrap: wrap;
-		gap: var(--cl-s1) var(--cl-s5);
+		align-items: flex-start;
+		justify-content: space-between;
+		gap: 24px;
+	}
+	.banner-main {
+		display: grid;
+		justify-items: start;
+		gap: 12px;
+		max-width: 620px;
+	}
+	.chip-line {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 4px 12px;
+	}
+	.open {
+		font: var(--cl-body-strong);
+	}
+	.banner-main :global(.lc) {
+		width: min(440px, 100%);
+	}
+	.banner-actions {
+		display: grid;
+		justify-items: end;
+		gap: 12px;
+	}
+	.ext {
+		font: var(--cl-body-strong);
+	}
+	.not-rated {
+		align-items: center;
+	}
+	.links {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 8px 24px;
+		font: var(--cl-body-strong);
+	}
+	.small {
 		font: var(--cl-body);
 	}
-	.legend li {
-		display: inline-flex;
+	.levels {
+		display: grid;
+		grid-template-columns: repeat(3, minmax(0, 1fr));
+		overflow: hidden;
+		border: 1px solid var(--cl-border);
+		border-radius: var(--cl-r-card);
+		background: var(--cl-surface);
+		list-style: none;
+	}
+	.levels li {
+		display: grid;
+		gap: 8px;
+		padding: 16px;
+	}
+	.levels li + li {
+		border-left: 1px solid var(--cl-border);
+	}
+	.levels .current {
+		background: var(--cl-brand-tint);
+	}
+	.lvl {
+		display: flex;
 		align-items: center;
 		gap: 8px;
-	}
-	.key {
-		width: 12px;
-		height: 12px;
-		border-radius: 2px;
-	}
-	.meter {
-		position: relative;
-		height: 14px;
-		border-radius: 3px;
-		background-image: radial-gradient(circle, var(--cl-border) 1.5px, transparent 1.9px);
-		background-size: 8px 14px;
-		margin-top: var(--cl-s5);
-	}
-	.meter-fill {
-		position: absolute;
-		inset: 0 auto 0 0;
-		background: var(--cl-text);
-		border-radius: 3px;
-	}
-	.meter-bar {
-		position: absolute;
-		left: 80%;
-		top: -6px;
-		bottom: -4px;
-		border-left: 2px solid var(--cl-text-muted);
-	}
-	.meter-bar-label {
-		position: absolute;
-		left: -14px;
-		top: -18px;
-		font: 600 12px/16px var(--cl-font);
 		color: var(--cl-text-muted);
+		font: var(--cl-body-strong);
 	}
-	.timeline {
-		list-style: none;
-		border-left: 2px solid var(--cl-border);
-		margin-left: 6px;
+	.current .lvl {
+		color: var(--cl-text);
 	}
-	.timeline li {
-		position: relative;
-		padding-left: var(--cl-s5);
+	.act {
+		display: inline-flex;
+		align-items: center;
+		gap: 6px;
+		font: var(--cl-body-lg);
+		font-weight: 600;
 	}
-	.timeline li::before {
-		content: '';
-		position: absolute;
-		left: -7px;
-		top: 30px;
-		width: 12px;
-		height: 12px;
-		border-radius: 50%;
-		background: var(--cl-paper);
-		border: 2px solid var(--cl-text-muted);
+	.numbers {
+		display: grid;
+		grid-template-columns: repeat(3, minmax(0, 1fr));
+		gap: 24px;
 	}
-	.timeline :global(.entry) {
-		grid-template-columns: 1fr;
-		padding-block: var(--cl-s4);
-	}
-	.timeline :global(.entry .when) {
-		display: flex;
+	.num {
+		display: grid;
+		align-content: start;
 		gap: 8px;
+		min-width: 0;
+	}
+	.num h3 {
+		font: var(--cl-body-strong);
+	}
+	.rows {
+		border-bottom: 1px solid var(--cl-border);
 	}
 	.side {
-		display: grid;
-		gap: var(--cl-s4);
 		position: sticky;
-		top: 24px;
-	}
-	.appeal-card {
-		display: grid;
-		gap: var(--cl-s3);
-		justify-items: start;
-	}
-	.facts-title {
-		font: 600 16px/24px var(--cl-font);
-		margin-bottom: var(--cl-s3);
+		top: 88px;
 	}
 	.facts {
 		display: grid;
-		gap: var(--cl-s3);
+		/* No fact, the live list pill included, can widen the card. */
+		grid-template-columns: minmax(0, 1fr);
+		gap: 16px;
+		padding: 24px;
+		border: 1px solid var(--cl-border);
+		border-radius: var(--cl-r-card);
+		background: var(--cl-surface);
 		font: var(--cl-body);
 	}
 	.facts dt {
-		font: var(--cl-caption);
+		margin-bottom: 4px;
 		color: var(--cl-text-muted);
+		font: var(--cl-chip);
 	}
-	.card-quiet {
+	.alias {
+		display: block;
+		overflow-wrap: anywhere;
+	}
+	.error-box {
 		display: grid;
-		gap: 0;
+		justify-items: start;
+		gap: 12px;
+		max-width: 560px;
 	}
-	@media (max-width: 960px) {
-		.grid {
-			grid-template-columns: 1fr;
+	@media (max-width: 1023px) {
+		.layout {
+			grid-template-columns: minmax(0, 1fr);
 		}
 		.side {
 			position: static;
 		}
-	}
-	@media (max-width: 720px) {
-		.head {
-			padding-top: var(--cl-s6);
+		.numbers {
+			grid-template-columns: 1fr;
 		}
-		.banner {
-			flex-direction: column;
-			align-items: stretch;
+	}
+	@media (max-width: 639px) {
+		/* Phones: one row per level, its name beside what it does. */
+		.levels {
+			grid-template-columns: minmax(0, 1fr);
+		}
+		.levels li {
+			display: flex;
+			flex-wrap: wrap;
+			align-items: center;
+			justify-content: space-between;
+			gap: 8px 16px;
+			padding: 12px 16px;
+		}
+		.levels li + li {
+			border-top: 1px solid var(--cl-border);
+			border-left: 0;
 		}
 		.banner-actions {
 			justify-items: start;
-		}
-		.banner-art {
-			flex-basis: 120px;
-			border-left: 0;
-			border-top: 1px solid var(--cl-border);
-		}
-		.effects {
-			grid-template-columns: 1fr 1fr;
-		}
-		.effects li:nth-child(3) {
-			border-left: 0;
-		}
-		.effects li:nth-child(n + 3) {
-			border-top: 1px solid var(--cl-border);
-		}
-		.signal-groups {
-			grid-template-columns: 1fr;
 		}
 	}
 </style>

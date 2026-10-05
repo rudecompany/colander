@@ -1,5 +1,5 @@
 <!--
-@component List — vertical row list with leading / label / aside slots.
+@component List - vertical row list with leading / label / aside slots.
 
 Distinct from `Table`: a List is a vertically-stacked sequence of
 single-row entries with a primary label, an optional secondary

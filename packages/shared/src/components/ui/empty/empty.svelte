@@ -1,5 +1,5 @@
 <!--
-@component Empty — empty-state placeholder.
+@component Empty - empty-state placeholder.
 
 Shown in a list, table, or panel when there's nothing to render. The
 default layout centers an optional icon, a display-font title, an

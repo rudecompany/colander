@@ -1,9 +1,9 @@
 import { test, expect } from './fixtures.ts';
-import { mockApi } from './mocks.ts';
+import { LOG, SOURCES, mockApi } from './mocks.ts';
 
 const cases = [
 	{ path: '/s/yt/UCq3x9Vb2m4LkT7pQe8sW1aZ', name: 'Ancient Facts Daily', chip: 'Slop', plain: 'Low-effort AI content', summary: 'Hidden for people on Standard', appeal: true },
-	{ path: '/s/tt/@historybites247', name: 'History Bites 24/7', chip: 'Likely slop', plain: 'Probably low-effort AI content', summary: 'Collapsed to one line', appeal: true },
+	{ path: '/s/tt/@historybites247', name: 'History Bites 24/7', chip: 'Likely slop', plain: 'Probably low-effort AI content', summary: 'Hidden for people on Standard', appeal: true },
 	{ path: '/s/ig/studiolumen', name: 'Studio Lumen', chip: 'AI-made', plain: 'Made with AI', summary: 'Labeled AI-made', appeal: true },
 	{ path: '/s/yt/@numisnotes', name: 'Numis Notes', chip: 'Disputed', plain: 'People disagree about this', summary: 'Shown to everyone, with a disputed mark', appeal: false },
 	{ path: '/s/fb/104729388112', name: 'Coastal Science Club', chip: 'Clear', plain: 'Checked and fine', summary: 'Allowed for everyone', appeal: false }
@@ -20,8 +20,9 @@ for (const c of cases) {
 		await expect(banner).toContainText(c.summary);
 		// Appeal is offered only where an appeal can start: a verdict other than Clear, with no appeal open.
 		if (c.appeal) {
-			await expect(banner.getByRole('link', { name: 'Appeal' })).toHaveAttribute('href', c.path.replace('/s/', '/appeal/'));
-			await expect(page.getByRole('heading', { name: /Appeal this verdict/ })).toBeVisible();
+			// One Appeal call to action on the page, in the banner.
+			await expect(banner.getByRole('link', { name: 'Appeal this verdict' })).toHaveAttribute('href', c.path.replace('/s/', '/appeal/'));
+			await expect(page.locator('a[href^="/appeal/"]')).toHaveCount(1);
 		} else {
 			await expect(page.locator('a[href^="/appeal/"]')).toHaveCount(0);
 		}
@@ -34,17 +35,28 @@ for (const c of cases) {
 test('an open appeal is explained instead of offering another', async ({ page }) => {
 	await mockApi(page);
 	await page.goto('/s/yt/@numisnotes');
-	const notice = page.getByRole('status').filter({ hasText: 'An appeal is open' });
-	await expect(notice).toContainText('The channel is shown to everyone while staff review it');
-	// Already Disputed, so the counter-tag hint has nothing left to do.
-	await expect(page.getByRole('heading', { name: 'Not the creator?' })).toHaveCount(0);
+	const banner = page.getByRole('region', { name: 'Verdict', exact: true });
+	await expect(banner).toContainText('Unhidden while staff review');
+	await expect(banner).toContainText('The channel is shown to everyone while staff review the appeal');
+	await expect(banner.getByRole('list', { name: 'Appeal' }).getByRole('listitem')).toHaveCount(4);
+	await expect(page.locator('a[href^="/appeal/"]')).toHaveCount(0);
 });
 
-test('a Clear source says there is nothing to appeal', async ({ page }) => {
-	await mockApi(page);
+test('history hides entries where nothing changed', async ({ page }) => {
+	await mockApi(page, {
+		'GET /v1/sources/*': () => ({
+			json: {
+				source: { ...SOURCES['fb:104729388112'] },
+				history: [
+					{ ...LOG[3] },
+					{ ...LOG[3], id: 'log_same', from: 'clear', to: 'clear', reason: 'Re-scored with no change.' }
+				]
+			}
+		})
+	});
 	await page.goto('/s/fb/104729388112');
-	await expect(page.getByRole('heading', { name: 'Nothing to appeal' })).toBeVisible();
-	await expect(page.getByRole('heading', { name: 'Not the creator?' })).toHaveCount(0);
+	await expect(page.getByText('Appeal upheld. Original footage')).toBeVisible();
+	await expect(page.getByText('Re-scored with no change.')).toHaveCount(0);
 });
 
 test('source page for a source with no verdict', async ({ page }) => {
@@ -55,15 +67,47 @@ test('source page for a source with no verdict', async ({ page }) => {
 	await expect(page.getByRole('link', { name: /View on TikTok/ })).toHaveAttribute('href', 'https://www.tiktok.com/@nobodyknows');
 });
 
-test('an imported source with no verdict still names its seed list', async ({ page }) => {
-	await mockApi(page);
+test('a source page never names a data source, even when an older server still sends one', async ({ page }) => {
+	// Old wire data on purpose: imported and attribution are deprecated and always false and null now.
+	await mockApi(page, {
+		'GET /v1/sources/*': () => ({
+			json: { source: { ...SOURCES['yt:@everydaytrivia'], imported: true, attribution: 'AiSList (CC BY-NC 4.0), blocklist' }, history: [] }
+		})
+	});
 	await page.goto('/s/yt/@everydaytrivia');
 	await expect(page.getByText('Not rated', { exact: true })).toBeVisible();
-	await expect(page.getByText('Imported from AiSList (CC BY-NC 4.0), blocklist.')).toBeVisible();
+	await expect(page.locator('main')).not.toContainText(/AiSList|seed list|imported/i);
+});
+
+test('audience size says when it is not known or what staff recorded, and no upload figures appear', async ({ page }) => {
+	await mockApi(page);
+	await page.goto('/s/tt/@historybites247');
+	const numbers = page.getByRole('region', { name: 'The numbers behind it' });
+	await expect(numbers).toContainText('Audience size');
+	await expect(numbers).toContainText('Not known.');
+	await expect(page.locator('main')).not.toContainText(/Large audience|uploads? a day|upload data|Posting volume/i);
+
+	await mockApi(page, { 'GET /v1/sources/*': () => ({ json: { source: { ...SOURCES['tt:@historybites247'], large: true }, history: [] } }) });
+	await page.reload();
+	await expect(numbers).toContainText('Large. A Slop verdict on it needs staff review.');
+
+	// Staff recorded it as not large: the size is known, so the page says so.
+	await mockApi(page, { 'GET /v1/sources/*': () => ({ json: { source: { ...SOURCES['tt:@historybites247'], audience_known: true }, history: [] } }) });
+	await page.reload();
+	await expect(numbers).toContainText('Not large, as recorded by staff.');
+	await expect(numbers).not.toContainText('Not known');
 });
 
 test('an unknown platform is a 404', async ({ page }) => {
 	await mockApi(page);
-	await page.goto('/s/xx/whatever');
+	const res = await page.goto('/s/xx/whatever');
+	expect(res?.status()).toBe(404);
 	await expect(page.getByRole('heading', { level: 1 })).toHaveText('This page went through the holes');
+});
+
+test('an unknown page answers with a real 404, and source pages with 200', async ({ page }) => {
+	await mockApi(page);
+	expect((await page.goto('/no-such-page'))?.status()).toBe(404);
+	await expect(page.getByRole('heading', { level: 1 })).toHaveText('This page went through the holes');
+	expect((await page.goto('/s/yt/UCq3x9Vb2m4LkT7pQe8sW1aZ'))?.status()).toBe(200);
 });

@@ -1,165 +1,315 @@
-<!-- @component Plus: keyword and hashtag topics with their own strictness, and the weekly summary. -->
+<!--
+@component Plus: one upsell for people without Plus, then keyword and hashtag topics with their own
+strictness, and the week in data dots. Gated parts stay in view, inert, at 60% opacity.
+-->
 <script lang="ts">
+	import { PageHeader, PerforatedDisc, PlusTag } from '@colander/shared';
+	import { PLAN_COPY } from '@colander/shared/copy';
+	import { fmtDay, fmtNum } from '@colander/shared/format';
 	import Button from '@colander/shared/components/ui/button/button.svelte';
+	import Card from '@colander/shared/components/ui/card/card.svelte';
 	import Input from '@colander/shared/components/ui/input/input.svelte';
 	import NativeSelect from '@colander/shared/components/ui/native-select/native-select.svelte';
-	import Sparkline from '@colander/shared/components/ui/sparkline/sparkline.svelte';
 	import Switch from '@colander/shared/components/ui/switch/switch.svelte';
 	import { STRICTNESS, STRICTNESS_WORD, type Strictness } from '@colander/shared/verdicts';
-	import Plus from '@lucide/svelte/icons/plus';
-	import Trash2 from '@lucide/svelte/icons/trash-2';
+	import ArrowRight from '@lucide/svelte/icons/arrow-right';
+	import Check from '@lucide/svelte/icons/check';
+	import CircleAlert from '@lucide/svelte/icons/circle-alert';
+	import { SITE } from '../../lib/env';
 	import { dayKey, isPlus, K, withDefaults, type Entitlement, type Settings, type Stats, type Topic } from '../../lib/settings';
-	import Card from '../../ui/Card.svelte';
-	import PlusGate from '../../ui/PlusGate.svelte';
-	import Section from '../../ui/Section.svelte';
-	import { fmtNum, send, stored } from '../../ui/store.svelte';
+	import Gated from '../../ui/Gated.svelte';
+	import { send, stored } from '../../ui/store.svelte';
 
 	const settingsStore = stored<Partial<Settings> | undefined>(K.settings, undefined);
 	const entitlement = stored<Entitlement | undefined>(K.entitlement, undefined);
 	const stats = stored<Stats | undefined>(K.stats, undefined);
 	const settings = $derived(withDefaults(settingsStore.value));
 	const plus = $derived(isPlus(entitlement.value));
+	const uid = $props.id();
 
+	let busy = $state(false);
+	let trialError = $state('');
+	async function trial() {
+		busy = true;
+		trialError = '';
+		const r = await send<{ ok: boolean; error?: string }>({ type: 'start-trial' }).catch(() => ({ ok: false, error: 'Could not reach Colander.' }));
+		busy = false;
+		if (!r.ok) trialError = r.error ?? 'The trial could not start. Try again in a moment.';
+	}
+
+	// The week: one column of 10 data dots per day, bottom up.
+	const ROWS = 10;
 	const week = $derived.by(() => {
 		const days = [];
 		for (let i = 6; i >= 0; i--) {
-			const t = Date.now() - i * 86_400_000;
-			const d = stats.value?.days[dayKey(t)] ?? { hidden: 0, collapsed: 0, labeled: 0 };
-			days.push({ label: new Date(t).toLocaleDateString(undefined, { weekday: 'short' }), ...d });
+			const t = new Date(Date.now() - i * 86_400_000);
+			const d = stats.value?.days[dayKey(t.getTime())] ?? { hidden: 0, labeled: 0 };
+			// fmtDay reads UTC; the local calendar day goes in as a UTC date.
+			const day = fmtDay(Date.UTC(t.getFullYear(), t.getMonth(), t.getDate())).split(' ')[0]!;
+			days.push({ day, n: d.hidden, labeled: d.labeled });
 		}
 		return days;
 	});
-	const total = $derived(week.reduce((n, d) => n + d.hidden + d.collapsed, 0));
+	const peak = $derived(Math.max(0, ...week.map((d) => d.n)));
+	const perDot = $derived(Math.max(1, Math.ceil(peak / ROWS)));
 	const labeled = $derived(week.reduce((n, d) => n + d.labeled, 0));
-	const peak = $derived(Math.max(1, ...week.map((d) => d.hidden + d.collapsed)));
+	const total = $derived(week.reduce((n, d) => n + d.n, 0));
 
-	function save(topics: Topic[]) {
-		void send({ type: 'settings', patch: { topics } });
-	}
-	function update(id: string, patch: Partial<Topic>) {
-		save(settings.topics.map((t) => (t.id === id ? { ...t, ...patch } : t)));
-	}
-	function addTopic() {
-		save([...settings.topics, { id: crypto.randomUUID(), name: 'New topic', terms: [], strictness: 'strict', hide: false }]);
-	}
+	// Topics
+	let name = $state('');
+	let terms = $state('');
+	let level = $state<Strictness>('no_ai');
+	let hide = $state(false);
+	let topicError = $state('');
 	const parseTerms = (s: string) => s.split(',').map((t) => t.trim()).filter(Boolean).slice(0, 50);
+	const save = (topics: Topic[]) => void send({ type: 'settings', patch: { topics } });
+	function addTopic(e: Event) {
+		e.preventDefault();
+		topicError = '';
+		const list = parseTerms(terms);
+		if (!name.trim() || !list.length) {
+			topicError = 'Give the topic a name and at least one keyword or #hashtag.';
+			return;
+		}
+		save([...settings.topics, { id: crypto.randomUUID(), name: name.trim().slice(0, 40), terms: list, strictness: level, hide }]);
+		name = '';
+		terms = '';
+		hide = false;
+	}
 </script>
 
-<Section id="plus" title="Plus" description="Strictness per topic, keyword and hashtag rules, and a weekly summary. Paying never changes a verdict.">
-	<Card title="Topics">
-		{#snippet aside()}
-			{#if plus}<Button variant="outline" onclick={addTopic}><Plus size={16} strokeWidth={1.75} />Add topic</Button>{/if}
-		{/snippet}
-		{#if plus}
-			<p class="muted">A topic matches titles and captions by keyword or #hashtag. Matching items use the topic's level when it is stricter. Choose Hide matches to hide them even when no list names them.</p>
-			{#if settings.topics.length === 0}
-				<p class="muted t-caption">No topics yet. For example: Kids, with #kids and cartoon, at No AI.</p>
-			{/if}
-			<ul class="topics">
-				{#each settings.topics as t (t.id)}
-					<li>
-						<div class="grid">
-							<label for="tn-{t.id}" class="t-caption muted">Name</label>
-							<label for="tt-{t.id}" class="t-caption muted">Keywords and #hashtags, separated by commas</label>
-							<label for="ts-{t.id}" class="t-caption muted">Level</label>
-							<Input id="tn-{t.id}" value={t.name} onchange={(e) => update(t.id, { name: (e.currentTarget as HTMLInputElement).value.slice(0, 40) || 'Topic' })} />
-							<Input id="tt-{t.id}" value={t.terms.join(', ')} placeholder="#kids, cartoon, nursery rhymes" onchange={(e) => update(t.id, { terms: parseTerms((e.currentTarget as HTMLInputElement).value) })} />
-							<NativeSelect id="ts-{t.id}" options={STRICTNESS.map((s) => ({ value: s, label: STRICTNESS_WORD[s] }))} value={t.strictness} onchange={(e) => update(t.id, { strictness: (e.currentTarget as HTMLSelectElement).value as Strictness })} />
-						</div>
-						<div class="foot">
-							<span class="hide"><Switch checked={t.hide} aria-labelledby="th-{t.id}" onCheckedChange={(v) => update(t.id, { hide: v })} /><span id="th-{t.id}">Hide matches</span></span>
-							<Button variant="ghost" class="quiet-muted" aria-label="Delete topic {t.name}" onclick={() => save(settings.topics.filter((x) => x.id !== t.id))}><Trash2 size={16} strokeWidth={1.75} />Delete</Button>
-						</div>
-					</li>
-				{/each}
+<PageHeader variant="app" eyebrow="Options" title="Plus" lede="Strictness per topic, keyword and hashtag rules, and a weekly summary. Paying never changes a verdict." />
+
+<div class="cards">
+	{#if !plus}
+		<Card class="upsell" title={PLAN_COPY.plus.pitch} headingLevel={2}>
+			<ul class="checks">
+				{#each PLAN_COPY.plus.features as f (f)}<li><Check size={16} aria-hidden="true" />{f}</li>{/each}
 			</ul>
-		{:else}
-			<PlusGate what="Give topics their own strictness, like No AI for children's content, and hide anything that matches a keyword or hashtag." />
-		{/if}
+			<p class="price"><span class="cl-stat">{PLAN_COPY.plus.price}</span> <span class="alt">{PLAN_COPY.plus.alt}</span></p>
+			<div class="btns">
+				<Button variant="primary" onclick={trial} loading={busy}>{PLAN_COPY.plus.cta}</Button>
+				<Button variant="quiet" href="{SITE}/plans" target="_blank" rel="noopener">Compare plans<ArrowRight size={16} aria-hidden="true" /></Button>
+			</div>
+			<p class="caption">{PLAN_COPY.plus.trial}. {PLAN_COPY.trust}</p>
+			{#if trialError}<p class="err" role="alert"><CircleAlert size={16} aria-hidden="true" />{trialError}</p>{/if}
+		</Card>
+	{/if}
+
+	<Card title="Topics" headingLevel={2}>
+		{#snippet aside()}{#if !plus}<PlusTag />{/if}{/snippet}
+		<p class="muted">A topic matches titles and captions by keyword or #hashtag. Matching items use the topic's level when it is stricter. Hide matches hides them even when no list names them.</p>
+		<Gated locked={!plus}>
+			{#if settings.topics.length === 0}
+				<div class="empty">
+					<PerforatedDisc size={64} />
+					<p>No topics yet. For example: Kids, with #kids and cartoon, at No AI.</p>
+				</div>
+			{:else}
+				<ul class="topics">
+					{#each settings.topics as t (t.id)}
+						<li>
+							<span class="t-name">{t.name}</span>
+							<span class="t-terms">{t.terms.join(', ')}</span>
+							<span class="uin-badge uin-badge-md">{STRICTNESS_WORD[t.strictness]}</span>
+							{#if t.hide}<span class="uin-badge uin-badge-md">Hides matches</span>{/if}
+							<Button variant="quiet" aria-label="Delete topic {t.name}" onclick={() => save(settings.topics.filter((x) => x.id !== t.id))}>Delete</Button>
+						</li>
+					{/each}
+				</ul>
+			{/if}
+			<form class="form" onsubmit={addTopic} aria-label="Add a topic">
+				<label class="f"><span>Name</span><Input bind:value={name} maxlength={40} placeholder="Kids" /></label>
+				<label class="f grow"><span>Keywords and #hashtags, separated by commas</span><Input bind:value={terms} placeholder="#kids, cartoon, nursery rhymes" /></label>
+				<label class="f"><span>Level</span><NativeSelect options={STRICTNESS.map((s) => ({ value: s, label: STRICTNESS_WORD[s] }))} bind:value={level} /></label>
+				<div class="form-foot">
+					<span class="hide"><Switch bind:checked={hide} aria-labelledby="{uid}-hide" /><span id="{uid}-hide">Hide matches</span></span>
+					<Button variant="primary" type="submit">Add topic</Button>
+				</div>
+				{#if topicError}<p class="err" role="alert"><CircleAlert size={16} aria-hidden="true" />{topicError}</p>{/if}
+			</form>
+		</Gated>
 	</Card>
 
-	<Card title="This week">
-		{#if plus}
-			<div class="summary">
-				<div class="big"><span class="t-display cl-num">{fmtNum(total)}</span><span class="muted">hidden or collapsed in 7 days</span></div>
-				<Sparkline values={week.map((d) => d.hidden + d.collapsed)} width={160} height={40} area />
+	<Card title="This week" headingLevel={2}>
+		{#snippet aside()}{#if !plus}<PlusTag />{/if}{/snippet}
+		<Gated locked={!plus}>
+			<p class="sum"><span class="cl-stat">{fmtNum(total)}</span> <span class="muted">hidden in 7 days</span></p>
+			<div class="chart">
+				<svg
+					viewBox="0 0 {7 * 48} {ROWS * 12}"
+					width={7 * 48}
+					height={ROWS * 12}
+					role="img"
+					aria-label="Hidden per day: {week.map((d) => `${d.day} ${d.n}`).join(', ')}. Each dot is {perDot} {perDot === 1 ? 'item' : 'items'}."
+				>
+					{#each week as d, x (x)}
+						{#each Array.from({ length: ROWS }, (_, i) => i) as y (y)}
+							<circle cx={x * 48 + 24} cy={(ROWS - 1 - y) * 12 + 6} r="3" class:on={y < Math.round(d.n / perDot)} />
+						{/each}
+					{/each}
+				</svg>
+				<ol class="days" aria-hidden="true">
+					{#each week as d, x (x)}<li><span class="cl-figure">{d.day}</span><span class="n">{fmtNum(d.n)}</span></li>{/each}
+				</ol>
 			</div>
-			<ol class="bars" aria-label="Hidden or collapsed per day">
-				{#each week as d (d.label)}
-					<li>
-						<span class="bar" style="height: {Math.round(((d.hidden + d.collapsed) / peak) * 64)}px" aria-hidden="true"></span>
-						<span class="t-caption muted">{d.label}</span>
-						<span class="sr-only">{d.label}: {d.hidden + d.collapsed}</span>
-						<span class="t-caption cl-num">{d.hidden + d.collapsed}</span>
-					</li>
-				{/each}
-			</ol>
-			<p class="muted t-caption">Also labeled: <span class="cl-num">{fmtNum(labeled)}</span>. Counts stay on this device.</p>
-		{:else}
-			<PlusGate what="See how much slop Colander kept out of your feeds each week." />
-		{/if}
+			<p class="caption">1 dot = {perDot} {perDot === 1 ? 'item' : 'items'}. Also labeled: {fmtNum(labeled)}. Counts stay on this device.</p>
+		</Gated>
 	</Card>
-</Section>
+</div>
 
 <style>
-	.topics {
+	.cards {
+		display: grid;
+		grid-template-columns: minmax(0, 1fr);
+		gap: 24px;
+		margin-top: 32px;
+	}
+	.muted {
+		color: var(--cl-text-muted);
+	}
+	.caption {
+		color: var(--cl-text-muted);
+		font: var(--cl-caption);
+	}
+	.checks {
+		display: grid;
+		gap: 8px;
+	}
+	.checks li {
 		display: flex;
-		flex-direction: column;
-		gap: 12px;
+		align-items: center;
+		gap: 8px;
+	}
+	.price {
+		display: flex;
+		align-items: baseline;
+		gap: 8px;
+		margin: 16px 0;
+	}
+	.alt {
+		color: var(--cl-text-muted);
+	}
+	.btns {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 8px;
+		margin-bottom: 12px;
+	}
+	.err {
+		display: flex;
+		align-items: flex-start;
+		gap: 6px;
+		margin-top: 8px;
+	}
+	.err :global(svg) {
+		margin-top: 2px;
+	}
+	.empty {
+		display: flex;
+		align-items: center;
+		gap: 16px;
+		padding: 16px 0;
+		color: var(--cl-text-muted);
+	}
+	.topics {
+		margin-top: 12px;
+		border-top: 1px solid var(--cl-border);
 	}
 	.topics li {
 		display: flex;
-		flex-direction: column;
-		gap: 8px;
-		padding: 12px;
-		border: 1px solid var(--cl-border);
-		border-radius: var(--cl-r-chip);
+		align-items: center;
+		gap: 12px;
+		min-height: 48px;
+		border-bottom: 1px solid var(--cl-border);
 	}
-	.grid {
+	.t-name {
+		font: var(--cl-body-strong);
+	}
+	.t-terms {
+		flex: 1;
+		min-width: 0;
+		overflow: hidden;
+		color: var(--cl-text-muted);
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+	.form {
 		display: grid;
 		grid-template-columns: 160px minmax(0, 1fr) 140px;
-		gap: 4px 8px;
-		align-items: end;
+		gap: 12px 8px;
+		margin-top: 16px;
+		padding-top: 16px;
+		border-top: 1px solid var(--cl-border);
 	}
-	.foot {
+	/* Under the topic list, its last row's rule is the divider. */
+	.topics + .form {
+		padding-top: 0;
+		border-top: 0;
+	}
+	.f {
+		display: grid;
+		align-content: end;
+		gap: 4px;
+	}
+	.f > span {
+		color: var(--cl-text-muted);
+		font: var(--cl-caption);
+	}
+	.form-foot {
 		display: flex;
+		grid-column: 1 / -1;
 		align-items: center;
 		justify-content: space-between;
+	}
+	.form .err {
+		grid-column: 1 / -1;
 	}
 	.hide {
 		display: inline-flex;
 		align-items: center;
 		gap: 8px;
 	}
-	.summary {
+	.sum {
 		display: flex;
-		align-items: flex-end;
-		justify-content: space-between;
-		gap: 16px;
-	}
-	.big {
-		display: flex;
-		flex-direction: column;
-	}
-	.bars {
-		display: grid;
-		grid-template-columns: repeat(7, 1fr);
+		align-items: baseline;
 		gap: 8px;
-		align-items: end;
-		padding-top: 8px;
-		border-top: 1px solid var(--cl-border);
 	}
-	.bars li {
-		display: flex;
-		flex-direction: column;
-		align-items: center;
-		gap: 4px;
+	/* 7 columns of 48 px, shrinking together on a narrow screen so the days stay under their dots. */
+	.chart {
+		display: grid;
+		gap: 8px;
+		max-width: 336px;
+		margin: 16px 0 12px;
 	}
-	.bar {
+	.chart svg {
 		width: 100%;
-		max-width: 40px;
-		min-height: 2px;
-		border-radius: 4px 4px 0 0;
-		background: var(--cl-brand);
+		height: auto;
+	}
+	circle {
+		fill: var(--cl-dot-strong);
+	}
+	circle.on {
+		fill: var(--cl-text);
+	}
+	.days {
+		display: grid;
+		grid-template-columns: repeat(7, minmax(0, 1fr));
+		text-align: center;
+	}
+	.days li {
+		display: grid;
+	}
+	.days .cl-figure {
+		color: var(--cl-text-muted);
+	}
+	.n {
+		font: var(--cl-body-strong);
+		font-variant-numeric: tabular-nums;
+	}
+	@media (max-width: 639px) {
+		.form {
+			grid-template-columns: minmax(0, 1fr);
+		}
 	}
 </style>

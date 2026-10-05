@@ -1,14 +1,16 @@
 <!--
-@component Tabs — pill-style tab strip with optional counts.
+@component Tabs: a tab strip with optional counts.
 
-Vertical (default) for sidebar sub-navigation; horizontal for top-of-
-panel filter strips. Pass `tabs` as `{value, label, count?, disabled?}[]`
-and bind `value`.
+`horizontal`: 40 tall, the selected tab in the text color over a 2 px brand underline. Used
+for platform tabs, the side panel queue and page filters. `vertical`: 40-tall nav items, the
+selected one on brand-tint. Counts follow the label in the figure style ("Reports 7").
+Arrow keys, Home and End move between tabs; only the selected tab is a tab stop.
 
 CSS lives in `./tabs.css`.
 -->
 <script lang="ts" generics="T extends string">
   import {cn} from '../../../utils/cn';
+  import {fmtNum} from '../../../utils/format';
 
   type Tab = {
     value: T;
@@ -40,6 +42,19 @@ CSS lives in `./tabs.css`.
     value = next;
     onChange?.(next);
   }
+
+  function keydown(e: KeyboardEvent) {
+    const list = [...((e.currentTarget as HTMLElement).parentElement?.querySelectorAll<HTMLButtonElement>('[role="tab"]:not(:disabled)') ?? [])];
+    const i = list.indexOf(e.currentTarget as HTMLButtonElement);
+    const back = direction === 'horizontal' ? 'ArrowLeft' : 'ArrowUp';
+    const fwd = direction === 'horizontal' ? 'ArrowRight' : 'ArrowDown';
+    const n = list.length;
+    const next = e.key === fwd ? (i + 1) % n : e.key === back ? (i - 1 + n) % n : e.key === 'Home' ? 0 : e.key === 'End' ? n - 1 : -1;
+    if (next < 0) return;
+    e.preventDefault();
+    list[next]!.focus();
+    list[next]!.click();
+  }
 </script>
 
 <div
@@ -55,12 +70,14 @@ CSS lives in `./tabs.css`.
       class="uin-tab"
       class:uin-tab-active={value === tab.value}
       aria-selected={value === tab.value}
-      disabled={tab.disabled || tab.count === 0}
+      tabindex={value === tab.value ? 0 : -1}
+      disabled={tab.disabled}
+      onkeydown={keydown}
       onclick={() => pick(tab.value)}
     >
       <span>{tab.label}</span>
       {#if tab.count !== undefined}
-        <span class="uin-tab-count">{tab.count.toLocaleString()}</span>
+        <span class="uin-tab-count">{fmtNum(tab.count)}</span>
       {/if}
     </button>
   {/each}

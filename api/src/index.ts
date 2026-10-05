@@ -1,6 +1,6 @@
 // The edge Worker on getcolander.com (hosting plan sections 2 and 4). Workers Static Assets serves
-// the website; this code runs only for /v1/*, /ops/*, /healthz and /__dev/*, and only on cache
-// misses. It answers preflights, checks `since` and the query of the other cached GETs,
+// the website; this code runs only for /v1/*, /ops/*, /healthz, /__dev/* and the two SPA shell
+// paths, and only on cache misses. It answers preflights, checks `since` and the query of the other cached GETs,
 // rate-limits misses per salted IP hash, serves snapshot misses from R2 (from the Store while R2
 // has none or fails) and forwards the rest of /v1 to the Store. The cron triggers run
 // src/scheduled.ts.
@@ -46,6 +46,11 @@ export default {
 async function handle(request: Request, url: URL, env: Env, ctx: ExecutionContext): Promise<Handled> {
 	const path = url.pathname;
 	const method = request.method;
+	// The SPA shells are files, not pages: /200 and /404 get the 404 page with status 404, like any
+	// other unknown path.
+	if (path === '/200' || path === '/404') {
+		return { route: `${method} (site)`, res: await env.ASSETS.fetch(new Request(new URL('/__not_found__', url), request)) };
+	}
 	if (method === 'OPTIONS' && path.startsWith('/v1/')) {
 		return { route: 'OPTIONS (preflight)', res: isCorsPath(path) ? preflight() : notFound() };
 	}

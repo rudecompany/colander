@@ -1,4 +1,4 @@
-// Full-page screenshots of every page, desktop 1280 and mobile 390, light and dark.
+// Full-page screenshots of every page, desktop 1440 and mobile 390, light and dark.
 // Run with `pnpm screenshots` (writes to screenshots/). Skipped in the normal test run.
 import { test } from '@playwright/test';
 import { mockApi, PLUS_ACCOUNT, STAFF, APPEAL, QUEUE, reviewSource } from './mocks.ts';
@@ -72,7 +72,7 @@ const shots: Shot[] = [
 ];
 
 const variants = [
-	{ id: 'desktop', width: 1280, height: 900 },
+	{ id: 'desktop', width: 1440, height: 900 },
 	{ id: 'mobile', width: 390, height: 844 }
 ];
 

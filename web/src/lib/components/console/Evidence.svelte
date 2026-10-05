@@ -14,11 +14,11 @@
 	import ExternalLink from '@lucide/svelte/icons/external-link';
 	import Lock from '@lucide/svelte/icons/lock';
 	import { api, errorText } from '#lib/api.ts';
-	import { fmtDateTime, fmtNum, fmtPct, platformItemUrl, platformSourceUrl, sourcePath } from '#lib/format.ts';
-	import { LAYER_KEYS, LAYER_QUESTION, LAYER_WORD } from '#lib/layers.ts';
-	import LogEntryView from '../LogEntryView.svelte';
+	import { fmtDateTime, fmtNum, fmtPct, platformItemUrl, platformSourceUrl, sourcePath } from '@colander/shared';
+	import { LAYER_KEYS, LAYER_QUESTION, LAYER_WORD } from '@colander/shared';
+	import { LogRow, middleTruncate } from '@colander/shared';
 	import Notice from '../Notice.svelte';
-	import VerdictOrNone from '../VerdictOrNone.svelte';
+	import { VerdictChip } from '@colander/shared';
 
 	let {
 		data,
@@ -73,21 +73,21 @@
 
 <article class="evidence" aria-labelledby="ev-title">
 	<header class="ev-head">
-		<p class="eyebrow">{PLATFORM_NAME[s.platform]} {noun}</p>
-		<h2 class="t-display" id="ev-title">{s.name ?? s.id}</h2>
-		<p class="ids">{#each s.aliases as a (a)}<span class="mono">{a}</span>{/each}</p>
+		<p class="cl-eyebrow">{PLATFORM_NAME[s.platform]} {noun}</p>
+		<h2 class="cl-display" id="ev-title">{s.name ?? s.id}</h2>
+		<p class="ids">{#each s.aliases as a (a)}<span class="cl-figure id">{a}</span>{/each}</p>
 		<div class="verdict-row">
-			<span class="vr"><span class="vr-label">Current</span><VerdictOrNone verdict={s.verdict} /></span>
+			<span class="vr"><span class="vr-label">Current</span><VerdictChip verdict={s.verdict} /></span>
 			{#if queueItem}
-				<span class="vr"><span class="vr-label">Scoring says</span><VerdictOrNone verdict={queueItem.computed_verdict} /></span>
+				<span class="vr"><span class="vr-label">Scoring says</span><VerdictChip verdict={queueItem.computed_verdict} /></span>
 			{/if}
-			{#if s.large}<span class="tag"><Lock size={12} strokeWidth={1.75} aria-hidden="true" /> Large audience</span>{/if}
-			{#if s.imported}<span class="tag">Imported, not reviewed</span>{/if}
-			{#if s.appeal_open}<span class="tag">Appeal open</span>{/if}
+			{#if s.large}<span class="uin-badge uin-badge-md"><Lock size={12} aria-hidden="true" /> Large audience</span>{/if}
+			{#if s.imported}<span class="uin-badge uin-badge-md">Seed list lead</span>{/if}
+			{#if s.appeal_open}<span class="uin-badge uin-badge-md">Appeal open</span>{/if}
 		</div>
 		<p class="links">
 			<a class="icon-line" href={platformSourceUrl(s.platform, s.id)} rel="noreferrer" target="_blank">
-				Open on {PLATFORM_NAME[s.platform]} <ExternalLink size={14} strokeWidth={1.75} aria-hidden="true" />
+				Open on {PLATFORM_NAME[s.platform]} <ExternalLink size={14} aria-hidden="true" />
 			</a>
 			<a href={sourcePath(s.platform, s.id)} target="_blank">Public source page</a>
 		</p>
@@ -119,20 +119,19 @@
 			<div><dt>Taggers</dt><dd class="cl-num">{fmtNum(s.evidence.taggers)}</dd></div>
 			<div><dt>Slop / fine / not slop</dt><dd class="cl-num">{s.evidence.tags.slop} / {s.evidence.tags.ai_fine} / {s.evidence.tags.not_slop}</dd></div>
 			<div><dt>AI item share</dt><dd class="cl-num">{s.evidence.ai_item_share === null ? 'No data' : `${fmtPct(s.evidence.ai_item_share)} of ${s.evidence.items_seen}`}</dd></div>
-			<div><dt>Uploads a day</dt><dd class="cl-num">{s.evidence.uploads_per_day ?? 'No data'}</dd></div>
 		</dl>
 	</section>
 
 	<section aria-labelledby="reports-title" class="sec">
 		<h3 class="sec-title" id="reports-title">Reports <span class="count">{data.reports.length}</span></h3>
 		{#if data.reports.length === 0}
-			<p class="t-body muted">No reports on this {noun}.</p>
+			<p class="cl-body cl-muted">No reports on this {noun}.</p>
 		{:else}
 			<ul class="cards">
 				{#each data.reports as r (r.id)}
 					<li class="item-card">
 						<p class="meta">{fmtDateTime(r.created_at)} · {r.status === 'under_review' ? 'Under review' : r.status}</p>
-						<p class="t-body">{r.reason}</p>
+						<p class="cl-body">{r.reason}</p>
 						<p class="meta">
 							{#if r.slop_type}Type: {SLOP_TYPE_WORD[r.slop_type]}.{/if}
 							{#if r.tests.length}Tests: {r.tests.map((t) => TEST_WORD[t]).join(', ')}.{/if}
@@ -141,7 +140,7 @@
 							<p class="examples">
 								<span class="meta">Examples:</span>
 								{#each r.examples as ex (ex)}
-									<a class="mono icon-line" href={platformItemUrl(s.platform, ex, s.id)} rel="noreferrer" target="_blank">{ex} <ExternalLink size={12} strokeWidth={1.75} aria-hidden="true" /></a>
+									<a class="cl-figure icon-line id" href={platformItemUrl(s.platform, ex, s.id)} rel="noreferrer" target="_blank">{ex} <ExternalLink size={16} aria-hidden="true" /></a>
 								{/each}
 							</p>
 						{/if}
@@ -151,12 +150,12 @@
 									<label class="field-label" for="dismiss-{r.id}">Why dismiss it?</label>
 									<Textarea id="dismiss-{r.id}" rows={2} bind:value={dismissReason} />
 									<div class="row">
-										<button type="button" class="uin-btn uin-btn-primary uin-btn-sm" disabled={busy || dismissReason.trim().length < 5} onclick={() => act(`/v1/review/reports/${r.id}/dismiss`, { reason: dismissReason.trim() }, 'Report dismissed.')}>Dismiss report</button>
-										<button type="button" class="uin-btn uin-btn-ghost uin-btn-sm" onclick={() => (dismissing = null)}>Cancel</button>
+										<button type="button" class="uin-btn uin-btn-primary uin-btn-lg" disabled={busy || dismissReason.trim().length < 5} onclick={() => act(`/v1/review/reports/${r.id}/dismiss`, { reason: dismissReason.trim() }, 'Report dismissed.')}>Dismiss report</button>
+										<button type="button" class="uin-btn uin-btn-ghost uin-btn-lg" onclick={() => (dismissing = null)}>Cancel</button>
 									</div>
 								</div>
 							{:else}
-								<button type="button" class="uin-btn uin-btn-outline uin-btn-sm" onclick={() => ((dismissing = r.id), (dismissReason = ''))}>Dismiss with no change</button>
+								<button type="button" class="uin-btn uin-btn-outline uin-btn-lg" onclick={() => ((dismissing = r.id), (dismissReason = ''))}>Dismiss with no change</button>
 							{/if}
 						{/if}
 					</li>
@@ -169,17 +168,17 @@
 		<section aria-labelledby="appeals-title" class="sec">
 			<h3 class="sec-title" id="appeals-title">Appeals <span class="count">{data.appeals.length}</span></h3>
 			{#if !isStaff}
-				<p class="t-body muted icon-line"><Lock size={14} strokeWidth={1.75} aria-hidden="true" /> Verifying and resolving appeals needs staff.</p>
+				<p class="cl-body cl-muted icon-line"><Lock size={16} aria-hidden="true" /> Verifying and resolving appeals needs staff.</p>
 			{/if}
 			<ul class="cards">
 				{#each data.appeals as a (a.id)}
 					<li class="item-card">
-						<p class="meta">{fmtDateTime(a.created_at)} · <strong>{APPEAL_STATUS[a.status]}</strong> · Code <span class="mono">{a.code}</span></p>
-						<p class="t-body quote">{a.statement}</p>
+						<p class="meta">{fmtDateTime(a.created_at)} · <strong>{APPEAL_STATUS[a.status]}</strong> · Code <span class="cl-figure id">{a.code}</span></p>
+						<p class="cl-body quote">{a.statement}</p>
 						{#if isStaff && a.status === 'pending_manual'}
 							<div class="row">
-								<a class="uin-btn uin-btn-ghost uin-btn-sm icon-line" href={platformSourceUrl(s.platform, s.id)} rel="noreferrer" target="_blank">Look for the code <ExternalLink size={12} strokeWidth={1.75} aria-hidden="true" /></a>
-								<button type="button" class="uin-btn uin-btn-outline uin-btn-sm" disabled={busy} onclick={() => act(`/v1/review/appeals/${a.id}/verify`, {}, 'Appeal verified. The source now shows as Disputed.')}>The code is on the {noun}</button>
+								<a class="uin-btn uin-btn-ghost uin-btn-lg icon-line" href={platformSourceUrl(s.platform, s.id)} rel="noreferrer" target="_blank">Look for the code <ExternalLink size={16} aria-hidden="true" /></a>
+								<button type="button" class="uin-btn uin-btn-outline uin-btn-lg" disabled={busy} onclick={() => act(`/v1/review/appeals/${a.id}/verify`, {}, 'Appeal verified. The source now shows as Disputed.')}>The code is on the {noun}</button>
 							</div>
 						{/if}
 						{#if isStaff && a.status === 'under_review'}
@@ -193,12 +192,12 @@
 									<label class="field-label" for="reasoning-{a.id}">Reasoning, published in the log</label>
 									<Textarea id="reasoning-{a.id}" rows={3} bind:value={reasoning} />
 									<div class="row">
-										<button type="button" class="uin-btn uin-btn-primary uin-btn-sm" disabled={busy || !outcome || reasoning.trim().length < 10} onclick={() => act(`/v1/review/appeals/${a.id}/resolve`, { outcome, reasoning: reasoning.trim() }, 'Appeal resolved and logged.')}>Resolve appeal</button>
-										<button type="button" class="uin-btn uin-btn-ghost uin-btn-sm" onclick={() => (resolving = null)}>Cancel</button>
+										<button type="button" class="uin-btn uin-btn-primary uin-btn-lg" disabled={busy || !outcome || reasoning.trim().length < 10} onclick={() => act(`/v1/review/appeals/${a.id}/resolve`, { outcome, reasoning: reasoning.trim() }, 'Appeal resolved and logged.')}>Resolve appeal</button>
+										<button type="button" class="uin-btn uin-btn-ghost uin-btn-lg" onclick={() => (resolving = null)}>Cancel</button>
 									</div>
 								</fieldset>
 							{:else}
-								<button type="button" class="uin-btn uin-btn-outline uin-btn-sm" onclick={() => ((resolving = a.id), (outcome = ''), (reasoning = ''))}>Resolve</button>
+								<button type="button" class="uin-btn uin-btn-outline uin-btn-lg" onclick={() => ((resolving = a.id), (outcome = ''), (reasoning = ''))}>Resolve</button>
 							{/if}
 						{/if}
 					</li>
@@ -210,40 +209,67 @@
 	<section aria-labelledby="items-title" class="sec">
 		<h3 class="sec-title" id="items-title">Items <span class="count">{data.items.length}</span></h3>
 		{#if data.items.length === 0}
-			<p class="t-body muted">No items recorded.</p>
+			<p class="cl-body cl-muted">No items recorded.</p>
 		{:else}
-			<div class="table-scroll">
-				<table class="plain items stack-sm">
-					<thead><tr><th scope="col">Item</th><th scope="col">Verdict</th><th scope="col">Slop / fine / not slop</th><th scope="col">AI label seen</th><th scope="col"><span class="sr-only">Action</span></th></tr></thead>
-					<tbody>
-						{#each data.items as it (it.id)}
-							<tr>
-								<th scope="row"><a class="mono icon-line" href={platformItemUrl(it.platform, it.id, s.id)} rel="noreferrer" target="_blank">{it.id} <ExternalLink size={12} strokeWidth={1.75} aria-hidden="true" /></a></th>
-								<td data-label="Verdict"><VerdictOrNone verdict={it.verdict} /></td>
-								<td class="cl-num" data-label="Slop / fine / not slop">{it.tags.slop} / {it.tags.ai_fine} / {it.tags.not_slop}</td>
-								<td class="cl-num" data-label="AI label seen">{it.platform_label_reports} {it.platform_label_reports === 1 ? 'report' : 'reports'}</td>
-								<td><button type="button" class="uin-btn uin-btn-ghost uin-btn-sm" onclick={() => onDecideItem(it)}>Decide item</button></td>
-							</tr>
-						{/each}
-					</tbody>
-				</table>
-			</div>
+			<ul class="items">
+				{#each data.items as it (it.id)}
+					<li>
+						<a class="cl-figure icon-line" href={platformItemUrl(it.platform, it.id, s.id)} rel="noreferrer" target="_blank" aria-label="Item {it.id}">
+							{middleTruncate(it.id, 18)}<ExternalLink size={16} aria-hidden="true" />
+						</a>
+						<VerdictChip verdict={it.verdict} size="sm" />
+						<span class="item-meta">
+							Tags {it.tags.slop} slop, {it.tags.ai_fine} fine, {it.tags.not_slop} not slop.
+							AI label seen by {it.platform_label_reports} {it.platform_label_reports === 1 ? 'install' : 'installs'}.
+						</span>
+						<button type="button" class="uin-btn uin-btn-ghost uin-btn-md" onclick={() => onDecideItem(it)}>Decide item</button>
+					</li>
+				{/each}
+			</ul>
 		{/if}
 	</section>
 
 	<section aria-labelledby="hist-title" class="sec">
 		<h3 class="sec-title" id="hist-title">History</h3>
 		{#if data.history.length === 0}
-			<p class="t-body muted">No decisions logged yet.</p>
+			<p class="cl-body cl-muted">No decisions logged yet.</p>
 		{:else}
 			<ol class="history">
-				{#each data.history as e (e.id)}<li><LogEntryView entry={e} showSource={false} headingLevel={4} /></li>{/each}
+				{#each data.history as e (e.id)}<li><LogRow entry={e} /></li>{/each}
 			</ol>
 		{/if}
 	</section>
 </article>
 
 <style>
+	.items {
+		display: grid;
+		list-style: none;
+		border-top: 1px solid var(--cl-border);
+	}
+	.items li {
+		display: grid;
+		grid-template-columns: minmax(0, 1fr) auto;
+		align-items: center;
+		gap: 4px 8px;
+		padding: 10px 0;
+		border-bottom: 1px solid var(--cl-border);
+	}
+	.items a {
+		min-width: 0;
+		overflow: hidden;
+		white-space: nowrap;
+	}
+	.item-meta {
+		color: var(--cl-text-muted);
+		font: var(--cl-caption);
+	}
+	.items button {
+		justify-self: end;
+	}
+	.id {
+		overflow-wrap: anywhere;
+	}
 	.evidence {
 		display: grid;
 		gap: var(--cl-s5);
@@ -253,7 +279,7 @@
 		display: grid;
 		gap: var(--cl-s2);
 	}
-	.ev-head .t-display {
+	.ev-head .cl-display {
 		overflow-wrap: anywhere;
 	}
 	.ids {
@@ -301,7 +327,7 @@
 		min-width: 20px;
 		padding: 0 var(--cl-s1);
 		border-radius: var(--cl-r-full);
-		background: var(--w-ink-soft);
+		background: color-mix(in srgb, var(--cl-text) 6%, transparent);
 		font: 600 12px/20px var(--cl-font);
 		font-variant-numeric: tabular-nums;
 		text-align: center;
@@ -317,7 +343,7 @@
 		align-content: start;
 		padding: var(--cl-s3) var(--cl-s4);
 		border-radius: var(--cl-r-card);
-		border: 1px dashed var(--w-control-border);
+		border: 1px dashed var(--cl-border-strong);
 		background: transparent;
 	}
 	.layer.met {
@@ -332,8 +358,10 @@
 	.layer-name {
 		font: 600 14px/20px var(--cl-font);
 	}
+	/* The status keeps its width and its icon; a long layer name wraps instead. */
 	.status {
 		display: inline-flex;
+		flex: none;
 		align-items: center;
 		gap: 4px;
 		font: 600 12px/20px var(--cl-font);
@@ -357,7 +385,7 @@
 	}
 	.numbers {
 		display: grid;
-		grid-template-columns: repeat(4, minmax(0, 1fr));
+		grid-template-columns: repeat(3, minmax(0, 1fr));
 		gap: var(--cl-s3);
 	}
 	.numbers dt {
@@ -421,16 +449,6 @@
 		accent-color: var(--cl-brand);
 		width: 16px;
 		height: 16px;
-	}
-	.items th[scope='row'] {
-		color: var(--cl-text);
-		font-weight: 400;
-	}
-	.items td,
-	.items th {
-		vertical-align: middle;
-		padding-top: 8px;
-		padding-bottom: 8px;
 	}
 	.history {
 		list-style: none;

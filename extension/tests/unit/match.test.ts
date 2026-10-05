@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { STRICTNESS, VERDICTS, ACTION_TABLE, type Strictness, type TagVerdict, type Verdict } from '@colander/shared/verdicts';
 import { decide, type CardFacts, type MatchContext } from '../../src/lib/match';
 import type { ListHit } from '@colander/shared/list';
-import type { Topic } from '../../src/lib/settings';
+import { withDefaults, type Settings, type Topic } from '../../src/lib/settings';
 
 const hit = (verdict: Verdict): ListHit => ({
 	verdict,
@@ -46,10 +46,10 @@ describe('strictness table', () => {
 	});
 
 	it('matches the spec rows', () => {
-		expect(ACTION_TABLE.standard).toMatchObject({ slop: 'hide', likely_slop: 'collapse', ai_made: 'label', disputed: 'label', clear: 'allow' });
-		expect(ACTION_TABLE.strict).toMatchObject({ slop: 'hide', likely_slop: 'hide', ai_made: 'collapse' });
-		expect(ACTION_TABLE.no_ai).toMatchObject({ slop: 'hide', likely_slop: 'hide', ai_made: 'hide', disputed: 'label' });
-		expect(ACTION_TABLE.label).toMatchObject({ slop: 'label', likely_slop: 'label', ai_made: 'label' });
+		expect(STRICTNESS).toEqual(['label', 'standard', 'no_ai']);
+		expect(ACTION_TABLE.label).toEqual({ slop: 'label', likely_slop: 'label', ai_made: 'label', disputed: 'label', clear: 'allow' });
+		expect(ACTION_TABLE.standard).toEqual({ slop: 'hide', likely_slop: 'hide', ai_made: 'label', disputed: 'label', clear: 'allow' });
+		expect(ACTION_TABLE.no_ai).toEqual({ slop: 'hide', likely_slop: 'hide', ai_made: 'hide', disputed: 'label', clear: 'allow' });
 	});
 });
 
@@ -64,7 +64,7 @@ describe('precedence', () => {
 		['own tag beats own block', { blocks: new Set(['yt:s:@chan']), ownTags: new Map<string, TagVerdict>([['yt:s:@chan', 'not_slop']]) }, {}, 'own_tag', 'clear', 'allow'],
 		['block hides even on Label', { strictness: 'label', blocks: new Set(['yt:s:@chan']) }, {}, 'my_list', 'slop', 'hide'],
 		['item entry beats source entry', { list: { 'yt:s:@chan': 'slop', 'yt:i:dQw4w9WgXcQ': 'clear' } }, {}, 'item_list', 'clear', 'allow'],
-		['source entry by any alias', { list: { 'yt:s:UCaaaaaaaaaaaaaaaaaaaaaa': 'likely_slop' } }, {}, 'source_list', 'likely_slop', 'collapse'],
+		['source entry by any alias', { list: { 'yt:s:UCaaaaaaaaaaaaaaaaaaaaaa': 'likely_slop' } }, {}, 'source_list', 'likely_slop', 'hide'],
 		['list beats the platform label', { list: { 'yt:s:@chan': 'clear' } }, { aiLabel: true }, 'source_list', 'clear', 'allow'],
 		['platform label alone is AI-made (P0-4)', {}, { aiLabel: true }, 'platform_label', 'ai_made', 'label'],
 		['disputed shows with its mark', { strictness: 'no_ai', list: { 'yt:s:@chan': 'disputed' } }, {}, 'source_list', 'disputed', 'label'],
@@ -86,7 +86,7 @@ describe('Plus strictness', () => {
 	it('per-platform strictness replaces the global level only with Plus', () => {
 		const c = { list: { 'yt:s:@chan': 'likely_slop' as Verdict }, perPlatform: { yt: 'label' as Strictness } };
 		expect(decide(card, ctx({ ...c, plus: true })).action).toBe('label');
-		expect(decide(card, ctx({ ...c, plus: false })).action).toBe('collapse');
+		expect(decide(card, ctx({ ...c, plus: false })).action).toBe('hide');
 	});
 
 	it('the strictest matching topic wins', () => {
@@ -104,5 +104,17 @@ describe('Plus strictness', () => {
 		expect(decide(card, ctx({ plus: true, topics: [muted] }))).toMatchObject({ reason: 'topic', action: 'hide', topic: 'Muted' });
 		expect(decide(card, ctx({ plus: false, topics: [muted] })).reason).toBe('none');
 		expect(decide(card, ctx({ plus: true, topics: [muted], list: { 'yt:s:@chan': 'clear' } })).action).toBe('allow');
+	});
+});
+
+describe('stored levels', () => {
+	it('read the removed Strict, from any version or from sync, as Standard everywhere', () => {
+		const old = { strictness: 'strict', perPlatform: { tt: 'strict', yt: 'no_ai' }, topics: [{ id: 't', name: 'Kids', terms: ['#kids'], strictness: 'strict', hide: false }] } as unknown as Partial<Settings>;
+		const s = withDefaults(old);
+		expect(s.strictness).toBe('standard');
+		expect(s.perPlatform).toEqual({ tt: 'standard', yt: 'no_ai' });
+		expect(s.topics.map((t) => t.strictness)).toEqual(['standard']);
+		expect(withDefaults(undefined)).toMatchObject({ strictness: 'standard', skipNotice: false });
+		expect(withDefaults({ strictness: 'label' }).strictness).toBe('label');
 	});
 });

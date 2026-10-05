@@ -2,7 +2,7 @@
 // reaches the extension; then the creator appeals, the channel is unhidden as Disputed during
 // review, and the upheld appeal clears it.
 import type { Page } from '@playwright/test';
-import { CARD, CHANNEL, REPORTED, SEARCH, card, chip, expect, launch, onboard, shownSequence, signIn, syncNow, test, type Ext } from './harness.ts';
+import { CARD, CHANNEL, REPORTED, SEARCH, card, chip, expect, launch, onboard, signIn, syncNow, test, type Ext } from './harness.ts';
 import { BASE_URL, LOCAL_ONLY, ORIGIN, STAFF, listSequence, logMark, mailsSince, publishedAfter } from './stack.ts';
 
 test.skip(!!BASE_URL, LOCAL_ONLY);
@@ -30,7 +30,7 @@ test.afterAll(async () => {
 /** Opens the queue item for the reported channel in the console. */
 async function openInConsole(kind: 'All' | 'Appeals') {
 	await site.goto(`${ORIGIN}/console`);
-	if (kind !== 'All') await site.getByRole('radio', { name: kind }).click();
+	if (kind !== 'All') await site.getByRole('tab', { name: new RegExp(`^${kind}`) }).click();
 	await site.getByRole('button', { name: new RegExp(REPORTED.name) }).click();
 	await expect(site.getByRole('heading', { level: 2, name: REPORTED.name })).toBeVisible();
 }
@@ -39,7 +39,7 @@ async function openInConsole(kind: 'All' | 'Appeals') {
 async function nextListReachesExtension(before: number): Promise<number> {
 	const seq = await publishedAfter(before);
 	const options = await syncNow(ext);
-	await expect.poll(() => shownSequence(options)).toBe(String(seq));
+	await expect(options.locator('dl.facts div', { hasText: 'Version' }).locator('dd')).toHaveText(`v.${seq}`);
 	await options.close();
 	return seq;
 }
@@ -50,17 +50,17 @@ test('a report goes through review and its verdict reaches the extension and My 
 
 	const channel = await ext.youtube(CHANNEL);
 	await channel.locator('colander-ui[data-kind="report"] button').click();
-	const dialog = channel.locator('colander-ui[data-kind="layer"] .dialog');
-	await expect(dialog.getByRole('heading', { name: 'Report source' })).toBeVisible();
-	await expect(dialog).toContainText(`YouTube channel · ${REPORTED.handle}`);
-	const examples = dialog.locator('.examples input[type="checkbox"]');
+	const dialog = channel.locator('colander-ui[data-kind="layer"] .report');
+	await expect(dialog.getByRole('heading', { name: `Report ${REPORTED.handle}` })).toBeVisible();
+	const examples = dialog.locator('.tile input[type="checkbox"]');
 	await examples.nth(0).check();
 	await examples.nth(1).check();
-	await dialog.getByLabel('Reason').fill(REASON);
-	await dialog.getByRole('button', { name: 'Filler' }).click();
-	await dialog.getByLabel('Mass-produced').check();
+	await dialog.getByRole('button', { name: 'Next' }).click();
+	await dialog.getByRole('radio', { name: /^Filler/ }).check();
+	await dialog.getByRole('checkbox', { name: /^Mass-produced/ }).check();
+	await dialog.getByLabel('Note, optional').fill(REASON);
 	await dialog.getByRole('button', { name: 'Send report' }).click();
-	await expect(dialog).toContainText('Reported. It is under review, and you can follow it in My reports.');
+	await expect(dialog).toContainText('Report received. Track it in My reports.');
 
 	const sent = ext.seen.find((s) => s.method === 'POST' && s.url === `${ORIGIN}/v1/reports`)!;
 	expect(sent.by).toBe('worker');
@@ -71,9 +71,9 @@ test('a report goes through review and its verdict reaches the extension and My 
 	expect(sent.body).not.toMatch(/youtube|\/videos/i);
 
 	const opened = ext.ctx.waitForEvent('page');
-	await dialog.getByRole('button', { name: 'Open My reports' }).click();
+	await dialog.getByRole('button', { name: 'My reports' }).click();
 	const reports = await opened;
-	const row = reports.locator('li', { has: reports.getByRole('link', { name: REPORTED.name }) });
+	const row = reports.locator('li', { hasText: REPORTED.name });
 	await expect(row).toContainText('Under review');
 	await channel.close();
 
@@ -101,11 +101,12 @@ test('a report goes through review and its verdict reaches the extension and My 
 	await expect(site.getByText('Decision written to the public log.')).toBeVisible();
 
 	await site.goto(`${ORIGIN}/log`);
-	const entry = site.locator('article.entry').first();
-	await expect(entry.getByRole('link', { name: REPORTED.name })).toBeVisible();
+	const entry = site.locator('ol.entries > li').first();
+	await expect(entry.locator('.src')).toHaveText(REPORTED.name);
 	await expect(entry).toContainText(DECISION);
 	await expect(entry.locator('.change')).toContainText('Slop');
-	await expect(entry.getByRole('list', { name: 'Signals' })).toContainText('The platform labels it AI-generated');
+	await entry.locator('summary').click();
+	await expect(entry.locator('details > .more')).toContainText('The platform labels it AI-generated');
 
 	await nextListReachesExtension(before);
 	await expect(card(search, CARD.reported)).toHaveAttribute('data-colander', 'hide');
@@ -114,7 +115,8 @@ test('a report goes through review and its verdict reaches the extension and My 
 	// Other installs keep syncing too: their anonymous list downloads are what "protects" counts.
 	for (let i = 0; i < 48; i++) await fetch(`${ORIGIN}/v1/list/snapshot`, { method: 'HEAD' });
 	await reports.getByRole('button', { name: 'Refresh' }).click();
-	await expect(row.locator('[data-verdict="slop"]')).toContainText('Slop');
+	await expect(row.locator('[data-v="slop"]')).toContainText('Slop');
+	await row.locator('summary').click();
 	await expect(row).toContainText(/Protects \d+ installs/);
 	// 48 downloads in the last day estimate at least 2 installs, so "protects" counts every syncing install.
 	expect(Number(/Protects (\d+) installs/.exec((await row.textContent())!)![1])).toBeGreaterThanOrEqual(2);
@@ -126,7 +128,7 @@ test('an appeal unhides the channel as Disputed during review, and the upheld ap
 	await site.goto(`${ORIGIN}/s/yt/${REPORTED.handle}`);
 	await expect(site.getByRole('heading', { level: 1, name: REPORTED.name })).toBeVisible();
 	await expect(site.locator('.banner .chip-line')).toContainText('Slop');
-	await site.getByRole('link', { name: 'Appeal', exact: true }).click();
+	await site.getByRole('link', { name: 'Appeal this verdict' }).click();
 	await site.getByLabel('Email').fill(CREATOR);
 	await site.getByLabel('Your statement').fill('We research and narrate every episode ourselves; AI only draws the space backgrounds.');
 	const mark = logMark();
@@ -137,7 +139,7 @@ test('an appeal unhides the channel as Disputed during review, and the upheld ap
 	expect(code).toMatch(/^colander-[A-Z0-9]{8}$/);
 	// The status link is also emailed to the creator.
 	await expect.poll(() => mailsSince(mark).find((m) => m.to === CREATOR)?.body ?? '').toContain(site.url());
-	await site.getByRole('button', { name: 'Verify' }).click();
+	await site.getByRole('button', { name: 'Check my description' }).click();
 	await expect(site.getByRole('heading', { name: 'Waiting for a manual check' })).toBeVisible();
 
 	// No YouTube API key in this run, so staff confirm the code by hand.
@@ -151,10 +153,11 @@ test('an appeal unhides the channel as Disputed during review, and the upheld ap
 	await site.goto(`${ORIGIN}/s/yt/${REPORTED.handle}`);
 	await expect(site.locator('.banner .chip-line')).toContainText('Disputed');
 	await site.screenshot({ path: 'screenshots/source-disputed.png' });
-	await expect(site.getByRole('status').filter({ hasText: 'An appeal is open' })).toContainText('nothing from it is hidden');
+	await expect(site.locator('.banner')).toContainText('Unhidden while staff review');
+	await expect(site.locator('.banner')).toContainText('nothing from it is hidden');
 	await site.goto(`${ORIGIN}/log`);
-	await expect(site.locator('article.entry').first().getByRole('link', { name: REPORTED.name })).toBeVisible();
-	await expect(site.locator('article.entry').first().locator('.change')).toContainText('Disputed');
+	await expect(site.locator('ol.entries > li').first().locator('.src')).toHaveText(REPORTED.name);
+	await expect(site.locator('ol.entries > li').first().locator('.change')).toContainText('Disputed');
 
 	// The extension moves forward by a delta from its own copy, not a new snapshot.
 	const from = ext.seen.length;
@@ -180,7 +183,7 @@ test('an appeal unhides the channel as Disputed during review, and the upheld ap
 	await site.goto(`${ORIGIN}/s/yt/${REPORTED.handle}`);
 	await expect(site.locator('.banner .chip-line')).toContainText('Clear');
 	await site.goto(`${ORIGIN}/log`);
-	await expect(site.locator('article.entry').first()).toContainText('generated art alone is not slop');
+	await expect(site.locator('ol.entries > li').first()).toContainText('generated art alone is not slop');
 
 	await nextListReachesExtension(seq);
 	await expect(reported).not.toHaveAttribute('data-colander', /./);

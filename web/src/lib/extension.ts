@@ -19,7 +19,17 @@ function runtime(): Runtime | undefined {
 	return (globalThis as { chrome?: { runtime?: Runtime } }).chrome?.runtime;
 }
 
-/** Sends one message and resolves with the reply, or rejects when nothing answers in time. */
+/** Colander answered and refused the message: `code` is its error, such as invalid_token. */
+export class ExtensionRefused extends Error {
+	constructor(readonly code: string) {
+		super(`Colander refused the message (${code}).`);
+	}
+}
+
+/**
+ * Sends one message and resolves with the reply. Rejects with ExtensionRefused when Colander answers
+ * `{ok: false}`, or with an Error when nothing answers in time.
+ */
 export function sendToExtension<T = { ok: boolean }>(message: ExternalMessage, timeoutMs = 3000): Promise<T> {
 	const rt = runtime();
 	if (!PUBLIC_EXTENSION_ID || !rt?.sendMessage) return Promise.reject(new Error('Colander is not installed in this browser.'));
@@ -29,7 +39,9 @@ export function sendToExtension<T = { ok: boolean }>(message: ExternalMessage, t
 			rt.sendMessage!(PUBLIC_EXTENSION_ID, message, (reply) => {
 				clearTimeout(timer);
 				const failed = rt.lastError;
+				const refusal = reply as { ok?: unknown; error?: unknown } | undefined;
 				if (failed || !reply) reject(new Error(failed?.message ?? 'Colander did not answer.'));
+				else if (refusal?.ok === false) reject(new ExtensionRefused(String(refusal.error ?? 'refused')));
 				else resolve(reply as T);
 			});
 		} catch (e) {

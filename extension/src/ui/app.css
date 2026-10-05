@@ -1,68 +1,26 @@
-/* Extension pages: popup, options, welcome and side panel. Brand tokens from colander.css on
-   top of Mittsu, then the spec's sizes: 32 px controls, 14 px text, nothing under 12 px. */
+/* Extension pages: popup, options, welcome and side panel. Every value comes from the shared
+   system: Mittsu's base tokens, then colander.css (tokens, type, paper base, focus ring), then the
+   themed Mittsu components the pages use. Only page resets live here. */
 @import '@colander/shared/styles/tokens.css';
 @import '@colander/shared/styles/colander.css';
+@import '@colander/shared/components/ui/badge/badge.css';
 @import '@colander/shared/components/ui/button/button.css';
+@import '@colander/shared/components/ui/card/card.css';
+@import '@colander/shared/components/ui/checkbox/checkbox.css';
+@import '@colander/shared/components/ui/dialog/dialog.css';
+@import '@colander/shared/components/ui/input/input.css';
+@import '@colander/shared/components/ui/kbd/kbd.css';
+@import '@colander/shared/components/ui/native-select/native-select.css';
 @import '@colander/shared/components/ui/segmented-control/segmented-control.css';
 @import '@colander/shared/components/ui/switch/switch.css';
-@import '@colander/shared/components/ui/checkbox/checkbox.css';
-@import '@colander/shared/components/ui/input/input.css';
+@import '@colander/shared/components/ui/tabs/tabs.css';
 @import '@colander/shared/components/ui/textarea/textarea.css';
-@import '@colander/shared/components/ui/native-select/native-select.css';
-@import '@colander/shared/components/ui/sparkline/sparkline.css';
-@import '@colander/shared/components/ui/badge/badge.css';
 
-html {
-	color-scheme: light dark;
-}
-
-/* Older copies of colander.css mapped Mittsu's tokens onto the brand in :root only, so Mittsu's
-   more specific dark block won in dark mode. The shared theme now maps them for dark mode
-   itself; these repeat the same values and stay harmless. --uin-line-strong is left to it. */
-@media (prefers-color-scheme: dark) {
-	:root:not([data-theme='light']) {
-		--uin-fg: var(--cl-text);
-		--uin-fg-mute: var(--cl-text-muted);
-		--uin-fg-dim: color-mix(in srgb, var(--cl-text-muted) 80%, var(--cl-surface));
-		--uin-fg-faint: color-mix(in srgb, var(--cl-text) 22%, transparent);
-		--uin-line: var(--cl-border);
-		--uin-bg-base: var(--cl-paper);
-		--uin-bg-panel: var(--cl-surface);
-		--uin-mat-window: var(--cl-surface);
-		--uin-mat-sidebar: var(--cl-surface-raised);
-		--uin-mat-panel: var(--cl-surface);
-		--uin-mat-row: var(--cl-surface);
-		--uin-mat-hover: color-mix(in srgb, var(--cl-text) 8%, transparent);
-		--uin-mat-selected: color-mix(in srgb, var(--cl-brand) 16%, transparent);
-		--uin-accent: var(--cl-brand);
-		--uin-success: var(--cl-clear);
-		--uin-warn: var(--cl-likely);
-		--uin-danger: var(--cl-slop);
-	}
-}
-:root[data-theme='dark'] {
-	--uin-fg: var(--cl-text);
-	--uin-fg-mute: var(--cl-text-muted);
-	--uin-line: var(--cl-border);
-	--uin-bg-panel: var(--cl-surface);
-	--uin-mat-panel: var(--cl-surface);
-	--uin-mat-row: var(--cl-surface);
-	--uin-accent: var(--cl-brand);
-	--uin-success: var(--cl-clear);
-	--uin-warn: var(--cl-likely);
-	--uin-danger: var(--cl-slop);
-}
-*,
-*::before,
-*::after {
-	box-sizing: border-box;
-}
 body {
 	margin: 0;
-	font: var(--cl-body);
+	background: var(--cl-paper);
 	color: var(--cl-text);
-	background: var(--cl-surface);
-	-webkit-font-smoothing: antialiased;
+	font: var(--cl-body);
 	text-rendering: optimizeLegibility;
 }
 h1,
@@ -85,13 +43,6 @@ ol {
 a {
 	color: var(--cl-brand);
 	text-underline-offset: 2px;
-	border-radius: 2px;
-}
-a:focus-visible,
-summary:focus-visible,
-[tabindex]:not([tabindex='-1']):focus-visible {
-	outline: 2px solid var(--cl-brand);
-	outline-offset: 2px;
 }
 button {
 	font: inherit;
@@ -99,202 +50,32 @@ button {
 svg.lucide {
 	flex: none;
 }
-
-/* Type ramp (spec: Typography). */
-.t-caption {
-	font: var(--cl-caption);
-}
-.t-body-lg {
-	font: var(--cl-body-lg);
-}
-.t-title {
-	font: var(--cl-title);
-}
-.t-display {
-	font: var(--cl-display);
-}
-.muted {
-	color: var(--cl-text-muted);
-}
-.sr-only {
-	position: absolute;
-	width: 1px;
-	height: 1px;
-	overflow: hidden;
-	clip: rect(0 0 0 0);
-	white-space: nowrap;
-}
-
-/* Buttons: primary in brand fill, secondary outlined, quiet as text. */
-.uin-btn {
-	font-weight: 600;
-	border-radius: var(--cl-r-chip);
-	cursor: pointer;
-	gap: 6px;
-}
-.uin-btn-md {
-	height: 32px;
-	padding: 0 14px;
-	font-size: 14px;
-	line-height: 20px;
-}
-.uin-btn-sm {
-	height: 28px;
-	padding: 0 10px;
-	font-size: 12px;
-	line-height: 16px;
-}
-.uin-btn-primary {
-	box-shadow: none;
-}
-.uin-btn-outline {
-	background: var(--cl-surface);
-	border-color: var(--cl-border);
-	color: var(--cl-text);
-}
-.uin-btn-outline:hover:not(:disabled) {
-	background: var(--cl-surface-raised);
-}
-.uin-btn-ghost {
-	color: var(--cl-brand);
-}
-.uin-btn-ghost:hover:not(:disabled) {
-	color: var(--cl-brand);
-	background: color-mix(in srgb, var(--cl-brand) 10%, transparent);
-}
-.uin-btn-ghost.quiet-muted {
-	color: var(--cl-text-muted);
-}
-.uin-btn-ghost.quiet-muted:hover:not(:disabled) {
-	color: var(--cl-text);
-	background: var(--uin-mat-hover);
-}
-.uin-btn-md.uin-btn-ghost {
-	padding: 0 8px;
-}
-.uin-btn-icon.uin-btn-md {
-	width: 32px;
-	padding: 0;
-}
-.uin-btn[aria-busy='true'] {
-	opacity: 0.7;
-	pointer-events: none;
-}
-
-/* Segmented control: four stops, full width, 32 px. */
-.uin-seg {
-	display: flex;
-	width: 100%;
-	border: 1px solid var(--cl-border);
-	border-radius: var(--cl-r-chip);
-	background: var(--cl-surface);
-	padding: 2px;
-	gap: 2px;
-}
-.uin-seg-md .uin-seg-btn {
-	flex: 1 1 0;
-	justify-content: center;
-	height: 28px;
-	padding: 0 6px;
-	font-size: 14px;
-	line-height: 20px;
-	font-weight: 600;
-	border-radius: 4px;
-	color: var(--cl-text-muted);
-	cursor: pointer;
-	white-space: nowrap;
-}
-.uin-seg-btn + .uin-seg-btn {
-	border-left: 0;
-}
-.uin-seg-btn:hover:not(.uin-seg-btn-active):not(:disabled) {
-	color: var(--cl-text);
-	background: var(--uin-mat-hover);
-}
-.uin-seg-md .uin-seg-btn.uin-seg-btn-active {
-	background: var(--cl-brand);
-	color: var(--cl-brand-fg);
-}
-.uin-seg-btn:focus-visible {
-	box-shadow: var(--uin-focus-ring);
-	border-radius: 4px;
-}
-
-/* Inputs: 32 px, outlined in text-muted (spec: Color tokens). */
-.uin-input-md .uin-input-el,
-.uin-nselect-md .uin-nselect-el {
-	height: 32px;
-	font-size: 14px;
-	line-height: 20px;
-	background: var(--cl-surface);
-	border-color: var(--cl-text-muted);
-	border-radius: var(--cl-r-chip);
-}
-.uin-nselect-md .uin-nselect-el {
-	padding: 0 32px 0 12px;
-}
-.uin-nselect-chev {
-	width: 12px;
-	height: 12px;
-}
-.uin-textarea {
-	font-size: 14px;
-	line-height: 20px;
-	background: var(--cl-surface);
-	border-color: var(--cl-text-muted);
-	border-radius: var(--cl-r-chip);
-}
-.uin-input-el:focus,
-.uin-textarea:focus {
-	background: var(--cl-surface);
-}
-.uin-checkbox {
-	font-size: 14px;
-	line-height: 20px;
-	min-height: 24px;
-}
-.uin-checkbox-box {
-	border-color: var(--cl-text-muted);
-}
-.uin-switch {
-	cursor: pointer;
+/* The 3-dot mark beside a plain sentence, for empty and loading states (as in the popup). */
+.three {
+	display: inline-flex;
 	flex: none;
+	gap: 4px;
 }
-.uin-switch-md .uin-switch-track {
-	width: 40px;
-	height: 24px;
+.three i {
+	width: 4px;
+	height: 4px;
+	border-radius: 50%;
+	background: var(--cl-dot-strong);
 }
-/* Off: a text-muted track (at least 3:1 against the page and the thumb, WCAG 1.4.11). */
-.uin-switch-md .uin-switch-thumb {
-	width: 18px;
-	height: 18px;
-	left: 3px;
-	background: var(--cl-surface);
+/* Local fix for the shared button, to move into button.css: in dark (and on the band), mixing the
+   light text color into the brand fill on hover drops white text to 4.06:1. Toward ink it stays
+   above 5:1. */
+@media (prefers-color-scheme: dark) {
+	:root:not([data-theme='light']) .uin-btn-primary:hover {
+		background: color-mix(in srgb, var(--cl-brand-fill), var(--cl-ink) 12%);
+	}
+	:root:not([data-theme='light']) .uin-btn-primary:active {
+		background: color-mix(in srgb, var(--cl-brand-fill), var(--cl-ink) 20%);
+	}
 }
-.uin-switch-md.uin-switch-on .uin-switch-thumb {
-	transform: translate(16px, -50%);
+.cl-band .uin-btn-primary:hover {
+	background: color-mix(in srgb, var(--cl-brand-fill), var(--cl-ink) 12%);
 }
-.uin-switch-on .uin-switch-thumb {
-	background: var(--cl-brand-fg);
-}
-.uin-switch:not(.uin-switch-on) .uin-switch-track {
-	background: var(--cl-text-muted);
-}
-.uin-badge-md,
-.uin-badge-sm {
-	font-size: 12px;
-	line-height: 16px;
-	padding: 2px 8px;
-	font-weight: 600;
-}
-.uin-badge-accent {
-	background: var(--cl-brand-tint);
-	color: var(--cl-brand);
-}
-
-/* The perforation-dot motif (spec: Logo and motif). */
-.dots {
-	background-image: radial-gradient(circle, var(--cl-dot) 1.5px, transparent 1.75px);
-	background-size: 12px 12px;
-	background-position: center;
+.cl-band .uin-btn-primary:active {
+	background: color-mix(in srgb, var(--cl-brand-fill), var(--cl-ink) 20%);
 }

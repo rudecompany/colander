@@ -21,8 +21,20 @@ test('a creator starts an appeal, gets a code, verifies and sees the status', as
 	await expect(page.getByRole('heading', { level: 1 })).toHaveText('Appeal the verdict for History Bites 24/7');
 	await expect(page.locator('a[href="/support"], a[href="/supporters"]')).toHaveCount(0);
 
-	await page.getByLabel('Email').fill('creator@example.com');
-	await page.getByLabel('Your statement').fill('We write and film every video ourselves, and use AI only for captions.');
+	// An empty form marks the field it is about invalid, describes it with the error and focuses it.
+	await page.getByRole('button', { name: 'Start the appeal' }).click();
+	const email = page.getByLabel('Email');
+	await expect(email).toBeFocused();
+	await expect(email).toHaveAttribute('aria-invalid', 'true');
+	await expect(email).toHaveAccessibleDescription(/Enter the email address where we should send the appeal link\./);
+	await email.fill('creator@example.com');
+	await page.getByRole('button', { name: 'Start the appeal' }).click();
+	const statement = page.getByLabel('Your statement');
+	await expect(statement).toBeFocused();
+	await expect(statement).toHaveAttribute('aria-invalid', 'true');
+	await expect(email).not.toHaveAttribute('aria-invalid', 'true');
+
+	await statement.fill('We write and film every video ourselves, and use AI only for captions.');
 	await page.getByRole('button', { name: 'Start the appeal' }).click();
 
 	await expect(page).toHaveURL(/\/appeal\/status\/apl_4k9x2m\?secret=s3cret$/);
@@ -40,11 +52,11 @@ test('a creator starts an appeal, gets a code, verifies and sees the status', as
 	await expect(page.getByRole('button', { name: 'Copied' })).toBeVisible();
 	expect(await page.evaluate(() => navigator.clipboard.readText())).toBe('colander-7KQ2M9XD');
 
-	await page.getByRole('button', { name: 'Verify' }).click();
+	await page.getByRole('button', { name: 'Check my description' }).click();
 	await expect(page.getByRole('heading', { name: 'Waiting for a manual check' })).toBeVisible();
 	const verify = calls.find((c) => c.path === '/v1/appeals/apl_4k9x2m/verify')!;
 	expect(verify.body).toEqual({ secret: 's3cret' });
-	await expect(page.getByRole('button', { name: 'Verify' })).toHaveCount(0);
+	await expect(page.getByRole('button', { name: 'Check my description' })).toHaveCount(0);
 	await expect(page.locator('a[href="/support"], a[href="/supporters"]')).toHaveCount(0);
 });
 

@@ -1,5 +1,8 @@
-// Serves build/ with the lookup web/README.md asks of a host: a file, then {path}.html, then
-// {path}/index.html, then the SPA fallback 200.html. The API is mocked per test with page.route.
+// Serves build/ with the lookup web/README.md asks of a host, as Workers Static Assets does: a file,
+// then {path}.html, then {path}/index.html. The client-rendered routes (/s/{platform}/{id},
+// /appeal/{platform}/{id}, /appeal/status/{id}) get the SPA fallback 200.html; any other path is a
+// real 404 with 404.html, a copy of the same shell, which renders the not-found page. The API is
+// mocked per test with page.route.
 import { createReadStream, statSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { extname, join, normalize } from 'node:path';
@@ -11,6 +14,7 @@ const types: Record<string, string> = {
 	'.js': 'text/javascript',
 	'.css': 'text/css',
 	'.svg': 'image/svg+xml',
+	'.webp': 'image/webp',
 	'.woff2': 'font/woff2',
 	'.json': 'application/json'
 };
@@ -30,7 +34,11 @@ createServer((req, res) => {
 		return;
 	}
 	const base = join(root, pathname);
-	const found = file(base) ?? file(base + '.html') ?? file(join(base, 'index.html')) ?? join(root, '200.html');
-	res.writeHead(200, { 'Content-Type': types[extname(found)] ?? 'application/octet-stream' });
+	const spa = /^\/(s\/(yt|tt|ig|fb)|appeal\/(yt|tt|ig|fb|status))\/[^/]+$/.test(pathname);
+	// The shells are not pages of their own: /200 and /404 are not found, as on the Worker.
+	const shell = pathname === '/200' || pathname === '/404';
+	const page = shell ? null : (file(base) ?? file(base + '.html') ?? file(join(base, 'index.html')) ?? (spa ? join(root, '200.html') : null));
+	const found = page ?? file(join(root, '404.html')) ?? join(root, '200.html');
+	res.writeHead(page ? 200 : 404, { 'Content-Type': types[extname(found)] ?? 'application/octet-stream' });
 	createReadStream(found).pipe(res);
 }).listen(port, () => console.log(`serving ${root} on http://localhost:${port}`));

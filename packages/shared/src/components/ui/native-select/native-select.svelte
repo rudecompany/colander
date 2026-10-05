@@ -1,5 +1,5 @@
 <!--
-@component NativeSelect — system `<select>` with our chrome.
+@component NativeSelect - system `<select>` with our chrome.
 
 The browser's native dropdown, styled to match our Input shape. Use it
 when the OS-native picker is preferred (mobile drawers, screen-reader
@@ -23,7 +23,7 @@ CSS lives in `./native-select.css`.
     options: Option[];
     value?: T;
     placeholder?: string;
-    size?: 'sm' | 'md';
+    size?: 'sm' | 'md' | 'lg';
     class?: string;
   };
 

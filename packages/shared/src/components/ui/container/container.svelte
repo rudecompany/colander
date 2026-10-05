@@ -1,5 +1,5 @@
 <!--
-@component Container — max-width content well with auto margins.
+@component Container - max-width content well with auto margins.
 
 The page-level layout primitive. Centers a column of content inside a
 viewport, with a token-driven horizontal padding so text doesn't run

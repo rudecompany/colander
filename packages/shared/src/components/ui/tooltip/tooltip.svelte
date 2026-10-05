@@ -1,8 +1,8 @@
 <!--
-@component Tooltip — short hover-/focus-triggered label.
+@component Tooltip - short hover-/focus-triggered label.
 
 Built on bits-ui's `Tooltip`. Smaller than `Popover` and non-
-interactive — the content shouldn't accept clicks. Use for one-line
+interactive - the content shouldn't accept clicks. Use for one-line
 explanations of icon buttons, abbreviations, truncated text.
 
 `delayDuration` (ms) controls how long the trigger must be hovered
@@ -29,7 +29,7 @@ CSS lives in `./tooltip.css`.
     open?: boolean;
     class?: string;
     /**
-     * Trigger snippet — receives bits-ui's wiring props you must spread
+     * Trigger snippet - receives bits-ui's wiring props you must spread
      * onto your own element. Avoids nesting a `<button>` inside the
      * bits-ui default trigger.
      *

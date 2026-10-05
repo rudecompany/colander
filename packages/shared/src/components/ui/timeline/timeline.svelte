@@ -1,5 +1,5 @@
 <!--
-@component Timeline — vertical chronological event list.
+@component Timeline - vertical chronological event list.
 
 A vertical line with markers at each event. Each event has an
 optional time eyebrow, a title, and an optional description. Markers

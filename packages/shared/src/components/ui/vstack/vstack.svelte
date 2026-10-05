@@ -1,11 +1,11 @@
 <!--
-@component VStack — vertical flex column. Naming-symmetric twin of HStack.
+@component VStack - vertical flex column. Naming-symmetric twin of HStack.
 
 Functionally identical to `Stack`; ships as a separately-forkable
 component so codebases that use `HStack` for horizontal layouts can
 pair it with `VStack` for vertical without reaching for the
 asymmetric "Stack" name. Pick whichever convention reads better in
-your code — the kit ships both.
+your code - the kit ships both.
 
 `gap`, `align`, `justify` mirror Stack. Default `gap=2`,
 `align='stretch'`, `justify='start'`.

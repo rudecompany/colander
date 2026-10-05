@@ -1,33 +1,26 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
-	import { VERDICTS, VerdictChip, VERDICT_WORD } from '@colander/shared';
-	import type { Stats } from '@colander/shared/api';
-	import RefreshCw from '@lucide/svelte/icons/refresh-cw';
-	import { api, errorText } from '#lib/api.ts';
-	import { fmtDateTime, fmtNum } from '#lib/format.ts';
+	import { LiveBadge, PageHeader, PLAN_COPY, StatCell, VerdictTally, VERDICTS, fmtListVersion, fmtNum, fmtShortDate, fmtTime } from '@colander/shared';
+	import Ban from '@lucide/svelte/icons/ban';
+	import CircleDot from '@lucide/svelte/icons/circle-dot';
+	import Search from '@lucide/svelte/icons/search';
+	import { live } from '#lib/live.svelte.ts';
+	import ArrowLink from '#lib/components/ArrowLink.svelte';
 	import Loading from '#lib/components/Loading.svelte';
 	import Notice from '#lib/components/Notice.svelte';
-	import PageHead from '#lib/components/PageHead.svelte';
 
-	let stats = $state<Stats | null>(null);
-	let error = $state('');
+	const stats = $derived(live.stats);
+	const total = $derived(stats ? VERDICTS.reduce((n, v) => n + stats.sources[v], 0) : 0);
+	/** Each dot of the 50-dot meters stands for this many sources. */
+	const perDot = $derived(stats ? Math.max(1, Math.ceil(Math.max(...VERDICTS.map((v) => stats.sources[v])) / 50)) : 1);
 
-	async function load() {
-		error = '';
-		try {
-			stats = await api<Stats>('/v1/stats');
-		} catch (e) {
-			error = errorText(e);
-		}
-	}
-	onMount(load);
-
-	const total = $derived(stats ? VERDICTS.reduce((n, v) => n + stats!.sources[v], 0) : 0);
-	const max = $derived(stats ? Math.max(1, ...VERDICTS.map((v) => stats!.sources[v])) : 1);
-
-	const funding = [
-		['Plus subscriptions', '$3 a month or $30 a year, from version 1.0', 'Planned'],
-		['Donations', 'Once or monthly, any amount, with optional credit', 'Open'],
+	const STATUS = {
+		Open: CircleDot,
+		Sought: Search,
+		Never: Ban
+	} as const;
+	const funding: [string, string, keyof typeof STATUS][] = [
+		['Plus subscriptions', PLAN_COPY.plus.short, 'Open'],
+		['Gifts', 'Once or monthly, any amount, with optional credit', 'Open'],
 		['Grants', 'From foundations that fund work on the information ecosystem', 'Sought'],
 		['Advertising', 'Ads in the extension, on this site or in the lists', 'Never'],
 		['Affiliate links', 'Commission from links we show or rewrite', 'Never'],
@@ -37,7 +30,7 @@
 
 	const rules = [
 		'Free blocking is never reduced to push upgrades.',
-		'Paying or donating never changes tag weight, review priority or any verdict.',
+		'Paying or giving never changes tag weight, review priority or any verdict.',
 		'No creator, platform or advertiser can pay to leave a list or join an allowlist.',
 		'No ads, no affiliate links, and no sale or sharing of user data.',
 		'Every funding source is published.'
@@ -49,84 +42,81 @@
 	<meta name="description" content="Live numbers for the Colander list, how it is funded, the independence rules and how verdicts expire." />
 </svelte:head>
 
-<PageHead
-	eyebrow="Transparency"
-	title="Open books, open list"
-	lede="A blocker asks for trust. These are the live numbers behind the shared list, where the money comes from, and the rules that keep money away from verdicts."
-/>
+<div class="cl-container page-top">
+	<PageHeader
+		eyebrow="Transparency"
+		title="Open books,"
+		title2="open list."
+		lede="A blocker asks for trust. These are the live numbers behind the shared list, where the money comes from, and the rules that keep money away from verdicts."
+	>
+		<div class="badge"><LiveBadge sequence={stats?.list_sequence} updatedAt={stats?.list_updated_at} now={live.now ?? undefined} /></div>
+	</PageHeader>
+</div>
 
-<div class="wrap page">
-	<section aria-labelledby="live-title" class="block">
+<div class="cl-container page-body body">
+	<section class="block" aria-labelledby="live-title">
 		<div class="block-head">
-			<h2 class="t-title" id="live-title">The list right now</h2>
-			{#if stats?.list_updated_at}
-				<p class="t-body muted">List version <span class="cl-num">{fmtNum(stats.list_sequence)}</span>, published {fmtDateTime(stats.list_updated_at)}.</p>
-			{/if}
+			<h2 class="cl-title" id="live-title">The list, right now</h2>
+			<!-- The line keeps its height before the numbers arrive, so the body never moves. -->
+			<p class="cl-figure cl-muted as-of">{#if live.asOf}As of {fmtShortDate(live.asOf)}, {fmtTime(live.asOf)}{/if}</p>
 		</div>
-
-		{#if error}
-			<div class="error-box">
-				<Notice tone="error" title="Live numbers could not load"><p>{error}</p></Notice>
-				<button type="button" class="uin-btn uin-btn-outline uin-btn-md" onclick={load}><RefreshCw size={16} strokeWidth={1.75} aria-hidden="true" /> Try again</button>
-			</div>
+		{#if !stats && live.failed}
+			<Notice tone="error" title="Live numbers could not load"><p>Please try again in a moment.</p></Notice>
 		{:else if !stats}
-			<Loading label="Loading live numbers" />
+			<!-- The numbers' space is held while they load, so the sections below never jump. -->
+			<div class="reserve"><Loading /></div>
 		{:else}
-			<dl class="tiles">
-				<div class="tile"><dt>Sources on the list</dt><dd>{fmtNum(total)}</dd></div>
-				<div class="tile"><dt>Items with their own verdict</dt><dd>{fmtNum(stats.items)}</dd></div>
-				<div class="tile"><dt>Decisions in the last 7 days</dt><dd>{fmtNum(stats.decisions_7d)}</dd></div>
-				<div class="tile"><dt>Open appeals</dt><dd>{fmtNum(stats.appeals.open)}</dd></div>
-				<div class="tile">
-					<dt>Median days to decide an appeal</dt>
-					<dd>
-						{stats.appeals.median_days === null ? 'No data yet' : stats.appeals.median_days.toFixed(1)}
-						<span class="tile-note">The goal is 7 days or fewer.</span>
-					</dd>
+			<div class="cells uin-card">
+				<div class="cell"><StatCell size="lg" label="Sources on the list" value={total} reserve={6} /></div>
+				<div class="cell"><StatCell size="lg" label="Items with their own verdict" value={stats.items} reserve={6} /></div>
+				<div class="cell"><StatCell size="lg" label="Verdict changes in the last 7 days" value={stats.decisions_7d} zero="None this week" reserve={5} /></div>
+				<div class="cell"><StatCell size="lg" label="Appeals open" value={stats.appeals.open} zero="No open appeals" reserve={4} /></div>
+				<div class="cell">
+					<StatCell size="lg" label="Median days to decide an appeal" value={stats.appeals.median_days} zero="No appeals decided yet" foot="The goal is 7 days or fewer." reserve={4} />
 				</div>
-				<div class="tile">
-					<dt>Active installs</dt>
-					<dd>
-						{fmtNum(stats.active_installs)}
-						<span class="tile-note">Estimated from list downloads, which carry no identifier.</span>
-					</dd>
-				</div>
-			</dl>
+			</div>
 
-			<figure class="card chart">
-				<figcaption class="t-title">Sources by verdict</figcaption>
-				<table class="bars">
-					<thead class="sr-only"><tr><th scope="col">Verdict</th><th scope="col">Sources</th></tr></thead>
-					<tbody>
-						{#each VERDICTS as v (v)}
-							{@const n = stats.sources[v]}
-							<tr title="{VERDICT_WORD[v]}: {fmtNum(n)} sources">
-								<th scope="row"><VerdictChip verdict={v} /></th>
-								<td>
-									<span class="bar-track" aria-hidden="true"><span class="bar" style:width="{(n / max) * 100}%"></span></span>
-									<span class="value cl-num">{fmtNum(n)}</span>
-								</td>
-							</tr>
-						{/each}
-					</tbody>
-				</table>
-				<p class="t-caption muted">Clear sources stay on the list so the extension knows they were checked.</p>
-			</figure>
+			<div class="two even">
+				<section class="uin-card uin-card-lg uin-card-pad" aria-labelledby="by-title">
+					<h3 class="cl-title" id="by-title">Sources by verdict</h3>
+					<VerdictTally counts={stats.sources} layout="rows" {perDot} />
+					<p class="cl-caption cl-muted">Each dot is {fmtNum(perDot)} {perDot === 1 ? 'source' : 'sources'}. Clear sources stay on the list so the extension knows they were checked.</p>
+				</section>
+				<div class="side">
+					<section class="uin-card uin-card-lg uin-card-pad list-card" aria-labelledby="list-title">
+						<h3 class="cl-title" id="list-title">Core list {fmtListVersion(stats.list_sequence)}</h3>
+						{#if stats.list_updated_at}<p class="cl-muted">Published {fmtShortDate(stats.list_updated_at)}, {fmtTime(stats.list_updated_at)}</p>{/if}
+						<ArrowLink href="/definition#signing">How signing works</ArrowLink>
+					</section>
+					<section class="uin-card uin-card-lg uin-card-pad" aria-label="Installs">
+						{#if stats.active_installs < 1000}
+							<p class="cl-muted">Install counts appear here once 1,000 people use Colander.</p>
+						{:else}
+							<StatCell size="lg" label="Active installs" value={stats.active_installs} foot="Estimated from list downloads, which carry no identifier." reserve={7} />
+						{/if}
+					</section>
+				</div>
+			</div>
 		{/if}
 	</section>
 
-	<section aria-labelledby="funding-title" class="block">
-		<h2 class="t-title" id="funding-title">Where the money comes from</h2>
-		<p class="t-body-lg muted prose">
-			Blocking is free, and the work behind it is paid for by a low-priced subscription, donations and grants. A yearly report
-			publishes income by source and spending by category on this page.
+	<section class="block" aria-labelledby="funding-title" id="funding">
+		<h2 class="cl-title" id="funding-title">Where the money comes from</h2>
+		<p class="cl-muted lede">
+			Blocking is free, and the work behind it is paid for by a low-priced subscription, gifts and grants. A yearly report publishes income by
+			source and spending by category on this page.
 		</p>
-		<div class="table-scroll">
+		<div class="table-card">
 			<table class="plain stack-sm">
 				<thead><tr><th scope="col">Source</th><th scope="col">What it is</th><th scope="col">Status</th></tr></thead>
 				<tbody>
 					{#each funding as [name, what, status] (name)}
-						<tr><th scope="row" class="row-name">{name}</th><td>{what}</td><td data-label="Status"><span class="tag">{status}</span></td></tr>
+						{@const Icon = STATUS[status]}
+						<tr>
+							<th scope="row">{name}</th>
+							<td>{what}</td>
+							<td data-label="Status"><span class="status"><Icon size={16} aria-hidden="true" />{status}</span></td>
+						</tr>
 					{/each}
 				</tbody>
 			</table>
@@ -134,17 +124,17 @@
 	</section>
 
 	<div class="two">
-		<section aria-labelledby="independence-title" class="block" id="independence">
-			<h2 class="t-title" id="independence-title">Independence rules</h2>
+		<section class="block" aria-labelledby="independence-title" id="independence">
+			<h2 class="cl-title" id="independence-title">Independence rules</h2>
 			<ol class="rules">
-				{#each rules as r, i (r)}<li><span class="n cl-num" aria-hidden="true">{i + 1}</span><span>{r}</span></li>{/each}
+				{#each rules as r, i (r)}<li><span class="cl-figure n">0{i + 1}</span><span>{r}</span></li>{/each}
 			</ol>
-			<p class="t-body muted">The scoring and review code never reads plan or payment state. It is an input nobody can buy.</p>
+			<p class="cl-muted small">The scoring and review code never reads plan or payment state. It is an input nobody can buy.</p>
 		</section>
 
-		<section aria-labelledby="expiry-title" class="block">
-			<h2 class="t-title" id="expiry-title">How verdicts expire</h2>
-			<ul class="plain-list">
+		<section class="block" aria-labelledby="expiry-title">
+			<h2 class="cl-title" id="expiry-title">How verdicts expire</h2>
+			<ul class="dots-list small">
 				<li>Every verdict carries a re-score date, 90 days after it last changed.</li>
 				<li>At that date, staff and curator decisions lapse and the source is scored again from fresh evidence.</li>
 				<li>If re-scoring would make it Slop, it stays Likely slop until a person reviews it.</li>
@@ -154,184 +144,175 @@
 		</section>
 	</div>
 
-	<section aria-labelledby="review-title" class="block">
-		<h2 class="t-title" id="review-title">How review works</h2>
-		<div class="review-grid">
-			<div class="card-quiet">
+	<section class="block" aria-labelledby="review-title">
+		<h2 class="cl-title" id="review-title">How review works</h2>
+		<div class="three">
+			<div class="uin-card uin-card-lg uin-card-pad">
 				<h3>Curators</h3>
-				<p class="t-body muted">Volunteers who review reports and items, with spot audits. They cannot decide large sources or appeals.</p>
+				<p class="cl-muted small">Volunteers who review reports and items, with spot audits. They cannot decide large sources or appeals.</p>
 			</div>
-			<div class="card-quiet">
+			<div class="uin-card uin-card-lg uin-card-pad">
 				<h3>Staff</h3>
-				<p class="t-body muted">Decide large sources, escalations and every appeal. A list-wide Slop verdict on a large source always needs staff.</p>
+				<p class="cl-muted small">Decide large sources, escalations and every appeal. A list-wide Slop verdict on a large source always needs staff.</p>
 			</div>
-			<div class="card-quiet">
+			<div class="uin-card uin-card-lg uin-card-pad">
 				<h3>Community scoring</h3>
-				<p class="t-body muted">Runs every few minutes from weighted tags. Every change it makes is logged with a reason built from its signals.</p>
+				<p class="cl-muted small">Runs every few minutes from weighted tags. Every change it makes is logged with a reason built from its signals.</p>
 			</div>
 		</div>
-		<p class="t-body"><a href="/log">Read every decision in the log</a></p>
+		<ArrowLink href="/log">Read every decision in the log</ArrowLink>
 	</section>
 </div>
 
 <style>
-	.page {
+	/* The badge's line is held before the list version is known, so the page below never moves. */
+	.badge {
+		min-height: 24px;
+		margin-top: 16px;
+	}
+	.as-of {
+		min-height: 16px;
+	}
+	.body {
 		display: grid;
 		gap: 64px;
-		padding-top: var(--cl-s6);
 	}
 	.block {
 		display: grid;
-		gap: var(--cl-s4);
+		justify-items: start;
+		gap: 16px;
 		align-content: start;
+	}
+	.block > :global(*) {
+		width: 100%;
+	}
+	.block > :global(.arrow) {
+		width: auto;
 	}
 	.block-head {
 		display: flex;
+		flex-wrap: wrap;
 		align-items: baseline;
 		justify-content: space-between;
-		flex-wrap: wrap;
-		gap: var(--cl-s2) var(--cl-s5);
+		gap: 8px 24px;
 	}
-	.tiles {
+	.cells {
 		display: grid;
-		grid-template-columns: repeat(3, minmax(0, 1fr));
-		gap: var(--cl-s4);
+		grid-template-columns: repeat(5, minmax(0, 1fr));
 	}
-	.tile {
-		padding: var(--cl-s4) var(--cl-s5);
-		background: var(--cl-surface);
-		border: 1px solid var(--cl-border);
-		border-radius: var(--cl-r-card);
-		display: grid;
-		align-content: start;
-		gap: 2px;
+	.cell {
+		padding: 24px;
 	}
-	.tile dt {
-		font: var(--cl-body);
-		color: var(--cl-text-muted);
+	.cell + .cell {
+		border-left: 1px solid var(--cl-border);
 	}
-	.tile dd {
-		font: var(--cl-display);
-		font-variant-numeric: tabular-nums;
-	}
-	.tile-note {
-		display: block;
-		font: var(--cl-caption);
-		color: var(--cl-text-muted);
-	}
-	.chart {
-		margin: 0;
-		display: grid;
-		gap: var(--cl-s4);
-	}
-	.bars {
-		width: 100%;
-		border-collapse: collapse;
-	}
-	.bars th {
-		width: 136px;
-		text-align: left;
-		padding: var(--cl-s2) 0;
-	}
-	.bars td {
-		display: flex;
-		align-items: center;
-		gap: var(--cl-s3);
-		padding: var(--cl-s2) 0;
-	}
-	.bars tr:hover .bar {
-		background: color-mix(in srgb, var(--cl-text) 80%, var(--cl-surface));
-	}
-	.bar-track {
-		flex: 1;
-		height: 12px;
-		display: flex;
-		border-left: 1px solid var(--w-control-border);
-	}
-	.bar {
-		height: 100%;
-		background: var(--cl-text);
-		border-radius: 0 4px 4px 0;
-		min-width: 2px;
-		transition: background-color var(--cl-fast) var(--cl-ease);
-	}
-	.value {
-		width: 72px;
-		text-align: right;
-		font: 600 14px/20px var(--cl-font);
-	}
-	.row-name {
-		color: var(--cl-text) !important;
-		white-space: nowrap;
+	.cell :global(.label) {
+		min-height: 40px;
 	}
 	.two {
 		display: grid;
-		grid-template-columns: 1fr 1fr;
-		gap: 64px;
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+		gap: 24px;
+		align-items: start;
+	}
+	.two > section {
+		display: grid;
+		gap: 16px;
+	}
+	.side {
+		display: grid;
+		gap: 24px;
+	}
+	.reserve {
+		min-height: 420px;
+	}
+	@media (max-width: 1023px) {
+		.reserve {
+			min-height: 940px;
+		}
+	}
+	/* The verdict card and the two beside it end on one line. */
+	.two.even {
+		align-items: stretch;
+	}
+	.even .side {
+		grid-template-rows: auto 1fr;
+	}
+	/* The 50-dot meters shrink with the card instead of pushing past it on phones. */
+	.two :global(.tally-rows) {
+		grid-template-columns: max-content minmax(0, 300px) max-content;
+	}
+	.two :global(.tally-rows .chart) {
+		width: 100%;
+	}
+	.list-card {
+		display: grid;
+		justify-items: start;
+		gap: 8px;
+	}
+	.lede {
+		max-width: 68ch;
+	}
+	.status {
+		display: inline-flex;
+		align-items: center;
+		gap: 6px;
+		font-weight: 600;
+		white-space: nowrap;
 	}
 	.rules {
-		list-style: none;
 		display: grid;
-		gap: var(--cl-s3);
-		font: var(--cl-body-lg);
+		gap: 12px;
+		list-style: none;
 	}
 	.rules li {
-		display: flex;
-		gap: var(--cl-s3);
-	}
-	.n {
-		flex: none;
 		display: grid;
-		place-items: center;
-		width: 24px;
-		height: 24px;
-		border-radius: 50%;
-		border: 1.5px solid var(--cl-text);
-		font: 700 12px/1 var(--cl-font);
-	}
-	.plain-list {
-		padding-left: var(--cl-s5);
-		display: grid;
-		gap: var(--cl-s2);
+		grid-template-columns: 32px 1fr;
+		gap: 8px;
 		font: var(--cl-body-lg);
 	}
-	.plain-list li::marker {
+	.n {
+		padding-top: 4px;
 		color: var(--cl-text-muted);
 	}
-	.review-grid {
+	.small {
+		font: var(--cl-body);
+	}
+	.three {
 		display: grid;
 		grid-template-columns: repeat(3, minmax(0, 1fr));
-		gap: var(--cl-s4);
+		gap: 24px;
 	}
-	.review-grid h3 {
-		font: 600 16px/24px var(--cl-font);
-		margin-bottom: var(--cl-s1);
+	.three h3 {
+		margin-bottom: 8px;
+		font: var(--cl-body-lg);
+		font-weight: 600;
 	}
-	.error-box {
-		display: grid;
-		gap: var(--cl-s3);
-		justify-items: start;
-		max-width: 560px;
-	}
-	@media (max-width: 860px) {
-		.tiles {
-			grid-template-columns: 1fr 1fr;
+	@media (max-width: 1023px) {
+		.cells {
+			grid-template-columns: repeat(2, minmax(0, 1fr));
+		}
+		.cell + .cell {
+			border-left: 0;
+		}
+		.cell {
+			border-top: 1px solid var(--cl-border);
+		}
+		.cell:first-child {
+			grid-column: 1 / -1;
+			border-top: 0;
+		}
+		.cell:nth-child(odd):not(:first-child) {
+			border-left: 1px solid var(--cl-border);
 		}
 		.two,
-		.review-grid {
-			grid-template-columns: 1fr;
-			gap: var(--cl-s6);
+		.three {
+			grid-template-columns: minmax(0, 1fr);
 		}
 	}
-	@media (max-width: 480px) {
-		.tile {
-			padding: var(--cl-s3) var(--cl-s4);
-		}
-		.bars th {
-			width: 112px;
-		}
-		.value {
-			width: 56px;
+	@media (max-width: 639px) {
+		.cell {
+			padding: 16px;
 		}
 	}
 </style>

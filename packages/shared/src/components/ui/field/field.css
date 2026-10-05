@@ -1,22 +1,26 @@
-/* Field — see ./field.svelte. */
+/* Field, themed for Colander. Errors are the circle-alert icon and the message in the text color,
+   never a verdict color. */
 
 .uin-field {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
   min-width: 0;
 }
-
 .uin-field-desc {
   margin: 0;
-  font-size: 12px;
-  line-height: 1.4;
-  color: var(--uin-fg-mute);
+  color: var(--cl-text-muted);
+  font: var(--cl-caption);
 }
-
 .uin-field-error {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
   margin: 0;
-  font-size: 12px;
-  line-height: 1.4;
-  color: var(--uin-danger);
+  color: var(--cl-text);
+  font: var(--cl-body);
+}
+.uin-field-error :where(svg) {
+  flex: none;
+  margin-top: 2px;
 }

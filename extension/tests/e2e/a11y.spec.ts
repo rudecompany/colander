@@ -3,13 +3,16 @@
 // in-page checks cover only the colander-ui hosts and their shadow roots.
 import AxeBuilder from '@axe-core/playwright';
 import type { Page } from '@playwright/test';
-import { EXT_ID, REVIEW_QUEUE, REVIEW_SOURCE, expect, fixtureHtml, test, type Ext } from './harness';
+import { EXT_ID, REVIEW_QUEUE, REVIEW_SOURCE, expect, test, type Ext } from './harness';
 
 const TAGS = ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa'];
 const SECTIONS = ['lists', 'platforms', 'strictness', 'plus', 'appearance', 'plan', 'reports', 'data', 'privacy'];
 
 /** Violations as readable lines, so a failure says what and where. */
 async function audit(page: Page, include?: string): Promise<string[]> {
+	// Extension pages in their resting colors: the pointer leaves whatever the last click left it
+	// over. In-page checks keep it, since the Tag button shows only on hover.
+	if (!include) await page.mouse.move(0, 0);
 	// The layer (popovers, notices, the report dialog) lives under <html>, outside <body>, where
 	// axe cannot work out colors. It is position: fixed, so moving it into <body> changes nothing
 	// on screen and lets axe check its contrast too.
@@ -32,13 +35,13 @@ async function richState(ext: Ext) {
 	};
 	await ext.ctl.evaluate(
 		({ days }) => chrome.storage.local.set({ stats: { firstRunAt: Date.now() - 9 * 86_400_000, days } }),
-		{ days: Object.fromEntries([18, 31, 24, 40, 12, 27, 35].map((n, i) => [day(6 - i), { hidden: n, collapsed: Math.round(n / 4), labeled: n * 2 }])) }
+		{ days: Object.fromEntries([18, 31, 24, 40, 12, 27, 35].map((n, i) => [day(6 - i), { hidden: n, labeled: n * 2 }])) }
 	);
 	await ext.send({
 		type: 'settings',
 		patch: {
 			topics: [{ id: 't1', name: 'Kids', terms: ['#kids', 'cartoon'], strictness: 'no_ai', hide: false }],
-			perPlatform: { tt: 'strict' },
+			perPlatform: { tt: 'no_ai' },
 			blocks: [{ key: 'yt:s:@endlessfacts', name: 'Endless Facts', at: Date.now() }],
 			allows: [{ key: 'yt:s:@handmadehistory', name: 'Handmade History', at: Date.now() }]
 		}
@@ -54,18 +57,27 @@ for (const scheme of ['light', 'dark'] as const) {
 		// Reduced motion: axe reads colors mid-fade otherwise. The resting colors are the same.
 		test.use({ colorScheme: scheme, reducedMotion: 'reduce' });
 
-		test(`extension pages pass axe, ${scheme}`, async ({ ext }) => {
+		test(`popup and options pass axe, ${scheme}`, async ({ ext }) => {
+			// Fourteen full-page audits: more than the default minute when the suite runs in parallel.
+			test.slow();
 			const page = await ext.ctx.newPage();
 			await page.goto(`chrome-extension://${EXT_ID}/options.html#plus`);
-			await expect(page.getByRole('button', { name: 'Start 14-day trial, no card' }).first()).toBeVisible();
+			await expect(page.getByRole('button', { name: 'Start 14 days free' })).toBeVisible();
 			expect.soft(await audit(page), 'options #plus, free').toEqual([]);
+			await page.goto(`chrome-extension://${EXT_ID}/options.html#plan`);
+			await expect(page.getByRole('heading', { name: 'Current plan: Free' })).toBeVisible();
+			expect.soft(await audit(page), 'options #plan, free').toEqual([]);
 
 			await richState(ext);
 			const yt = await ext.open('https://www.youtube.com/results?search_query=history');
 			await page.setViewportSize({ width: 360, height: 760 });
 			await page.goto(`chrome-extension://${EXT_ID}/popup.html?tab=${await ext.tabId(yt)}`);
-			await expect(page.getByRole('heading', { name: 'Your week' })).toBeVisible();
+			await expect(page.getByText(/items for you this week/)).toBeVisible();
 			expect.soft(await audit(page), 'popup').toEqual([]);
+			await page.getByRole('button', { name: 'Pause' }).click();
+			await expect(page.getByRole('menuitem', { name: 'Pause on this site' })).toBeVisible();
+			expect.soft(await audit(page), 'popup, pause menu').toEqual([]);
+			await page.keyboard.press('Escape');
 
 			await page.setViewportSize({ width: 1200, height: 860 });
 			for (const s of SECTIONS) {
@@ -75,9 +87,24 @@ for (const scheme of ['light', 'dark'] as const) {
 				expect.soft(await audit(page), `options #${s}`).toEqual([]);
 			}
 
+			await page.goto(`chrome-extension://${EXT_ID}/options.html#data`);
+			await page.getByRole('button', { name: 'Delete local data' }).click();
+			await expect(page.getByRole('dialog')).toBeVisible();
+			expect.soft(await audit(page), 'options #data, confirm').toEqual([]);
+		});
+
+		test(`welcome and side panel pass axe, ${scheme}`, async ({ ext }) => {
+			const page = await ext.ctx.newPage();
+			await page.setViewportSize({ width: 1200, height: 860 });
 			await page.goto(`chrome-extension://${EXT_ID}/welcome.html`);
-			await expect(page.getByRole('heading', { name: 'Welcome to Colander' })).toBeVisible();
-			expect.soft(await audit(page), 'welcome').toEqual([]);
+			await expect(page.getByRole('heading', { name: 'Set up Colander in 3 steps.' })).toBeVisible();
+			expect.soft(await audit(page), 'welcome, strictness').toEqual([]);
+			await page.getByRole('button', { name: 'Continue' }).click();
+			await expect(page.getByRole('heading', { name: 'Where should it work?' })).toBeVisible();
+			expect.soft(await audit(page), 'welcome, platforms').toEqual([]);
+			await page.getByRole('button', { name: 'Continue' }).click();
+			await expect(page.getByRole('heading', { name: 'Pin Colander' })).toBeVisible();
+			expect.soft(await audit(page), 'welcome, pin').toEqual([]);
 
 			await page.setViewportSize({ width: 400, height: 900 });
 			await page.goto(`chrome-extension://${EXT_ID}/sidepanel.html`);
@@ -92,6 +119,9 @@ for (const scheme of ['light', 'dark'] as const) {
 			await page.getByRole('button', { name: /Cat Rescue Tales/ }).click();
 			await expect(page.getByRole('heading', { name: 'Cat Rescue Tales' })).toBeVisible();
 			expect.soft(await audit(page), 'side panel, evidence and decision').toEqual([]);
+			await page.keyboard.press('?');
+			await expect(page.getByRole('dialog', { name: 'Keyboard shortcuts' })).toBeVisible();
+			expect.soft(await audit(page), 'side panel, shortcuts').toEqual([]);
 		});
 
 		test(`in-page elements pass axe, ${scheme}`, async ({ ext }) => {
@@ -101,51 +131,78 @@ for (const scheme of ['light', 'dark'] as const) {
 			const page = await ext.open('https://www.youtube.com/results?search_query=history', { dark });
 			const cards = page.locator('ytd-search ytd-video-renderer');
 			const layer = page.locator('colander-ui[data-kind="layer"]');
-			// Chips, the collapsed bar and the Tag button (shown on hover).
+			// Chips and the Tag button (shown on hover).
 			await cards.nth(3).hover();
 			await expect(cards.nth(3).locator('colander-ui[data-kind="tag"]')).toHaveCSS('opacity', '1');
-			expect.soft(await audit(page, UI), 'chips, collapsed bar, Tag button').toEqual([]);
-			// The tag menu, then the Slop detail.
+			expect.soft(await audit(page, UI), 'chips, Tag button').toEqual([]);
+			// The tag menu, then its confirmation and Add detail.
 			await cards.nth(3).locator('colander-ui[data-kind="tag"] button').click();
-			await expect(layer.locator('.pop')).toBeVisible();
+			await expect(layer.locator('.cl-pop')).toBeVisible();
 			expect.soft(await audit(page, UI), 'tag menu').toEqual([]);
-			await layer.getByRole('button', { name: /^Slop/ }).click();
-			await expect(layer.getByRole('button', { name: 'Done' })).toBeVisible();
-			expect.soft(await audit(page, UI), 'tag menu, Slop detail').toEqual([]);
+			await layer.getByRole('menuitem', { name: /^Slop/ }).click();
+			await layer.getByRole('button', { name: 'Add detail' }).click();
+			await expect(layer.getByRole('dialog', { name: 'Add detail' })).toBeVisible();
+			expect.soft(await audit(page, UI), 'tag confirmation and Add detail').toEqual([]);
 			await page.keyboard.press('Escape');
+			await layer.getByRole('button', { name: 'Undo' }).click();
 			// The Why popover.
-			await cards.nth(1).locator('colander-ui[data-kind="bar"]').getByRole('button', { name: 'Why' }).click();
-			await expect(layer.locator('.pop')).toBeVisible();
+			await cards.nth(2).locator('colander-ui[data-kind="chip"] button').click();
+			await expect(layer.locator('.cl-pop')).toBeVisible();
 			expect.soft(await audit(page, UI), 'Why popover').toEqual([]);
 			await page.keyboard.press('Escape');
 
-			// The report form, and its sent state.
+			// The report sheet, both steps, and an error.
 			const channel = await ext.open('https://www.youtube.com/@NASA/videos', { dark });
 			await channel.locator('colander-ui[data-kind="report"] button').click();
-			const dialog = channel.locator('colander-ui[data-kind="layer"] .dialog');
-			await expect(dialog).toBeVisible();
-			expect.soft(await audit(channel, UI), 'report form').toEqual([]);
-			await dialog.getByRole('button', { name: 'Send report' }).click();
-			await expect(dialog.getByRole('alert')).toBeVisible();
-			expect.soft(await audit(channel, UI), 'report form with an error').toEqual([]);
+			const sheet = channel.locator('colander-ui[data-kind="layer"] .report');
+			await expect(sheet).toBeVisible();
+			expect.soft(await audit(channel, UI), 'report sheet, examples').toEqual([]);
+			await sheet.getByRole('button', { name: 'Next' }).click();
+			await sheet.getByRole('button', { name: 'Send report' }).click();
+			await expect(sheet.getByRole('alert')).toBeVisible();
+			expect.soft(await audit(channel, UI), 'report sheet, reason with an error').toEqual([]);
 
-			// Swipe feeds: the skip notice, then a cover.
+			// Swipe feeds: the skip notice, with it switched on in Appearance.
+			await ext.send({ type: 'settings', patch: { skipNotice: true } });
 			const shorts = await ext.open('https://www.youtube.com/shorts/_k2w1cC69qY', { dark });
-			await expect(shorts.locator('colander-ui[data-kind="layer"] .toast')).toBeVisible();
+			await expect(shorts.locator('colander-ui[data-kind="layer"] .cl-toast')).toBeVisible();
 			expect.soft(await audit(shorts, UI), 'skip notice').toEqual([]);
-			const covered = await ext.open('https://www.youtube.com/shorts/_k2w1cC69qY', { dark, html: fixtureHtml('yt-shorts').replaceAll('aihistorydaily', 'catrescuetales') });
-			await expect(covered.locator('colander-ui[data-kind="cover"]').first()).toBeVisible();
-			expect.soft(await audit(covered, UI), 'swipe cover').toEqual([]);
 
-			// Plain-language chips.
+			// Plain-language chips, on a card shown again from the popup too. Plain words read neutrally (VERDICT_PLAIN).
 			await ext.send({ type: 'settings', patch: { plainChips: true } });
 			await expect(cards.nth(2).locator('colander-ui[data-kind="chip"]')).toContainText('Made with AI');
-			// Plain words read neutrally (VERDICT_PLAIN).
-			await expect(cards.nth(1).locator('colander-ui[data-kind="bar"]')).toContainText('Probably low-effort AI content');
-			expect.soft(await audit(page, UI), 'plain-language chips and bar').toEqual([]);
+			const shown = (await ext.pageState(page)).actions.find((a: { verdict: string }) => a.verdict === 'likely_slop');
+			await ext.ctl.evaluate(async ([tabId, id]) => chrome.tabs.sendMessage(tabId, { type: 'show', id }), [await ext.tabId(page), shown.id] as const);
+			await expect(cards.nth(1).locator('colander-ui[data-kind="chip"]')).toContainText('Probably low-effort AI content');
+			expect.soft(await audit(page, UI), 'plain-language chips').toEqual([]);
+
+			// TikTok, Instagram and Facebook, on their own light or dark pages, a Tag button showing.
+			await ext.send({ type: 'settings', patch: { plainChips: false } });
+			for (const p of ['tt', 'ig', 'fb']) await ext.send({ type: 'set-platform', platform: p, on: true });
+			for (const url of ['https://www.tiktok.com/foryou', 'https://www.tiktok.com/search?q=history', 'https://www.instagram.com/', 'https://www.facebook.com/']) {
+				const other = await ext.open(url, { dark });
+				await expect(other.locator('colander-ui[data-kind="chip"]').first()).toBeAttached();
+				await other.locator('[data-colander-card]:not([data-colander])').nth(1).hover();
+				expect.soft(await audit(other, UI), url).toEqual([]);
+				await other.close();
+			}
 		});
 	});
 }
+
+test('reflow: nothing scrolls sideways at 390 or 320 px (WCAG 1.4.10)', async ({ ext }) => {
+	await richState(ext);
+	const page = await ext.ctx.newPage();
+	const pages = ['welcome.html', 'options.html#plus', 'options.html#lists', 'options.html#strictness', 'options.html#appearance'];
+	for (const width of [390, 320]) {
+		await page.setViewportSize({ width, height: 844 });
+		for (const path of pages) {
+			await page.goto(`chrome-extension://${EXT_ID}/${path}`);
+			await page.waitForTimeout(300);
+			expect.soft(await page.evaluate(() => document.documentElement.scrollWidth), `${path} at ${width}`).toBeLessThanOrEqual(width);
+		}
+	}
+});
 
 test('radio groups: one tab stop, arrow keys, Home and End (WAI-ARIA)', async ({ ext }) => {
 	await ext.setup();
@@ -156,20 +213,21 @@ test('radio groups: one tab stop, arrow keys, Home and End (WAI-ARIA)', async ({
 	await group.getByRole('radio', { name: 'Standard' }).focus();
 	const strictness = () => ext.storage<{ strictness: string }>('settings').then((s) => s.strictness);
 	for (const [key, name, value] of [
-		['ArrowRight', 'Strict', 'strict'],
-		['ArrowDown', 'No AI', 'no_ai'],
-		['ArrowRight', 'Label', 'label'],
+		['ArrowRight', 'No AI', 'no_ai'],
+		['ArrowDown', 'Label', 'label'],
+		['ArrowRight', 'Standard', 'standard'],
+		['ArrowLeft', 'Label', 'label'],
 		['ArrowLeft', 'No AI', 'no_ai'],
 		['Home', 'Label', 'label'],
 		['End', 'No AI', 'no_ai'],
-		['ArrowUp', 'Strict', 'strict']
+		['ArrowUp', 'Standard', 'standard']
 	] as const) {
 		await popup.keyboard.press(key);
 		await expect(group.getByRole('radio', { name })).toBeFocused();
 		await expect(group.getByRole('radio', { name })).toHaveAttribute('aria-checked', 'true');
 		await expect.poll(strictness).toBe(value);
 	}
-	await expect(group.locator('[role="radio"][tabindex="0"]')).toHaveText('Strict');
+	await expect(group.locator('[role="radio"][tabindex="0"]')).toHaveText('Standard');
 	// Tab leaves the group in one step.
 	await popup.keyboard.press('Tab');
 	await expect(group.locator(':focus')).toHaveCount(0);
@@ -180,37 +238,8 @@ test('radio groups: one tab stop, arrow keys, Home and End (WAI-ARIA)', async ({
 	await expect(levels.locator('[role="radio"][tabindex="0"]')).toHaveCount(1);
 	await levels.getByRole('radio', { name: /^Standard/ }).focus();
 	await welcome.keyboard.press('ArrowDown');
-	await expect(levels.getByRole('radio', { name: /^Strict/ })).toBeFocused();
-	await expect(levels.getByRole('radio', { name: /^Strict/ })).toHaveAttribute('aria-checked', 'true');
+	await expect(levels.getByRole('radio', { name: /^No AI/ })).toBeFocused();
+	await expect(levels.getByRole('radio', { name: /^No AI/ })).toHaveAttribute('aria-checked', 'true');
 	await welcome.keyboard.press('Home');
 	await expect(levels.getByRole('radio', { name: /^Label/ })).toHaveAttribute('aria-checked', 'true');
-});
-
-test('popup pause rows are whole 32 px targets, and switches keep 3:1 when off', async ({ ext }) => {
-	await ext.setup();
-	const page = await ext.open('https://www.youtube.com/results?search_query=history');
-	const popup = await ext.ctx.newPage();
-	await popup.goto(`chrome-extension://${EXT_ID}/popup.html?tab=${await ext.tabId(page)}`);
-	const row = popup.locator('label', { hasText: 'Pause on this site' });
-	expect((await row.boundingBox())!.height).toBeGreaterThanOrEqual(32);
-	const sw = popup.getByRole('switch', { name: 'Pause on this site' });
-	// Off: the track against the popup surface and against its thumb.
-	const ratios = await sw.evaluate((el) => {
-		const rgb = (c: string) => c.match(/[\d.]+/g)!.slice(0, 3).map(Number);
-		const lum = (c: string) => {
-			const [r, g, b] = rgb(c).map((v) => (v / 255 <= 0.03928 ? v / 255 / 12.92 : ((v / 255 + 0.055) / 1.055) ** 2.4));
-			return 0.2126 * r! + 0.7152 * g! + 0.0722 * b!;
-		};
-		const ratio = (a: string, b: string) => (Math.max(lum(a), lum(b)) + 0.05) / (Math.min(lum(a), lum(b)) + 0.05);
-		const track = getComputedStyle(el.querySelector('.uin-switch-track')!).backgroundColor;
-		const thumb = getComputedStyle(el.querySelector('.uin-switch-thumb')!).backgroundColor;
-		const surface = getComputedStyle(document.querySelector('.popup')!).backgroundColor;
-		return [ratio(track, surface), ratio(track, thumb)];
-	});
-	for (const r of ratios) expect(r).toBeGreaterThanOrEqual(3);
-	// A click anywhere on the row, here on its words, flips the switch.
-	await row.getByText('Pause on this site').click();
-	await expect(sw).toHaveAttribute('aria-checked', 'true');
-	await row.click({ position: { x: 150, y: 4 } });
-	await expect(sw).toHaveAttribute('aria-checked', 'false');
 });
