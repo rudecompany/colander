@@ -53,9 +53,11 @@ function isAdminHost(url: URL, env: Env): boolean {
 
 /**
  * The admin host: Access in front, A3T Identity behind it. Every request that reaches the Worker
- * needs a valid Access token, static pages included; only the admin and review APIs exist here,
- * without CORS, and the home page is the admin console. Dev mode's Access stub is the one
- * exception, and only on admin.localhost.
+ * (the run_worker_first paths: /, /admin and /admin/*, /v1/*, /ops/*, /__dev/*, /healthz and the
+ * shells) needs a valid Access token; other static files are served without running the Worker,
+ * and Cloudflare Access covers them at the edge. Only the admin and review APIs exist here, without
+ * CORS, and the home page is the admin console. Dev mode's Access stub is the one exception, and
+ * only on admin.localhost.
  */
 async function handleAdmin(request: Request, url: URL, env: Env): Promise<Handled> {
 	const path = url.pathname;

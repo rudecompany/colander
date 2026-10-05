@@ -85,7 +85,7 @@ export function codeSignInPaused(): [subject: string, body: string] {
 }
 
 /** A security notice to the account's address: what happened, and what to do if it was not them. */
-export function securityNotice(what: string, ifNotYou = 'sign in, open your account page and choose Sign out everywhere, then remove any passkey you do not recognise.'): [subject: string, body: string] {
+export function securityNotice(what: string, ifNotYou = 'sign in, open your account page and choose Sign out everywhere, then remove any passkey you do not recognize.'): [subject: string, body: string] {
 	return ['Colander account: ' + what.charAt(0).toLowerCase() + what.slice(1), `${what}.\n\nIf this was not you, ${ifNotYou}\n\nColander`];
 }
 

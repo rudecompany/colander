@@ -80,16 +80,24 @@ export function audit(db: Db, e: AuditEntry, now: number): void {
  * Sets an account's role, creating the account when the email is new. Raising a role to curator
  * or above ends the account's sessions and deletes its passkeys and reviewer token in the same
  * transaction, so a passkey added while it was a member never carries review authority: the new
- * reviewer enrolls one through an invite. Lowering it below curator deletes the reviewer token.
+ * reviewer enrolls one through an invite. It also cancels a support email change still waiting,
+ * which only ever moves member accounts. Lowering it below curator deletes the reviewer token.
  */
 export function grantRole(db: Db, email: string, role: string, now: number, who: Omit<AuditEntry, 'action' | 'target'>): Account {
 	return db.tx(() => {
 		const before = ensureAccount(db, email, now);
 		if (before.role === role) return before;
 		db.run('UPDATE accounts SET role = ? WHERE id = ?', role, before.id);
-		if (rank(role) > rank(before.role) && rank(role) >= rank('curator')) revokeCredentials(db, before.id);
-		else if (rank(role) < rank('curator')) db.run('DELETE FROM reviewer_tokens WHERE account_id = ?', before.id);
 		audit(db, { ...who, action: 'role_changed', target: before.id, before: before.role, after: role }, now);
+		if (rank(role) > rank(before.role) && rank(role) >= rank('curator')) {
+			revokeCredentials(db, before.id);
+			const moved = db.run(
+				"UPDATE account_requests SET cancelled_at = ? WHERE account_id = ? AND kind = 'email_change' AND done_at IS NULL AND cancelled_at IS NULL",
+				now,
+				before.id
+			);
+			if (moved > 0) audit(db, { ...who, action: 'request_cancelled', target: before.id, before: 'email_change', reason: 'review accounts never move to a new address' }, now);
+		} else if (rank(role) < rank('curator')) db.run('DELETE FROM reviewer_tokens WHERE account_id = ?', before.id);
 		return getAccount(db, before.id)!;
 	});
 }

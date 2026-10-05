@@ -419,3 +419,54 @@ export const nextAuditExport = (now: number): number => {
 	const at = Math.floor(now / day) * day + (4 * 60 + 31) * 60_000;
 	return at > now ? at : at + day;
 };
+
+/** The columns of an audit row, besides its ID. */
+const AUDIT_COLUMNS = ['at', 'actor_id', 'actor_sub', 'actor_email', 'host', 'action', 'target', 'before', 'after', 'reason', 'request_id'] as const;
+
+/**
+ * After a point-in-time restore to since (unix ms), which took the audit log back with everything
+ * else: puts back, in their order, the rows of the audit/ copies written at or after that second
+ * that the log lacks (the same match loadDump uses). Returns how many it added. The export mark is
+ * left alone, so the next copy may repeat rows the archive already holds; it never misses one.
+ */
+export async function reapplyAudit(db: Db, bucket: R2Bucket, since: number): Promise<number> {
+	const from = Math.floor(since / 1000);
+	// A copy holds rows up to the day it was made, which its key starts with.
+	const day = new Date(since).toISOString().slice(0, 10);
+	const rows: Record<string, string | number | null>[] = [];
+	let cursor: string | undefined;
+	do {
+		const page = await bucket.list({ prefix: AUDIT_PREFIX, cursor });
+		for (const o of page.objects) {
+			if (o.key.slice(AUDIT_PREFIX.length, AUDIT_PREFIX.length + 10) < day) continue;
+			const body = await bucket.get(o.key);
+			for (const line of (await body?.text())?.split('\n') ?? []) {
+				if (line === '') continue;
+				const row = JSON.parse(line) as Record<string, string | number | null>;
+				if ((row.at as number) >= from) rows.push(row);
+			}
+		}
+		cursor = page.truncated ? page.cursor : undefined;
+	} while (cursor);
+	rows.sort((a, b) => (a.id as number) - (b.id as number));
+	const cols = AUDIT_COLUMNS.map(ident).join(',');
+	const count = () => db.get<{ n: number }>(`SELECT count(*) AS n FROM ${ident(AUDIT)}`)!.n;
+	return db.tx(() => {
+		const before = count();
+		for (const r of rows) {
+			const v = AUDIT_COLUMNS.map((c) => r[c] ?? null);
+			db.run(
+				`INSERT INTO ${ident(AUDIT)}(${cols}) SELECT ${AUDIT_COLUMNS.map(() => '?').join(',')}
+				WHERE NOT EXISTS (SELECT 1 FROM ${ident(AUDIT)} a WHERE a.at = ? AND a.action = ? AND a.target IS ? AND a.actor_id IS ? AND a.actor_sub IS ? AND a.after IS ?)`,
+				...v,
+				r.at ?? null,
+				r.action ?? null,
+				r.target ?? null,
+				r.actor_id ?? null,
+				r.actor_sub ?? null,
+				r.after ?? null
+			);
+		}
+		return count() - before;
+	});
+}

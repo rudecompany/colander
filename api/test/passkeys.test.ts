@@ -27,7 +27,7 @@ async function addPasskey(h: Harness, cookie: string, auth: SoftAuthenticator, m
 	if (o.status !== 200) return o;
 	const { options } = (await o.json()) as { options: Parameters<SoftAuthenticator['create']>[0] & { excludeCredentials: { id: string }[] } };
 	const credential = await auth.create(options, m);
-	return h.do('POST', '/v1/account/passkeys', { credential, name }, ...CSRF, 'Cookie', `${cookie}; ${cookieOf(o, 'colander_flow')}`);
+	return h.do('POST', '/v1/account/passkeys', { credential, name }, ...CSRF, 'Cookie', `${cookie}; ${cookieOf(o, 'colander_pk')}`);
 }
 
 /** Signs in with the passkey; with a session cookie it is a step-up. Returns the response. */
@@ -36,7 +36,7 @@ async function passkeySignIn(h: Harness, auth: SoftAuthenticator, cookie = '', m
 	await expectStatus(o, 200);
 	const { options } = (await o.json()) as { options: { challenge: string; rpId: string } };
 	const credential = await auth.get(options, m);
-	const flow = cookieOf(o, 'colander_flow');
+	const flow = cookieOf(o, 'colander_pk');
 	return h.do('POST', '/v1/auth/passkey/verify', { credential }, ...CSRF, 'Cookie', cookie ? `${cookie}; ${flow}` : flow);
 }
 
@@ -60,6 +60,7 @@ describe('passkeys', () => {
 			synced: true
 		});
 		expect(h.mail).toContain('Subject: Colander account: a passkey was added to your account');
+		expect(h.mail).toContain('then remove any passkey you do not recognize.');
 		// The user handle is the account ID, never the email.
 		expect(new TextDecoder().decode(auth.userHandle)).toMatch(/^acc_/);
 
@@ -92,7 +93,7 @@ describe('passkeys', () => {
 		const o = await h.do('POST', '/v1/auth/passkey/options', undefined, ...CSRF);
 		const { options } = (await o.json()) as { options: { challenge: string; rpId: string } };
 		const credential = await auth.get(options);
-		const flow = cookieOf(o, 'colander_flow');
+		const flow = cookieOf(o, 'colander_pk');
 		const [first, second] = await Promise.all([
 			h.do('POST', '/v1/auth/passkey/verify', { credential }, ...CSRF, 'Cookie', flow),
 			h.do('POST', '/v1/auth/passkey/verify', { credential }, ...CSRF, 'Cookie', flow)
@@ -222,6 +223,38 @@ describe('held requests', () => {
 		expect(await h.run((store) => store.db.get<{ n: number }>('SELECT count(*) AS n FROM accounts')!.n)).toBe(0);
 	});
 
+	it('never deletes a staff or admin account: not at once, not held, and not when a member became staff while it waited', async () => {
+		const h = await Harness.create();
+		const run = () => h.run((store) => import('../src/erase').then((m) => m.runHeldRequests(store, h.clock)));
+		// The bootstrap admin holds no passkey: an email code alone must not delete it.
+		await h.run((store) => grantRole(store.db, 'ada@example.test', 'admin', h.s, { host: 'ops' }));
+		const admin = await h.signIn('ada@example.test');
+		for (const [method, path, body] of [
+			['DELETE', '/v1/account', undefined],
+			['POST', '/v1/account/requests', { kind: 'delete' }]
+		] as const) {
+			const res = await h.do(method, path, body, ...CSRF, 'Cookie', admin);
+			expect([res.status, await errorCode(res)], path).toEqual([403, 'staff_account']);
+		}
+
+		// A member asks with a code; the account becomes staff before the 72 hours are over.
+		const auth = new SoftAuthenticator(SITE);
+		await expectStatus(await addPasskey(h, await h.signIn('maya@example.test'), auth), 201);
+		await expectStatus(await h.do('POST', '/v1/account/requests', { kind: 'delete' }, ...CSRF, 'Cookie', await h.signIn('maya@example.test')), 201);
+		await h.run((store) => grantRole(store.db, 'maya@example.test', 'staff', h.s, { host: 'job' }));
+		h.clock += 73 * HOUR;
+		await run();
+		expect(await h.run((store) => store.db.all('SELECT email, role FROM accounts ORDER BY email'))).toEqual([
+			{ email: 'ada@example.test', role: 'admin' },
+			{ email: 'maya@example.test', role: 'staff' }
+		]);
+		expect(await h.run((store) => store.db.all("SELECT kind FROM account_requests WHERE cancelled_at IS NOT NULL AND done_at IS NULL"))).toEqual([{ kind: 'delete' }]);
+		expect(await h.run((store) => store.db.get("SELECT host, reason FROM audit_log WHERE action = 'delete_refused'"))).toEqual({
+			host: 'job',
+			reason: 'staff and admin accounts are not deleted'
+		});
+	});
+
 	it('lets a member who lost their passkey remove it after 72 hours, and then add a new one', async () => {
 		const h = await Harness.create();
 		const lost = new SoftAuthenticator(SITE);
@@ -255,7 +288,7 @@ async function redeem(h: Harness, cookie: string, inv: string, auth: SoftAuthent
 	if (o.status !== 200) return o;
 	const { options } = (await o.json()) as { options: Parameters<SoftAuthenticator['create']>[0] };
 	const credential = await auth.create(options);
-	return h.do('POST', '/v1/auth/invite/verify', { invite: inv, credential, name: 'Work laptop' }, ...CSRF, 'Cookie', `${cookie}; ${cookieOf(o, 'colander_flow')}`);
+	return h.do('POST', '/v1/auth/invite/verify', { invite: inv, credential, name: 'Work laptop' }, ...CSRF, 'Cookie', `${cookie}; ${cookieOf(o, 'colander_pk')}`);
 }
 
 describe('reviewers', () => {
@@ -288,6 +321,18 @@ describe('reviewers', () => {
 		h.clock += 12 * HOUR + 1000;
 		expect(await errorCode(await h.do('GET', '/v1/review/queue', undefined, 'Cookie', session))).toBe('passkey_required');
 		await expectStatus(await h.do('GET', '/v1/review/queue', undefined, 'Cookie', sessionOf(await passkeySignIn(h, auth))), 200);
+	});
+
+	it('asks a reviewer who holds a passkey but signed in with a code for that passkey before adding another, not for an invite', async () => {
+		const h = await Harness.create();
+		const inv = await invite(h, 'sam@example.test', 'curator');
+		const auth = new SoftAuthenticator(SITE);
+		await expectStatus(await redeem(h, await h.signIn('sam@example.test'), inv, auth), 200);
+		const code = await h.signIn('sam@example.test');
+		expect(await errorCode(await addPasskey(h, code, new SoftAuthenticator(SITE)))).toBe('passkey_required');
+		// The step-up the website then opens unlocks it.
+		const up = sessionOf(await passkeySignIn(h, auth, code));
+		await expectStatus(await addPasskey(h, up, new SoftAuthenticator(SITE), {}, 'Phone'), 201);
 	});
 
 	it('invites need a session of the same account, work once within 24 hours, and only for the role they were issued for', async () => {

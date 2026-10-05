@@ -7,6 +7,8 @@ import { createExecutionContext, runInDurableObject } from 'cloudflare:test';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import worker from '../src/index';
 import { can, type Action, type Role } from '../src/permissions';
+import { emailRef } from '../src/auth';
+import { runHeldRequests } from '../src/erase';
 import { grantRole, getAccount } from '../src/store/accounts';
 import { Store } from '../src/store/store';
 import { accessHeaders, accessToken, ADMIN_ORIGIN } from './tokens';
@@ -250,11 +252,64 @@ describe('the permission table', () => {
 		expect(audit.status).toBe(200);
 		const entries = ((await audit.json()) as { entries: { action: string; reason: string | null }[] }).entries;
 		expect(entries.map((e) => e.action)).toEqual(expect.arrayContaining(['invite_issued', 'revoked', 'role_changed']));
-		// A search by email is recorded; opening the reviewer list is not.
-		expect(entries.filter((e) => e.action === 'people_searched').map((e) => e.reason)).toEqual(['example']);
+		// A search by email is recorded with what it found, never the query, which may be an address;
+		// opening the reviewer list is not recorded.
+		const searched = entries.filter((e) => e.action === 'people_searched');
+		expect(searched.map((e) => e.reason)).toEqual([expect.stringMatching(/^\d+ found$/)]);
+		expect(JSON.stringify(searched)).not.toContain('example');
 		// Writes need the CSRF header and a same-origin fetch here too.
 		const { 'X-Colander-CSRF': _, ...noCsrf } = await accessHeaders(staff);
 		expect(await code(await send(`${ADMIN_ORIGIN}/v1/admin/people/role`, { method: 'PUT', headers: noCsrf, body: '{}' }))).toBe('csrf_required');
+	});
+
+	it('moves a member to a new address after 7 days, never an account that became a reviewer, and keeps no address in the audit log', async () => {
+		const admin = email('admin');
+		await role(admin, 'admin');
+		const [moving, promoted, raised] = await Promise.all([role(email('moving'), 'member'), role(email('promoted'), 'member'), role(email('raised'), 'member')]);
+		const to = { moving: email('moved'), promoted: email('promoted-new'), raised: email('raised-new') };
+		const matches = await runInDurableObject(primary(), (s: Store) => {
+			const original = s.billing.checkoutMatches;
+			s.billing.checkoutMatches = async () => true;
+			return original;
+		});
+		try {
+			for (const [who, address] of [[moving, to.moving], [promoted, to.promoted], [raised, to.raised]] as const) {
+				const res = await send(`${ADMIN_ORIGIN}/v1/admin/people/${who.id}/email`, {
+					method: 'PUT',
+					headers: { ...(await accessHeaders(admin)), 'Content-Type': 'application/json' },
+					body: JSON.stringify({ email: address, checkout_session: 'cs_1', amount_cents: 300, date: '2026-10-01' })
+				});
+				expect(res.status).toBe(200);
+			}
+		} finally {
+			await runInDurableObject(primary(), (s: Store) => void (s.billing.checkoutMatches = matches));
+		}
+		// Raised to curator on the admin host: the waiting change is cancelled at once.
+		await role(promoted.email, 'curator');
+		// Raised some other way: the change refuses to run when it comes due.
+		await runInDurableObject(primary(), (s: Store) => s.db.run("UPDATE accounts SET role = 'staff' WHERE id = ?", raised.id));
+		await runInDurableObject(primary(), (s: Store) => runHeldRequests(s, s.now() + 8 * 86_400_000));
+
+		const accounts = await runInDurableObject(primary(), (s: Store) => [moving, promoted, raised].map((a) => getAccount(s.db, a.id)!.email));
+		expect(accounts).toEqual([to.moving, promoted.email, raised.email]);
+		const rows = await runInDurableObject(primary(), (s: Store) =>
+			s.db.all<{ action: string; target: string; before: string | null; after: string | null; reason: string | null }>(
+				`SELECT action, target, before, after, reason FROM audit_log WHERE target IN (?, ?, ?) AND action NOT IN ('role_changed') ORDER BY id`,
+				moving.id,
+				promoted.id,
+				raised.id
+			)
+		);
+		expect(rows).toEqual([
+			{ action: 'email_change_held', target: moving.id, before: emailRef(moving.email), after: emailRef(to.moving), reason: null },
+			{ action: 'email_change_held', target: promoted.id, before: emailRef(promoted.email), after: emailRef(to.promoted), reason: null },
+			{ action: 'email_change_held', target: raised.id, before: emailRef(raised.email), after: emailRef(to.raised), reason: null },
+			{ action: 'request_cancelled', target: promoted.id, before: 'email_change', after: null, reason: 'review accounts never move to a new address' },
+			{ action: 'email_changed', target: moving.id, before: emailRef(moving.email), after: emailRef(to.moving), reason: expect.stringMatching(/^held request req_/) },
+			{ action: 'email_change_refused', target: raised.id, before: null, after: null, reason: 'only member accounts move to a new address' }
+		]);
+		expect(emailRef(moving.email)).toMatch(/^sha256:[0-9a-f]{16}$/);
+		expect(JSON.stringify(rows)).not.toContain('@');
 	});
 
 	it('shows the invite to the issuer only, mails a notice, and binds it to the account and role', async () => {

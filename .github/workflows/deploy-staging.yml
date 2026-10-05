@@ -32,12 +32,13 @@ jobs:
       # The deployment is recorded below for the commit CI tested; an automatic one would carry
       # the default branch head instead, which can be a newer commit.
       deployment: false
+    # No id-token here: this job runs third-party npm code (install and build), so it never gets to
+    # ask for an ops channel token. The smoke job below does, and runs nothing but Node itself.
     permissions:
       contents: read
       deployments: write
-      # The mutating smoke test decides on a check channel through the ops channel, which takes
-      # GitHub Actions OIDC tokens from this repository's main.
-      id-token: write
+    outputs:
+      deployment: ${{ steps.deployment.outputs.id }}
     env:
       SHA: ${{ github.event.workflow_run.head_sha }}
       GH_TOKEN: ${{ github.token }}
@@ -77,6 +78,42 @@ jobs:
           workingDirectory: api
           packageManager: pnpm
           command: deploy --env staging --message "staging ${{ github.event.workflow_run.head_sha }}"
+      - name: Mark the deployment failed
+        if: failure() && steps.deployment.outputs.id != ''
+        env:
+          ID: ${{ steps.deployment.outputs.id }}
+        run: |
+          gh api "repos/$GITHUB_REPOSITORY/deployments/$ID/statuses" -f state=failure \
+            -f environment_url=https://staging.getcolander.com -f log_url="$RUN_URL" >/dev/null
+          echo "Staging deployment $ID of $SHA: failure"
+
+  smoke:
+    name: smoke-staging
+    needs: deploy
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment:
+      name: staging
+      deployment: false
+    permissions:
+      contents: read
+      deployments: write
+      # The mutating smoke test decides on a check channel through the ops channel, which takes
+      # GitHub Actions OIDC tokens from this repository's main and lets this workflow run only
+      # check-decision. This job installs nothing: smoke.ts uses Node's own modules.
+      id-token: write
+    env:
+      SHA: ${{ github.event.workflow_run.head_sha }}
+      GH_TOKEN: ${{ github.token }}
+      RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 24
+          package-manager-cache: false
       - name: Smoke test staging (mutating)
         run: node scripts/smoke.ts --mutating --expect-cache
         env:
@@ -85,9 +122,9 @@ jobs:
           CF_ACCESS_CLIENT_ID: ${{ secrets.CF_ACCESS_CLIENT_ID }}
           CF_ACCESS_CLIENT_SECRET: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}
       - name: Mark the deployment
-        if: always() && steps.deployment.outputs.id != ''
+        if: always()
         env:
-          ID: ${{ steps.deployment.outputs.id }}
+          ID: ${{ needs.deploy.outputs.deployment }}
           JOB_STATUS: ${{ job.status }}
         run: |
           state=failure

@@ -5,7 +5,7 @@
 import type { AuthenticationResponseJSON, RegistrationResponseJSON } from '@simplewebauthn/server';
 import { csrfOk, csrfRequired, hashToken, newCode, newToken, normalizeEmail, readCookie, safeNext, signedIn, TTL, type Auth } from '../auth';
 import { StripeError, toPlan, UnavailableError } from '../billing';
-import { eraseAccount, sendQuietly } from '../erase';
+import { eraseAccount, sendQuietly, StaffAccountError, undeletable } from '../erase';
 import { IP_HASH_HEADER, json, jsonError, REQUEST_ID_HEADER, tooMany } from '../http';
 import { allow, available } from '../limits';
 import { codeSignInPaused, heldRequest, securityNotice, signInCode } from '../mail';
@@ -195,8 +195,11 @@ async function authCode(s: Store, turnstileSecret: string, request: Request): Pr
 	return json(202, { ok: true }, { 'Set-Cookie': s.auth.cookie(s.auth.names.flow, flow.raw, TTL.code) });
 }
 
-/** The flow cookie's token, or ''. */
+/** The email code's flow cookie token, or ''. */
 const flowToken = (auth: Auth, request: Request) => readCookie(request, auth.names.flow);
+
+/** The passkey challenge cookie's token, or ''. */
+const pkToken = (auth: Auth, request: Request) => readCookie(request, auth.names.pk);
 
 const codeExpired = () => jsonError(400, 'code_expired', 'This code has expired or was used up. Ask for a new one.');
 
@@ -259,8 +262,8 @@ async function authCodeVerify(s: Store, request: Request): Promise<Response> {
 const passkeyInvalid = () => jsonError(400, 'passkey_invalid', 'That passkey did not work here. Try again, or sign in with an email code.');
 
 /**
- * POST /v1/auth/passkey/options: a challenge for a passkey sign-in, tied to the flow cookie for 5
- * minutes. With a session it is a step-up and offers only that account's passkeys. Without one,
+ * POST /v1/auth/passkey/options: a challenge for a passkey sign-in, tied to the passkey cookie for
+ * 5 minutes. With a session it is a step-up and offers only that account's passkeys. Without one,
  * 60 per IP an hour.
  */
 async function passkeyOptions(s: Store, rp: RelyingParty, request: Request): Promise<Response> {
@@ -283,7 +286,7 @@ async function passkeyOptions(s: Store, rp: RelyingParty, request: Request): Pro
 		createdAt: unix(now),
 		expiresAt: unix(now) + TTL.challenge
 	});
-	return json(200, { options }, { 'Set-Cookie': s.auth.cookie(s.auth.names.flow, flow.raw, TTL.challenge) });
+	return json(200, { options }, { 'Set-Cookie': s.auth.cookie(s.auth.names.pk, flow.raw, TTL.challenge) });
 }
 
 /**
@@ -297,7 +300,7 @@ async function passkeyVerify(s: Store, rp: RelyingParty, request: Request): Prom
 	const body = await decode(request, 16 << 10, { credential: 'raw' });
 	if (body instanceof Response) return body;
 	const cred = parseCredential<AuthenticationResponseJSON>(body.credential);
-	const token = flowToken(s.auth, request);
+	const token = pkToken(s.auth, request);
 	if (!cred || !token) return passkeyInvalid();
 	const flowHash = hashToken(token);
 	const flow = getFlow(s.db, flowHash, 'passkey', unix(s.now()));
@@ -319,7 +322,7 @@ async function passkeyVerify(s: Store, rp: RelyingParty, request: Request): Prom
 	if (!result) return passkeyInvalid();
 	const headers = new Headers();
 	headers.append('Set-Cookie', result.cookie);
-	headers.append('Set-Cookie', s.auth.cookie(s.auth.names.flow, '', 0));
+	headers.append('Set-Cookie', s.auth.cookie(s.auth.names.pk, '', 0));
 	return writeAccount(s, result.account, result.session, headers);
 }
 
@@ -367,7 +370,7 @@ async function registrationFlow(s: Store, rp: RelyingParty, ses: Session, invite
 		createdAt: now,
 		expiresAt: now + TTL.challenge
 	});
-	return json(200, { options }, { 'Set-Cookie': s.auth.cookie(s.auth.names.flow, flow.raw, TTL.challenge) });
+	return json(200, { options }, { 'Set-Cookie': s.auth.cookie(s.auth.names.pk, flow.raw, TTL.challenge) });
 }
 
 /** A passkey name: one line of at most 60 characters, or a default. */
@@ -391,7 +394,7 @@ async function finishRegistration(
 	inviteHash: string,
 	then: (passkeyId: string, now: number) => void
 ): Promise<string | Response> {
-	const token = flowToken(s.auth, request);
+	const token = pkToken(s.auth, request);
 	const cred = parseCredential<RegistrationResponseJSON>(raw);
 	if (!token || !cred) return passkeyInvalid();
 	const flowHash = hashToken(token);
@@ -452,7 +455,7 @@ async function inviteVerify(s: Store, rp: RelyingParty, request: Request): Promi
 	await sendQuietly(s, ses.account.email, securityNotice('A passkey was added to your account with an invite'));
 	const headers = new Headers();
 	headers.append('Set-Cookie', started!.cookie);
-	headers.append('Set-Cookie', s.auth.cookie(s.auth.names.flow, '', 0));
+	headers.append('Set-Cookie', s.auth.cookie(s.auth.names.pk, '', 0));
 	return writeAccount(s, started!.session.account, started!.session, headers);
 }
 
@@ -550,11 +553,14 @@ function listPasskeys(s: Store, request: Request): Response {
 /**
  * Who may add a passkey: a member after a recent sign-in, with a passkey when the account already
  * holds one; a curator, staff member or admin only from a recent passkey session of that account
- * (the first one comes through an invite), so a stolen mailbox never gains review authority.
+ * (the first one comes through an invite), so a stolen mailbox never gains review authority. A
+ * reviewer with a passkey who signed in with a code is asked for that passkey (passkey_required).
  */
 function mayAddPasskey(s: Store, ses: Session): Response | null {
 	if (rank(ses.account.role) >= rank('curator')) {
-		if (!s.auth.passkey(ses)) return jsonError(403, 'invite_required', 'Reviewer accounts add their first passkey with an invite from an admin, and more passkeys from a passkey sign-in.');
+		if (passkeyCount(s.db, ses.account.id) === 0) {
+			return jsonError(403, 'invite_required', 'Reviewer accounts add their first passkey with an invite from an admin, and more passkeys from a passkey sign-in.');
+		}
 		return s.auth.stepUp(ses, { passkey: true });
 	}
 	return s.auth.stepUp(ses);
@@ -581,7 +587,7 @@ async function addPasskeyRoute(s: Store, rp: RelyingParty, request: Request): Pr
 	const id = await finishRegistration(s, rp, request, ses, body.credential, name, '', () => undefined);
 	if (id instanceof Response) return id;
 	await sendQuietly(s, ses.account.email, securityNotice('A passkey was added to your account'));
-	const headers = new Headers({ 'Set-Cookie': s.auth.cookie(s.auth.names.flow, '', 0) });
+	const headers = new Headers({ 'Set-Cookie': s.auth.cookie(s.auth.names.pk, '', 0) });
 	const p = passkeys(s.db, ses.account.id).find((x) => x.id === id)!;
 	return json(201, { passkey: passkeyJSON(p) }, headers);
 }
@@ -657,18 +663,25 @@ function exportAccount(s: Store, request: Request): Response {
 	return json(200, data, { 'Content-Disposition': 'attachment; filename="colander-account.json"' });
 }
 
+/** Staff and admin accounts are never deleted here (erase.ts StaffAccountError). */
+const staffAccount = () =>
+	jsonError(403, 'staff_account', 'Staff and admin accounts cannot be deleted. An admin lowers the role on the admin host first.');
+
 /**
  * DELETE /v1/account: needs a recent sign-in, with a passkey when the account holds one. Ends
- * Plus (refunding when refundable), deletes the Stripe customer and then the account.
+ * Plus (refunding when refundable), deletes the Stripe customer and then the account. Staff and
+ * admin accounts are refused.
  */
 async function deleteAccountRoute(s: Store, request: Request): Promise<Response> {
 	const ses = signedIn(s.auth, request);
 	if (ses instanceof Response) return ses;
+	if (undeletable(ses.account.role)) return staffAccount();
 	const refused = s.auth.stepUp(ses);
 	if (refused) return refused;
 	try {
 		await eraseAccount(s, ses.account.id, main(request, ses.account.id));
 	} catch (err) {
+		if (err instanceof StaffAccountError) return staffAccount();
 		if (err instanceof UnavailableError) {
 			return jsonError(503, 'billing_unavailable', 'We could not end your Plus plan right now, so your account is unchanged. Please try again later.');
 		}
@@ -701,6 +714,7 @@ async function holdRoute(s: Store, publicUrl: string, request: Request): Promise
 	if (kind !== 'delete' && kind !== 'export' && kind !== 'remove_passkey') {
 		return jsonError(400, 'invalid_kind', 'kind must be delete, export or remove_passkey.');
 	}
+	if (kind === 'delete' && undeletable(ses.account.role)) return staffAccount();
 	if (!s.auth.recent(ses)) return jsonError(403, 'recent_auth_required', 'Confirm it is you to do this. For your safety we ask again after 10 minutes.');
 	if (passkeyCount(s.db, ses.account.id) === 0 || s.auth.passkey(ses)) {
 		return jsonError(409, 'not_needed', 'You can do this now, without waiting.');

@@ -50,6 +50,9 @@ export async function accessHeaders(email: string, opts: { subject?: string } = 
 	return { 'Cf-Access-Jwt-Assertion': await accessToken(email, opts), 'X-Colander-CSRF': '1', 'Sec-Fetch-Site': 'same-origin' };
 }
 
+/** The commit on main the test ops runs start from (the token's `sha`). */
+export const RUN_SHA = '0f1e2d3c4b5a69788796a5b4c3d2e1f00f1e2d3c';
+
 /** A GitHub Actions OIDC token as the Ops workflow on main gets it, with claims overridden. */
 export async function githubToken(claims: Record<string, unknown> = {}, kid = 'gh'): Promise<string> {
 	const key = await keyFor(GITHUB_JWKS, 'gh');
@@ -61,6 +64,7 @@ export async function githubToken(claims: Record<string, unknown> = {}, kid = 'g
 		repository_id: '1403629038',
 		ref: 'refs/heads/main',
 		workflow_ref: 'rudecompany/colander/.github/workflows/ops.yml@refs/heads/main',
+		sha: RUN_SHA,
 		environment: env.OPS_GITHUB_ENVIRONMENT,
 		actor: 'slantview',
 		run_id: '4242',

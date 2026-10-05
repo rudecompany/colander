@@ -156,7 +156,7 @@ The extension ships the trusted public keys at build time (`WXT_COLANDER_PUBLIC_
 `GET /v1/config/adapters` returns the envelope above, or `404` when the server has none (the extension then keeps its bundled copy).
 The payload schema is owned by the extension and documented in `extension/README.md`.
 It must contain a top-level integer `version`; the extension applies a remote config only when it is signed and its version is higher than the bundled or cached one.
-The server treats the payload as opaque bytes: the ops command `sign-config` (`POST /ops/sign-config`, see `docs/deploy.md`) signs it with the Worker's key and stores it.
+The server treats the payload as opaque bytes: the ops command `sign-config` (`POST /ops/sign-config`, see `docs/deploy.md`) reads `extension/src/adapters/default-config.json` from the repository at the run's commit on main, signs it with the Worker's key and stores it.
 The payload is declarative data only: selectors, attribute names and regular expressions. Never code.
 
 ## 5. Plan tokens
@@ -390,8 +390,8 @@ There are no passwords and no emailed sign-in links.
 | --- | --- |
 | `POST /v1/auth/code` `{"email", "next", "turnstile"?}` | Emails a 6-digit code and sets the flow cookie `__Host-colander_flow` (HttpOnly, Secure, SameSite=Strict, Max-Age 600; `colander_flow` in dev). Always `202` for a valid address, so the answer never tells whether an account exists. 5 codes an hour and 10 a day per address, 30 an hour per IP (`429`). `turnstile` is required, and checked with Turnstile, only when `TURNSTILE_SECRET_KEY` is set (`400 turnstile_failed`). |
 | `POST /v1/auth/code/verify` `{"code"}` | Needs the flow cookie of the same browser. A code works once, for 10 minutes; 5 wrong codes end it (`400 code_expired`), a wrong code is `400 code_invalid`, 30 tries an hour per IP. 10 wrong codes in a day for one address pause code sign-in for that address for 24 hours (`400 code_paused`; codes requested meanwhile are not sent, the answer is still `202`) and send one notice; passkeys keep working. `200` `{"account": Account}` with a new session; the first sign-in creates the account. |
-| `POST /v1/auth/passkey/options` | A WebAuthn challenge, tied to the flow cookie for 5 minutes. With a session it is a step-up and allows only that account's passkeys (`409 no_passkey` when it has none). Without one, 60 an hour per IP. `200` `{"options"}` (PublicKeyCredentialRequestOptionsJSON). |
-| `POST /v1/auth/passkey/verify` `{"credential"}` | Signs in, or steps up, with a passkey: `200` `{"account"}` with a new passkey session, or `400 passkey_invalid`. The challenge is used up in the same transaction that records the signature counter and starts the session, so only one request can use it. A passkey sign-in cancels every request the account has waiting. |
+| `POST /v1/auth/passkey/options` | A WebAuthn challenge, tied for 5 minutes to the passkey cookie `__Host-colander_pk` (HttpOnly, Secure, SameSite=Strict; `colander_pk` in dev), which is separate from the code's flow cookie, so a passkey prompt in another tab never ends a code that is waiting. With a session it is a step-up and allows only that account's passkeys (`409 no_passkey` when it has none). Without one, 60 an hour per IP. `200` `{"options"}` (PublicKeyCredentialRequestOptionsJSON). |
+| `POST /v1/auth/passkey/verify` `{"credential"}` | Needs the passkey cookie. Signs in, or steps up, with a passkey: `200` `{"account"}` with a new passkey session, or `400 passkey_invalid`. The challenge is used up in the same transaction that records the signature counter and starts the session, so only one request can use it. A passkey sign-in cancels every request the account has waiting. |
 | `POST /v1/auth/invite/options` `{"invite"}`, `POST /v1/auth/invite/verify` `{"invite", "credential", "name"}` | Enrolls a reviewer's passkey with an invite (6.9). Both need a session of the same account (an email code is enough), so an invite works only together with control of that mailbox. The invite works once, within 24 hours, and only while the account holds the role it was issued for (`400 invite_invalid`). Verify signs the session in with the new passkey and emails a notice. |
 | `POST /v1/auth/verify` `{"token"}` | Finishes a sign-in link mailed before codes, for one release; links die 20 minutes after they were sent. `400 link_invalid` otherwise. |
 | `POST /v1/auth/logout` `{"everywhere"?}` | Ends the session. `everywhere` ends every session of the account and its reviewer token, and from a passkey sign-in of the last 10 minutes also removes every other passkey (with an email notice). |
@@ -399,10 +399,10 @@ There are no passwords and no emailed sign-in links.
 | `GET /v1/account` | `200` `{"account": Account}` or `401 signed_out` |
 | `PATCH /v1/account` `{"display_name"}` | Updates the public name used in the decision log and supporters page |
 | `GET /v1/account/passkeys` | `{"passkeys": [{"id", "name", "created_at", "last_used_at", "synced"}], "current"}`, `current` the passkey this session signed in with |
-| `POST /v1/account/passkeys/options`, `POST /v1/account/passkeys` `{"credential", "name"}` | Adds a passkey (`201` `{"passkey"}`), at most 10 per account (`409 too_many_passkeys`), with an email notice. A member needs a sign-in from the last 10 minutes, with a passkey once the account holds one; a curator, staff member or admin only from a passkey sign-in of that account (their first passkey comes from an invite, `403 invite_required`). |
+| `POST /v1/account/passkeys/options`, `POST /v1/account/passkeys` `{"credential", "name"}` | Adds a passkey (`201` `{"passkey"}`), at most 10 per account (`409 too_many_passkeys`), with an email notice. A member needs a sign-in from the last 10 minutes, with a passkey once the account holds one; a curator, staff member or admin only from a passkey sign-in of that account (`403 passkey_required` with only a code; their first passkey comes from an invite, `403 invite_required`). Registration challenges use the passkey cookie too. |
 | `DELETE /v1/account/passkeys/{id}` | Removes a passkey after a passkey sign-in of the last 10 minutes, with an email notice. Sessions that signed in with it count as email sign-ins from then on. |
 | `GET /v1/account/export` | Everything kept about the account as a JSON attachment: the account, passkeys (name, dates, whether synced), session dates, the reviewer token's dates, the subscription summary, the synced settings, the decisions it authored, waiting requests and its audit events. |
-| `DELETE /v1/account` | Ends Plus and deletes the account (6.8). `204`, and the session cookie is cleared. |
+| `DELETE /v1/account` | Ends Plus and deletes the account (6.8). `204`, and the session cookie is cleared. Staff and admin accounts are never deleted (`403 staff_account`): an admin lowers the role on the admin host first. |
 | `POST /v1/account/requests` `{"kind", "passkey_id"?}`, `DELETE /v1/account/requests/{id}` | Held requests, below |
 | `POST /v1/account/reviewer-token` | Curators, staff and admins, after a passkey sign-in of the last 10 minutes. `200` `{"token", "expires_at"}`: `colander_rt_` and 43 characters, valid 7 days, curator authority at most. Replaces any earlier token. |
 | `DELETE /v1/account/reviewer-token` | Disconnects the side panel |
@@ -428,6 +428,7 @@ The website then asks the person to confirm with their passkey, or with an email
 
 Held requests: an account that holds a passkey but was confirmed with an email code only may still ask for deletion, an export or removing a passkey it lost.
 The request waits 72 hours; the email it sends has a cancel link to `{public_url}/account/cancel#<secret>`, and any passkey sign-in cancels it.
+A staff or admin account cannot ask for deletion (`403 staff_account`), and a deletion that comes due after the account became staff is cancelled instead.
 Then deletions and passkey removals run on their own, and a held export may be downloaded after a code sign-in of the last 10 minutes for 7 days.
 
 Every sign-in, credential change, role change, staff action and read of personal data writes the audit log (6.9).
@@ -513,7 +514,8 @@ There are four roles in one column, with a fixed permission table in code (`api/
 
 | Permission | member | curator | staff | admin | Where |
 | --- | --- | --- | --- | --- | --- |
-| Own account: name, passkeys, sign out everywhere, export, delete | yes | yes | yes | yes | Main host, session |
+| Own account: name, passkeys, sign out everywhere, export | yes | yes | yes | yes | Main host, session |
+| Delete own account | yes | yes | - | - | Main host, session; an admin lowers a staff or admin role first |
 | Checkout, cancel, refund, plan tokens | yes | yes | yes | yes | Main host, session |
 | Review queue and source detail; decide items and sources that are not large; dismiss reports | - | yes | yes | yes | Main host with a fresh passkey session or a reviewer token; the admin host |
 | Decide large sources, set the large flag, verify and resolve appeals | - | - | yes | yes | Admin host only |
@@ -522,7 +524,7 @@ There are four roles in one column, with a fixed permission table in code (`api/
 | Change supporter credit, read the audit log | - | - | - | yes | Admin host only |
 
 Roles change only on accounts strictly below the actor's role and only to roles strictly below it, never on the actor's own account, and never to admin.
-Admin is granted only through the ops channel's bootstrap (`grant-role` grants staff and admin only while no account is admin).
+Admin is granted only through the ops channel's bootstrap (`grant-role` grants staff and admin only until it first grants admin, and never again, even if no admin is left).
 Raising an account to curator or above ends its sessions and deletes its passkeys and reviewer token in the same transaction, so a passkey added while it was a member never carries review authority; lowering it below curator deletes the reviewer token.
 Nobody issues an invite for their own account.
 
@@ -538,11 +540,11 @@ In dev mode on `http://localhost` only, `POST /__dev/access` `{"email", "subject
 | Request | Permission | Effect |
 | --- | --- | --- |
 | `GET /v1/admin/me` | staff | `{"account": Person, "authority", "permissions"}` |
-| `GET /v1/admin/people?q=` | staff | Up to 50 accounts whose email contains `q` (audited), or every reviewer. |
+| `GET /v1/admin/people?q=` | staff | Up to 50 accounts whose email contains `q` (audited with the IDs found, never `q`), or every reviewer. |
 | `PUT /v1/admin/people/role` `{"email", "role"}` | staff | Sets the role (creates a member account for a new address). `{"person": Person}` |
 | `POST /v1/admin/people/{id}/invite` | staff | `201` `{"invite", "url", "expires_at"}`: a single-use invite for a review account, valid 24 hours, bound to the account and its role, shown only to the issuer; the account gets an email notice. `url` is `{public_url}/account/invite#invite=<invite>`. |
 | `POST /v1/admin/people/{id}/revoke` | admin | Ends every session and deletes every passkey and the reviewer token |
-| `PUT /v1/admin/people/{id}/email` `{"email", "checkout_session", "amount_cents", "date"}` | admin | Members only. Checks the Checkout Session with Stripe (this account's checkout, the amount and the UTC date `YYYY-MM-DD`; `400 receipt_mismatch`), then holds the move 7 days with a cancel link to the old address. When it runs, every session, passkey and token ends and both addresses hear. `{"due_at"}` |
+| `PUT /v1/admin/people/{id}/email` `{"email", "checkout_session", "amount_cents", "date"}` | admin | Members only. Checks the Checkout Session with Stripe (this account's checkout, the amount and the UTC date `YYYY-MM-DD`; `400 receipt_mismatch`), then holds the move 7 days with a cancel link to the old address. When it runs, every session, passkey and token ends and both addresses hear; an account raised to a review role meanwhile is not moved, and the change is cancelled. `{"due_at"}` |
 | `POST /v1/admin/donations/{id}/credit` `{"credit_name"}` | admin | Replaces or clears (`""`) a donor's supporter credit by Checkout Session ID |
 | `GET /v1/admin/audit?target=&before=` | admin | The newest 100 audit rows, `{"entries", "next_cursor"}`. Audited. |
 
@@ -553,6 +555,8 @@ In dev mode on `http://localhost` only, `POST /__dev/access` `{"email", "subject
 The audit log is one insert-only table: `at`, `actor_id`, `actor_sub` (`a3t:`, `otp:` or `github:`), `actor_email`, `host` (`main`, `admin`, `ops` or `job`), `action`, `target`, `before`, `after`, `reason` and `request_id` (the cf-ray or the GitHub run).
 Triggers refuse any update and any delete of a row younger than 400 days; a restore keeps the rows written since the dump.
 Every day its new rows are copied to `audit/` in the backup bucket, under a 400-day bucket lock.
+A point-in-time restore copies the rows first, its own `ops:pitr-restore` row included, and after the restart puts back from `audit/` every row written after the restore point.
+It names members by account ID, never by address: a people search records the IDs it found, and an email change a short hash of each address (`sha256:` and 16 hex digits of SHA-256 over `audit:` and the address), so no member's address outlives their account in it.
 
 ## 7. Website and extension handoff
 

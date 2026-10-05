@@ -2,7 +2,7 @@
 // changes, supporter credit and the audit log. It exists only on the admin host, where the edge
 // has verified Cloudflare Access and dropped every other credential; the role comes from the
 // Store on every request, and can() (src/permissions.ts) decides every action.
-import { csrfOk, csrfRequired, newToken, normalizeEmail, TTL } from '../auth';
+import { csrfOk, csrfRequired, emailRef, newToken, normalizeEmail, TTL } from '../auth';
 import { StripeError, UnavailableError } from '../billing';
 import { sendQuietly } from '../erase';
 import { json, jsonError } from '../http';
@@ -59,8 +59,8 @@ function me(s: Store, request: Request): Response {
 
 /**
  * GET /v1/admin/people?q=: up to 50 accounts whose email contains q, or every reviewer without q.
- * A search can reach members' addresses, so it is audited; the reviewer list, which staff open on
- * every visit, is not.
+ * A search can reach members' addresses, so it is audited with the accounts it found, never the
+ * query, which may be an address; the reviewer list, which staff open on every visit, is not.
  */
 function people(s: Store, request: Request, url: URL): Response {
 	const st = staffFor(s, request, 'people.read');
@@ -69,7 +69,7 @@ function people(s: Store, request: Request, url: URL): Response {
 	const rows = q
 		? s.db.all<{ id: string }>("SELECT id FROM accounts WHERE instr(email, ?) > 0 ORDER BY email LIMIT 50", q)
 		: s.db.all<{ id: string }>("SELECT id FROM accounts WHERE role != 'member' ORDER BY role DESC, email LIMIT 50");
-	if (q) audit(s.db, { ...st.who, action: 'people_searched', reason: q }, unix(s.now()));
+	if (q) audit(s.db, { ...st.who, action: 'people_searched', after: rows.map((r) => r.id).join(' '), reason: `${rows.length} found` }, unix(s.now()));
 	return json(200, { people: rows.map((r) => personJSON(s, getAccount(s.db, r.id)!)) });
 }
 
@@ -173,7 +173,7 @@ async function changeEmail(s: Store, publicUrl: string, request: Request, id: st
 	const due = now + TTL.emailChange;
 	s.db.tx(() => {
 		holdRequest(s.db, { accountId: target.id, kind: 'email_change', arg: email, actorId: st.account.id, cancelHash: cancel.hash, dueAt: due }, now);
-		audit(s.db, { ...st.who, action: 'email_change_held', target: target.id, before: target.email, after: email }, now);
+		audit(s.db, { ...st.who, action: 'email_change_held', target: target.id, before: emailRef(target.email), after: emailRef(email) }, now);
 	});
 	s.jobs.schedule('requests', due * 1000);
 	await sendQuietly(s, target.email, emailChangeHeld(email, 7, `${publicUrl}/account/cancel#${cancel.raw}`));

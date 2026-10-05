@@ -385,6 +385,39 @@ describe('/ops/*', () => {
 		expect((await status({ Authorization: 'Bearer dev-ops-token' }, { OPS_TOKEN: 'dev-ops-token', COLANDER_DEV: '', PUBLIC_URL: 'http://localhost:8787' })).status).toBe(401);
 	});
 
+	it('lets each workflow run only the commands its jobs need, so a token minted next to npm code cannot change roles or sign', async () => {
+		const as = async (workflow: string, command: string, environment = 'production') => {
+			const staging = environment === 'staging';
+			const headers = await opsAuth({
+				workflow_ref: `rudecompany/colander/.github/workflows/${workflow}@refs/heads/main`,
+				environment,
+				...(staging ? { aud: 'https://staging.getcolander.com' } : {})
+			});
+			const overrides = staging ? { OPS_GITHUB_ENVIRONMENT: 'staging', PUBLIC_URL: 'https://staging.getcolander.com' } : {};
+			const res = await getWith(overrides, `/ops/${command}`, { method: 'POST', headers, body: '{}' });
+			return [res.status, ((await res.json()) as { error?: { code: string } }).error?.code ?? 'ok'];
+		};
+		const refused = [403, 'not_this_workflow'];
+		expect(await as('probes.yml', 'status')).toEqual([200, 'ok']);
+		expect(await as('probes.yml', 'grant-role')).toEqual(refused);
+		// deploy-staging installs and builds npm code: its token decides the check channel and nothing else.
+		for (const command of ['status', 'grant-role', 'pin-subject', 'sign-config', 'import-seed', 'restore-dump', 'pitr-restore', 'purge-cache']) {
+			expect(await as('deploy-staging.yml', command, 'staging'), command).toEqual(refused);
+		}
+		// Past the workflow check: the Store here runs with production's settings, which refuse check-decision.
+		expect(await as('deploy-staging.yml', 'check-decision', 'staging')).toEqual([403, 'not_here']);
+		// The drills: the dump drill on production, the point-in-time drill on staging.
+		expect(await as('drills.yml', 'status')).toEqual(refused);
+		expect(await as('drills.yml', 'pitr-restore')).toEqual(refused);
+		expect(await as('drills.yml', 'status', 'staging')).toEqual([200, 'ok']);
+		expect(await as('drills.yml', 'pitr-restore', 'staging')).toEqual([400, 'confirmation_required']);
+		expect(await as('drills.yml', 'grant-role', 'staging')).toEqual(refused);
+		// Any other workflow of the repository runs nothing; the Ops workflow runs everything.
+		expect(await as('release.yml', 'status')).toEqual(refused);
+		expect(await as('ci.yml', 'status')).toEqual(refused);
+		expect(await as('ops.yml', 'grant-role')).toEqual([400, 'invalid_email']);
+	});
+
 	it('is closed when no repository or environment is configured', async () => {
 		expect((await status(await opsAuth(), { OPS_GITHUB_ENVIRONMENT: '' })).status).toBe(503);
 		expect((await status(await opsAuth(), { OPS_GITHUB_REPOSITORY: '' })).status).toBe(503);

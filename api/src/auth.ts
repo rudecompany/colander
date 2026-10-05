@@ -30,6 +30,12 @@ export function newToken(prefix = ''): { raw: string; hash: string } {
 /** The stored form of a token. */
 export const hashToken = (raw: string): string => hex(sha256(utf8(raw)));
 
+/**
+ * How the audit log names an email address: a short hash, so the 400-day record keeps no address
+ * after an account is deleted, yet support can still check a known address against it.
+ */
+export const emailRef = (email: string): string => `sha256:${hashToken('audit:' + email).slice(0, 16)}`;
+
 /** Reviewer tokens start with this, so they are easy to spot in a leak scan. */
 export const REVIEWER_PREFIX = 'colander_rt_';
 
@@ -128,9 +134,14 @@ export const TTL = {
 	emailChange: 7 * DAY
 } as const;
 
-/** The cookie names: __Host- outside dev, so no other host can plant them; plain on http://localhost. */
-export function cookieNames(dev: boolean): { session: string; flow: string } {
-	return dev ? { session: 'colander_session', flow: 'colander_flow' } : { session: '__Host-colander_session', flow: '__Host-colander_flow' };
+/**
+ * The cookie names: __Host- outside dev, so no other host can plant them; plain on http://localhost.
+ * The email code's flow and passkey challenges have a cookie each, so a passkey prompt (a sign-in
+ * form opening in another tab, or a step-up) never ends a code that is waiting.
+ */
+export function cookieNames(dev: boolean): { session: string; flow: string; pk: string } {
+	const p = dev ? '' : '__Host-';
+	return { session: `${p}colander_session`, flow: `${p}colander_flow`, pk: `${p}colander_pk` };
 }
 
 /** The cookie name from before code sign-in, still read for sessions from then (contracts 6.6). */
@@ -138,7 +149,7 @@ export const LEGACY_COOKIE = 'colander_session';
 
 /** Issues and checks sessions, flows and reviewer tokens. Times are unix seconds. */
 export class Auth {
-	readonly names: { session: string; flow: string };
+	readonly names: { session: string; flow: string; pk: string };
 
 	constructor(
 		private readonly db: Db,

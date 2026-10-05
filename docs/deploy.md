@@ -81,7 +81,9 @@ The watchdog cron mails alerts through the `ALERTS` binding, which only sends to
 ### 6a. The admin hosts: A3T Identity, Access and MFA
 
 Staff and admin authority exists only on `admin.getcolander.com` and `staging-admin.getcolander.com` (contracts 6.9).
-Cloudflare Access sits in front of both, with A3T Identity as the identity provider and independent MFA, and the Worker checks the Access token again on every request and pins each staff member to their A3T subject.
+Cloudflare Access sits in front of both, with A3T Identity as the identity provider and independent MFA.
+Access covers every path at the edge, static files included.
+The Worker checks the Access token again on the paths it runs for (`/`, `/admin` and `/admin/*`, `/v1/*`, `/ops/*`, `/__dev/*` and `/healthz`), and binds each staff member to their A3T subject.
 
 1. **A3T Identity client.** In A3T prod (for production) and in A3T dev (for staging), seed a Hydra OAuth client called `colander-access` with a copy of `infra/scripts/seed-admin-oauth-client.sh` from A3T Core:
    - redirect URI `https://<team>.cloudflareaccess.com/cdn-cgi/access/callback`, with your Zero Trust team name;
@@ -89,16 +91,18 @@ Cloudflare Access sits in front of both, with A3T Identity as the identity provi
    - token endpoint auth method `client_secret_basic`;
    - `skip_consent: true`.
    Keep the client ID and secret for the next step.
-2. **Fix email_verified first, or use One-time PIN.** A3T's consent-server marks every email as verified without checking it, so an A3T account could claim a staff address.
-   Until the consent-server sets `email_verified` from Kratos's verifiable-address status, use Access One-time PIN (a verified mailbox) as the login method, with independent MFA keys enrolled beforehand (step 6).
-   The Worker accepts One-time PIN identities for staff accounts, and pins A3T subjects once A3T Identity is in use.
+2. **Fix email_verified first, or use One-time PIN only.** A3T's consent-server marks every email as verified without checking it, so an A3T account could claim a staff address.
+   Until the consent-server sets `email_verified` from Kratos's verifiable-address status, make Access One-time PIN (a verified mailbox) the only login method of the admin applications, with independent MFA keys enrolled beforehand (step 6).
+   Do not enable A3T Identity on them meanwhile: an Access email rule matches whatever identity provider the login came from, so an A3T login with a claimed staff address would pass it, and the Worker would bind that login's subject to the staff account.
+   The Worker accepts One-time PIN identities for staff accounts.
 3. **The identity provider.** In Zero Trust > Integrations > Identity providers, add A3T Identity as a generic OIDC provider with the endpoints from `https://id.a3t.app/.well-known/openid-configuration` (A3T dev's for staging), the client ID and secret from step 1, and PKCE on.
    Under OIDC Claims add `sub`, so Access passes the A3T subject to the Worker in its token's `custom.sub` claim.
    Select Test and check that `sub` appears in `oidc_fields`.
 4. **Two Access applications**, one per environment, each with its own AUD tag:
    - `Colander admin` for `admin.getcolander.com`, and `Colander staging admin` for `staging-admin.getcolander.com`.
-   - Login methods: A3T Identity (and One-time PIN only while step 2 applies).
-   - Policy `Staff`: action Allow, include the OIDC Claim `sub` equal to each staff member's A3T subject, one value per person (with One-time PIN: their email addresses). Never write this policy with email addresses for A3T logins.
+   - Login methods: One-time PIN only while step 2 applies; after that A3T Identity only, with One-time PIN off.
+   - Policy `Staff`: action Allow. With A3T Identity, include the OIDC Claim `sub` equal to each staff member's A3T subject, one value per person, and never email addresses. While step 2 applies, include their email addresses instead.
+   - If you ever need both login methods at once (the break-glass in step 7), keep the email addresses in a policy of their own that also requires Login Methods: One-time PIN, so an A3T login never matches them.
    - Session duration 8 hours.
    - Independent MFA: require it, with security keys and platform biometrics allowed. Never turn on skipping MFA based on the identity provider's `amr` claim.
    - Cookie settings: HttpOnly on, SameSite Strict, binding cookie on.
@@ -110,9 +114,12 @@ Cloudflare Access sits in front of both, with A3T Identity as the identity provi
 6. **Keys, under supervision.** Each staff member registers two keys (security keys, or a security key and a platform biometric) in A3T Identity and in Access independent MFA, in a session you watch, before their `sub` goes into the policy.
    Access lets a person enroll their own MFA after signing in, so a policy entry for someone who has not enrolled yet would trust whoever signs in first.
    You protect the Cloudflare account and the A3T admin account with two hardware keys each.
-7. **Recovery.** When a staff member loses a key, take them out of the policy first, have an A3T admin provision a new passkey and reset their Access MFA enrollment, re-enroll under supervision, then add them back.
+   **Pin each subject before A3T logins are on.** Once their account is staff or admin (step 16), run the Ops command `pin-subject` for every staff member and for yourself with `{"email": "<their email>", "subject": "<their A3T subject>"}`, the subject you read in A3T Identity, before you add that `sub` to the policy.
+   The Worker then refuses any other subject for the account; without a pin it binds the first subject Access lets through.
+7. **Recovery.** When a staff member loses a key, take them out of the policy first, have an A3T admin provision a new passkey and reset their Access MFA enrollment, re-enroll under supervision, run `pin-subject` again if their A3T subject changed, then add them back.
    A staff member who joins without an A3T identity needs one first: create an A3T tenant for Colander with `getcolander.com` as its email domain, or add a per-client switch to the consent-server, before you add them.
-   If A3T Identity is down, staff work pauses; the product keeps running. Turning on One-time PIN in the application is the break-glass, for the people whose keys are already enrolled.
+   If A3T Identity is down, staff work pauses; the product keeps running.
+   The break-glass is One-time PIN with the email addresses in its own policy (step 4), for the people whose keys are already enrolled; turn it off again when A3T Identity is back.
 
 ### 6b. Turnstile on the sign-in form (optional)
 
@@ -358,7 +365,7 @@ Set each one with `gh secret set NAME [--env ENV]` or `gh variable set NAME [--e
 ### 16. The first admin, and reviewers
 
 1. After the first production deploy, run the Ops workflow with environment `production`, command `grant-role` and args `{"email": "<your email>", "role": "admin"}`.
-   The ops channel grants admin only while no account is admin, so this works once; every later role change happens on the admin host.
+   The ops channel grants admin only once, and never again even if no admin is left; every later role change happens on the admin host.
    Do the same on staging.
 2. Open https://admin.getcolander.com, sign in through Access, and check that People shows you as Admin and bound to A3T Identity.
 3. Make staff and curators on People, then use Invite on each: send the link through a channel you trust.
@@ -411,6 +418,8 @@ The workflows talk to the Worker through one authenticated channel, and the Work
 - The Worker verifies the token against GitHub's published keys (`https://token.actions.githubusercontent.com/.well-known/jwks`) and requires: issuer `https://token.actions.githubusercontent.com`, audience its `PUBLIC_URL`, `repository` equal to `OPS_GITHUB_REPOSITORY` and `repository_id` to `OPS_GITHUB_REPOSITORY_ID`, `ref` `refs/heads/main`, a `workflow_ref` of this repository on `refs/heads/main`, and `environment` equal to `OPS_GITHUB_ENVIRONMENT`.
   Anything else answers 401 without detail.
   There is no static token, so a leaked secret cannot reach it; a workflow on another branch or in a fork gets no matching token.
+- Each workflow runs only the commands its jobs need (`403 not_this_workflow` otherwise): `ops.yml` every command, `probes.yml` `status`, `drills.yml` `drill` on production and `status`, `check-decision` and `pitr-restore` on staging, and `deploy-staging.yml` `check-decision`.
+  The job that asks for the token runs no third-party code: `deploy-staging.yml` installs and builds in a job without `id-token: write`, and smoke-tests in a separate job that runs only Node.
 - Every command except `status` writes the audit log with the GitHub login and run ID from the verified token, not from anything the client sends.
 - Response: JSON.
   Any 2xx status means the command succeeded; anything else means it failed, with a contract error body.
@@ -420,9 +429,10 @@ The workflows talk to the Worker through one authenticated channel, and the Work
 | Command | Body | Success answer |
 | --- | --- | --- |
 | `status` | `{}` | `head_seq` (Store list head), `r2_seq` (sequence in R2's `list/snapshot.bin`), `pass_age_s` (seconds since the last completed scoring pass), `publish_lag_s` (seconds the oldest verdict change not yet in R2's list has waited, 0 when R2 holds the head), `dump_age_s` (seconds since the newest successful dump), `dump_ms`, `rows_read_last_pass` |
-| `grant-role` | `{"email", "role"}` with role `member`, `curator`, `staff` or `admin`. While no account is admin it grants any role, so the owner bootstraps the first admin; after that it moves only member and curator accounts between member and curator (`403 admin_exists`). Raising a role ends the account's sessions and passkeys. | The account |
+| `grant-role` | `{"email", "role"}` with role `member`, `curator`, `staff` or `admin`. Until it first grants admin it grants any role, so the owner bootstraps the first admin; after that it moves only member and curator accounts between member and curator (`403 admin_exists`), even if no admin is left. Raising a role ends the account's sessions and passkeys. | The account |
 | `import-seed` | `{"key"}` and nothing else, key naming an object under `seeds/` in the environment's backup bucket. The object is a JSON object `{"file", "list", "source_name", "license", "attribution", "permission_doc"}`: file the list text, list `blocklist` or `warnlist`, license `CC0-1.0`, `CC-BY-4.0`, `MIT` or `LicenseRef-written-grant`. `attribution` (the credit) is required for CC BY and MIT, `permission_doc` (where the written grant is kept) for a written grant. Non-commercial, no-derivatives, share-alike, GPL and unlicensed lists answer `400 license_refused`. | Counts imported and the batch ID, never the list's name or license; entries become review leads, never verdicts |
-| `sign-config` | `{"file"}`, file being the adapter configuration JSON, signed byte for byte | Version and key ID |
+| `pin-subject` | `{"email", "subject"}`: binds a staff or admin account to its A3T subject before that person's first A3T sign-in, replacing an earlier pin (step 6a). `409 subject_taken` when another account holds it. | The account |
+| `sign-config` | `{}`: the Worker reads `extension/src/adapters/default-config.json` itself from `raw.githubusercontent.com` at the commit on main the run started from (the token's `sha`) and signs it byte for byte. A body with `file` is `400`. | Version, key ID and the commit |
 | `drill` | `{}` | `{"ok": true, ...}` after the dump drill passed (hosting plan section 3) |
 | `purge-cache` | `{"confirm": "purge-cache"}` | Done |
 | `restore-dump` | `{"key", "confirm"}`, confirm equal to key | Done |
@@ -463,7 +473,8 @@ Run the Ops workflow, choose the environment and command, and give the arguments
 The run log and its summary are the audit trail.
 Examples:
 - Make a curator: command `grant-role`, args `{"email": "sam@example.com", "role": "curator"}`.
-- Ship new adapter selectors: raise `version` in `extension/src/adapters/default-config.json`, merge it, then run command `sign-config` with that file.
+- Ship new adapter selectors: raise `version` in `extension/src/adapters/default-config.json`, merge it, then run command `sign-config` with args `{}`.
+  The Worker signs the file exactly as it is on main at that run's commit, never text from the run.
 - Import a seed list.
   The repository, the run log and its summary are public, so never commit a list or put it, its name or its license in the Ops inputs; the list travels in a private object of the backup bucket.
   1. Check the list's license file at the exact version you import.

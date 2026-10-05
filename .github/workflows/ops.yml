@@ -16,13 +16,10 @@ on:
       command:
         description: The ops command
         type: choice
-        options: [status, grant-role, import-seed, sign-config, drill, purge-cache, restore-dump, pitr-restore]
+        options: [status, grant-role, pin-subject, import-seed, sign-config, drill, purge-cache, restore-dump, pitr-restore]
       args:
-        description: 'Arguments as a JSON object, for example {"email": "sam@example.com", "role": "curator"}. Staff and admin only while no admin exists.'
+        description: 'Arguments as a JSON object, for example {"email": "sam@example.com", "role": "curator"}. Staff and admin only until the first admin is made.'
         default: '{}'
-      file:
-        description: Optional repository path whose text becomes the "file" argument (sign-config only)
-        default: ''
       confirm:
         description: 'Destructive commands only: pitr-restore needs args.at typed again, restore-dump args.key, purge-cache the word purge-cache'
         default: ''
@@ -47,15 +44,19 @@ jobs:
     env:
       COMMAND: ${{ inputs.command }}
       ARGS: ${{ inputs.args }}
-      FILE: ${{ inputs.file }}
       CONFIRM: ${{ inputs.confirm }}
       BASE: ${{ inputs.environment == 'staging' && 'https://staging.getcolander.com' || 'https://getcolander.com' }}
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - name: Build the request
         run: |
           if ! jq -e 'type == "object"' <<<"$ARGS" >/dev/null 2>&1; then
             echo "::error::args must be a JSON object, got: $ARGS"
+            exit 1
+          fi
+          # sign-config signs the adapter configuration the Worker reads from this run's commit on
+          # main itself; no command takes a file from the arguments.
+          if jq -e 'has("file")' <<<"$ARGS" >/dev/null; then
+            echo "::error::args may not hold file. sign-config signs extension/src/adapters/default-config.json as committed on main."
             exit 1
           fi
           destructive=1
@@ -70,16 +71,9 @@ jobs:
             exit 1
           fi
           body=$(jq -c --arg confirm "$CONFIRM" '. + (if $confirm == "" then {} else {confirm: $confirm} end)' <<<"$ARGS")
-          if [ -n "$FILE" ]; then
-            if [ ! -f "$FILE" ]; then
-              echo "::error::$FILE is not a file in the repository."
-              exit 1
-            fi
-            body=$(jq -c --rawfile file "$FILE" '. + {file: $file}' <<<"$body")
-          fi
           printf '%s' "$body" >"$RUNNER_TEMP/body.json"
-          echo "POST $BASE/ops/$COMMAND by $GITHUB_ACTOR with arguments:"
-          jq 'if has("file") then .file = "(\(.file | length) characters)" else . end' "$RUNNER_TEMP/body.json"
+          echo "POST $BASE/ops/$COMMAND by $GITHUB_ACTOR at $GITHUB_SHA with arguments:"
+          jq . "$RUNNER_TEMP/body.json"
       - name: Run the command
         env:
           CF_ACCESS_CLIENT_ID: ${{ secrets.CF_ACCESS_CLIENT_ID }}

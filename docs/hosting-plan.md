@@ -329,7 +329,7 @@ All work happens in a fresh linked worktree on a new branch, following the repo 
   `mail.ts` sends through the binding, then Resend, then dev stdout in the exact block format e2e/tests/stack.ts parses.
   `billing.ts` pins the Stripe API to 2026-04-22.dahlia.
   `backup.ts` covers dump, restore-dump and drill.
-- `src/ops.ts`: commands status, grant-role, import-seed (one transaction for the whole file), sign-config (signed with the Worker-held key, so the seed never sits on a laptop), pitr-restore (requires a typed confirmation), restore-dump, drill and purge-cache.
+- `src/ops.ts`: commands status, grant-role, import-seed (one transaction for the whole file), sign-config (the adapter configuration as committed on main, signed with the Worker-held key, so the seed never sits on a laptop), pitr-restore (requires a typed confirmation), restore-dump, drill and purge-cache.
 - `scripts/keygen.ts`: offline, uses node:crypto, never overwrites, and prints the public key and key ID.
 - `test/**`: Vitest with `@cloudflare/vitest-pool-workers`.
   It ports every Go test (store, rules, engine, format, sign, mail, youtube, api, billing, webhook, independence).

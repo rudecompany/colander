@@ -84,8 +84,10 @@ test('staff work on the admin host through Access, and its token opens nothing o
 	// A member's identity gets no staff authority there.
 	const member = await adminHttp('/v1/admin/me', { headers: { 'Cf-Access-Jwt-Assertion': await devAccess('nobody@example.test') } });
 	expect([member.status, member.json.error.code]).toEqual([403, 'not_staff']);
-	// Without Access nothing on the admin host answers, static pages included.
-	expect((await adminHttp('/admin')).status).toBe(403);
+	// Without Access the Worker answers nothing on the paths it runs for. Other static files never
+	// reach it: in production Cloudflare Access covers them at the edge, and the local stack has no Access.
+	for (const path of ['/', '/admin', '/admin/people', '/v1/admin/me', '/healthz']) expect((await adminHttp(path)).status, path).toBe(403);
+	expect((await adminHttp('/privacy')).status).toBe(200);
 
 	// On the main host the admin API does not exist, a forged identity header is dropped, the
 	// dev stub is absent, and /admin leads to the admin host.

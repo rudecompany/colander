@@ -174,6 +174,16 @@ describe('email code sign-in', () => {
 		]);
 	});
 
+	it('keeps a waiting code when a sign-in form or step-up in another tab asks for a passkey: each has its own cookie', async () => {
+		const h = await Harness.create();
+		const { flow, code } = await askCode(h, 'maya@example.test');
+		// The same browser opens /console in another tab, whose sign-in form offers passkeys.
+		const pk = await h.do('POST', '/v1/auth/passkey/options', undefined, ...CSRF, 'Cookie', flow);
+		await expectStatus(pk, 200);
+		expect(pk.headers.getSetCookie().map((c) => c.split('=')[0])).toEqual(['colander_pk']);
+		await expectStatus(await verify(h, `${flow}; ${cookieOf(pk, 'colander_pk')}`, code), 200);
+	});
+
 	it('always answers 202, whether or not an account exists', async () => {
 		const h = await Harness.create();
 		await h.signIn('maya@example.test');
@@ -323,9 +333,13 @@ describe('email code sign-in', () => {
 
 		const prod = await h.run((store) => {
 			const auth = new Auth(store.db, () => h.clock, false);
-			return [auth.signOut(new Request('https://getcolander.com/')), auth.cookie(auth.names.flow, 'f', 600)];
+			return [auth.signOut(new Request('https://getcolander.com/')), auth.cookie(auth.names.flow, 'f', 600), auth.cookie(auth.names.pk, 'p', 300)];
 		});
-		expect(prod).toEqual(['__Host-colander_session=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=Strict', '__Host-colander_flow=f; Path=/; Max-Age=600; HttpOnly; Secure; SameSite=Strict']);
+		expect(prod).toEqual([
+			'__Host-colander_session=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=Strict',
+			'__Host-colander_flow=f; Path=/; Max-Age=600; HttpOnly; Secure; SameSite=Strict',
+			'__Host-colander_pk=p; Path=/; Max-Age=300; HttpOnly; Secure; SameSite=Strict'
+		]);
 	});
 
 	it('still finishes sign-in links mailed before codes shipped, within their 20 minutes', async () => {

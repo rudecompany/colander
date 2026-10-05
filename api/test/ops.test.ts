@@ -2,21 +2,22 @@
 // each command: status for the probes, grant-role, import-seed (Go's TestImportSeed), sign-config
 // against the contract fixture, the restores with their restart, publication and cache purge,
 // and the dump drill.
-import { env } from 'cloudflare:workers';
+import { env, exports } from 'cloudflare:workers';
 import { runInDurableObject } from 'cloudflare:test';
 import { afterEach, beforeEach, describe, expect, inject, it, vi } from 'vitest';
 import { b64decode, hex, utf8 } from '@colander/shared/bytes';
 import { sha256 } from '@colander/shared/sha256';
 import { CONFIG_CONTEXT, importKeys, verifyEnvelope } from '@colander/shared/signing';
 import worker from '../src/index';
-import { dump, DUMP_PREFIX, dumpKey } from '../src/backup';
+import { AUDIT_EXPORTED, AUDIT_PREFIX, dump, DUMP_PREFIX, dumpKey } from '../src/backup';
 import { STATUS } from '../src/jobs';
-import { PITR_PREFIX, SEED_PREFIX, storeOps } from '../src/ops';
+import { ADAPTER_CONFIG_PATH, ADMIN_BOOTSTRAPPED, PITR_PREFIX, SEED_PREFIX, storeOps } from '../src/ops';
+import { audit, grantRole } from '../src/store/accounts';
 import { log } from '../src/store/verdicts';
 import { findSource, getSource, sourceRefs } from '../src/store/sources';
 import { SNAPSHOT_KEY } from '../src/store/list';
 import type { Store } from '../src/store/store';
-import { opsAuth } from './tokens';
+import { accessHeaders, ADMIN_ORIGIN, opsAuth, RUN_SHA } from './tokens';
 
 const files = inject('contract');
 const keys = await importKeys([files.devPublicKey]);
@@ -61,11 +62,11 @@ async function resetPrimary(): Promise<void> {
 				store.db.run(`DELETE FROM ${t}`);
 			}
 		});
-		for (const key of Object.values(STATUS)) state.storage.kv.delete(key);
+		for (const key of [...Object.values(STATUS), ADMIN_BOOTSTRAPPED, AUDIT_EXPORTED]) state.storage.kv.delete(key);
 		await state.storage.deleteAlarm();
 	});
 	await env.LISTS.delete(SNAPSHOT_KEY);
-	for (const prefix of [DUMP_PREFIX, PITR_PREFIX, SEED_PREFIX]) for (const o of (await env.BACKUPS.list({ prefix })).objects) await env.BACKUPS.delete(o.key);
+	for (const prefix of [DUMP_PREFIX, PITR_PREFIX, SEED_PREFIX, AUDIT_PREFIX]) for (const o of (await env.BACKUPS.list({ prefix })).objects) await env.BACKUPS.delete(o.key);
 }
 
 beforeEach(resetPrimary);
@@ -143,8 +144,13 @@ describe('grant-role', () => {
 		]);
 	});
 
-	it('grants staff and admin only while no account is admin, then moves only members and curators', async () => {
-		expect((await op('grant-role', { email: 'owner@example.com', role: 'admin' })).status).toBe(200);
+	it('grants staff and admin only until it first grants admin, then moves only members and curators, even with no admin left', async () => {
+		const owner = await op('grant-role', { email: 'owner@example.com', role: 'admin' });
+		expect(owner.status).toBe(200);
+		// The only admin cannot invite their own account: they review on the admin host.
+		expect(owner.body.message).toBe(
+			`owner@example.com (${owner.body.account.id}) is now admin. It reviews on the admin host through Access; a passkey for getcolander.com needs an invite from another admin.`
+		);
 		for (const [args, status] of [
 			[{ email: 'new@example.com', role: 'staff' }, 403],
 			[{ email: 'new@example.com', role: 'admin' }, 403],
@@ -157,6 +163,17 @@ describe('grant-role', () => {
 			expect(res.status, JSON.stringify(args)).toBe(status);
 			if (status === 403) expect(res.body.error.code).toBe('admin_exists');
 		}
+		// The admin is gone (a restore, a slip in the database): the bootstrap stays closed.
+		await runInDurableObject(primary(), (store: Store) => store.db.run("DELETE FROM accounts WHERE role = 'admin'"));
+		const again = await op('grant-role', { email: 'eve@example.com', role: 'admin' });
+		expect([again.status, again.body.error.code]).toEqual([403, 'admin_exists']);
+	});
+
+	it('tells a new staff member how they review', async () => {
+		const res = await op('grant-role', { email: 'rae@example.com', role: 'staff' });
+		expect(res.body.message).toBe(
+			`rae@example.com (${res.body.account.id}) is now staff. It reviews on the admin host through Access; a passkey for getcolander.com needs an invite from an admin.`
+		);
 	});
 
 	it("trims as Go's strings.TrimSpace did: U+0085 is space, a byte order mark is not", async () => {
@@ -173,6 +190,52 @@ describe('grant-role', () => {
 		const res = await op('grant-role', args);
 		expect(res.status).toBe(400);
 		expect(res.body.error).toEqual({ code, message });
+	});
+});
+
+describe('pin-subject', () => {
+	const staffMe = async (subject: string) =>
+		(await exports.default.fetch(new Request(`${ADMIN_ORIGIN}/v1/admin/me`, { headers: await accessHeaders('rae@example.com', { subject }) }))).status;
+
+	it('binds a staff account to the A3T subject the owner checked, so no other subject ever signs in as it', async () => {
+		const rae = await runInDurableObject(primary(), (store: Store) => grantRole(store.db, 'rae@example.com', 'staff', S, { host: 'job' }));
+		const res = await op('pin-subject', { email: ' Rae@Example.com', subject: 'a3t-rae' });
+		expect(res.status).toBe(200);
+		expect(res.body).toMatchObject({ account: { id: rae.id, role: 'staff', access_pinned: true }, message: `rae@example.com (${rae.id}) now signs in to the admin host only as a3t:a3t-rae.` });
+		// The first A3T sign-in no longer decides it.
+		expect(await staffMe('a3t-mallory')).toBe(403);
+		expect(await staffMe('a3t-rae')).toBe(200);
+		// A new A3T identity after a lost one is pinned again; the old subject stops working.
+		expect((await op('pin-subject', { email: 'rae@example.com', subject: 'a3t-rae-2' })).status).toBe(200);
+		expect(await staffMe('a3t-rae')).toBe(403);
+		expect(
+			await runInDurableObject(primary(), (store: Store) =>
+				store.db.all("SELECT actor_sub, before, after FROM audit_log WHERE action = 'access_pinned' AND host = 'ops' ORDER BY id")
+			)
+		).toEqual([
+			{ actor_sub: 'github:slantview', before: null, after: 'a3t:a3t-rae' },
+			{ actor_sub: 'github:slantview', before: 'a3t:a3t-rae', after: 'a3t:a3t-rae-2' }
+		]);
+	});
+
+	it('refuses members, curators, unknown addresses, a blank subject and one another account holds', async () => {
+		await runInDurableObject(primary(), (store: Store) => {
+			grantRole(store.db, 'sam@example.com', 'curator', S, { host: 'job' });
+			grantRole(store.db, 'rae@example.com', 'staff', S, { host: 'job' });
+			grantRole(store.db, 'lee@example.com', 'staff', S, { host: 'job' });
+		});
+		expect((await op('pin-subject', { email: 'rae@example.com', subject: 'a3t-rae' })).status).toBe(200);
+		for (const [args, status, code] of [
+			[{ email: 'sam@example.com', subject: 'a3t-sam' }, 400, 'not_staff'],
+			[{ email: 'nobody@example.com', subject: 'a3t-x' }, 400, 'not_staff'],
+			[{ email: 'lee@example.com', subject: ' ' }, 400, 'invalid_subject'],
+			[{ email: 'lee@example.com', subject: 'a\nb' }, 400, 'invalid_subject'],
+			[{ email: 'lee', subject: 'a3t-lee' }, 400, 'invalid_email'],
+			[{ email: 'lee@example.com', subject: 'a3t-rae' }, 409, 'subject_taken']
+		] as const) {
+			const res = await op('pin-subject', args);
+			expect([res.status, res.body.error.code], JSON.stringify(args)).toEqual([status, code]);
+		}
 	});
 });
 
@@ -318,20 +381,46 @@ describe('import-seed', () => {
 });
 
 describe('sign-config', () => {
-	it('signs the file byte for byte with the Worker key, as the contract fixture shows', async () => {
+	const RAW = `https://raw.githubusercontent.com/rudecompany/colander/${RUN_SHA}/${ADAPTER_CONFIG_PATH}`;
+	/** GitHub serving the repository file at the run's commit, and nothing else. */
+	function github(file: string, status = 200) {
+		const real = globalThis.fetch.bind(globalThis);
+		return vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) =>
+			String(input).startsWith('https://raw.githubusercontent.com/') ? new Response(file, { status }) : real(input, init)
+		);
+	}
+	const stored = () => runInDurableObject(primary(), (store: Store) => store.db.get<{ version: number; envelope: string }>('SELECT version, envelope FROM adapter_configs'));
+
+	it('signs the adapter configuration committed at the run\'s commit byte for byte with the Worker key, as the contract fixture shows', async () => {
 		const file = '{"version":7,"note":"contract fixture"}';
-		const res = await op('sign-config', { file });
+		const fetch = github(file);
+		const res = await op('sign-config', {});
 		expect(res.status).toBe(200);
+		expect(fetch.mock.calls.map(([url]) => String(url)).filter((u) => u.startsWith('https://raw.'))).toEqual([RAW]);
 		expect(res.body).toEqual({
 			version: 7,
 			key_id: '941afaf31a9c228e',
-			message: 'Signed adapter configuration version 7 with key 941afaf31a9c228e. GET /v1/config/adapters now serves it.'
+			message: 'Signed adapter configuration version 7 with key 941afaf31a9c228e. GET /v1/config/adapters now serves it.',
+			commit: RUN_SHA
 		});
-		const stored = await runInDurableObject(primary(), (store: Store) => store.db.get<{ version: number; envelope: string }>('SELECT version, envelope FROM adapter_configs'));
-		expect(stored!.version).toBe(7);
-		expect(stored!.envelope).toBe(JSON.stringify(JSON.parse(files.configEnvelope)));
-		expect(new TextDecoder().decode(b64decode(JSON.parse(stored!.envelope).payload))).toBe(file);
-		expect(await verifyEnvelope(JSON.parse(stored!.envelope), CONFIG_CONTEXT, keys)).toEqual(JSON.parse(file));
+		const signed = await stored();
+		expect(signed!.version).toBe(7);
+		expect(signed!.envelope).toBe(JSON.stringify(JSON.parse(files.configEnvelope)));
+		expect(new TextDecoder().decode(b64decode(JSON.parse(signed!.envelope).payload))).toBe(file);
+		expect(await verifyEnvelope(JSON.parse(signed!.envelope), CONFIG_CONTEXT, keys)).toEqual(JSON.parse(file));
+	});
+
+	it('never signs text from the run: a file argument, a token without a commit, or a file GitHub does not serve is refused', async () => {
+		github('{"version": 3}');
+		const sent = await op('sign-config', { file: '{"version": 99, "selectors": "anything"}' });
+		expect([sent.status, sent.body.error.code]).toEqual([400, 'invalid_args']);
+		const noCommit = await op('sign-config', {}, { headers: await opsAuth({ sha: undefined }) });
+		expect([noCommit.status, noCommit.body.error.code]).toEqual([400, 'no_commit']);
+		vi.restoreAllMocks();
+		github('Not Found', 404);
+		const missing = await op('sign-config', {});
+		expect([missing.status, missing.body.error.code]).toEqual([502, 'repository_unavailable']);
+		expect(await stored()).toBeUndefined();
 	});
 
 	it.each([
@@ -428,6 +517,57 @@ describe('restores', () => {
 		await expect(inStore(primary(), T, 'pitr-restore', { at: T - 3_600_000, record })).rejects.toThrow();
 		expect(await marker(), 'the Store restarted without a second call').toBeUndefined();
 		expect(await (await env.BACKUPS.get(record))!.json()).toEqual({ bookmark: 'bookmark-at', undo_bookmark: 'undo-before-bookmark-at' });
+	});
+
+	/** The rows of every audit copy in the backup bucket, oldest first. */
+	const copies = async () => {
+		const rows: { id: number; action: string }[] = [];
+		for (const o of (await env.BACKUPS.list({ prefix: AUDIT_PREFIX })).objects) {
+			for (const line of (await (await env.BACKUPS.get(o.key))!.text()).split('\n')) if (line) rows.push(JSON.parse(line));
+		}
+		return rows;
+	};
+
+	it('pitr-restore copies the audit log, its own row included, to the locked copies before it arms', async () => {
+		await standIns();
+		await runInDurableObject(primary(), (store: Store) => audit(store.db, { host: 'main', action: 'signed_in', target: 'acc_late' }, Math.floor(Date.now() / 1000)));
+		const at = new Date(Date.now() - 3_600_000).toISOString();
+		const res = await op('pitr-restore', { at, confirm: at });
+		expect(res.status).toBe(200);
+		// Every row so far is copied (the log keeps those of earlier tests too); the newest two are these.
+		expect((await copies()).slice(-2).map((r) => r.action)).toEqual(['signed_in', 'ops:pitr-restore']);
+		// The stand-ins restore nothing, so the log still holds every row and none comes back twice.
+		expect(res.body.audit_restored).toBe(0);
+		expect(await runInDurableObject(primary(), (store: Store) => store.db.all("SELECT action FROM audit_log WHERE target = 'acc_late'"))).toEqual([{ action: 'signed_in' }]);
+	});
+
+	it('reapply-audit puts back the copied rows from the restore point on that the restored log lacks, in order and once', async () => {
+		const stub = fresh();
+		// A day no other test's copies carry: 2030-03-17.
+		const since = T;
+		const s = since / 1000;
+		const row = (id: number, at: number, action: string) => ({
+			id, at, actor_id: null, actor_sub: 'github:slantview', actor_email: null, host: 'ops', action, target: 'acc_1', before: null, after: null, reason: null, request_id: '4242'
+		});
+		const ndjson = (...rows: object[]) => rows.map((r) => JSON.stringify(r) + '\n').join('');
+		await env.BACKUPS.put(`${AUDIT_PREFIX}2030-03-16-000000000001.ndjson`, ndjson(row(1, s - 86_400, 'old')));
+		await env.BACKUPS.put(`${AUDIT_PREFIX}2030-03-17-000000000002.ndjson`, ndjson(row(2, s - 60, 'kept'), row(3, s + 5, 'lost'), row(4, s + 9, 'ops:pitr-restore')));
+		// The restored log ends at the restore point.
+		await runInDurableObject(stub, (store: Store) => {
+			audit(store.db, { host: 'ops', actorSub: 'github:slantview', action: 'old', target: 'acc_1', requestId: '4242' }, s - 86_400);
+			audit(store.db, { host: 'ops', actorSub: 'github:slantview', action: 'kept', target: 'acc_1', requestId: '4242' }, s - 60);
+		});
+		expect((await inStore(stub, T, 'reapply-audit', { since })).body).toEqual({ audit_restored: 2 });
+		const log = () => runInDurableObject(stub, (store: Store) => store.db.all('SELECT at, action, actor_sub, request_id FROM audit_log ORDER BY id'));
+		const want = [
+			{ at: s - 86_400, action: 'old', actor_sub: 'github:slantview', request_id: '4242' },
+			{ at: s - 60, action: 'kept', actor_sub: 'github:slantview', request_id: '4242' },
+			{ at: s + 5, action: 'lost', actor_sub: 'github:slantview', request_id: '4242' },
+			{ at: s + 9, action: 'ops:pitr-restore', actor_sub: 'github:slantview', request_id: '4242' }
+		];
+		expect(await log()).toEqual(want);
+		expect((await inStore(stub, T, 'reapply-audit', { since })).body).toEqual({ audit_restored: 0 });
+		expect(await log()).toEqual(want);
 	});
 
 	it('restore-dump replaces the data with a dump, then restarts, publishes above R2 and reports an unpurged cache', async () => {
