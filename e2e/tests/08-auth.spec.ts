@@ -34,12 +34,13 @@ test('a member signs in with an emailed code, adds a passkey, and signs in with 
 	await expect.poll(() => mailsSince(mark).map((m) => m.subject)).toContain('Colander account: a passkey was added to your account');
 
 	await page.getByRole('button', { name: 'Sign out', exact: true }).click();
-	await expect(page.getByRole('heading', { level: 1 })).toHaveText(/Sign in|Your account/);
-	// The email field offers the passkey in its autofill, which this device answers on its own; the
-	// button is the way otherwise.
-	const button = page.getByRole('button', { name: 'Sign in with a passkey' });
-	if (await button.isVisible().catch(() => false)) await button.click().catch(() => undefined);
-	await expect(page.getByText('You signed in with a passkey.')).toBeVisible();
+	await expect(page.getByRole('heading', { level: 1 })).toHaveText('Sign in');
+	// Nothing starts before the person does. Once they are in the email field it offers the passkey
+	// in its autofill, which this device answers on its own; the button is the way otherwise.
+	await page.getByLabel('Email').focus();
+	const passkeySession = page.getByText('You signed in with a passkey.');
+	await passkeySession.waitFor({ timeout: 3000 }).catch(() => page.getByRole('button', { name: 'Sign in with a passkey' }).click());
+	await expect(passkeySession).toBeVisible();
 	await page.screenshot({ path: 'screenshots/account-passkey.png', animations: 'disabled' });
 	await page.close();
 });
