@@ -11,8 +11,10 @@ import type { Platform } from '@colander/shared/verdicts';
 import { testNow } from '../src/dev';
 import worker from '../src/index';
 import { Sig } from '../src/scoring/rules';
+import { accountByEmail } from '../src/store/accounts';
 import { AppealAwaiting, AppealDenied, AppealExpired, AppealPendingManual, appealsWithStatus, AppealUnderReview, AppealUpheld } from '../src/store/appeals';
 import { SNAPSHOT_KEY } from '../src/store/list';
+import { MIGRATIONS } from '../src/store/migrations';
 import { findSource, getSource } from '../src/store/sources';
 import { openReports, reportsBySource } from '../src/store/tags';
 import { verdictCounts } from '../src/store/misc';
@@ -70,6 +72,8 @@ describe('/__dev/seed', () => {
 			const fitness = reportsBySource(db, findSource(db, 'ig', 'fitness.tips.ai')!);
 			expect(fitness.map((r) => r.status)).toEqual(['open']);
 			expect(db.get<{ n: number }>("SELECT count(*) AS n FROM reports WHERE status = 'decided'")!.n).toBeGreaterThan(0);
+			// The pairing journey in e2e/ connects Pat's Plus plan to the extension.
+			expect(store.billing.planClaims(accountByEmail(db, 'pat@colander.test')!.id, Math.floor(Date.now() / 1000))).toMatchObject({ plan: 'plus', trial: false });
 			const escalations = new Set(openEscalations(db).map((e) => `${e.kind}: ${e.summary}`));
 			expect(escalations).toContain('capped: Scores as Slop, held at Likely slop: audience size unknown, needs staff review');
 			expect(escalations).toContain('appeal: Appeal filed more than 14 days ago still waits for staff to check its code');
@@ -184,6 +188,6 @@ describe('/__dev/dump', () => {
 		expect(res.status).toBe(200);
 		expect(res.headers.get('Content-Type')).toBe('application/sql; charset=utf-8');
 		// application/sql is not a type workerd reads as text, so decode the bytes.
-		expect(new TextDecoder().decode(await res.arrayBuffer())).toMatch(/^-- Colander Store dump, schema version 5, taken .*\nCOMMIT;\n$/s);
+		expect(new TextDecoder().decode(await res.arrayBuffer())).toMatch(new RegExp(`^-- Colander Store dump, schema version ${Math.max(...MIGRATIONS.map((m) => m.version))}, taken .*\nCOMMIT;\n$`, 's'));
 	});
 });

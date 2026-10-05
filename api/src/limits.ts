@@ -21,7 +21,11 @@ export const LIMITERS = {
 	trial_ip: { n: 5, per: DAY },
 	auth_email: { n: 5, per: HOUR },
 	auth_email_ip: { n: 30, per: HOUR },
-	donate: { n: 10, per: HOUR }
+	donate: { n: 10, per: HOUR },
+	/** pairing codes an account may make; each one ends the one before */
+	pair_create: { n: 20, per: HOUR },
+	/** a claim carries nothing but the code, so guesses are limited per IP */
+	pair_claim_ip: { n: 10, per: 10 * MINUTE }
 } as const;
 
 export type Limiter = keyof typeof LIMITERS;

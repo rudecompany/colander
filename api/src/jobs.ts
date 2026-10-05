@@ -118,10 +118,11 @@ export function nextDump(now: number): number {
 }
 
 /**
- * The hourly cleanup: expired magic links and sessions (Go pruned them while signing in), list
- * sequences past the delta window (their changes cascade; the head always stays), refilled rate
- * limit buckets, the synced settings of ended install trials, which no token can read again, and
- * YouTube Data API data before it is 30 days old (with quota ledger days older than that).
+ * The hourly cleanup: expired magic links and sessions (Go pruned them while signing in), pairing
+ * codes an hour after they expired, list sequences past the delta window (their changes cascade;
+ * the head always stays), refilled rate limit buckets, the synced settings of ended install
+ * trials, which no token can read again, and YouTube Data API data before it is 30 days old (with
+ * quota ledger days older than that).
  * The trial rows stay, so each install still gets one trial.
  */
 export function prune(db: Db, now: number): number {
@@ -129,6 +130,7 @@ export function prune(db: Db, now: number): number {
 	db.tx(() => {
 		db.run('DELETE FROM magic_links WHERE expires_at < ?', s);
 		db.run('DELETE FROM sessions WHERE expires_at <= ?', s);
+		db.run('DELETE FROM pairings WHERE expires_at < ?', s - 3600);
 		db.run('DELETE FROM sync_blobs WHERE sub IN (SELECT sub FROM trials WHERE expires_at <= ?)', s);
 		db.run(
 			'DELETE FROM list_sequences WHERE created_at < ? AND seq < (SELECT ifnull(max(seq), 0) FROM list_sequences)',

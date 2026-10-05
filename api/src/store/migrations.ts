@@ -7,6 +7,7 @@ import billing from './migrations/0002_billing.sql';
 import scoringState from './migrations/0003_scoring_state.sql';
 import store from './migrations/0004_store.sql';
 import compliance from './migrations/0005_compliance.sql';
+import pairing from './migrations/0007_pairing.sql';
 import { complianceData } from './compliance';
 import type { Db } from './db';
 
@@ -26,7 +27,10 @@ export const MIGRATIONS: Migration[] = [
 	{ version: 2, name: '0002_billing.sql', sql: billing },
 	{ version: 3, name: '0003_scoring_state.sql', sql: scoringState },
 	{ version: 4, name: '0004_store.sql', sql: store },
-	{ version: 5, name: '0005_compliance.sql', sql: compliance, data: complianceData }
+	{ version: 5, name: '0005_compliance.sql', sql: compliance, data: complianceData },
+	// 6 is left to a parallel branch. The runner applies any listed migration it has not applied yet,
+	// so a 6 merged after 7 shipped still runs.
+	{ version: 7, name: '0007_pairing.sql', sql: pairing }
 ];
 
 /** Applies pending migrations, each in its own transaction, and returns the schema version. */

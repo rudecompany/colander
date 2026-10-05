@@ -16,6 +16,7 @@ import { Mailer } from '../mail';
 import { storeOps, type OpsArgs } from '../ops';
 import { accountRoutes } from '../routes/account';
 import { billingRoutes } from '../routes/billing';
+import { pairRoutes } from '../routes/pairing';
 import { routes as apiRoutes } from '../routes/server';
 import { Engine } from '../scoring/engine';
 import { DAILY_UNITS, YouTube } from '../youtube';
@@ -123,6 +124,7 @@ export class Store extends DurableObject<Env> {
 				...apiRoutes({ store: this, key: this.signingKey, publicUrl: env.PUBLIC_URL.replace(/\/+$/, '') }),
 				...accountRoutes(this, env),
 				...billingRoutes(this),
+				...pairRoutes(this),
 				...devRoutes(this, ctx, env)
 			].map(([method, pattern, handler]) => route(method, pattern, handler))
 		];

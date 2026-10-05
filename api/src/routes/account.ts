@@ -100,10 +100,13 @@ async function patchAccount(s: Store, request: Request): Promise<Response> {
 	return writeAccount(s, { ...a, displayName: name });
 }
 
+/** Whether the account may hold a reviewer token: curators and staff. */
+export const mayReview = (a: Account): boolean => a.role === 'curator' || a.role === 'staff';
+
 function reviewerToken(s: Store, request: Request): Response {
 	const a = session(s.auth, request);
 	if (a instanceof Response) return a;
-	if (a.role !== 'curator' && a.role !== 'staff') {
+	if (!mayReview(a)) {
 		return jsonError(403, 'forbidden', 'Only curators and staff can create a reviewer token.');
 	}
 	return json(200, { token: s.auth.issueReviewerToken(a.id) });

@@ -166,6 +166,11 @@ describe('Cache-Control on every route', () => {
 		await check('PATCH /v1/account', 'PATCH', '/v1/account', 200, 'none', { headers: signedIn, body: { display_name: 'Cache' } });
 		await check('POST /v1/account/reviewer-token', 'POST', '/v1/account/reviewer-token', 403, 'none', { headers: signedIn });
 
+		// Pairing (contract 7): a member without a plan gets no code; the claim answers any origin.
+		await check('POST /v1/pair', 'POST', '/v1/pair', 404, 'none', { headers: signedIn, body: { kind: 'plan' } });
+		await check('GET /v1/pair/:id', 'GET', '/v1/pair/pair_none', 404, 'none', { headers: signedIn });
+		await check('POST /v1/pair/claim', 'POST', '/v1/pair/claim', 404, 'none', { body: { code: 'KXQ4-JP7M', ext_version: '1.0.0', browser: 'chrome' } });
+
 		// Billing and entitlements (contract 6.8): without Stripe keys payments are off; the
 		// supporters page is the same for every viewer.
 		await check('POST /v1/billing/checkout', 'POST', '/v1/billing/checkout', 503, 'none', { headers: signedIn, body: { price: 'plus_yearly' } });

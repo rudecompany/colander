@@ -81,7 +81,7 @@ export function tooMany(retryAfterSeconds: number): Response {
 }
 
 // Routes the extension calls from any origin (contract 6); the rest are same-origin only.
-const CORS_PREFIXES = ['/v1/list/', '/v1/config/', '/v1/tags', '/v1/reports', '/v1/trial', '/v1/entitlement/refresh', '/v1/sync', '/v1/review/', '/v1/sources/'];
+const CORS_PREFIXES = ['/v1/list/', '/v1/config/', '/v1/tags', '/v1/reports', '/v1/trial', '/v1/entitlement/refresh', '/v1/sync', '/v1/review/', '/v1/sources/', '/v1/pair/claim'];
 
 export function isCorsPath(path: string): boolean {
 	return CORS_PREFIXES.some((pre) => path === pre || (path.startsWith(pre) && (pre.endsWith('/') || path[pre.length] === '/')));

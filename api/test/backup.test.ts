@@ -7,9 +7,13 @@ import { API_DATA_TABLES, countsAgree, dump, DUMP_PREFIX, dumpKey, dumpLines, du
 import { nextDump, STATUS } from '../src/jobs';
 import { grantRole, setDisplayName } from '../src/store/accounts';
 import type { Db } from '../src/store/db';
+import { MIGRATIONS } from '../src/store/migrations';
 import { putSync } from '../src/store/misc';
 import { setYouTube } from '../src/store/sources';
 import { saveTags } from '../src/store/tags';
+
+/** The schema version a dump of the current Store names: the newest migration it applied. */
+const SCHEMA = Math.max(...MIGRATIONS.map((m) => m.version));
 import type { Store } from '../src/store/store';
 
 const T = 1_900_000_000_000;
@@ -101,7 +105,7 @@ describe('dump and restore', () => {
 			fill(store);
 			state.storage.kv.put('status:pass', { at: 1 });
 			const lines = dumpText(store, state).trimEnd().split('\n');
-			expect(lines.slice(0, 3)).toEqual([`-- Colander Store dump, schema version 5, taken ${new Date(T).toISOString()}`, 'PRAGMA foreign_keys=OFF;', 'BEGIN TRANSACTION;']);
+			expect(lines.slice(0, 3)).toEqual([`-- Colander Store dump, schema version ${SCHEMA}, taken ${new Date(T).toISOString()}`, 'PRAGMA foreign_keys=OFF;', 'BEGIN TRANSACTION;']);
 			expect(lines.at(-1)).toBe('COMMIT;');
 			const text = lines.join('\n');
 			for (const t of dumpTables(store.db)) expect(text).toContain(`${t.sql};\n`);
@@ -195,7 +199,7 @@ describe('restores across migrations and the quota ledger', () => {
 				(2, 2, 'yt', 'source', 'x', 1, 'x', 'API Title', 'Staff checked AiSList.', 'staff')`);
 			return dumpText(store, state);
 		});
-		const old = text.replace('-- Colander Store dump, schema version 5,', '-- Colander Store dump, schema version 4,');
+		const old = text.replace(`-- Colander Store dump, schema version ${SCHEMA},`, '-- Colander Store dump, schema version 4,');
 		expect(old).not.toBe(text);
 		await runInDurableObject(fresh(), async (store: Store) => {
 			const db = store.db;
