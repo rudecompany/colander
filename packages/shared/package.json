@@ -24,6 +24,8 @@
     "./ids": "./src/ids.ts",
     "./list": "./src/list.ts",
     "./signing": "./src/signing.ts",
+    "./seeds": "./src/seeds.ts",
+    "./seed-registry": "./src/seed-registry.ts",
     "./styles/*": "./src/styles/*",
     "./components/*": "./src/components/*"
   },

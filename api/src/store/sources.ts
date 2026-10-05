@@ -9,7 +9,7 @@ export interface State {
 	signals: number;
 	/** slop type code and test bits, as in a list entry */
 	detail: number;
-	/** list flag bits for large, imported, staff reviewed */
+	/** list flag bits for large and staff reviewed */
 	flags: number;
 	changedAt: number;
 	rescoreAt: number;
@@ -30,12 +30,6 @@ export interface Source {
 	canonicalId: string;
 	name: string;
 	aliases: string[];
-	importList: string;
-	importSource: string;
-	importLicense: string;
-	importedAt: number;
-	/** the checked import (seed_imports) that last listed it, 0 for none or an import from before the license check */
-	importBatch: number;
 	reviewedAt: number;
 	largeStaff: boolean;
 	/** when staff last recorded the source's size, 0 when never */
@@ -46,6 +40,9 @@ export interface Source {
 	/** when Colander last looked the channel up, found or not */
 	youtubeCheckedAt: number;
 	frozenUntil: number;
+	/** when staff suppressed seed lists on it (src/store/seeds.ts), 0 when not */
+	seedSuppressedAt: number;
+	seedSuppressReason: string;
 	state: State;
 	createdAt: number;
 }
@@ -76,11 +73,6 @@ type SourceRow = StateRow & {
 	platform: string;
 	canonical_id: string;
 	name: string;
-	import_list: string;
-	import_source: string;
-	import_license: string;
-	imported_at: number;
-	import_batch: number;
 	reviewed_at: number;
 	large_staff: number;
 	size_reviewed_at: number;
@@ -88,6 +80,8 @@ type SourceRow = StateRow & {
 	uploads_per_day: number | null;
 	youtube_checked_at: number;
 	frozen_until: number;
+	seed_suppressed_at: number;
+	seed_suppress_reason: string;
 	mixed: number;
 	created_at: number;
 };
@@ -95,11 +89,11 @@ type SourceRow = StateRow & {
 type ItemRow = StateRow & { id: number; platform: string; item_id: string; source_id: number; created_at: number };
 
 // The YouTube figures come from youtube_channels (y), whose rows the hourly prune deletes at 30 days.
-const sourceCols = `id, platform, canonical_id, ifnull(name, '') AS name, ifnull(import_list, '') AS import_list,
-	ifnull(import_source, '') AS import_source, ifnull(import_license, '') AS import_license,
-	ifnull(imported_at, 0) AS imported_at, ifnull(import_batch, 0) AS import_batch, ifnull(reviewed_at, 0) AS reviewed_at, large_staff,
+// The import_* columns of imports from before the seed registry stay unread (migration 0008).
+const sourceCols = `id, platform, canonical_id, ifnull(name, '') AS name, ifnull(reviewed_at, 0) AS reviewed_at, large_staff,
 	ifnull(size_reviewed_at, 0) AS size_reviewed_at, y.subscribers AS subscribers, y.uploads_per_day AS uploads_per_day,
 	ifnull(youtube_checked_at, 0) AS youtube_checked_at, ifnull(frozen_until, 0) AS frozen_until,
+	ifnull(seed_suppressed_at, 0) AS seed_suppressed_at, ifnull(seed_suppress_reason, '') AS seed_suppress_reason,
 	ifnull(verdict, '') AS verdict, signals, detail, flags, ifnull(changed_at, 0) AS changed_at,
 	ifnull(rescore_at, 0) AS rescore_at, lapse_hold, ifnull(computed, '') AS computed, mixed, created_at`;
 
@@ -128,11 +122,6 @@ function scanSource(r: SourceRow): Source {
 		canonicalId: r.canonical_id,
 		name: r.name,
 		aliases: [],
-		importList: r.import_list,
-		importSource: r.import_source,
-		importLicense: r.import_license,
-		importedAt: r.imported_at,
-		importBatch: r.import_batch,
 		reviewedAt: r.reviewed_at,
 		largeStaff: r.large_staff !== 0,
 		sizeReviewedAt: r.size_reviewed_at,
@@ -140,6 +129,8 @@ function scanSource(r: SourceRow): Source {
 		uploadsPerDay: r.uploads_per_day,
 		youtubeCheckedAt: r.youtube_checked_at,
 		frozenUntil: r.frozen_until,
+		seedSuppressedAt: r.seed_suppressed_at,
+		seedSuppressReason: r.seed_suppress_reason,
 		state: scanState(r, r.mixed),
 		createdAt: r.created_at
 	};
@@ -184,6 +175,23 @@ export function getSource(db: Db, ref: number): Source | undefined {
 	const i = src.aliases.indexOf(src.canonicalId);
 	if (i > 0) [src.aliases[0], src.aliases[i]] = [src.aliases[i]!, src.aliases[0]!];
 	return src;
+}
+
+/**
+ * Whether the public may know of the source: it has a verdict, or tags, reports, appeals,
+ * decisions, items or log rows. A source that only seed lists or the calibration set brought in
+ * has none, and public responses treat it as unknown.
+ */
+export function hasPublicRecord(db: Db, ref: number): boolean {
+	return (
+		db.get(
+			`SELECT 1 FROM sources s WHERE s.id = ? AND (s.verdict IS NOT NULL
+			OR EXISTS (SELECT 1 FROM tags WHERE source_id = s.id) OR EXISTS (SELECT 1 FROM reports WHERE source_id = s.id)
+			OR EXISTS (SELECT 1 FROM appeals WHERE source_id = s.id) OR EXISTS (SELECT 1 FROM decisions WHERE source_id = s.id)
+			OR EXISTS (SELECT 1 FROM items WHERE source_id = s.id) OR EXISTS (SELECT 1 FROM decision_log WHERE source_id = s.id))`,
+			ref
+		) !== undefined
+	);
 }
 
 /** Lists every source ref, oldest first. */
@@ -252,7 +260,11 @@ function mergeSources(db: Db, keep: number, drop: number): void {
 		'UPDATE appeals SET source_id = ? WHERE source_id = ?',
 		'UPDATE decisions SET source_id = ? WHERE source_id = ?',
 		'UPDATE decision_log SET source_id = ? WHERE source_id = ?',
-		'UPDATE OR IGNORE escalations SET source_id = ? WHERE source_id = ?'
+		'UPDATE OR IGNORE escalations SET source_id = ? WHERE source_id = ?',
+		'UPDATE seed_entries SET source_id = ? WHERE source_id = ?',
+		// Items first, so moved labels find theirs; whatever stays on drop goes with it.
+		'UPDATE OR IGNORE calibration_items SET source_id = ? WHERE source_id = ?',
+		'UPDATE OR IGNORE calibration_labels SET source_id = ? WHERE source_id = ?'
 	]) {
 		db.run(stmt, keep, drop);
 	}
@@ -268,12 +280,16 @@ function mergeSources(db: Db, keep: number, drop: number): void {
 		reviewed_at = max(ifnull(sources.reviewed_at, 0), ifnull(d.reviewed_at, 0)),
 		large_staff = max(sources.large_staff, d.large_staff),
 		size_reviewed_at = max(ifnull(sources.size_reviewed_at, 0), ifnull(d.size_reviewed_at, 0)),
-		frozen_until = max(ifnull(sources.frozen_until, 0), ifnull(d.frozen_until, 0))
+		frozen_until = max(ifnull(sources.frozen_until, 0), ifnull(d.frozen_until, 0)),
+		seed_suppressed_at = coalesce(sources.seed_suppressed_at, d.seed_suppressed_at),
+		seed_suppress_reason = CASE WHEN sources.seed_suppressed_at IS NULL THEN d.seed_suppress_reason ELSE sources.seed_suppress_reason END
 		FROM (SELECT * FROM sources WHERE id = ?) AS d WHERE sources.id = ?`,
 		drop,
 		keep
 	);
 	db.run('DELETE FROM sources WHERE id = ?', drop);
+	// A suppression on either half holds for the whole channel.
+	db.run('DELETE FROM seed_entries WHERE source_id = ? AND EXISTS (SELECT 1 FROM sources WHERE id = ? AND seed_suppressed_at IS NOT NULL)', keep, keep);
 }
 
 /** What the YouTube Data API told us about a channel. The title is never kept: names come from reports. */
@@ -338,56 +354,6 @@ export function youTubeStale(db: Db, before: number, limit: number): Source[] {
 		)
 		.map((r) => r.id);
 	return refs.map((r) => getSource(db, r)!);
-}
-
-/** One run of the import-seed ops command, as seed_imports records it. */
-export interface SeedImport {
-	sourceName: string;
-	/** blocklist | warnlist */
-	list: string;
-	license: string;
-	attribution: string;
-	permissionDoc: string;
-	sha256: string;
-	entries: number;
-}
-
-/** Records an import run for audits and returns its batch ID. */
-export function recordSeedImport(db: Db, s: SeedImport, now: number): number {
-	return db.get<{ id: number }>(
-		`INSERT INTO seed_imports (source_name, list, license, attribution, permission_doc, sha256, entries, imported_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`,
-		s.sourceName,
-		s.list,
-		s.license,
-		nullString(s.attribution),
-		nullString(s.permissionDoc),
-		s.sha256,
-		s.entries,
-		now
-	)!.id;
-}
-
-/**
- * Records alias as an entry of the seed import batch. A seed entry is a review lead for staff,
- * never evidence (contracts 9.3). A blocklist import is never weakened by a later warnlist import.
- */
-export function importSeed(db: Db, batch: number, platform: string, alias: string, s: SeedImport, now: number): number {
-	return db.tx(() => {
-		const ref = ensureSource(db, platform, alias, '', now);
-		db.run(
-			`UPDATE sources SET
-			import_list = CASE WHEN import_list = 'blocklist' THEN 'blocklist' ELSE ? END,
-			import_source = ?, import_license = ?, imported_at = ?, import_batch = ? WHERE id = ?`,
-			s.list,
-			s.sourceName,
-			s.license,
-			now,
-			batch,
-			ref
-		);
-		return ref;
-	});
 }
 
 /**

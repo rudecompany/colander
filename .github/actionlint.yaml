@@ -16,3 +16,8 @@ paths:
       # deprecated app-id input.
       - 'missing input "app-id" which is required by action "actions/create-github-app-token@v3"'
       - 'input "client-id" is not defined in action "actions/create-github-app-token@v3"'
+  .github/workflows/*.yml:
+    ignore:
+      # GitHub's environment.deployment key (false: use the environment's secrets without creating
+      # a deployment) is newer than actionlint 1.7.11, which developers may still run locally.
+      - 'unexpected key "deployment" for "environment" section'

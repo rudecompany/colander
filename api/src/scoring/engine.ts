@@ -7,6 +7,7 @@ import { FLAG_LARGE, FLAG_STAFF_REVIEWED } from '@colander/shared/list';
 import type { Jobs, PassScorer } from '../jobs';
 import { expireAppeals } from '../store/appeals';
 import type { Db } from '../store/db';
+import { seedLeads, SeedRegistry } from '../store/seeds';
 import { setFrozen, sourceRefs, type Item, type Source, type State } from '../store/sources';
 import {
 	applyUpdate,
@@ -120,6 +121,11 @@ export class Engine implements PassScorer {
 	 * recorded it, and nothing derived from YouTube Data API data reaches a verdict.
 	 */
 	derived = false;
+	/**
+	 * The seed registry: which lists' entries are review leads now. The Store builds it with dev
+	 * mode; tests replace it with their own entries.
+	 */
+	seeds = new SeedRegistry();
 	/** The full pass's reputation, loaded at its start and kept across its chunks. A restart mid-pass reloads it. */
 	private passReps?: Map<string, Rep>;
 
@@ -432,9 +438,9 @@ export class Engine implements PassScorer {
 				want.appeal = `Appeal filed more than ${Math.trunc(th.appealExpiry / DAY)} days ago still waits for staff to check its code`;
 			}
 			// A seed list entry is a review lead and never evidence (9.3): until a reviewer decides the
-			// source, it only puts the source in the queue. The summary is for reviewers, never public.
-			if (src.importBatch !== 0 && src.reviewedAt === 0) {
-				want.seed = `Seed lead, not evidence: listed on ${src.importSource} (${src.importLicense}) as a ${src.importList} entry`;
+			// source, it only puts the source in the queue. The summary names no list: curators see it.
+			if (src.reviewedAt === 0 && src.seedSuppressedAt === 0 && seedLeads(db, this.seeds, ref, nowS).length > 0) {
+				want.seed = 'Seed lead, not evidence';
 			}
 			syncEscalations(db, ref, 0, ['capped', 'lapsed', 'reports', 'appeal', 'seed'], want, nowS);
 			return changed;

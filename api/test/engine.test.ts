@@ -18,10 +18,12 @@ import { grantRole } from '../src/store/accounts';
 import { AppealExpired, AppealPendingManual, AppealAwaiting, AppealUnderReview, createAppeal, getAppeal, transitionAppeal } from '../src/store/appeals';
 import { SNAPSHOT_KEY } from '../src/store/list';
 import { putSync, startTrial } from '../src/store/misc';
-import { findItem, findSource, getSource, importSeed, recordSeedImport, setYouTube, type SeedImport, type Source } from '../src/store/sources';
+import { SeedRegistry, setSeedSuppression } from '../src/store/seeds';
+import { findItem, findSource, getSource, setYouTube, type Source } from '../src/store/sources';
 import { createReport, getReport, saveTags } from '../src/store/tags';
 import { applyUpdate, loadSourceData, log, openEscalations, reputation } from '../src/store/verdicts';
 import type { Store } from '../src/store/store';
+import { clearedEntry, listSeed } from './seed-fixtures';
 
 const keys = await importKeys([inject('contract').devPublicKey]);
 const MINUTE = 60_000;
@@ -469,10 +471,10 @@ describe('engine', () => {
 });
 
 describe('seed lists', () => {
-	const seed: SeedImport = { sourceName: 'Secret List', list: 'blocklist', license: 'CC0-1.0', attribution: '', permissionDoc: '', sha256: '0'.repeat(64), entries: 1 };
+	const entry = clearedEntry();
 	const importAll = (f: Fixture, ...aliases: string[]) => {
-		const batch = recordSeedImport(f.db, seed, f.s);
-		for (const alias of aliases) importSeed(f.db, batch, 'yt', alias, seed, f.s);
+		f.eng.seeds = new SeedRegistry([entry]);
+		listSeed(f.db, entry, aliases, f.s);
 	};
 
 	// A seed entry is a review lead and never evidence: alone it gives no list entry, and next to
@@ -488,7 +490,7 @@ describe('seed lists', () => {
 			const alone = f.source('@seedonly');
 			expect(alone.state).toMatchObject({ verdict: '', flags: 0, computed: '' });
 			expect(log(f.db, { sourceRef: alone.ref, limit: 10 })).toEqual([]);
-			expect(f.escalationsOf(alone.ref)).toEqual({ seed: 'Seed lead, not evidence: listed on Secret List (CC0-1.0) as a blocklist entry' });
+			expect(f.escalationsOf(alone.ref), 'the summary names no list: curators see it').toEqual({ seed: 'Seed lead, not evidence' });
 
 			const seeded = f.source('@seedtagged').state;
 			const plain = f.source('@plaintagged').state;
@@ -497,7 +499,7 @@ describe('seed lists', () => {
 			expect(seeded.flags & (1 << 5), 'flag bit 5 stays 0').toBe(0);
 			const reason = log(f.db, { sourceRef: f.source('@seedtagged').ref, limit: 1 })[0]!.reason;
 			expect(reason).toBe(log(f.db, { sourceRef: f.source('@plaintagged').ref, limit: 1 })[0]!.reason);
-			expect(reason).not.toMatch(/seed|Secret List/i);
+			expect(reason).not.toMatch(/seed|Secret/i);
 
 			// A reviewer's decision uses up the lead.
 			decide(f.eng, { sourceRef: alone.ref, verdict: 'none', reason: 'Checked the channel: nothing to rate.', actor: 'staff' });
@@ -505,8 +507,43 @@ describe('seed lists', () => {
 			expect(f.escalationsOf(alone.ref)).toEqual({});
 		}));
 
+	// A lead lasts only while its list is cleared in the registry, its entry has not expired and
+	// staff have not suppressed seed lists on the source; a fictional dev list counts in dev only.
+	it('closes a lead when its list is no longer cleared, its entry expires or staff suppress it', () =>
+		withFixture(async (f) => {
+			importAll(f, '@one', '@two', '@three');
+			await f.pass();
+			const refs = ['@one', '@two', '@three'].map((a) => f.source(a).ref);
+			expect(refs.map((r) => f.escalationsOf(r))).toEqual(Array(3).fill({ seed: 'Seed lead, not evidence' }));
+
+			setSeedSuppression(f.db, refs[0]!, true, 'Objection under Article 21', f.s);
+			f.eng.seeds = new SeedRegistry([{ ...entry, clearance: { status: 'revoked', by: 'slantview', at: '2026-06-02' } }]);
+			await f.pass();
+			expect(refs.map((r) => f.escalationsOf(r))).toEqual([{}, {}, {}]);
+			expect(f.db.all('SELECT alias FROM seed_entries ORDER BY alias'), 'suppression deletes the entries; revocation by deploy waits for the daily job').toEqual([
+				{ alias: '@three' },
+				{ alias: '@two' }
+			]);
+
+			f.eng.seeds = new SeedRegistry([entry]);
+			await f.pass();
+			expect(refs.map((r) => f.escalationsOf(r))).toEqual([{}, { seed: 'Seed lead, not evidence' }, { seed: 'Seed lead, not evidence' }]);
+			f.clock += 365 * DAY;
+			await f.pass();
+			expect(refs.map((r) => f.escalationsOf(r)), 'listed 365 days ago, the entries expired').toEqual([{}, {}, {}]);
+
+			const demo = { ...entry, id: 'demo', dev_only: true, license: 'LicenseRef-Colander-internal', license_url: null, clearance: { status: 'pending' as const, by: null, at: null } };
+			listSeed(f.db, demo, ['@four'], f.s);
+			f.eng.seeds = new SeedRegistry([demo], false);
+			await f.pass();
+			expect(f.escalationsOf(f.source('@four').ref), 'dev data outside dev mode').toEqual({});
+			f.eng.seeds = new SeedRegistry([demo], true);
+			await f.pass();
+			expect(f.escalationsOf(f.source('@four').ref)).toEqual({ seed: 'Seed lead, not evidence' });
+		}));
+
 	// Entries the old rules put on the list because of a seed alone come off at the next pass, and
-	// imports from before the license check raise no lead.
+	// imports from before the license check or the registry raise no lead.
 	it('takes off the list what a seed alone put there', () =>
 		withFixture(async (f) => {
 			f.tags(1, '@legacy', 'slop', false);
@@ -596,7 +633,7 @@ describe('jobs', () => {
 	// for the next full pass.
 	it('rescore touched sources after the debounce', async () => {
 		const ref = await at(T, async (f) => {
-			expect(f.store.jobs.kinds()).toEqual(['dump', 'pass', 'prune', 'publish', 'rescore']);
+			expect(f.store.jobs.kinds()).toEqual(['dump', 'pass', 'prune', 'publish', 'rescore', 'seeds']);
 			let ref = 0;
 			for (let i = 0; i < 3; i++) {
 				const input = { installHash: `i${i}`, clientId: 'r', platform: 'yt', sourceId: '@reported', sourceName: '', examples: [] };

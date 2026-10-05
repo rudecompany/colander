@@ -36,6 +36,14 @@ describe('migrations', () => {
 		expect(accounts).toEqual([{ id: 'acc_1' }]);
 	});
 
+	// Work landing beside each other may number migrations out of order (0008 before 0006): the
+	// list stays in version order, each version once, and a Store applies whichever it lacks.
+	it('lists migrations in version order, each version and file once', () => {
+		const versions = MIGRATIONS.map((m) => m.version);
+		expect(versions).toEqual([...new Set(versions)].sort((a, b) => a - b));
+		for (const m of MIGRATIONS) expect(m.name.startsWith(String(m.version).padStart(4, '0') + '_')).toBe(true);
+	});
+
 	it('ignores migrations newer than the code knows, so a rollback still starts', async () => {
 		const stub = env.STORE.getByName('rollback');
 		await runInDurableObject(stub, (store: Store) => store.db.run("INSERT INTO _migrations (version, name, applied_at) VALUES (99, '0099_future.sql', 1)"));

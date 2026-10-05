@@ -110,7 +110,7 @@ describe('/__dev/seed', () => {
 			// names has no entry, only a review lead.
 			for (let at = 0; at < snap.entries.length; at += ENTRY) expect(snap.entries[at + 9]! & FLAG_IMPORTED).toBe(0);
 			expect(entry('yt:s:@dailymotivationmachine')).toBeUndefined();
-			expect(escalations).toContain('seed: Seed lead, not evidence: listed on Demo list (CC0-1.0) as a blocklist entry');
+			expect(escalations).toContain('seed: Seed lead, not evidence');
 			// The journeys in e2e/: staff recorded @gossipnarrated as large, and a viewer reported it since.
 			const gossip = getSource(db, findSource(db, 'yt', '@gossipnarrated')!)!;
 			expect(gossip).toMatchObject({ largeStaff: true, name: 'Celebrity Gossip Narrated' });
@@ -184,6 +184,6 @@ describe('/__dev/dump', () => {
 		expect(res.status).toBe(200);
 		expect(res.headers.get('Content-Type')).toBe('application/sql; charset=utf-8');
 		// application/sql is not a type workerd reads as text, so decode the bytes.
-		expect(new TextDecoder().decode(await res.arrayBuffer())).toMatch(/^-- Colander Store dump, schema version 5, taken .*\nCOMMIT;\n$/s);
+		expect(new TextDecoder().decode(await res.arrayBuffer())).toMatch(/^-- Colander Store dump, schema version \d+, migrations [\d,]+, taken .*\nCOMMIT;\n$/s);
 	});
 });

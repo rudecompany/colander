@@ -10,7 +10,7 @@ import { SlopTypes } from '../scoring/rules';
 import { appealStats } from '../store/appeals';
 import { latestSequence } from '../store/list';
 import { logCountSince, verdictCounts } from '../store/misc';
-import { findSource as storeFindSource } from '../store/sources';
+import { hasPublicRecord, findSource as storeFindSource } from '../store/sources';
 import { log, type LogEntry, type LogFilter } from '../store/verdicts';
 import { canonicalSource, validPlatform } from './ids';
 import { activeInstalls } from './list';
@@ -98,6 +98,9 @@ const publicJSON = (body: unknown): Response => json(200, body, setCache(new Hea
 export function getSource(api: Api, _request: Request, _url: URL, params: Params): Response {
 	const ref = lookupSource(api, params);
 	if (ref instanceof Response) return ref;
+	// A source only a seed list or the calibration set brought in is unknown to the public, so its
+	// page cannot tell anyone that a list names it.
+	if (!hasPublicRecord(api.store.db, ref)) return jsonError(404, 'not_rated', 'Colander has no information about this source.');
 	const ev = explain(api, ref);
 	const history = log(api.store.db, { sourceRef: ref, limit: 50 });
 	return publicJSON({ source: toSource(ev), history: history.map(toLog) });

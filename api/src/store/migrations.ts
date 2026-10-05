@@ -7,6 +7,7 @@ import billing from './migrations/0002_billing.sql';
 import scoringState from './migrations/0003_scoring_state.sql';
 import store from './migrations/0004_store.sql';
 import compliance from './migrations/0005_compliance.sql';
+import seeds from './migrations/0008_seeds.sql';
 import { complianceData } from './compliance';
 import type { Db } from './db';
 
@@ -26,7 +27,9 @@ export const MIGRATIONS: Migration[] = [
 	{ version: 2, name: '0002_billing.sql', sql: billing },
 	{ version: 3, name: '0003_scoring_state.sql', sql: scoringState },
 	{ version: 4, name: '0004_store.sql', sql: store },
-	{ version: 5, name: '0005_compliance.sql', sql: compliance, data: complianceData }
+	{ version: 5, name: '0005_compliance.sql', sql: compliance, data: complianceData },
+	// 6 and 7 are kept for work landing beside this; list migrations in version order.
+	{ version: 8, name: '0008_seeds.sql', sql: seeds }
 ];
 
 /** Applies pending migrations, each in its own transaction, and returns the schema version. */
@@ -49,9 +52,9 @@ export function migrate(db: Db, nowMs: number): number {
 }
 
 /**
- * Runs the data changes of every migration newer than a restored dump's schema version on its
- * rows, which the Store's schema took in but no migration changed. now is unix seconds.
+ * Runs the data changes of every migration a restored dump had not applied on its rows, which the
+ * Store's schema took in but no migration changed. now is unix seconds.
  */
-export function restoredData(db: Db, dumpVersion: number, now: number): void {
-	for (const m of MIGRATIONS) if (m.version > dumpVersion) m.data?.(db, now);
+export function restoredData(db: Db, applied: (version: number) => boolean, now: number): void {
+	for (const m of MIGRATIONS) if (!applied(m.version)) m.data?.(db, now);
 }

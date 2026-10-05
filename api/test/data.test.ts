@@ -11,6 +11,7 @@ import * as list from '../src/store/list';
 import * as misc from '../src/store/misc';
 import * as sources from '../src/store/sources';
 import * as tags from '../src/store/tags';
+import { clearedEntry, listSeed } from './seed-fixtures';
 import * as verdicts from '../src/store/verdicts';
 import type { Store } from '../src/store/store';
 
@@ -122,28 +123,27 @@ describe('sources.go', () => {
 		});
 	});
 
-	it('never weakens a blocklist import and lists stale YouTube sources oldest first', async () => {
+	it('lists seed entries per list, moves them with a merge, and lists stale YouTube sources oldest first', async () => {
 		await withDb((db) => {
-			const seed = (sourceName: string, list: string, license: string): sources.SeedImport => ({
-				sourceName,
-				list,
-				license,
-				attribution: 'Credit',
-				permissionDoc: '',
-				sha256: '0'.repeat(64),
-				entries: 1
-			});
-			const block = seed('AiSList', 'blocklist', 'CC0-1.0');
-			const ref = sources.importSeed(db, sources.recordSeedImport(db, block, 5), 'yt', '@seeded', block, 5);
-			const warn = seed('Other', 'warnlist', 'MIT');
-			const batch = sources.recordSeedImport(db, warn, 6);
-			sources.importSeed(db, batch, 'yt', '@seeded', warn, 6);
-			const src = sources.getSource(db, ref)!;
-			expect([src.importList, src.importSource, src.importLicense, src.importedAt, src.importBatch]).toEqual(['blocklist', 'Other', 'MIT', 6, batch]);
-			expect(db.all('SELECT source_name, license, attribution FROM seed_imports ORDER BY id')).toEqual([
-				{ source_name: 'AiSList', license: 'CC0-1.0', attribution: 'Credit' },
-				{ source_name: 'Other', license: 'MIT', attribution: 'Credit' }
+			const a = clearedEntry({ id: 'list-a', name: 'List A' });
+			const b = clearedEntry({ id: 'list-b', name: 'List B', license: 'MIT', license_url: 'https://opensource.org/license/mit', attribution: 'Credit' });
+			listSeed(db, a, ['@seeded'], 5, 5);
+			listSeed(db, b, ['@seeded'], 6, 6);
+			const ref = sources.findSource(db, 'yt', '@seeded')!;
+			expect(db.all('SELECT seed, alias, source_id, listed_at FROM seed_entries ORDER BY seed')).toEqual([
+				{ seed: 'list-a', alias: '@seeded', source_id: ref, listed_at: 5 },
+				{ seed: 'list-b', alias: '@seeded', source_id: ref, listed_at: 6 }
 			]);
+			expect(db.all('SELECT seed, source_name, license, attribution, list, entries FROM seed_imports ORDER BY id')).toEqual([
+				{ seed: 'list-a', source_name: 'List A', license: 'CC0-1.0', attribution: null, list: 'lead', entries: 1 },
+				{ seed: 'list-b', source_name: 'List B', license: 'MIT', attribution: 'Credit', list: 'lead', entries: 1 }
+			]);
+			// A lookup that finds the channel ID of another source folds the newer one in, entries too.
+			const byId = sources.ensureSource(db, 'yt', 'UCzzzzzzzzzzzzzzzzzzzzz7', '', 7);
+			db.run('UPDATE sources SET seed_suppressed_at = 9, seed_suppress_reason = ? WHERE id = ?', 'Objection', byId);
+			expect(sources.setYouTube(db, byId, { channelId: 'UCzzzzzzzzzzzzzzzzzzzzz7', handle: '@seeded', subscribers: null, uploadsPerDay: null }, 8)).toBe(ref);
+			expect(sources.getSource(db, ref)).toMatchObject({ seedSuppressedAt: 9, seedSuppressReason: 'Objection' });
+			expect(db.all('SELECT seed FROM seed_entries'), 'a suppression on either half holds for the channel').toEqual([]);
 			const other = sources.ensureSource(db, 'yt', '@other', '', 1);
 			sources.markYouTubeChecked(db, other, 50);
 			sources.ensureSource(db, 'yt', '', '', 1); // the unattributed holder is never looked up

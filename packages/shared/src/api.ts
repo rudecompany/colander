@@ -72,8 +72,9 @@ export interface Source {
 	large: boolean;
 	/** Staff recorded the audience size (or, with YouTube derived use only, YouTube reported it). */
 	audience_known: boolean;
+	/** Always false in public responses; for reviewers, whether seed lists name the source as a review lead. */
 	imported: boolean;
-	/** Always null: public responses never name a data source. Kept for wire compatibility. */
+	/** Always null in public responses, which never name a data source; for staff, the lists that name it. */
 	attribution: string | null;
 	appeal_open: boolean;
 	updated_at: ISODate | null;
@@ -175,6 +176,8 @@ export interface QueueItem {
 	verdict: Verdict | null;
 	computed_verdict: Verdict | null;
 	report_count: number;
+	/** A seed lead: seed lists name the source, which is not evidence (kind is escalation). */
+	lead: boolean;
 }
 
 export interface Layer {
@@ -206,14 +209,47 @@ export interface ItemSummary {
 	platform_label_reports: number;
 }
 
+/** One seed list entry behind a lead, with its full provenance. Staff only. */
+export interface SeedProvenance {
+	/** the registry ID */
+	seed: string;
+	name: string;
+	license: string;
+	use: 'lead' | 'seed' | 'frame';
+	platform: Platform;
+	/** the ID as the list file named it */
+	alias: string;
+	batch: number;
+	imported_at: ISODate;
+	/** the upstream date of the file that last listed it */
+	listed_at: ISODate;
+	expires_at: ISODate;
+}
+
 export interface ReviewSourceResponse {
 	source: Source;
+	/** how many seed lists name the source as a review lead */
+	seed_lists: number;
+	/** staff only: each entry with its provenance */
+	seeds?: SeedProvenance[];
+	/** staff only: set while staff suppress seed lists on the source */
+	seed_suppression?: { at: ISODate; reason: string } | null;
 	layers: Layers;
 	reports: ReportDetail[];
 	appeals: Appeal[];
 	items: ItemSummary[];
 	history: LogEntry[];
 }
+
+/** A blind calibration item: only what the labeler needs to find it on its platform. */
+export interface CalibrationItem {
+	platform: Platform;
+	source_id: string;
+	/** labels it has so far, from other reviewers */
+	labels: number;
+}
+
+export type CalibrationLabel = 'slop' | 'ai_not_slop' | 'not_ai' | 'gone' | 'unsure';
 
 export interface DecisionInput {
 	verdict: Verdict | 'none';

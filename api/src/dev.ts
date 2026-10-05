@@ -18,7 +18,8 @@ import { grantRole, setDisplayName, type Account } from './store/accounts';
 import { AppealAwaiting, AppealPendingManual, createAppeal, transitionAppeal, type Appeal } from './store/appeals';
 import { latestSequence } from './store/list';
 import { verdictCounts } from './store/misc';
-import { ensureSource, findItem, findSource, importSeed, recordSeedImport, setYouTube, sourceRefs, type SeedImport } from './store/sources';
+import { applyImport, planImport } from './store/seeds';
+import { ensureSource, findItem, findSource, setYouTube, sourceRefs } from './store/sources';
 import { createReport, dismissReport, saveTags, type TagInput } from './store/tags';
 import type { Store } from './store/store';
 
@@ -182,12 +183,16 @@ class Seeder {
 		this.attempt(() => setYouTube(this.db, ref, { channelId, handle, subscribers: null, uploadsPerDay: null }, this.unix));
 	}
 
-	/** A seed list import, through the same store calls the import-seed command uses: review leads only. */
-	importSeed(list: string, ...aliases: string[]): void {
-		const seed: SeedImport = { sourceName: 'Demo list', list, license: 'CC0-1.0', attribution: '', permissionDoc: '', sha256: '0'.repeat(64), entries: aliases.length };
+	/**
+	 * The registry's fictional dev_only list, imported through the same store calls the import-seed
+	 * command uses: review leads only.
+	 */
+	importSeed(...aliases: string[]): void {
 		this.attempt(() => {
-			const batch = recordSeedImport(this.db, seed, this.unix);
-			for (const alias of aliases) importSeed(this.db, batch, 'yt', alias, seed, this.unix);
+			const entry = this.store.engine.seeds.lead('demo-list');
+			if (!entry) throw new Error('the registry has no demo-list usable in dev mode');
+			const plan = planImport(this.db, entry.id, aliases.map((alias) => ({ platform: 'yt', alias })));
+			applyImport(this.db, entry, plan, { sha256: '0'.repeat(64), entries: aliases.length, records: {}, listedAt: this.unix }, this.unix);
 		});
 	}
 
@@ -312,8 +317,7 @@ class Seeder {
 		// Seed lists, imported through the calls the import-seed command uses. The names are
 		// fictional. Their entries are review leads only: they never give a verdict.
 		this.at(this.days(45));
-		this.importSeed('blocklist', '@catrescuetales', '@dailymotivationmachine');
-		this.importSeed('warnlist', '@biblestoriesanimated');
+		this.importSeed('@catrescuetales', '@dailymotivationmachine', '@biblestoriesanimated');
 
 		// The bulk of community tagging happens a month ago, by installs that are mature at the end.
 		this.at(this.days(40));

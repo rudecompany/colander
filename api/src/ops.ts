@@ -4,26 +4,24 @@
 // orchestrates the restores (restart the Store, publish above R2, purge the edge cache) and the
 // restore drill, which loads the newest dump into the scratch Store "drill".
 //
-// They replace the Go binary's operator commands: grant-role, import-seed and sign-config behave
-// as `colander <command>` did, with JSON arguments instead of flags. The workflow's run log is
-// public, so arguments and answers never name a seed list: import-seed reads the list and its
-// license from a private object in the backup bucket and answers with counts only.
-import { hex, utf8 } from '@colander/shared/bytes';
-import { sha256 } from '@colander/shared/sha256';
+// They replace the Go binary's operator commands: grant-role and sign-config behave as
+// `colander <command>` did, with JSON arguments instead of flags. The seed list commands
+// (import-seed, revoke-seed, calibration-sample, calibration-export) are in src/seeds.ts: the
+// workflow's run log is public, so they read lists from private objects in the backup bucket and
+// answer with counts only.
+import { utf8 } from '@colander/shared/bytes';
 import { CONFIG_CONTEXT, signEnvelope } from '@colander/shared/signing';
 import { normalizeEmail } from './auth';
 import { countsAgree, newestDump, restoreDump, tableCounts } from './backup';
 import { json, jsonError } from './http';
 import { STATUS, type DumpStatus, type PassStatus, type PublishStatus } from './jobs';
 import { r2Sequence } from './list/publisher';
-import { canonicalSource } from './routes/ids';
-import { rfc3339, trimSpace } from './routes/respond';
+import { rfc3339 } from './routes/respond';
 import { unix } from './scoring/engine';
 import { grantRole, type Account } from './store/accounts';
+import { calibrationExport, calibrationSample, importSeed, revokeSeedOps } from './seeds';
 import { latestSequence, RETENTION_SECONDS, SNAPSHOT_KEY } from './store/list';
-import { redactSeedNames } from './store/compliance';
 import { saveAdapterConfig } from './store/misc';
-import { importSeed, recordSeedImport, type SeedImport } from './store/sources';
 import { primary, type Store } from './store/store';
 
 /** A JSON object argument as the workflow sends it. */
@@ -42,7 +40,19 @@ async function call(stub: DurableObjectStub<Store>, command: string, args: OpsAr
 }
 
 /** The commands of the contract. */
-const COMMANDS = new Set(['status', 'grant-role', 'import-seed', 'sign-config', 'drill', 'purge-cache', 'restore-dump', 'pitr-restore']);
+const COMMANDS = new Set([
+	'status',
+	'grant-role',
+	'import-seed',
+	'revoke-seed',
+	'calibration-sample',
+	'calibration-export',
+	'sign-config',
+	'drill',
+	'purge-cache',
+	'restore-dump',
+	'pitr-restore'
+]);
 
 /** The drill fails when the newest dump is this old: one 6-hourly dump went missing (hosting plan section 3). */
 export const DUMP_MAX_AGE_S = 7 * 3600;
@@ -193,11 +203,16 @@ export async function storeOps(store: Store, ctx: DurableObjectState, env: Env, 
 			return ok(await status(store, ctx, env));
 		case 'grant-role':
 			return grant(store, a);
-		case 'import-seed': {
-			const answer = await importSeedFile(store, env, a);
+		case 'import-seed':
+		case 'revoke-seed': {
+			const answer = command === 'import-seed' ? await importSeed(store, env, a) : revokeSeedOps(store, a);
 			if (store.jobs.dirty) await store.jobs.arm();
 			return answer;
 		}
+		case 'calibration-sample':
+			return calibrationSample(store, env, a);
+		case 'calibration-export':
+			return calibrationExport(store, env, a);
 		case 'sign-config':
 			return signConfig(store, a);
 		case 'pitr-restore': {
@@ -295,105 +310,6 @@ function grant(store: Store, a: OpsArgs): OpsAnswer {
 	}
 	const acct = grantRole(store.db, email, role, unix(store.now()));
 	return ok({ account: accountJSON(acct), message: `${acct.email} (${acct.id}) is now ${acct.role}.` });
-}
-
-/** The licenses a paid product may use a seed list under, by their SPDX identifiers. */
-export const SEED_LICENSES = ['CC0-1.0', 'CC-BY-4.0', 'MIT', 'LicenseRef-written-grant'];
-
-/** import-seed reads seed lists from objects under this prefix of the private backup bucket. */
-export const SEED_PREFIX = 'seeds/';
-
-/**
- * Checks a seed list's license and the records it needs: the credit for CC BY and MIT, and where
- * the written grant is kept for LicenseRef-written-grant. Non-commercial, no-derivatives,
- * share-alike, GPL and unlicensed lists are refused. Returns the SPDX spelling or the refusal,
- * which never repeats the license: the answer is public.
- */
-function seedLicense(license: string, attribution: string, permissionDoc: string): string | OpsAnswer {
-	const known = SEED_LICENSES.find((l) => l.toLowerCase() === license.toLowerCase());
-	if (known === undefined) {
-		const how = 'Ask its maintainer for written permission and import it as LicenseRef-written-grant with permission_doc.';
-		if (license === '' || /^(none|noassertion|unlicensed|unknown|proprietary)$/i.test(license)) {
-			return fail(400, 'license_refused', `Refusing to import: the list has no license, and unlicensed lists may not be used. ${how}`);
-		}
-		if (/(^|[^a-z])(nc|nd|sa)([^a-z]|$)|noncommercial|noderiv|sharealike|gpl/i.test(license)) {
-			return fail(
-				400,
-				'license_refused',
-				`Refusing to import: the list's license does not allow use in a paid product. Non-commercial, no-derivatives, share-alike and GPL lists are refused. ${how}`
-			);
-		}
-		return fail(400, 'invalid_license', `license must be one of ${SEED_LICENSES.join(', ')}.`);
-	}
-	if ((known === 'CC-BY-4.0' || known === 'MIT') && attribution === '') {
-		return fail(400, 'attribution_required', 'CC-BY-4.0 and MIT need attribution: the credit or copyright notice the license asks for.');
-	}
-	if (known === 'LicenseRef-written-grant' && permissionDoc === '') {
-		return fail(400, 'permission_doc_required', 'LicenseRef-written-grant needs permission_doc: where the written grant is kept.');
-	}
-	return known;
-}
-
-/**
- * `colander import-seed`: the only argument is `key`, an object under SEED_PREFIX in the backup
- * bucket holding a JSON object with the list text (`file`: one @handle or UC channel ID per line,
- * `!` starts a comment), `list`, `source_name`, `license`, `attribution` and `permission_doc`.
- * The repository and the ops run log are public, and no list or its name may be in either.
- * The whole file goes in one transaction. Only lists a paid product may use are accepted
- * (seedLicense), and the run is recorded with its license, attribution, grant and file hash for
- * audits. Seed entries are review leads for staff: they never give a verdict and are never named in
- * public (contracts 9.3), so the log loses any mention of the list's name too. The scoring pass
- * that puts them in the review queue starts at once.
- */
-async function importSeedFile(store: Store, env: Env, a: OpsArgs): Promise<OpsAnswer> {
-	const key = text(a.key);
-	if (!key.startsWith(SEED_PREFIX) || key.length === SEED_PREFIX.length || Object.keys(a).some((k) => k !== 'key')) {
-		return fail(
-			400,
-			'invalid_args',
-			`import-seed takes only key: an object under ${SEED_PREFIX} in the backup bucket that holds the list and its license. The ops run log is public, so nothing about a list may be in the arguments.`
-		);
-	}
-	const obj = await env.BACKUPS.get(key);
-	if (!obj) return fail(404, 'no_seed', `There is no object ${key} in the backup bucket.`);
-	const seed = await obj.json<unknown>().catch(() => undefined);
-	if (typeof seed !== 'object' || seed === null || Array.isArray(seed)) return fail(400, 'invalid_seed', `${key} does not hold a JSON object.`);
-	const s = seed as Record<string, unknown>;
-	const file = text(s.file);
-	const list = text(s.list);
-	const sourceName = trimSpace(text(s.source_name));
-	const attribution = trimSpace(text(s.attribution));
-	const permissionDoc = trimSpace(text(s.permission_doc));
-	if (file === '' || sourceName === '') return fail(400, 'invalid_seed', 'file and source_name are required.');
-	if (list !== 'blocklist' && list !== 'warnlist') return fail(400, 'invalid_seed', 'list must be blocklist or warnlist.');
-	const license = seedLicense(trimSpace(text(s.license)), attribution, permissionDoc);
-	if (typeof license !== 'string') return license;
-	const db = store.db;
-	const now = store.now();
-	const ids: string[] = [];
-	let skipped = 0;
-	for (const raw of file.split('\n')) {
-		const line = trimSpace(raw);
-		if (line === '' || line.startsWith('!')) continue;
-		const id = canonicalSource('yt', line);
-		if (id === undefined) skipped++;
-		else ids.push(id);
-	}
-	const imp: SeedImport = { sourceName, list, license, attribution, permissionDoc, sha256: hex(sha256(utf8(file))), entries: ids.length };
-	const batch = db.tx(() => {
-		const id = recordSeedImport(db, imp, unix(now));
-		for (const alias of ids) importSeed(db, id, 'yt', alias, imp, unix(now));
-		// A reviewer may have named the list before Colander imported it.
-		redactSeedNames(db, [sourceName]);
-		return id;
-	});
-	store.jobs.schedule('pass', now);
-	return ok({
-		imported: ids.length,
-		skipped,
-		batch,
-		message: `Imported ${ids.length} YouTube channels as review leads, skipped ${skipped} lines. They never give a verdict; the scoring pass now puts them in the review queue.`
-	});
 }
 
 /**

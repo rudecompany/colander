@@ -10,12 +10,15 @@ import { getReports, postReport, postTags, postTrial } from './extension';
 import { adapterConfig } from './list';
 import { getLog, getSource, getStats } from './public';
 import {
+	reviewCalibrationLabel,
+	reviewCalibrationNext,
 	reviewDismissReport,
 	reviewItemDecision,
 	reviewQueue,
 	reviewResolveAppeal,
 	reviewSource,
 	reviewSourceDecision,
+	reviewSuppressSeeds,
 	reviewVerifyAppeal
 } from './review';
 import { getSync, putSync } from './sync';
@@ -54,10 +57,13 @@ const ROUTES: [method: string, pattern: string, handler: Handler][] = [
 	['GET', '/v1/review/queue', reviewQueue],
 	['GET', '/v1/review/sources/:platform/:source_id', reviewSource],
 	['POST', '/v1/review/sources/:platform/:source_id/decision', reviewSourceDecision],
+	['POST', '/v1/review/sources/:platform/:source_id/suppress-seeds', reviewSuppressSeeds],
 	['POST', '/v1/review/items/:platform/:item_id/decision', reviewItemDecision],
 	['POST', '/v1/review/reports/:id/dismiss', reviewDismissReport],
 	['POST', '/v1/review/appeals/:id/verify', reviewVerifyAppeal],
-	['POST', '/v1/review/appeals/:id/resolve', reviewResolveAppeal]
+	['POST', '/v1/review/appeals/:id/resolve', reviewResolveAppeal],
+	['GET', '/v1/review/calibration/next', reviewCalibrationNext],
+	['POST', '/v1/review/calibration/:platform/:source_id/label', reviewCalibrationLabel]
 ];
 
 /** These routes bound to one Store, for its router. */

@@ -41,8 +41,12 @@ export const API_DATA_TABLES = new Set(['youtube_cache', 'youtube_channels']);
  */
 const LEDGER = 'youtube_quota';
 
-/** The first line of a dump names the schema version of the Store it came from (dumpLines). */
-const HEADER = /^-- Colander Store dump, schema version (\d+),/;
+/**
+ * The first line of a dump names the schema version of the Store it came from and, since migration
+ * 8, every migration it had applied (dumpLines): versions may land out of order, so a dump at
+ * version 8 need not hold 6 and 7.
+ */
+const HEADER = /^-- Colander Store dump, schema version (\d+),(?: migrations ([\d,]+),)?/;
 
 /** The tables a dump holds, in creation order, with their CREATE statements. */
 export function dumpTables(db: Db): { name: string; sql: string }[] {
@@ -57,8 +61,8 @@ export const dumpKey = (now: number): string => `${DUMP_PREFIX}${new Date(now).t
  * is done: the backup runs it inside blockConcurrencyWhile.
  */
 export function* dumpLines(sql: SqlStorage, db: Db, now: number): Generator<string> {
-	const version = db.get<{ v: number }>('SELECT max(version) AS v FROM _migrations')?.v ?? 0;
-	yield `-- Colander Store dump, schema version ${version}, taken ${new Date(now).toISOString()}`;
+	const versions = db.all<{ v: number }>('SELECT version AS v FROM _migrations ORDER BY version').map((r) => r.v);
+	yield `-- Colander Store dump, schema version ${versions.at(-1) ?? 0}, migrations ${versions.join(',')}, taken ${new Date(now).toISOString()}`;
 	yield 'PRAGMA foreign_keys=OFF;';
 	yield 'BEGIN TRANSACTION;';
 	const tables = dumpTables(db);
@@ -271,7 +275,7 @@ const BATCH_CHARS = 1 << 20;
  * COMMIT. API_DATA_TABLES end up empty and are left out of the counts, and the quota ledger keeps
  * the larger count of each day (LEDGER). The rows stream into staging tables in bounded batches,
  * so a dump never sits in memory whole; one transaction then swaps them in and runs the data
- * changes of the migrations newer than the dump (its header names its version; one without a
+ * changes of the migrations the dump had not applied (its header names them; one without a
  * header counts as older than all), so the live tables change all at once or not at all.
  * Requests keep being served from the live tables meanwhile, and what they write is replaced.
  */
@@ -295,11 +299,15 @@ export async function loadDump(db: Db, body: ReadableStream<Uint8Array>, now: nu
 			chars = 0;
 		};
 		let last = '';
-		let version = 0;
+		let applied: ((version: number) => boolean) | undefined;
 		for await (const line of textLines(body)) {
 			last = line;
 			if (!line.startsWith('INSERT INTO ')) {
-				version ||= Number(HEADER.exec(line)?.[1] ?? 0);
+				const h = applied ? null : HEADER.exec(line);
+				if (h) {
+					const listed = h[2] === undefined ? undefined : new Set(h[2].split(',').map(Number));
+					applied = listed ? (v) => listed.has(v) : (v) => v <= Number(h[1]);
+				}
 				continue;
 			}
 			const s = parseInsert(line);
@@ -326,7 +334,7 @@ export async function loadDump(db: Db, body: ReadableStream<Uint8Array>, now: nu
 				const keep = t === LEDGER ? ' WHERE true ON CONFLICT (day) DO UPDATE SET units = max(units, excluded.units)' : '';
 				db.run(`INSERT INTO ${ident(t)}(${list}) SELECT ${list} FROM ${ident(STAGE + t)}${keep}`);
 			}
-			restoredData(db, version, Math.floor(now / 1000));
+			restoredData(db, applied ?? (() => false), Math.floor(now / 1000));
 		});
 		for (const t of API_DATA_TABLES) delete counts[t];
 		return counts;

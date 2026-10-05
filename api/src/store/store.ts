@@ -4,13 +4,14 @@
 // calls the RPC methods below; the alarm runs the jobs (src/jobs.ts).
 import { DurableObject } from 'cloudflare:workers';
 import { b64decode } from '@colander/shared/bytes';
+import { REGISTRY } from '@colander/shared/seed-registry';
 import { SigningKey } from '@colander/shared/signing';
 import { Auth } from '../auth';
 import { dump } from '../backup';
 import { Billing, billingConfig } from '../billing';
 import { devRoutes, testNow } from '../dev';
 import { jsonError, notFound, ROUTE_HEADER, setCache } from '../http';
-import { Jobs, prune, STATUS, type DumpStatus, type PassStatus, type PublishStatus } from '../jobs';
+import { Jobs, nextSeeds, prune, seedsJob, STATUS, type DumpStatus, type PassStatus, type PublishStatus } from '../jobs';
 import { Publisher, r2Sequence } from '../list/publisher';
 import { Mailer } from '../mail';
 import { storeOps, type OpsArgs } from '../ops';
@@ -22,6 +23,7 @@ import { DAILY_UNITS, YouTube } from '../youtube';
 import { Db } from './db';
 import { addListRequests, latestSequence, setListRequests, SNAPSHOT_KEY, type Sequence } from './list';
 import { migrate } from './migrations';
+import { SeedRegistry } from './seeds';
 
 interface Route {
 	method: string;
@@ -88,11 +90,14 @@ export class Store extends DurableObject<Env> {
 		this.engine = new Engine(this.db, this.jobs, () => this.now());
 		this.jobs.definePass(this.engine);
 		this.jobs.define('rescore', (ref) => (this.engine.rescore(Number(ref)), null));
+		this.jobs.define('seeds', (_, now) => seedsJob(this.db, this.engine.seeds, this.jobs, now), nextSeeds);
 		const youtubeKey = (env as Env & { YOUTUBE_API_KEY?: string }).YOUTUBE_API_KEY;
 		const budget = Number(env.YOUTUBE_DAILY_UNITS || DAILY_UNITS);
 		if (!Number.isSafeInteger(budget) || budget < 0) throw new Error('YOUTUBE_DAILY_UNITS must be a whole number of units');
 		if (youtubeKey) this.engine.youtube = new YouTube(youtubeKey, this.db, () => this.now(), budget);
 		this.engine.derived = env.YOUTUBE_DERIVED_USE === '1';
+		// Fictional dev_only lists count only in dev mode (docs/contracts.md 14).
+		this.engine.seeds = new SeedRegistry(REGISTRY, env.COLANDER_DEV === '1');
 		this.auth = new Auth(this.db, () => this.now(), env.COLANDER_DEV === '1');
 		this.mailer = new Mailer(env);
 		this.billing = new Billing(this.db, billingConfig(env));

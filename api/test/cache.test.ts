@@ -143,6 +143,15 @@ describe('Cache-Control on every route', () => {
 			headers: bearer,
 			body: { verdict: 'slop', reason: 'Still generated.', signals: ['watermark'] }
 		});
+		await check('POST /v1/review/sources/:platform/:source_id/suppress-seeds', 'POST', '/v1/review/sources/yt/@chan/suppress-seeds', 200, 'none', {
+			headers: bearer,
+			body: { reason: 'Objection by email.' }
+		});
+		await check('GET /v1/review/calibration/next', 'GET', '/v1/review/calibration/next', 200, 'none', { headers: bearer });
+		await check('POST /v1/review/calibration/:platform/:source_id/label', 'POST', '/v1/review/calibration/yt/@chan/label', 404, 'none', {
+			headers: bearer,
+			body: { label: 'slop', tests: [], evidence: [] }
+		});
 		await check('POST /v1/review/items/:platform/:item_id/decision', 'POST', '/v1/review/items/yt/abcdefghijk/decision', 200, 'none', {
 			headers: bearer,
 			body: { verdict: 'clear', reason: 'Original.', source_id: '@chan' }

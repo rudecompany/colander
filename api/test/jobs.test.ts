@@ -3,7 +3,7 @@
 import { env } from 'cloudflare:workers';
 import { evictDurableObject, runDurableObjectAlarm, runInDurableObject } from 'cloudflare:test';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { DEBOUNCE, dumpBackoff, nextDump, PASS_CHUNK, PASS_INTERVAL, PRUNE_INTERVAL, PUBLISH_FLOOR, STATUS, type DumpResult, type PassScorer } from '../src/jobs';
+import { DEBOUNCE, dumpBackoff, nextDump, nextSeeds, PASS_CHUNK, PASS_INTERVAL, PRUNE_INTERVAL, PUBLISH_FLOOR, STATUS, type DumpResult, type PassScorer } from '../src/jobs';
 import { allow } from '../src/limits';
 import { SNAPSHOT_KEY } from '../src/store/list';
 import type { Store } from '../src/store/store';
@@ -121,7 +121,8 @@ describe('jobs', () => {
 			expect(jobRows(store)).toEqual([
 				{ name: 'dump', due_at: nextDump(T) },
 				{ name: 'pass', due_at: T },
-				{ name: 'prune', due_at: T + PRUNE_INTERVAL }
+				{ name: 'prune', due_at: T + PRUNE_INTERVAL },
+				{ name: 'seeds', due_at: nextSeeds(T) }
 			]);
 			// Between turns the Store answers requests, and writes land.
 			expect((await store.fetch(new Request('https://store/v1/list/delta?since=1'))).status).toBe(410);
@@ -153,7 +154,8 @@ describe('jobs', () => {
 				{ name: 'dump', due_at: nextDump(T) },
 				{ name: 'pass', due_at: T + PASS_INTERVAL },
 				{ name: 'prune', due_at: T + PRUNE_INTERVAL },
-				{ name: 'publish', due_at: T + 2000 }
+				{ name: 'publish', due_at: T + 2000 },
+				{ name: 'seeds', due_at: nextSeeds(T) }
 			]);
 		});
 	});

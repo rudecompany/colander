@@ -10,6 +10,7 @@ import type { Db } from '../src/store/db';
 import { putSync } from '../src/store/misc';
 import { setYouTube } from '../src/store/sources';
 import { saveTags } from '../src/store/tags';
+import { MIGRATIONS } from '../src/store/migrations';
 import type { Store } from '../src/store/store';
 
 const T = 1_900_000_000_000;
@@ -101,7 +102,12 @@ describe('dump and restore', () => {
 			fill(store);
 			state.storage.kv.put('status:pass', { at: 1 });
 			const lines = dumpText(store, state).trimEnd().split('\n');
-			expect(lines.slice(0, 3)).toEqual([`-- Colander Store dump, schema version 5, taken ${new Date(T).toISOString()}`, 'PRAGMA foreign_keys=OFF;', 'BEGIN TRANSACTION;']);
+			const versions = MIGRATIONS.map((m) => m.version);
+			expect(lines.slice(0, 3)).toEqual([
+				`-- Colander Store dump, schema version ${versions.at(-1)}, migrations ${versions.join(',')}, taken ${new Date(T).toISOString()}`,
+				'PRAGMA foreign_keys=OFF;',
+				'BEGIN TRANSACTION;'
+			]);
 			expect(lines.at(-1)).toBe('COMMIT;');
 			const text = lines.join('\n');
 			for (const t of dumpTables(store.db)) expect(text).toContain(`${t.sql};\n`);
@@ -195,19 +201,26 @@ describe('restores across migrations and the quota ledger', () => {
 				(2, 2, 'yt', 'source', 'x', 1, 'x', 'API Title', 'Staff checked AiSList.', 'staff')`);
 			return dumpText(store, state);
 		});
-		const old = text.replace('-- Colander Store dump, schema version 5,', '-- Colander Store dump, schema version 4,');
+		// A header from before migration 8 names only the version; versions may also land out of
+		// order, so a dump that lists its migrations gets the data changes of each one it lacks, even
+		// below its own version.
+		const old = text.replace(/schema version \d+, migrations [\d,]+,/, 'schema version 4,');
+		const gap = text.replace(/migrations [\d,]+,/, 'migrations 1,2,3,4,8,');
 		expect(old).not.toBe(text);
-		await runInDurableObject(fresh(), async (store: Store) => {
-			const db = store.db;
-			await loadDump(db, bytes(old), T);
-			expect(db.all('SELECT source_name, reason, reason_original FROM decision_log ORDER BY id')).toEqual([
-				{ source_name: null, reason: 'Likely slop. It met a rule Colander no longer uses.', reason_original: 'Likely slop. Listed on the AiSList seed list.' },
-				{ source_name: null, reason: 'Staff checked [withheld].', reason_original: 'Staff checked AiSList.' }
-			]);
-			expect(db.get('SELECT name, import_source, subscribers, youtube_checked_at FROM sources')).toEqual({ name: null, import_source: null, subscribers: null, youtube_checked_at: null });
-			expect(db.all('SELECT source_name, entries, cleared_at FROM seed_imports')).toEqual([{ source_name: 'AiSList', entries: 1, cleared_at: T / 1000 }]);
-			expect(db.all('PRAGMA foreign_key_check')).toEqual([]);
-		});
+		expect(gap).not.toBe(text);
+		for (const dumped of [old, gap]) {
+			await runInDurableObject(fresh(), async (store: Store) => {
+				const db = store.db;
+				await loadDump(db, bytes(dumped), T);
+				expect(db.all('SELECT source_name, reason, reason_original FROM decision_log ORDER BY id')).toEqual([
+					{ source_name: null, reason: 'Likely slop. It met a rule Colander no longer uses.', reason_original: 'Likely slop. Listed on the AiSList seed list.' },
+					{ source_name: null, reason: 'Staff checked [withheld].', reason_original: 'Staff checked AiSList.' }
+				]);
+				expect(db.get('SELECT name, import_source, subscribers, youtube_checked_at FROM sources')).toEqual({ name: null, import_source: null, subscribers: null, youtube_checked_at: null });
+				expect(db.all('SELECT source_name, entries, cleared_at FROM seed_imports')).toEqual([{ source_name: 'AiSList', entries: 1, cleared_at: T / 1000 }]);
+				expect(db.all('PRAGMA foreign_key_check')).toEqual([]);
+			});
+		}
 		// A dump taken after the migration loads as it is.
 		await runInDurableObject(fresh(), async (store: Store) => {
 			await loadDump(store.db, bytes(text), T);
