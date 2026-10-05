@@ -17,7 +17,7 @@ export interface Migration {
 	sql: string;
 	/**
 	 * Data changes in code, run after sql in the same transaction, and again on the rows of a dump
-	 * taken before this migration when one is restored (restoredData). now is unix seconds.
+	 * taken without this migration when one is restored (restoredData). now is unix seconds.
 	 */
 	data?: (db: Db, now: number) => void;
 }
@@ -29,7 +29,8 @@ export const MIGRATIONS: Migration[] = [
 	{ version: 4, name: '0004_store.sql', sql: store },
 	{ version: 5, name: '0005_compliance.sql', sql: compliance, data: complianceData },
 	// 6 is left to a parallel branch. The runner applies any listed migration it has not applied yet,
-	// so a 6 merged after 7 shipped still runs.
+	// and a restore runs the data changes of every migration the dump lacks, so a 6 merged after 7
+	// shipped still runs, also on the rows of a dump taken in between.
 	{ version: 7, name: '0007_pairing.sql', sql: pairing }
 ];
 
@@ -53,9 +54,9 @@ export function migrate(db: Db, nowMs: number): number {
 }
 
 /**
- * Runs the data changes of every migration newer than a restored dump's schema version on its
- * rows, which the Store's schema took in but no migration changed. now is unix seconds.
+ * Runs the data changes of every migration a restored dump had not applied on its rows, which the
+ * Store's schema took in but no migration changed. now is unix seconds.
  */
-export function restoredData(db: Db, dumpVersion: number, now: number): void {
-	for (const m of MIGRATIONS) if (m.version > dumpVersion) m.data?.(db, now);
+export function restoredData(db: Db, applied: ReadonlySet<number>, now: number): void {
+	for (const m of MIGRATIONS) if (!applied.has(m.version)) m.data?.(db, now);
 }

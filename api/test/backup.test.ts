@@ -60,6 +60,15 @@ function fill(store: Store): void {
 }
 
 const dumpText = (store: Store, state: DurableObjectState) => [...dumpLines(state.storage.sql, store.db, T)].join('\n') + '\n';
+/** The dump without the _migrations rows of the versions `drop` picks, as if those had not run. */
+const withoutMigrations = (text: string, drop: (version: number) => boolean) =>
+	text
+		.split('\n')
+		.filter((l) => {
+			const v = /^INSERT INTO "_migrations"\("version",[^)]*\) VALUES\((\d+),/.exec(l)?.[1];
+			return v === undefined || !drop(Number(v));
+		})
+		.join('\n');
 
 /** SQL text as the byte stream loadDump reads. */
 const bytes = (text: string) => new Response(text).body!;
@@ -189,7 +198,7 @@ describe('dump and restore', () => {
 describe('restores across migrations and the quota ledger', () => {
 	// A dump from before migration 0005 holds what 0005 took out of the live rows: seed list names in
 	// public reasons, unchecked imports, YouTube API titles and figures. Its data changes run again.
-	it('run the data changes of the migrations newer than the dump on its rows', async () => {
+	it('run the data changes of the migrations the dump lacks on its rows', async () => {
 		const text = await runInDurableObject(fresh(), (store: Store, state) => {
 			const db = store.db;
 			db.run(`INSERT INTO sources (id, platform, canonical_id, name, import_list, import_source, import_license, imported_at, subscribers, youtube_checked_at, created_at)
@@ -199,19 +208,28 @@ describe('restores across migrations and the quota ledger', () => {
 				(2, 2, 'yt', 'source', 'x', 1, 'x', 'API Title', 'Staff checked AiSList.', 'staff')`);
 			return dumpText(store, state);
 		});
-		const old = text.replace(`-- Colander Store dump, schema version ${SCHEMA},`, '-- Colander Store dump, schema version 4,');
-		expect(old).not.toBe(text);
-		await runInDurableObject(fresh(), async (store: Store) => {
-			const db = store.db;
-			await loadDump(db, bytes(old), T);
-			expect(db.all('SELECT source_name, reason, reason_original FROM decision_log ORDER BY id')).toEqual([
-				{ source_name: null, reason: 'Likely slop. It met a rule Colander no longer uses.', reason_original: 'Likely slop. Listed on the AiSList seed list.' },
-				{ source_name: null, reason: 'Staff checked [withheld].', reason_original: 'Staff checked AiSList.' }
-			]);
-			expect(db.get('SELECT name, import_source, subscribers, youtube_checked_at FROM sources')).toEqual({ name: null, import_source: null, subscribers: null, youtube_checked_at: null });
-			expect(db.all('SELECT source_name, entries, cleared_at FROM seed_imports')).toEqual([{ source_name: 'AiSList', entries: 1, cleared_at: T / 1000 }]);
-			expect(db.all('PRAGMA foreign_key_check')).toEqual([]);
-		});
+		const old = withoutMigrations(text, (v) => v >= 5).replace(`-- Colander Store dump, schema version ${SCHEMA},`, '-- Colander Store dump, schema version 4,');
+		const row5 = /^INSERT INTO "_migrations".*VALUES\(5,/m;
+		expect(text).toMatch(row5);
+		expect(old).not.toMatch(row5);
+		// A migration merged below one that already shipped: the header names the newest version, and
+		// the dump's _migrations rows say 5 is missing. A dump without those rows goes by its header.
+		const gap = withoutMigrations(text, (v) => v === 5);
+		expect(gap).toContain(`-- Colander Store dump, schema version ${SCHEMA},`);
+		expect(gap).not.toMatch(row5);
+		for (const dump of [old, gap, withoutMigrations(old, () => true)]) {
+			await runInDurableObject(fresh(), async (store: Store) => {
+				const db = store.db;
+				await loadDump(db, bytes(dump), T);
+				expect(db.all('SELECT source_name, reason, reason_original FROM decision_log ORDER BY id')).toEqual([
+					{ source_name: null, reason: 'Likely slop. It met a rule Colander no longer uses.', reason_original: 'Likely slop. Listed on the AiSList seed list.' },
+					{ source_name: null, reason: 'Staff checked [withheld].', reason_original: 'Staff checked AiSList.' }
+				]);
+				expect(db.get('SELECT name, import_source, subscribers, youtube_checked_at FROM sources')).toEqual({ name: null, import_source: null, subscribers: null, youtube_checked_at: null });
+				expect(db.all('SELECT source_name, entries, cleared_at FROM seed_imports')).toEqual([{ source_name: 'AiSList', entries: 1, cleared_at: T / 1000 }]);
+				expect(db.all('PRAGMA foreign_key_check')).toEqual([]);
+			});
+		}
 		// A dump taken after the migration loads as it is.
 		await runInDurableObject(fresh(), async (store: Store) => {
 			await loadDump(store.db, bytes(text), T);
