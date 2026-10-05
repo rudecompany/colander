@@ -81,6 +81,12 @@ test('a report goes through review and its verdict reaches the extension and My 
 	site = await ext.ctx.newPage();
 	await signIn(site, STAFF, '/account');
 	await site.getByRole('link', { name: 'Open the review console' }).click();
+	// Staff see which seed list names a lead, with its provenance; it is never evidence.
+	await site.getByRole('button', { name: /Seed lead/ }).first().click();
+	const seeds = site.getByRole('region', { name: 'Seed lists' });
+	await expect(seeds).toContainText('A seed list is a review lead, never evidence.');
+	await expect(seeds).toContainText('Demo list');
+	await expect(seeds).toContainText(/Listed as @\w+ in the file dated/);
 	await site.getByRole('button', { name: new RegExp(REPORTED.name) }).click();
 	await expect(site.getByRole('heading', { level: 2, name: REPORTED.name })).toBeVisible();
 	await expect(site.getByText(REASON)).toBeVisible();

@@ -22,8 +22,10 @@ The Worker in `api/` serves that folder and the API from the same origin, so eve
 | `/transparency` | Live list numbers, funding, independence rules, expiry | Prerendered shell |
 | `/account` | Sign-in, plan, cancel, connect this browser, reviewer token | Prerendered shell |
 | `/auth/callback?token=&next=` | Finishes an emailed sign-in link | Prerendered shell |
-| `/console` | Review console for curators and staff | Prerendered shell |
-| `/privacy`, `/terms` | Policies | Prerendered |
+| `/console` | Review console for curators and staff; staff see which seed lists name a lead and can suppress them | Prerendered shell |
+| `/console/calibration` | Blind labeling of the calibration set, for curators and staff | Prerendered shell |
+| `/privacy`, `/terms` | Policies; the privacy page's Creators section lists where data about a source comes from | Prerendered |
+| `/credits` | The datasets whose license asks for credit, the one page that names a dataset | Prerendered from the seed registry by `+page.server.ts`, so the registry never reaches a page's JavaScript |
 
 `{platform}` is `yt`, `tt`, `ig` or `fb` (matched in `src/params.ts`); anything else is a 404.
 Support and donation links never appear on `/s/*` or `/appeal/*` pages, including the footer.
@@ -113,7 +115,9 @@ A shared fixture fails any test that logs a page error or a CSP violation.
 | `account.spec.ts` | Email sign-in and callback, safe `next`, connect this browser, one-click cancel at period end, then end now and refund, `409 not_refundable` |
 | `plans.spec.ts` | Yearly preselected, `503 billing_unavailable`, sign-in before checkout with the Free and Plus cards keeping one height, redirect, closed checkout, `409 already_subscribed`, the welcome page and its full-width sign-in button |
 | `support.spec.ts` | Donation body and redirect, custom amounts and limits, `503 billing_unavailable`, closed payment |
-| `console.spec.ts` | Keyboard queue, evidence, decision body and CSRF header, curator limits (large sources, appeals in review) and `403 staff_required`, AI evidence before Slop and `400 ai_evidence_required` |
+| `console.spec.ts` | Keyboard queue, evidence, decision body and CSRF header, curator limits (large sources, appeals in review) and `403 staff_required`, AI evidence before Slop and `400 ai_evidence_required`, seed provenance and suppression for staff and only a count for curators |
+| `calibration.spec.ts` | A blind label posted and the next item shown, the empty set, the console's link to it |
+| `credits.spec.ts` | `/credits` lists exactly the credits the registry gives, and no other file of the built site names a dataset |
 | `a11y.spec.ts` | axe WCAG 2.2 A and AA rules on every page, light and dark |
 | `brand.spec.ts` | The vocabulary table's "Not" words and exclamation marks never appear, nothing is below 12 px (figure labels as rendered too), controls are at least 32 px, nothing spills out of a card |
 | `reflow.spec.ts` | No page scrolls sideways or spills out of a card at 390 and 320 px, the stat cells on the landing page and /transparency keep their labels inside at 1024 and 1100 px, and figure labels stay at 12 px and up |

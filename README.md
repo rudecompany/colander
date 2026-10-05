@@ -53,7 +53,7 @@ Platform page selectors ship as signed declarative configuration, so a site rede
 
 | Command | What it covers |
 | --- | --- |
-| `make test-api` | The Wrangler config guard, type checks, the Worker's tests inside workerd (the store, every scoring rule, the HTTP API, billing against a fake Stripe, backups, ops and the list format against the contract fixtures), a dump that loads into stock SQLite, and dry-run deploys of both environments |
+| `make test-api` | The Wrangler config guard, the seed registry check, type checks, the Worker's tests inside workerd (the store, every scoring rule, the HTTP API, billing against a fake Stripe, backups, ops and the list format against the contract fixtures), a dump that loads into stock SQLite, and dry-run deploys of both environments |
 | `make test-web` | Type checks, then the website's Playwright tests with axe accessibility checks in light and dark |
 | `make test-extension` | Type checks, unit tests and the extension's Playwright tests on saved platform fixtures, including the speed budgets |
 | `make e2e` | The Worker under `wrangler dev`, the website and the extension together: blocking from the real list, tag, report, review, appeal, side panel, trial and a privacy audit |
@@ -96,7 +96,9 @@ Some things need people or accounts rather than code.
 
 - Instagram and Facebook selectors are tested on hand-built fixtures only; run `pnpm -C extension test:live` with signed-in storage states before those platforms ship.
 - Outside seed lists are review leads only and never decide a verdict.
-  The `import-seed` ops command reads a list object from the private bucket and accepts only CC0-1.0, CC-BY-4.0, MIT or a written grant; it refuses non-commercial, no-derivatives, share-alike, GPL and unlicensed lists.
+  They come only from the seed registry (`packages/shared/src/seed-registry.json`), and `import-seed` takes only entries the owner has cleared there, with the list in a private bucket object; the day-one candidates all wait for that clearance (docs/deploy.md, step 18).
+  Only `/credits` names a dataset, and only one whose license asks for credit.
+- The calibration set has its tooling (sampling, blind labeling at `/console/calibration`, export and `scripts/calibration-report.ts`), but the labels themselves need about 100 hours of staff time.
 - Stripe Managed Payments needs Stripe's eligibility approval and its terms accepted in the dashboard.
 - The extension asks for the `scripting` permission in addition to the spec's minimal list, because per-platform site access needs runtime content script registration; the spec's permission list should add it.
 - The open questions in the spec still stand: legal review of labels and platform terms, the calibration set behind the thresholds, the code and data licenses, and trademark clearance for the name.

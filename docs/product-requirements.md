@@ -154,7 +154,7 @@ The market is crowded on YouTube and nearly empty everywhere else. No tool found
 
 | Tool | Covers | How it decides | Model |
 | --- | --- | --- | --- |
-| [AiBlock and AiSList](https://aisloplist.com/) | YouTube, on Chrome and Firefox | Removes channels on a community list of 12,826 channels. Reports arrive through an in-player flag, Discord or GitHub issues. | Free, MIT licensed, volunteer-run with no funding |
+| [AiBlock and AiSList](https://aisloplist.com/) | YouTube, on Chrome and Firefox | Removes channels on a community list of 12,826 channels. Reports arrive through an in-player flag, Discord or GitHub issues. | Free, volunteer-run with no funding. The lists are CC BY-NC 4.0; the last CC0 version is from January 2026. |
 | [AI Block for YouTube](https://addons.mozilla.org/en-US/firefox/addon/ai-block-for-youtube/) | YouTube, on Firefox | Plain-text channel blocklist on GitHub, refreshed every 4 hours. A report opens a GitHub issue for manual checking. | Free |
 | [SlopBlock](https://slopblock.cc/) | YouTube | Users mark videos as AI-generated. Warning icons appear once a community trust threshold is reached. Trust scores combine time and accuracy. | Free, open source |
 | [AI Slop Blocker (Vlad)](https://vladeeno.com/ai-slop-blocker) | YouTube, Google Search | One-click personal blocklist. Hides AI-disclosed videos and Google's AI Overview. Community list planned. | Free |
@@ -436,7 +436,7 @@ Lists reach the device on the left and tags leave it on the right. The services 
 | --- | --- | --- | --- |
 | Extension framework | [WXT](https://github.com/wxt-dev/wxt) | MIT | Builds Manifest V3 for Chrome and later Firefox and Edge. |
 | Provenance reading | [c2pa-web](https://opensource.contentauthenticity.org/docs/c2pa-js/packages/c2pa-web/) from the [c2pa-js](https://github.com/contentauth/c2pa-js) project | MIT | Reads Content Credentials in the browser. Its inline build embeds the WebAssembly, which fits the no-remote-code rule. |
-| YouTube seed lists | Licensed community lists | CC0, CC BY 4.0, MIT or a written grant only | Review leads only, never a verdict on their own, since most lists use a looser "AI channel" bar. Never name a list on public pages; credit only where a license requires it. |
+| YouTube seed lists | Licensed community lists, through the seed registry the owner clears | CC0, CC BY 4.0, MIT or a written grant only | Review leads only, never a verdict on their own, since most lists use a looser "AI channel" bar. Never name a list on public pages; credit on /credits only where a license requires it. |
 | Site seed list for 1.1 | [HUGE AI Blocklist](https://github.com/laylavish/uBlockOrigin-HUGE-AI-Blocklist) | License file present, type to confirm | 1,000+ curated domains. Confirm terms before bundling. |
 | Crowdsourcing design | [SponsorBlock](https://github.com/ajayyy/sponsorblockserver) | Extension GPL-3.0, server AGPL-3.0-only, [database CC BY-NC-SA 4.0](https://sponsor.ajay.app/database) | Study the design. Do not copy code or data into a commercial product without meeting those terms or getting permission. |
 | Consensus method | [Community Notes scoring](https://github.com/twitter/communitynotes) | Code is published, license to confirm | Reimplement bridging from the published method. Confirm the license before reusing code. |

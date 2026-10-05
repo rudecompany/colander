@@ -34,6 +34,12 @@ test('curators see staff-only limits, the server enforces them, and the side pan
 	await expect(site.getByRole('button', { name: 'Resolve' })).toHaveCount(0);
 	await expect(site.getByRole('status').filter({ hasText: 'Staff decision needed' })).toContainText('An appeal is open on this source');
 
+	// A seed lead: curators see that a seed list names the source, never which list.
+	await site.getByRole('tab', { name: /^All/ }).click();
+	await site.getByRole('button', { name: /Seed lead/ }).first().click();
+	await expect(site.getByRole('region', { name: 'Seed lists' })).toContainText('Which lists name it is for staff only.');
+	await expect(site.locator('main')).not.toContainText(/demo list/i);
+
 	// Forced past the console, the server answers 403 staff_required.
 	const forced = await site.evaluate(async () => {
 		const post = async (path: string, body: unknown) => {

@@ -246,12 +246,13 @@ gh api -X POST repos/rudecompany/colander/rulesets --input - <<'JSON'
   "target": "branch",
   "enforcement": "active",
   "conditions": { "ref_name": { "include": ["~DEFAULT_BRANCH"], "exclude": [] } },
+  "bypass_actors": [{ "actor_id": 5, "actor_type": "RepositoryRole", "bypass_mode": "pull_request" }],
   "rules": [
     { "type": "deletion" },
     { "type": "non_fast_forward" },
     { "type": "pull_request", "parameters": {
         "required_approving_review_count": 0, "dismiss_stale_reviews_on_push": true,
-        "require_code_owner_review": false, "require_last_push_approval": false,
+        "require_code_owner_review": true, "require_last_push_approval": false,
         "required_review_thread_resolution": true, "allowed_merge_methods": ["squash"] } },
     { "type": "required_status_checks", "parameters": {
         "strict_required_status_checks_policy": true,
@@ -268,6 +269,8 @@ JSON
 ```
 
 `15368` is the GitHub Actions app, so only Actions can satisfy these checks.
+Code owner review guards the seed registry (`.github/CODEOWNERS`, docs/contracts.md section 14): a pull request that touches it needs your approval.
+You cannot approve your own pull request, so repository admins (role `5`) may merge one past that rule; the `api` check still fails any change to a clearance that you did not make.
 
 **Immutable releases.**
 `gh api -X PUT repos/rudecompany/colander/immutable-releases`.
@@ -315,6 +318,41 @@ The staging smoke test makes a staff decision and checks that it reaches the edg
    `release.yml` waits for staging, deploys production, smoke-tests it and publishes the release `v1.0.1`.
 3. Run the Probes workflow by hand and check that it passes.
 
+### 18. Seed data and the YouTube Data API
+
+Outside lists are review leads only: they put sources in the review queue and never decide a verdict (docs/contracts.md section 14).
+Nothing is imported until you clear it, and every step below is yours, because each one needs your judgment, your counsel or your accounts.
+Until then the registry's entries stay pending, `import-seed` refuses them, and `/credits` says that no dataset needs credit yet.
+
+**Decisions**
+
+- D1. Public pages and the decision log never name a data source; `/credits` names only the datasets whose license asks for credit.
+  This is built and tested; nothing to do unless you change the rule.
+- D2. Your GitHub login, `slantview`, is the one entry of `SEED_OWNERS` in `packages/shared/src/seeds.ts` and of `.github/CODEOWNERS`.
+  Turn on code owner review with the ruleset in step 15, so a pull request that touches the registry needs your approval.
+  To add an owner, change both files in a pull request of your own.
+  Do not add required reviewers to the `production` environment for this: the probes and drills run there unattended.
+- D3. After counsel, clear the day-one entries one at a time (Part 3, "Import a seed list"):
+  - `aislist-cc0-20260115-blocklist` and `aislist-cc0-20260115-warnlist`: AiSList at commit `50f476b8`, its last CC0 version. Lead only; never promote it to `seed`.
+  - `cevval-yt-ai-music`: pin the commit you import in `upstream.ref`; it expires 90 days after that commit's date, so import its newer versions the same way.
+  - `soul-over-ai-cc-by`: find the last commit whose `LICENSE.md` is CC BY 4.0 and pin it. Only fully AI-generated artists are read, and only their YouTube channel IDs.
+  - `staff-research`: the channels staff found themselves, one per line with a note of where they saw it. A large channel needs two reviewers.
+  - `tubecensus-sample`: a random sample of TubeCensus channel IDs, used only to sample calibration negatives. Its `scraped` stays null until counsel says whether IDs from Internet Archive captures of YouTube pages are scraped YouTube data; it cannot be cleared before.
+  Before the first one, have counsel sign off the credits approach, the DPIA and the legitimate interest assessment, and name the EU and UK representatives; the privacy page's Creators section and `/credits` are live already.
+- D4. The numbers, in code where you can change them in a pull request: the promotion thresholds (`CALIBRATION` in `packages/shared/src/seeds.ts`: 100 labeled sources, 30 per group, lower bounds of 0.90 AI-made and 0.80 slop), each entry's `expires_after_days`, `YOUTUBE_DAILY_UNITS` (step 12), and who labels (curators and staff).
+- D5. Staff time: about 100 hours of labeling for 1,000 sources, by 2 or 3 trained labelers working from `/definition`.
+  A starting mix: 150 each from `seed:` the AiSList blocklist, Cevval and Soul Over AI, 150 from `community`, and 300 from `random:tubecensus-sample`.
+- D6. Courtesy notes to the CC0 maintainers (Override92 for AiSList, cevvalkoala for Cevval), which also ask how each list was collected.
+  Not legally required.
+
+**Keys and the YouTube audit**
+
+- K1. One Google Cloud project for Colander, registered for the "Internal Company Tool" use case, with one `YOUTUBE_API_KEY` per environment restricted to the YouTube Data API v3 (step 12).
+  Never a second project for the same use: that splits one use case's quota.
+- K2. Before the Audit and Quota Extension Form: the privacy page names YouTube API Services and links Google's Privacy Policy (done), the terms bind users to YouTube's Terms of Service (add this with counsel), any page that shows API data carries YouTube's branding (no public page shows any), and a demo account for YouTube's reviewers.
+- K3. Submit the Audit and Quota Extension Form yourself, after counsel has said whether the extension's changes to YouTube's pages make it part of Colander's API client.
+  Include the derived-metrics amendment only if you want subscriber counts and uploads per day to feed scoring; until YouTube approves it, leave `YOUTUBE_DERIVED_USE` empty.
+
 ## Part 2: reference
 
 ### Secrets and variables
@@ -357,7 +395,10 @@ The workflows talk to the Worker through one authenticated channel, and the Work
 | --- | --- | --- |
 | `status` | `{}` | `head_seq` (Store list head), `r2_seq` (sequence in R2's `list/snapshot.bin`), `pass_age_s` (seconds since the last completed scoring pass), `publish_lag_s` (seconds the oldest verdict change not yet in R2's list has waited, 0 when R2 holds the head), `dump_age_s` (seconds since the newest successful dump), `dump_ms`, `rows_read_last_pass` |
 | `grant-role` | `{"email", "role"}` with role `member`, `curator` or `staff` | The account |
-| `import-seed` | `{"key"}` and nothing else, key naming an object under `seeds/` in the environment's backup bucket. The object is a JSON object `{"file", "list", "source_name", "license", "attribution", "permission_doc"}`: file the list text, list `blocklist` or `warnlist`, license `CC0-1.0`, `CC-BY-4.0`, `MIT` or `LicenseRef-written-grant`. `attribution` (the credit) is required for CC BY and MIT, `permission_doc` (where the written grant is kept) for a written grant. Non-commercial, no-derivatives, share-alike, GPL and unlicensed lists answer `400 license_refused`. | Counts imported and the batch ID, never the list's name or license; entries become review leads, never verdicts |
+| `import-seed` | `{"seed", "apply"}`: `seed` a registry ID the owner cleared, `apply` true to write; without it the command is a dry run. The list is the object `seeds/<seed>.json` in the environment's backup bucket (Part 3, "Import a seed list"). | The change in counts (`entries`, `by_platform`, `added`, `kept`, `dropped`, `suppressed`, `skipped`, `excluded`) and, applied, the batch ID; never a channel. Entries become review leads, never verdicts. |
+| `revoke-seed` | `{"seed", "reason"}`, and confirm set to the seed ID | The entries deleted and the sources they were on |
+| `calibration-sample` | `{"frame", "n"}`: frame `community`, `seed:<id>` or `random:<id>`, n 1 to 1,000 | How many sources were added to the calibration set, and how many were available |
+| `calibration-export` | `{}` | The key of the export under `calibration/` in the backup bucket, and its item and label counts |
 | `sign-config` | `{"file"}`, file being the adapter configuration JSON, signed byte for byte | Version and key ID |
 | `drill` | `{}` | `{"ok": true, ...}` after the dump drill passed (hosting plan section 3) |
 | `purge-cache` | `{"confirm": "purge-cache"}` | Done |
@@ -397,21 +438,30 @@ The run log and its summary are the audit trail.
 Examples:
 - Make a curator: command `grant-role`, args `{"email": "sam@example.com", "role": "curator"}`.
 - Ship new adapter selectors: raise `version` in `extension/src/adapters/default-config.json`, merge it, then run command `sign-config` with that file.
-- Import a seed list.
-  The repository, the run log and its summary are public, so never commit a list or put it, its name or its license in the Ops inputs; the list travels in a private object of the backup bucket.
-  1. Check the list's license file at the exact version you import.
-     A paid product may not use a list under a non-commercial, no-derivatives, share-alike or GPL license, or one with no license, and the command refuses them; such a list needs a written grant from its maintainer first, imported as `LicenseRef-written-grant` with `permission_doc`.
-  2. Build the object and put it under `seeds/` in the environment's backup bucket (`colander-backups`, or `colander-staging-backups` for staging), with a key that does not name the list, such as the date:
+- Import a seed list (docs/contracts.md section 14).
+  Only datasets in the seed registry, `packages/shared/src/seed-registry.json`, can be imported, and only once you have cleared them there (step 18, D3).
+  The repository, the run log and its summary are public, so never commit a list; the list and its clearance records travel in a private object of the backup bucket, and the answer carries counts only.
+  1. Check the list's license file at the exact version you import, and its `collection` statement.
+  2. Clear the entry in a pull request of your own: set `sha256` to the SHA-256 of the exact file (`shasum -a 256 list.txt`), `upstream.ref` and `upstream.date` to its commit or version and that date, `scraped` to false once the maintainer has said so, and `clearance` to `{"status": "cleared", "by": "slantview", "at": "<today>"}`.
+     Merge it and let it deploy: the same deploy puts the dataset on `/credits` when its license asks for credit.
+  3. Build the object and put it under `seeds/<id>.json` in the environment's backup bucket (`colander-backups`, or `colander-staging-backups` for staging).
+     `records` says where the data protection impact assessment and the legitimate interest assessment are kept, and for a written grant where the grant is kept (`permission_doc`); keep the documents themselves private.
      ```sh
-     jq -n --rawfile file list.txt --arg source_name "Example List" \
-       '{file: $file, list: "blocklist", source_name: $source_name, license: "CC0-1.0"}' >seed.json
-     pnpm -C api exec wrangler r2 object put colander-backups/seeds/2026-10-03.json --file seed.json --remote
+     jq -n --rawfile file list.txt '{file: $file, records: {dpia: "DPIA-2026-01", lia: "LIA-2026-01"}}' >seed.json
+     pnpm -C api exec wrangler r2 object put colander-backups/seeds/aislist-cc0-20260115-blocklist.json --file seed.json --remote
      ```
-     For CC BY and MIT add `attribution`, the credit the license asks for; for a written grant add `permission_doc`, where the grant is kept.
-     The bucket's lifecycle deletes the object after 90 days; `seed_imports` keeps its hash.
-  3. Run command `import-seed` with args `{"key": "seeds/2026-10-03.json"}`.
-     The answer gives counts and the batch ID only.
-  Its entries only put sources in the review queue: they never give a verdict and are never named in public.
+     The bucket's lifecycle deletes the object after 90 days; `seed_imports` keeps its hash and records.
+  4. Run command `import-seed` with args `{"seed": "aislist-cc0-20260115-blocklist"}`: a dry run that answers what would change.
+  5. Run it again with args `{"seed": "aislist-cc0-20260115-blocklist", "apply": true}`.
+     The scoring pass then puts the sources in the review queue as seed leads; they never give a verdict and are never named in public.
+  A newer version of the list is the same steps with the new hash and date: entries it no longer lists are deleted, and so are sources only they made.
+- Withdraw a seed list at once, when its license or clearance falls away: command `revoke-seed`, args `{"seed": "<id>", "reason": "<why>"}`, confirm set to the same ID.
+  Then set its clearance to `revoked` in the registry; the daily `seeds` job would also delete its entries within a day of that deploy.
+- Build the calibration set (step 18, D5): command `calibration-sample` with args such as `{"frame": "seed:cevval-yt-ai-music", "n": 150}`, `{"frame": "community", "n": 150}` or `{"frame": "random:tubecensus-sample", "n": 300}`.
+  The `random:` frame reads its own object, `seeds/tubecensus-sample.json`, with the sampled channel IDs one per line, like an import.
+  Curators and staff label at `/console/calibration`.
+  To report, run command `calibration-export`, fetch the file it names with `pnpm -C api exec wrangler r2 object get colander-backups/<key> --file export.json --remote`, and run `node scripts/calibration-report.ts export.json`.
+  The export names channels, so delete `export.json` once the report is done; the report itself holds counts only.
 - See the Store's health: command `status`.
 
 ### Restore
