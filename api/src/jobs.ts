@@ -49,7 +49,9 @@ export const STATUS = {
 	/** the dump attempt that has not succeeded yet: { failures, at } */
 	dumpTry: 'status:dump_try',
 	/** the last whole unix hour the analytics pull counted list requests for */
-	listRequests: 'status:list_requests'
+	listRequests: 'status:list_requests',
+	/** sign-in codes sent this unix hour: { hour, count, previous } */
+	signInMail: 'status:sign_in_mail'
 } as const;
 
 /** The last completed full scoring pass. */
@@ -117,8 +119,15 @@ export function nextDump(now: number): number {
 	return Math.floor((now - offset) / slot) * slot + offset + slot;
 }
 
+/** Audit rows are kept this long in the Store, and longer in R2 under the bucket lock. */
+export const AUDIT_RETENTION_S = 400 * 86_400;
+/** An appeal's email is blanked this long after the appeal closes. */
+export const APPEAL_EMAIL_S = 30 * 86_400;
+
 /**
- * The hourly cleanup: expired magic links and sessions (Go pruned them while signing in), list
+ * The hourly cleanup: expired magic links, sessions and sign-in flows, held requests that ran or
+ * were cancelled over 30 days ago, audit rows past 400 days, the email of appeals closed over 30
+ * days ago, list
  * sequences past the delta window (their changes cascade; the head always stays), refilled rate
  * limit buckets, the synced settings of ended install trials, which no token can read again, and
  * YouTube Data API data before it is 30 days old (with quota ledger days older than that).
@@ -129,6 +138,9 @@ export function prune(db: Db, now: number): number {
 	db.tx(() => {
 		db.run('DELETE FROM magic_links WHERE expires_at < ?', s);
 		db.run('DELETE FROM sessions WHERE expires_at <= ?', s);
+		db.run('DELETE FROM auth_flows WHERE expires_at <= ?', s);
+		db.run('DELETE FROM account_requests WHERE coalesce(done_at, cancelled_at) < ?', s - 30 * 86_400);
+		db.run("UPDATE appeals SET email = '' WHERE resolved_at < ? AND email != ''", s - APPEAL_EMAIL_S);
 		db.run('DELETE FROM sync_blobs WHERE sub IN (SELECT sub FROM trials WHERE expires_at <= ?)', s);
 		db.run(
 			'DELETE FROM list_sequences WHERE created_at < ? AND seq < (SELECT ifnull(max(seq), 0) FROM list_sequences)',
@@ -137,6 +149,12 @@ export function prune(db: Db, now: number): number {
 		pruneLimits(db, now);
 		purgeYouTube(db, Math.floor((now - RETENTION) / 1000), pacificDay(now - RETENTION));
 	});
+	try {
+		// The table's trigger refuses deleting a row younger than 400 days by the wall clock.
+		db.run('DELETE FROM audit_log WHERE at < ?', s - AUDIT_RETENTION_S);
+	} catch (err) {
+		console.error(JSON.stringify({ message: 'audit retention prune refused', error: String(err) }));
+	}
 	return now + PRUNE_INTERVAL;
 }
 

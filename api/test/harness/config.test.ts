@@ -39,12 +39,25 @@ describe.each([
 		expect(c.vars.ALERT_ADDRESS).toBe(alerts?.destination_address);
 	});
 
-	it('serves only through its custom domain, with the edge cache on', () => {
+	it('serves only through its custom domains, the site and the admin host, with the edge cache on', () => {
 		expect(c.workers_dev).toBe(false);
 		expect(c.preview_urls).toBe(false);
-		expect(c.routes).toEqual([expect.objectContaining({ custom_domain: true })]);
+		expect(c.routes).toEqual([expect.objectContaining({ custom_domain: true }), expect.objectContaining({ custom_domain: true })]);
+		const hosts = (c.routes as { pattern: string }[]).map((r) => r.pattern);
+		expect(`https://${hosts[0]}`).toBe(c.vars.PUBLIC_URL);
+		expect(hosts[1]).toBe(c.vars.ADMIN_HOST);
+		// A first-level subdomain, so Universal SSL covers it.
+		expect(c.vars.ADMIN_HOST).toMatch(/^[a-z-]+\.getcolander\.com$/);
 		expect(c.cache).toEqual({ enabled: true, cross_version_cache: true });
-		expect(c.assets?.run_worker_first).toEqual(['/v1/*', '/ops/*', '/healthz', '/__dev/*', '/200', '/404']);
+		expect(c.assets?.run_worker_first).toEqual(['/v1/*', '/ops/*', '/healthz', '/__dev/*', '/200', '/404', '/', '/admin', '/admin/*']);
+	});
+
+	it('takes ops calls only from GitHub Actions of this repository, and keeps no static ops token', () => {
+		expect(c.vars.OPS_GITHUB_REPOSITORY).toBe('rudecompany/colander');
+		expect(c.vars.OPS_GITHUB_REPOSITORY_ID).toMatch(/^\d+$/);
+		expect(c.vars.OPS_GITHUB_ENVIRONMENT).toMatch(/^(production|staging)$/);
+		expect(c.secrets?.required).toEqual(['COLANDER_SIGNING_KEY', 'IP_SALT']);
+		expect(c.vars).not.toHaveProperty('OPS_TOKEN');
 	});
 });
 
@@ -52,6 +65,11 @@ it('keeps the YouTube spend of both environments, which share one project and it
 	// The project gets 10,000 units a day; 2,000 stay as margin (contracts 9.7). Each environment
 	// keeps its own ledger, so only their sum bounds what the project spends.
 	expect(Number(production.vars.YOUTUBE_DAILY_UNITS) + Number(staging.vars.YOUTUBE_DAILY_UNITS)).toBeLessThanOrEqual(8_000);
+});
+
+it('gives each environment its own ops environment and admin host', () => {
+	expect([production.vars.OPS_GITHUB_ENVIRONMENT, staging.vars.OPS_GITHUB_ENVIRONMENT]).toEqual(['production', 'staging']);
+	expect([production.vars.ADMIN_HOST, staging.vars.ADMIN_HOST]).toEqual(['admin.getcolander.com', 'staging-admin.getcolander.com']);
 });
 
 it('gives staging its own Worker, domain, buckets and rate limit namespace', () => {

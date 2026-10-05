@@ -121,7 +121,7 @@ export function decide(e: Engine, input: DecisionInput): void {
 			},
 			input.large
 		);
-		e.rescore(input.sourceRef, { itemRef, actor: input.actor, actorName: input.actorName, reason: input.reason, always: true });
+		e.rescore(input.sourceRef, { itemRef, actor: input.actor, actorName: input.actorName, accountId: input.accountId, reason: input.reason, always: true });
 	});
 }
 
@@ -164,6 +164,6 @@ export function resolveAppeal(e: Engine, a: Appeal, outcome: string, reasoning: 
 			return;
 		}
 		voidCuratorDecisions(e.db, a.sourceRef, a.createdAt, now);
-		e.rescore(a.sourceRef, { actor: 'appeal', actorName: reviewer.displayName, always: true, reason: 'Appeal denied. ' + reasoning });
+		e.rescore(a.sourceRef, { actor: 'appeal', actorName: reviewer.displayName, accountId: reviewer.id, always: true, reason: 'Appeal denied. ' + reasoning });
 	});
 }

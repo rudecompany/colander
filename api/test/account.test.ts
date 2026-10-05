@@ -1,12 +1,12 @@
-// Accounts and sessions (src/auth.ts and src/routes/account.ts): Go's TestMagicLinkSignIn,
-// TestCSRFRequired and the reviewer token half of TestCuratorLimitsAndReviewerToken, plus the auth
-// helpers against Go's net/mail and the one transaction that consumes a link and creates a session.
-import { env } from 'cloudflare:workers';
+// Accounts and sign-in (src/auth.ts and src/routes/account.ts, docs/contracts.md 6.6): emailed
+// codes with their limits, sessions and cookies, legacy links and cookies, the auth helpers
+// against Go's net/mail, and the one transaction that uses up a code and starts a session.
+// Passkeys, invites, reviewers and account data are in passkeys.test.ts.
 import { describe, expect, it } from 'vitest';
 import { hex, utf8 } from '@colander/shared/bytes';
-import { Auth, csrfOk, hashInstall, hashToken, normalizeEmail, safeNext } from '../src/auth';
-import { grantRole, setDisplayName } from '../src/store/accounts';
-import { errorCode, expectStatus, Harness, installId } from './api';
+import { Auth, csrfOk, hashInstall, hashToken, newCode, newToken, normalizeEmail, safeNext } from '../src/auth';
+import { createSession, grantRole } from '../src/store/accounts';
+import { cookieOf, errorCode, expectStatus, Harness, installId, lastCode } from './api';
 
 const MINUTE = 60_000;
 const CSRF = ['X-Colander-CSRF', '1'];
@@ -90,37 +90,57 @@ describe('auth helpers', () => {
 		for (const bad of [id.slice(1), id + 'A', id.slice(0, 21) + '+', id.slice(0, 20) + '==', '']) expect(hashInstall(bad)).toBeUndefined();
 	});
 
-	it('lets reads through and wants the CSRF header on writes', () => {
+	it('lets reads through and wants the CSRF header and a same-origin fetch on writes', () => {
 		const req = (method: string, headers: HeadersInit = {}) => new Request('https://getcolander.com/v1/account', { method, headers });
 		for (const m of ['GET', 'HEAD', 'OPTIONS']) expect(csrfOk(req(m))).toBe(true);
 		expect(csrfOk(req('POST'))).toBe(false);
-		expect(csrfOk(req('PATCH', { 'X-Colander-CSRF': '0' }))).toBe(false);
-		expect(csrfOk(req('PATCH', { 'X-Colander-CSRF': '1' }))).toBe(true);
+		expect(csrfOk(req('PATCH', { 'X-Colander-CSRF': '0', 'Sec-Fetch-Site': 'same-origin' }))).toBe(false);
+		// A sibling host (staging, the admin host) is same-site, not same-origin.
+		expect(csrfOk(req('PATCH', { 'X-Colander-CSRF': '1', 'Sec-Fetch-Site': 'same-site' }))).toBe(false);
+		expect(csrfOk(req('PATCH', { 'X-Colander-CSRF': '1' }))).toBe(false);
+		expect(csrfOk(req('PATCH', { 'X-Colander-CSRF': '1', 'Sec-Fetch-Site': 'same-origin' }))).toBe(true);
+	});
+
+	it('draws 6-digit codes', () => {
+		const codes = Array.from({ length: 2000 }, newCode);
+		for (const c of codes) expect(c).toMatch(/^\d{6}$/);
+		// Every first digit shows up: no visible bias toward low codes.
+		expect(new Set(codes.map((c) => c[0])).size).toBe(10);
 	});
 });
 
-describe('email sign-in', () => {
-	it('signs in through a magic link that works once and expires after 20 minutes', async () => {
+/** Asks for a code; returns the flow cookie and the code the dev mail printed. */
+async function askCode(h: Harness, email: string, ...headers: string[]): Promise<{ flow: string; code: string }> {
+	h.mail = '';
+	const res = await h.do('POST', '/v1/auth/code', { email, next: '/account' }, ...CSRF, ...headers);
+	await expectStatus(res, 202);
+	return { flow: cookieOf(res, 'colander_flow'), code: lastCode(h.mail) ?? '' };
+}
+
+const verify = (h: Harness, flow: string, code: string, ...headers: string[]) => h.do('POST', '/v1/auth/code/verify', { code }, ...CSRF, 'Cookie', flow, ...headers);
+
+/** A wrong code for this one. */
+const wrong = (code: string) => String((Number(code) + 1) % 1e6).padStart(6, '0');
+
+describe('email code sign-in', () => {
+	it('signs in with a 6-digit code that works once, for 10 minutes, in the browser that asked', async () => {
 		const h = await Harness.create();
 		await expectStatus(await h.do('GET', '/v1/account'), 401);
-		h.mail = '';
-		await expectStatus(await h.do('POST', '/v1/auth/email', { email: 'Maya@Example.test', next: 'https://evil.example/' }), 202);
-		const token = /token=([A-Za-z0-9_-]+)/.exec(h.mail)?.[1];
-		expect(token).toBeDefined();
-		expect(h.mail).toContain(`${env.PUBLIC_URL}/auth/callback?token=`);
-		expect(h.mail).toContain('next=%2Faccount');
+		const { flow, code } = await askCode(h, 'Maya@Example.test');
+		expect(code).toMatch(/^\d{6}$/);
+		expect(h.mail).toContain(`Subject: ${code} is your Colander sign-in code`);
+		// Another browser's flow cookie, or none, never finishes it.
+		const other = await askCode(h, 'someone@example.test');
+		expect(await errorCode(await verify(h, other.flow, code))).toBe('code_invalid');
+		expect(await errorCode(await h.do('POST', '/v1/auth/code/verify', { code }, ...CSRF))).toBe('code_expired');
 
-		let res = await h.do('POST', '/v1/auth/verify', { token }, ...CSRF);
+		const res = await verify(h, flow, ` ${code.slice(0, 3)} ${code.slice(3)} `);
 		await expectStatus(res, 200);
-		const cookie = res.headers.get('Set-Cookie')!;
-		const value = /^colander_session=([A-Za-z0-9_-]{43});/.exec(cookie)?.[1];
-		expect(value).toBeDefined();
-		const expires = new Date(h.clock + 30 * 24 * 60 * MINUTE).toUTCString();
-		// Dev mode: HttpOnly and SameSite=Lax, not Secure.
-		expect(cookie).toBe(`colander_session=${value}; Path=/; Expires=${expires}; Max-Age=2592000; HttpOnly; SameSite=Lax`);
-
-		res = await h.do('GET', '/v1/account', undefined, 'Cookie', `colander_session=${value}`);
-		await expectStatus(res, 200);
+		const [session, cleared] = res.headers.getSetCookie();
+		const value = /^colander_session=([A-Za-z0-9_-]{43});/.exec(session!)?.[1];
+		// Dev mode: HttpOnly and SameSite=Strict, not Secure, no __Host- prefix.
+		expect(session).toBe(`colander_session=${value}; Path=/; Max-Age=2592000; HttpOnly; SameSite=Strict`);
+		expect(cleared).toBe('colander_flow=; Path=/; Max-Age=0; HttpOnly; SameSite=Strict');
 		const { account } = (await res.json()) as { account: Record<string, unknown> };
 		expect(account).toEqual({
 			id: expect.stringMatching(/^acc_[a-z2-9]{16}$/),
@@ -128,40 +148,123 @@ describe('email sign-in', () => {
 			display_name: null,
 			role: 'member',
 			plan: null,
-			created_at: '2026-10-01T12:00:00Z'
+			created_at: '2026-10-01T12:00:00Z',
+			session: { method: 'email', authenticated_at: '2026-10-01T12:00:00Z' },
+			passkey_count: 0,
+			reviewer_token: null,
+			requests: []
+		});
+		await expectStatus(await h.do('GET', '/v1/account', undefined, 'Cookie', `colander_session=${value}`), 200);
+		expect(await h.run((store) => store.db.get('SELECT action, target, after, host FROM audit_log'))).toEqual({
+			action: 'signed_in',
+			target: account.id,
+			after: 'email',
+			host: 'main'
 		});
 
-		// Links work once.
-		res = await h.do('POST', '/v1/auth/verify', { token }, ...CSRF);
-		await expectStatus(res, 400);
-		expect(await errorCode(res)).toBe('link_invalid');
-		// And expire after 20 minutes.
-		h.mail = '';
-		await h.do('POST', '/v1/auth/email', { email: 'maya@example.test' });
-		const late = /token=([A-Za-z0-9_-]+)/.exec(h.mail)![1];
-		h.clock += 21 * MINUTE;
-		await expectStatus(await h.do('POST', '/v1/auth/verify', { token: late }, ...CSRF), 400);
+		// A code works once.
+		expect(await errorCode(await verify(h, flow, code))).toBe('code_expired');
+		// And for 10 minutes.
+		const late = await askCode(h, 'maya@example.test');
+		h.clock += 10 * MINUTE + 1000;
+		expect(await errorCode(await verify(h, late.flow, late.code))).toBe('code_expired');
+		// Only the hash of the flow token and code is stored.
+		expect(await h.run((store) => store.db.all('SELECT kind FROM auth_flows WHERE secret_hash = ?', hashToken(late.flow.split('=')[1] + late.code)))).toEqual([
+			{ kind: 'email_code' }
+		]);
 	});
 
-	it('needs the CSRF header to sign in, so a cross-site form cannot sign a visitor into another account', async () => {
+	it('always answers 202, whether or not an account exists', async () => {
 		const h = await Harness.create();
-		h.mail = '';
-		await h.do('POST', '/v1/auth/email', { email: 'attacker@example.test' });
-		const token = /token=([A-Za-z0-9_-]+)/.exec(h.mail)![1]!;
-		// What an auto-submitting text/plain form sends: the decoder matches keys ignoring case and the last one wins.
-		const forged = await h.do('POST', '/v1/auth/verify', `{"TOKEN":"=","token":"${token}"}`, 'Content-Type', 'text/plain', 'Origin', 'https://evil.example');
+		await h.signIn('maya@example.test');
+		const known = await h.do('POST', '/v1/auth/code', { email: 'maya@example.test', next: '/account' }, ...CSRF);
+		const unknown = await h.do('POST', '/v1/auth/code', { email: 'nobody@example.test', next: '/account' }, ...CSRF);
+		expect([known.status, unknown.status]).toEqual([202, 202]);
+		expect(await known.json()).toEqual(await unknown.json());
+		// Asking creates no account; signing in does.
+		expect(await h.run((store) => store.db.get<{ n: number }>('SELECT count(*) AS n FROM accounts')!.n)).toBe(1);
+	});
+
+	it('needs the CSRF header and a same-origin fetch to sign in, so a cross-site page cannot sign a visitor into another account', async () => {
+		const h = await Harness.create();
+		const { flow, code } = await askCode(h, 'attacker@example.test');
+		// What an auto-submitting text/plain form sends.
+		const forged = await h.do('POST', '/v1/auth/code/verify', `{"code":"${code}"}`, 'Content-Type', 'text/plain', 'Cookie', flow, 'Sec-Fetch-Site', 'cross-site');
 		await expectStatus(forged, 403);
 		expect(await errorCode(forged)).toBe('csrf_required');
 		expect(forged.headers.get('Set-Cookie')).toBeNull();
-		expect(await h.run((store) => store.db.get('SELECT used_at FROM magic_links'))).toEqual({ used_at: null });
-		await expectStatus(await h.do('POST', '/v1/auth/verify', { token }, ...CSRF), 200);
+		// A sibling host of the same site, with the header, is refused too.
+		expect(await errorCode(await verify(h, flow, code, 'Sec-Fetch-Site', 'same-site'))).toBe('csrf_required');
+		expect(await errorCode(await h.do('POST', '/v1/auth/code', { email: 'a@b.c', next: '/' }))).toBe('csrf_required');
+		await expectStatus(await verify(h, flow, code), 200);
+	});
+
+	it('ends a code after 5 wrong tries, and pauses code sign-in for the address for 24 hours after 10 wrong codes in a day', async () => {
+		const h = await Harness.create();
+		let { flow, code } = await askCode(h, 'maya@example.test');
+		for (let i = 1; i <= 4; i++) expect(await errorCode(await verify(h, flow, wrong(code)))).toBe('code_invalid');
+		expect(await errorCode(await verify(h, flow, wrong(code)))).toBe('code_expired');
+		expect(await errorCode(await verify(h, flow, code))).toBe('code_expired');
+
+		// 5 more wrong codes across new codes use up the day's 10.
+		h.clock += 60 * MINUTE;
+		({ flow, code } = await askCode(h, 'maya@example.test'));
+		for (let i = 1; i <= 4; i++) expect(await errorCode(await verify(h, flow, 'abc'))).toBe('code_invalid');
+		h.mail = '';
+		const paused = await verify(h, flow, wrong(code));
+		expect(await errorCode(paused)).toBe('code_paused');
+		expect(h.mail).toContain('Subject: Sign-in codes are paused for your Colander account');
+		// No code goes out for 24 hours, though the answer stays 202; and none is accepted.
+		const quiet = await askCode(h, 'maya@example.test');
+		expect(quiet.code).toBe('');
+		h.clock += 23 * 60 * MINUTE;
+		const still = await askCode(h, 'maya@example.test');
+		expect(still.code).toBe('');
+		expect(await errorCode(await verify(h, still.flow, '000000'))).toBe('code_paused');
+		// The notice went out once.
+		h.clock += 2 * 60 * MINUTE;
+		const back = await askCode(h, 'maya@example.test');
+		expect(back.code).toMatch(/^\d{6}$/);
+		await expectStatus(await verify(h, back.flow, back.code), 200);
+	});
+
+	it('limits codes to 5 an hour and 10 a day per address and 30 an hour per IP, and code tries to 30 an hour per IP', async () => {
+		const h = await Harness.create();
+		const ask = (email: string, ...headers: string[]) => h.do('POST', '/v1/auth/code', { email, next: '/' }, ...CSRF, ...headers);
+		for (let i = 0; i < 5; i++) await expectStatus(await ask('maya@example.test'), 202);
+		let res = await ask('MAYA@example.test');
+		await expectStatus(res, 429);
+		expect(await errorCode(res)).toBe('rate_limited');
+		expect(res.headers.get('Retry-After')).toBe('720');
+		expect(await h.run((store) => store.db.get<{ n: number }>('SELECT count(*) AS n FROM auth_flows')!.n)).toBe(5);
+		// Over a day, 10 at most.
+		for (let i = 0; i < 5; i++) {
+			h.clock += 12 * MINUTE;
+			await expectStatus(await ask('maya@example.test'), 202);
+		}
+		h.clock += 60 * MINUTE;
+		await expectStatus(await ask('maya@example.test'), 429);
+		h.clock += 3 * 60 * MINUTE;
+		await expectStatus(await ask('maya@example.test'), 202);
+
+		// The address quota counts every email; another address has its own.
+		const fresh = await Harness.create();
+		for (let i = 0; i < 30; i++) await expectStatus(await fresh.do('POST', '/v1/auth/code', { email: `user${i}@example.test`, next: '/' }, ...CSRF), 202);
+		await expectStatus(await fresh.do('POST', '/v1/auth/code', { email: 'user99@example.test', next: '/' }, ...CSRF), 429);
+		await expectStatus(await fresh.do('POST', '/v1/auth/code', { email: 'user99@example.test', next: '/' }, ...CSRF, 'x-colander-ip-hash', 'elsewhere'), 202);
+
+		// 30 code tries an hour per IP, across flows.
+		const tries = await Harness.create();
+		const flows = [];
+		for (let i = 0; i < 9; i++) flows.push(await askCode(tries, `try${i}@example.test`));
+		for (let i = 0; i < 30; i++) expect((await verify(tries, flows[Math.floor(i / 4)]!.flow, 'zzzzzz')).status).toBe(400);
+		await expectStatus(await verify(tries, flows[8]!.flow, flows[8]!.code), 429);
+		await expectStatus(await verify(tries, flows[8]!.flow, flows[8]!.code, 'x-colander-ip-hash', 'elsewhere'), 200);
 	});
 
 	it('prints the dev mail in the block e2e/tests/stack.ts parses', async () => {
 		const h = await Harness.create();
-		h.mail = '';
-		await h.do('POST', '/v1/auth/email', { email: 'rae@colander.test', next: '/console' });
-		// stack.ts mailsSince and signInLink, applied to what the Store printed.
+		await askCode(h, 'rae@colander.test');
 		const mails = h.mail
 			.split('==== Colander dev mail (not sent) ====')
 			.slice(1)
@@ -172,45 +275,21 @@ describe('email sign-in', () => {
 			}));
 		expect(mails).toHaveLength(1);
 		expect(mails[0]!.to).toBe('rae@colander.test');
-		expect(mails[0]!.subject).toBe('Your Colander sign-in link');
-		const link = /^https?:\/\/\S+\/auth\/callback\?\S+$/m.exec(mails[0]!.body)?.[0];
-		expect(new URL(link!).searchParams.get('next')).toBe('/console');
+		expect(mails[0]!.subject).toMatch(/^\d{6} is your Colander sign-in code$/);
+		expect(/^ {4}(\d{6})$/m.exec(mails[0]!.body)?.[1]).toBe(mails[0]!.subject.slice(0, 6));
 	});
 
-	it('consumes the link and creates the session in one transaction', async () => {
+	it('uses up the code and starts the session in one transaction', async () => {
 		const h = await Harness.create();
-		h.mail = '';
-		await h.do('POST', '/v1/auth/email', { email: 'maya@example.test' });
-		const token = /token=([A-Za-z0-9_-]+)/.exec(h.mail)![1];
+		const { flow, code } = await askCode(h, 'maya@example.test');
 		await h.run((store) => store.db.run("CREATE TRIGGER no_sessions BEFORE INSERT ON sessions BEGIN SELECT RAISE(ABORT, 'sessions are down'); END"));
-		await expectStatus(await h.do('POST', '/v1/auth/verify', { token }, ...CSRF), 500);
-		// The failed session left the link unused and created no account.
+		await expectStatus(await verify(h, flow, code), 500);
+		// The failed session left the code usable and created no account.
 		expect(
-			await h.run((store) => [
-				store.db.get('SELECT used_at FROM magic_links'),
-				store.db.get<{ n: number }>('SELECT count(*) AS n FROM accounts')!.n
-			])
-		).toEqual([{ used_at: null }, 0]);
+			await h.run((store) => [store.db.get<{ n: number }>('SELECT count(*) AS n FROM auth_flows')!.n, store.db.get<{ n: number }>('SELECT count(*) AS n FROM accounts')!.n])
+		).toEqual([1, 0]);
 		await h.run((store) => store.db.run('DROP TRIGGER no_sessions'));
-		await expectStatus(await h.do('POST', '/v1/auth/verify', { token }, ...CSRF), 200);
-	});
-
-	it('limits links to 5 per email and 30 per address an hour, writing nothing when refused', async () => {
-		const h = await Harness.create();
-		for (let i = 0; i < 5; i++) await expectStatus(await h.do('POST', '/v1/auth/email', { email: 'maya@example.test' }), 202);
-		let res = await h.do('POST', '/v1/auth/email', { email: 'MAYA@example.test' });
-		await expectStatus(res, 429);
-		expect(await errorCode(res)).toBe('rate_limited');
-		expect(res.headers.get('Retry-After')).toBe('720');
-		expect(await h.run((store) => store.db.get<{ n: number }>('SELECT count(*) AS n FROM magic_links')!.n)).toBe(5);
-		// 12 minutes refill one link.
-		h.clock += 12 * MINUTE;
-		await expectStatus(await h.do('POST', '/v1/auth/email', { email: 'maya@example.test' }), 202);
-
-		// The address quota counts every email; another address has its own.
-		for (let i = 0; i < 29; i++) await expectStatus(await h.do('POST', '/v1/auth/email', { email: `user${i}@example.test` }), 202);
-		await expectStatus(await h.do('POST', '/v1/auth/email', { email: 'user99@example.test' }), 429);
-		await expectStatus(await h.do('POST', '/v1/auth/email', { email: 'user99@example.test' }, 'x-colander-ip-hash', 'elsewhere'), 202);
+		await expectStatus(await verify(h, flow, code), 200);
 	});
 
 	it('refuses bad bodies as Go decode() did', async () => {
@@ -222,30 +301,79 @@ describe('email sign-in', () => {
 			['{"email": "maya@example.test"} {}', 400, 'invalid_json'],
 			['', 400, 'invalid_json'],
 			['[]', 400, 'invalid_json'],
-			[{ email: 'maya@example.test', next: 'x'.repeat(5000) }, 413, 'too_large']
+			[{ email: 'maya@example.test', next: 'x'.repeat(9000) }, 413, 'too_large']
 		];
 		for (const [body, status, code] of cases) {
-			const res = await h.do('POST', '/v1/auth/email', body);
+			const res = await h.do('POST', '/v1/auth/code', body, ...CSRF);
 			await expectStatus(res, status);
 			expect(await errorCode(res)).toBe(code);
 		}
-		const res = await h.do('POST', '/v1/auth/email', { email: 'maya@example.test', remember: true });
-		expect(((await res.json()) as { error: { message: string } }).error.message).toBe('The request has a field this API does not accept: "remember".');
 		// Go matches field names regardless of case, and null keeps the zero value.
-		await expectStatus(await h.do('POST', '/v1/auth/email', { Email: 'maya@example.test', next: null }), 202);
+		await expectStatus(await h.do('POST', '/v1/auth/code', { Email: 'maya@example.test', next: null }, ...CSRF), 202);
 	});
 
-	it('logs out, clearing the session and the cookie, and sets Secure outside dev', async () => {
+	it('logs out, clearing the session and the cookie; outside dev cookies are __Host-, Secure and SameSite=Strict', async () => {
 		const h = await Harness.create();
 		const cookie = await h.signIn('maya@example.test');
-		const res = await h.do('POST', '/v1/auth/logout', undefined, 'Cookie', cookie, 'X-Colander-CSRF', '1');
+		const res = await h.do('POST', '/v1/auth/logout', undefined, 'Cookie', cookie, ...CSRF);
 		await expectStatus(res, 204);
-		expect(res.headers.get('Set-Cookie')).toBe('colander_session=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax');
+		expect(res.headers.get('Set-Cookie')).toBe('colander_session=; Path=/; Max-Age=0; HttpOnly; SameSite=Strict');
 		await expectStatus(await h.do('GET', '/v1/account', undefined, 'Cookie', cookie), 401);
 		expect(await h.run((store) => store.db.get<{ n: number }>('SELECT count(*) AS n FROM sessions')!.n)).toBe(0);
 
-		const cleared = await h.run((store) => new Auth(store.db, () => h.clock, false).signOut(new Request('https://getcolander.com/')));
-		expect(cleared).toBe('colander_session=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=Lax');
+		const prod = await h.run((store) => {
+			const auth = new Auth(store.db, () => h.clock, false);
+			return [auth.signOut(new Request('https://getcolander.com/')), auth.cookie(auth.names.flow, 'f', 600)];
+		});
+		expect(prod).toEqual(['__Host-colander_session=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=Strict', '__Host-colander_flow=f; Path=/; Max-Age=600; HttpOnly; Secure; SameSite=Strict']);
+	});
+
+	it('still finishes sign-in links mailed before codes shipped, within their 20 minutes', async () => {
+		const h = await Harness.create();
+		const link = newToken();
+		await h.run((store) =>
+			store.db.run(
+				'INSERT INTO magic_links (token_hash, email, next, created_at, expires_at) VALUES (?, ?, ?, ?, ?)',
+				link.hash,
+				'maya@example.test',
+				'/account',
+				h.s,
+				h.s + 1200
+			)
+		);
+		await expectStatus(await h.do('POST', '/v1/auth/verify', { token: link.raw }), 403);
+		const res = await h.do('POST', '/v1/auth/verify', { token: link.raw }, ...CSRF);
+		await expectStatus(res, 200);
+		expect(((await res.json()) as { account: { session: { method: string } } }).account.session.method).toBe('email');
+		expect(await errorCode(await h.do('POST', '/v1/auth/verify', { token: link.raw }, ...CSRF))).toBe('link_invalid');
+		// /v1/auth/email no longer sends links.
+		await expectStatus(await h.do('POST', '/v1/auth/email', { email: 'maya@example.test' }, ...CSRF), 404);
+	});
+
+	it('moves a session from before the migration to the __Host- cookie with the same token, and nothing else', async () => {
+		const h = await Harness.create();
+		const old = newToken();
+		const fresh = newToken();
+		await h.run((store) => {
+			const a = grantRole(store.db, 'maya@example.test', 'member', h.s, { host: 'job' });
+			createSession(store.db, { tokenHash: old.hash, accountId: a.id, method: 'email', now: h.s, expires: h.s + 3600 });
+			createSession(store.db, { tokenHash: fresh.hash, accountId: a.id, method: 'email', now: h.s, expires: h.s + 3600 });
+			store.db.run('UPDATE sessions SET legacy = 1 WHERE token_hash = ?', old.hash);
+			// Production names for this test: the dev Store reads colander_session itself.
+			(store as unknown as { auth: Auth }).auth = new Auth(store.db, () => h.clock, false);
+		});
+		const res = await h.do('GET', '/v1/account', undefined, 'Cookie', `colander_session=${old.raw}`);
+		await expectStatus(res, 200);
+		expect(res.headers.getSetCookie()).toEqual([
+			`__Host-colander_session=${old.raw}; Path=/; Max-Age=3600; HttpOnly; Secure; SameSite=Strict`,
+			'colander_session=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=Lax'
+		]);
+		// A session created after the migration is never read under the old name, which any subdomain could set.
+		await expectStatus(await h.do('GET', '/v1/account', undefined, 'Cookie', `colander_session=${fresh.raw}`), 401);
+		// Nor is the old name read when a __Host- cookie came along.
+		const both = await h.do('GET', '/v1/account', undefined, 'Cookie', `colander_session=${old.raw}; __Host-colander_session=${fresh.raw}`);
+		await expectStatus(both, 200);
+		expect(both.headers.getSetCookie()).toEqual([]);
 	});
 });
 
@@ -257,15 +385,15 @@ describe('account', () => {
 		await expectStatus(res, 403);
 		expect(await errorCode(res)).toBe('csrf_required');
 		await expectStatus(await h.do('POST', '/v1/auth/logout', undefined, 'Cookie', cookie), 403);
-		res = await h.do('PATCH', '/v1/account', { display_name: 'Sam' }, 'Cookie', cookie, 'X-Colander-CSRF', '1');
+		res = await h.do('PATCH', '/v1/account', { display_name: 'Sam' }, 'Cookie', cookie, ...CSRF);
 		await expectStatus(res, 200);
-		await expectStatus(await h.do('POST', '/v1/auth/logout', undefined, 'Cookie', cookie, 'X-Colander-CSRF', '1'), 204);
+		await expectStatus(await h.do('POST', '/v1/auth/logout', undefined, 'Cookie', cookie, ...CSRF), 204);
 		await expectStatus(await h.do('GET', '/v1/account', undefined, 'Cookie', cookie), 401);
 	});
 
 	it('sets and clears the display name, one line of at most 60 characters', async () => {
 		const h = await Harness.create();
-		const auth = ['Cookie', await h.signIn('sam@colander.test'), 'X-Colander-CSRF', '1'];
+		const auth = ['Cookie', await h.signIn('sam@colander.test'), ...CSRF];
 		const name = async (body: unknown) => {
 			const res = await h.do('PATCH', '/v1/account', body, ...auth);
 			return res.status === 200 ? ((await res.json()) as { account: { display_name: string | null } }).account.display_name : await errorCode(res);
@@ -279,28 +407,9 @@ describe('account', () => {
 		expect(await h.run((store) => store.db.get('SELECT display_name FROM accounts'))).toEqual({ display_name: null });
 	});
 
-	it('gives curators and staff a reviewer token that replaces the earlier one', async () => {
+	it('ignores the product cookie on the admin host', async () => {
 		const h = await Harness.create();
-		const member = await h.signIn('maya@example.test');
-		let res = await h.do('POST', '/v1/account/reviewer-token', undefined, 'Cookie', member, 'X-Colander-CSRF', '1');
-		await expectStatus(res, 403);
-		expect(await errorCode(res)).toBe('forbidden');
-
-		await h.run((store) => {
-			const a = grantRole(store.db, 'sam@colander.test', 'curator', h.s);
-			setDisplayName(store.db, a.id, 'Sam');
-		});
-		const curator = await h.signIn('sam@colander.test');
-		const issue = async () => {
-			const r = await h.do('POST', '/v1/account/reviewer-token', undefined, 'Cookie', curator, 'X-Colander-CSRF', '1');
-			await expectStatus(r, 200);
-			return ((await r.json()) as { token: string }).token;
-		};
-		const first = await issue();
-		expect(await h.run((store) => store.auth.reviewerAccount(first)?.email)).toBe('sam@colander.test');
-		const second = await issue();
-		expect(await h.run((store) => [store.auth.reviewerAccount(first), store.auth.reviewerAccount(second)?.displayName])).toEqual([undefined, 'Sam']);
-		// Only the hash is stored.
-		expect(await h.run((store) => store.db.get('SELECT token_hash FROM reviewer_tokens'))).toEqual({ token_hash: hashToken(second) });
+		const cookie = await h.signIn('maya@example.test');
+		await expectStatus(await h.do('GET', '/v1/account', undefined, 'Cookie', cookie, 'x-colander-host', 'admin'), 401);
 	});
 });

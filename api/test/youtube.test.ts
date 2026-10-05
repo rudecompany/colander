@@ -7,12 +7,11 @@ import { runInDurableObject } from 'cloudflare:test';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Appeal } from '@colander/shared/api';
 import { API_DATA_TABLES, dumpLines } from '../src/backup';
-import { IP_HASH_HEADER } from '../src/http';
-import { CookieName, newToken } from '../src/auth';
+import { ACCESS_EMAIL_HEADER, HOST_HEADER, IP_HASH_HEADER } from '../src/http';
 import { prune } from '../src/jobs';
 import { rfc3339 } from '../src/routes/respond';
 import { unix } from '../src/scoring/engine';
-import { createSession, grantRole } from '../src/store/accounts';
+import { grantRole } from '../src/store/accounts';
 import { youTubeQuotaUsed } from '../src/store/misc';
 import { ensureSource, findSource, getSource, setYouTube, sourceRefs } from '../src/store/sources';
 import type { Store } from '../src/store/store';
@@ -329,10 +328,8 @@ describe('appeal verification through the Data API', () => {
 			const description = { text: 'History videos every hour.' };
 			fakeAPI(NOW, description);
 			store.engine.youtube = client(store);
-			const staff = grantRole(store.db, 'rae@colander.test', 'staff', unix(NOW));
-			const { raw, hash } = newToken();
-			createSession(store.db, hash, staff.id, unix(NOW), unix(NOW) + 3600);
-			const review = { Cookie: `${CookieName}=${raw}`, 'X-Colander-CSRF': '1' };
+			const staff = grantRole(store.db, 'rae@colander.test', 'staff', unix(NOW), { host: 'job' });
+			const review = { [HOST_HEADER]: 'admin', [ACCESS_EMAIL_HEADER]: staff.email, 'X-Colander-CSRF': '1', 'Sec-Fetch-Site': 'same-origin' };
 			const decided = await post(store, `/v1/review/sources/yt/${CHANNEL}/decision`, { verdict: 'slop', reason: 'Generated.', signals: ['watermark'] }, review);
 			expect(decided.status).toBe(200);
 
@@ -370,10 +367,8 @@ describe('appeal verification through the Data API', () => {
 		withStore(async (store) => {
 			const api = fakeAPI(NOW, { text: 'History videos every hour.' });
 			store.engine.youtube = client(store);
-			const staff = grantRole(store.db, 'rae@colander.test', 'staff', unix(NOW));
-			const { raw, hash } = newToken();
-			createSession(store.db, hash, staff.id, unix(NOW), unix(NOW) + 3600);
-			const review = { Cookie: `${CookieName}=${raw}`, 'X-Colander-CSRF': '1' };
+			const staff = grantRole(store.db, 'rae@colander.test', 'staff', unix(NOW), { host: 'job' });
+			const review = { [HOST_HEADER]: 'admin', [ACCESS_EMAIL_HEADER]: staff.email, 'X-Colander-CSRF': '1', 'Sec-Fetch-Site': 'same-origin' };
 			expect((await post(store, `/v1/review/sources/yt/${CHANNEL}/decision`, { verdict: 'slop', reason: 'Generated.', signals: ['watermark'] }, review)).status).toBe(200);
 			// Each appeal is filed from its own address; every check comes from 192.0.2.1.
 			const file = async (n: number) => {

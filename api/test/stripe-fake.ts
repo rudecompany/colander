@@ -35,6 +35,8 @@ export class StripeFake {
 	private payments = new Map<string, Obj[]>();
 	/** refunded PaymentIntents */
 	private refunds = new Set<string>();
+	/** deleted customers */
+	readonly deletedCustomers = new Set<string>();
 
 	/** The fetch the Billing service calls. */
 	readonly fetch: typeof fetch = async (input, init) => {
@@ -72,7 +74,8 @@ export class StripeFake {
 				cancel_url: form.get('cancel_url') ?? '',
 				metadata: nested(form, 'metadata'),
 				payment_status: 'unpaid',
-				status: 'open'
+				status: 'open',
+				created: this.now()
 			};
 			this.sessions.set(id, { ...s, form });
 			return Response.json(s);
@@ -86,6 +89,18 @@ export class StripeFake {
 				sub.ended_at = this.now();
 			}
 			return Response.json(sub);
+		}
+		if (method === 'GET' && p.startsWith('/v1/checkout/sessions/')) {
+			const s = this.sessions.get(p.slice('/v1/checkout/sessions/'.length));
+			if (!s) return notFound('checkout session');
+			const { form: _, ...clean } = s;
+			return Response.json(clean);
+		}
+		if (method === 'DELETE' && p.startsWith('/v1/customers/')) {
+			const id = p.slice('/v1/customers/'.length);
+			if (this.deletedCustomers.has(id)) return notFound('customer');
+			this.deletedCustomers.add(id);
+			return Response.json({ id, object: 'customer', deleted: true });
 		}
 		if (method === 'GET' && p === '/v1/invoice_payments') {
 			return Response.json({ object: 'list', data: this.payments.get(form.get('invoice') ?? '') ?? null, has_more: false });

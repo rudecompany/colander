@@ -16,6 +16,7 @@ import { log } from '../src/store/verdicts';
 import { findSource, getSource, sourceRefs } from '../src/store/sources';
 import { SNAPSHOT_KEY } from '../src/store/list';
 import type { Store } from '../src/store/store';
+import { opsAuth } from './tokens';
 
 const files = inject('contract');
 const keys = await importKeys([files.devPublicKey]);
@@ -27,13 +28,13 @@ let client = 0;
 let edgeCache: CacheContext | undefined;
 const IncomingRequest = Request<unknown, IncomingRequestCfProperties>;
 
-/** POST /ops/<command> through the edge's fetch handler with the test OPS_TOKEN. */
+/** POST /ops/<command> through the edge's fetch handler with a GitHub OIDC token from the Ops workflow on main. */
 async function op(command: string, body: unknown = {}, init: RequestInit = {}): Promise<{ status: number; body: any }> {
 	const request = new IncomingRequest(`https://getcolander.com/ops/${command}`, {
 		method: 'POST',
 		body: typeof body === 'string' ? body : JSON.stringify(body),
 		...init,
-		headers: { Authorization: 'Bearer test-ops-token', 'Content-Type': 'application/json', 'CF-Connecting-IP': `198.51.100.${++client % 250}`, ...init.headers }
+		headers: { ...(await opsAuth()), 'Content-Type': 'application/json', 'CF-Connecting-IP': `198.51.100.${++client % 250}`, ...init.headers }
 	} as RequestInit<IncomingRequestCfProperties>);
 	const res = await worker.fetch(request, env, { waitUntil: () => {}, passThroughOnException: () => {}, cache: edgeCache } as unknown as ExecutionContext);
 	expect(res.headers.get('Content-Type')).toBe('application/json');
@@ -122,15 +123,40 @@ describe('status', () => {
 });
 
 describe('grant-role', () => {
-	it('sets a role on a normalized email, creating the account', async () => {
+	beforeEach(() => runInDurableObject(primary(), (store: Store) => store.db.run("DELETE FROM accounts")));
+
+	it('sets a role on a normalized email, creating the account, and audits it with the GitHub run', async () => {
 		const res = await op('grant-role', { email: '  Sam@Example.COM ', role: 'curator' });
 		expect(res.status).toBe(200);
 		expect(res.body.account).toMatchObject({ email: 'sam@example.com', role: 'curator', display_name: null });
 		expect(res.body.account.id).toMatch(/^acc_[a-z2-9]{16}$/);
 		expect(res.body.account.created_at).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/);
-		expect(res.body.message).toBe(`sam@example.com (${res.body.account.id}) is now curator.`);
+		expect(res.body.message).toBe(`sam@example.com (${res.body.account.id}) is now curator. It needs a passkey invite from the admin host before it can review.`);
 		const again = await op('grant-role', { email: 'sam@example.com', role: 'staff' });
 		expect(again.body.account).toMatchObject({ id: res.body.account.id, role: 'staff' });
+		const audited = await runInDurableObject(primary(), (store: Store) =>
+			store.db.all("SELECT action, host, actor_sub, request_id, reason, target, after FROM audit_log WHERE target = ? OR action LIKE 'ops:%' ORDER BY id DESC LIMIT 2", res.body.account.id)
+		);
+		expect(audited).toEqual([
+			{ action: 'role_changed', host: 'ops', actor_sub: 'github:slantview', request_id: '4242', reason: null, target: res.body.account.id, after: 'staff' },
+			{ action: 'ops:grant-role', host: 'ops', actor_sub: 'github:slantview', request_id: '4242', reason: '.github/workflows/ops.yml', target: null, after: null }
+		]);
+	});
+
+	it('grants staff and admin only while no account is admin, then moves only members and curators', async () => {
+		expect((await op('grant-role', { email: 'owner@example.com', role: 'admin' })).status).toBe(200);
+		for (const [args, status] of [
+			[{ email: 'new@example.com', role: 'staff' }, 403],
+			[{ email: 'new@example.com', role: 'admin' }, 403],
+			// No ops run can demote the admin, or the last admin would be gone.
+			[{ email: 'owner@example.com', role: 'member' }, 403],
+			[{ email: 'new@example.com', role: 'curator' }, 200],
+			[{ email: 'new@example.com', role: 'member' }, 200]
+		] as const) {
+			const res = await op('grant-role', args);
+			expect(res.status, JSON.stringify(args)).toBe(status);
+			if (status === 403) expect(res.body.error.code).toBe('admin_exists');
+		}
 	});
 
 	it("trims as Go's strings.TrimSpace did: U+0085 is space, a byte order mark is not", async () => {
@@ -142,7 +168,7 @@ describe('grant-role', () => {
 		[{ email: 'Sam <sam@example.com>', role: 'staff' }, 'invalid_email', '"Sam <sam@example.com>" is not an email address.'],
 		[{ email: 'not-an-email', role: 'staff' }, 'invalid_email', '"not-an-email" is not an email address.'],
 		[{ role: 'staff' }, 'invalid_email', '"" is not an email address.'],
-		[{ email: 'sam@example.com', role: 'admin' }, 'invalid_role', 'role must be member, curator or staff, not "admin".']
+		[{ email: 'sam@example.com', role: 'owner' }, 'invalid_role', 'role must be member, curator, staff or admin, not "owner".']
 	])('refuses %j', async (args, code, message) => {
 		const res = await op('grant-role', args);
 		expect(res.status).toBe(400);

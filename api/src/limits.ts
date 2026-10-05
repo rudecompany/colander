@@ -19,8 +19,18 @@ export const LIMITERS = {
 	appeal_verify_ip: { n: 30, per: HOUR },
 	/** a trial lets an install store synced settings without signing in */
 	trial_ip: { n: 5, per: DAY },
+	/** sign-in codes sent to one address: 5 an hour and 10 a day (contracts 6.6) */
 	auth_email: { n: 5, per: HOUR },
+	auth_email_day: { n: 10, per: DAY },
 	auth_email_ip: { n: 30, per: HOUR },
+	/** code tries per IP */
+	auth_verify_ip: { n: 30, per: HOUR },
+	/** wrong codes for one address across all its codes; when they run out, auth_lock is taken */
+	auth_fail: { n: 10, per: DAY },
+	/** one token that refills in exactly 24 hours: taken, code sign-in is off for the address that long */
+	auth_lock: { n: 1, per: DAY },
+	/** passkey challenges started without a session, per IP */
+	passkey_options_ip: { n: 60, per: HOUR },
 	donate: { n: 10, per: HOUR }
 } as const;
 
@@ -54,6 +64,13 @@ export function allow(db: Db, now: number, key: string, n: number, ...limiters: 
 		}
 		return 0;
 	});
+}
+
+/** Whether one token of limiter is left for key, without taking it. now is unix milliseconds. */
+export function available(db: Db, now: number, key: string, limiter: Limiter): boolean {
+	const { n: burst, per } = LIMITERS[limiter];
+	const row = db.get<{ tokens: number; at: number }>('SELECT tokens, at FROM limits WHERE name = ? AND key = ?', limiter, key);
+	return !row || Math.min(burst, row.tokens + (now - row.at) * (burst / per)) >= 1;
 }
 
 /** Drops buckets that have refilled completely: they hold no state worth keeping. */

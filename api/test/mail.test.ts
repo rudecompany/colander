@@ -2,7 +2,7 @@
 // Resend: the Email Sending binding first, Resend on any error, and dev mode printing instead.
 import { env } from 'cloudflare:workers';
 import { describe, expect, it } from 'vitest';
-import { appeal, Mailer, plusCancelled, plusRefunded, signIn } from '../src/mail';
+import { appeal, Mailer, plusCancelled, plusRefunded, signInCode } from '../src/mail';
 
 interface Sent {
 	auth: string | null;
@@ -39,7 +39,7 @@ function mailer(opts: { dev?: boolean; key?: string; binding?: (m: EmailMessageB
 const failing = () => Promise.reject(Object.assign(new Error('sender not verified'), { code: 'E_SENDER_NOT_VERIFIED' }));
 
 describe('Mailer', () => {
-	const [subject, body] = signIn('https://colander.test/auth/callback?token=t');
+	const [subject, body] = signInCode('012345');
 
 	it('sends through the Email Sending binding first', async () => {
 		const { m, binding, resend } = mailer({ key: 're_test' });
@@ -55,7 +55,7 @@ describe('Mailer', () => {
 		expect(resend).toEqual([
 			{ auth: 'Bearer re_test', body: { from: 'Colander <hello@colander.test>', to: ['maya@example.test'], subject, text: body } }
 		]);
-		expect((resend[0]!.body.text as string).includes('token=t')).toBe(true);
+		expect((resend[0]!.body.text as string).includes('    012345\n')).toBe(true);
 	});
 
 	it('fails when the binding fails and Resend is not configured or refuses', async () => {
@@ -72,7 +72,7 @@ describe('Mailer', () => {
 		expect(resend).toEqual([]);
 		// Go's block; console.log adds the final newline.
 		expect(printed).toEqual([`\n==== Colander dev mail (not sent) ====\nTo: maya@example.test\nSubject: ${subject}\n\n${body}\n======================================\n`]);
-		expect(printed[0]).toContain('token=t');
+		expect(printed[0]).toContain('    012345\n');
 		expect(printed[0]).toContain('not sent');
 	});
 
@@ -83,10 +83,11 @@ describe('Mailer', () => {
 });
 
 describe('templates', () => {
-	it('words the sign-in, appeal and Plus emails as Go did', () => {
-		expect(signIn('L')).toEqual([
-			'Your Colander sign-in link',
-			'Here is your link to sign in to Colander:\n\nL\n\nIt works once and expires in 20 minutes.\nIf you did not ask to sign in, you can ignore this email.\n\nColander'
+	it('words the sign-in, appeal and Plus emails plainly', () => {
+		expect(signInCode('012345')).toEqual([
+			'012345 is your Colander sign-in code',
+			'Here is your code to sign in to Colander:\n\n    012345\n\nEnter it on the page where you asked for it. It works once and expires in 10 minutes.\n' +
+				'Colander never asks for this code by phone, chat or email. If you did not ask to sign in, you can ignore this email.\n\nColander'
 		]);
 		const [as, ab] = appeal('Some Channel', 'channel', 'colander-7KQ2M9XD', 'L');
 		expect(as).toBe('Your Colander appeal for Some Channel');

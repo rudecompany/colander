@@ -184,6 +184,6 @@ describe('/__dev/dump', () => {
 		expect(res.status).toBe(200);
 		expect(res.headers.get('Content-Type')).toBe('application/sql; charset=utf-8');
 		// application/sql is not a type workerd reads as text, so decode the bytes.
-		expect(new TextDecoder().decode(await res.arrayBuffer())).toMatch(/^-- Colander Store dump, schema version 5, taken .*\nCOMMIT;\n$/s);
+		expect(new TextDecoder().decode(await res.arrayBuffer())).toMatch(/^-- Colander Store dump, schema version \d+, taken .*\nCOMMIT;\n$/s);
 	});
 });

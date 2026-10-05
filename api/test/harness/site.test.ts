@@ -12,7 +12,7 @@ const server = createTestHarness({
 		{
 			configPath: new URL('../../wrangler.jsonc', import.meta.url),
 			// Production-like: no dev routes. Secrets override a developer's api/.dev.vars.
-			secrets: { COLANDER_SIGNING_KEY: process.env.COLANDER_SIGNING_KEY!, IP_SALT: 'harness-salt', OPS_TOKEN: 'harness-ops-token', COLANDER_DEV: '' }
+			secrets: { COLANDER_SIGNING_KEY: process.env.COLANDER_SIGNING_KEY!, IP_SALT: 'harness-salt', COLANDER_DEV: '' }
 		}
 	]
 });
@@ -97,6 +97,14 @@ describe('Worker routes', () => {
 		expect(res.headers.get('x-colander-sequence')).toBe('42');
 		expect(res.headers.get('cache-control')).toBe('public, max-age=60');
 		expect(Buffer.from(await res.arrayBuffer()).equals(bytes)).toBe(true);
+	});
+
+	it('sends /admin to the admin host and has no admin API here', async () => {
+		const res = await server.fetch('/admin/people', { redirect: 'manual' });
+		expect(res.status).toBe(302);
+		expect(res.headers.get('location')).toBe('https://admin.getcolander.com/admin/people');
+		expect((await server.fetch('/v1/admin/me')).status).toBe(404);
+		expect((await server.fetch('/ops/status', { method: 'POST', headers: { Authorization: 'Bearer harness-ops-token' }, body: '{}' })).status).toBe(401);
 	});
 
 	it('has no dev routes outside dev mode', async () => {

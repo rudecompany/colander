@@ -13,12 +13,13 @@ import { b64decode } from '@colander/shared/bytes';
 import { sha256 } from '@colander/shared/sha256';
 import { utf8 } from '@colander/shared/bytes';
 import type { Appeal, LogEntry, QueueItem, Report, ReviewSourceResponse, Source, Stats } from '@colander/shared/api';
-import { IP_HASH_HEADER } from '../src/http';
-import { CookieName, hashInstall, hashToken, newToken, normalizeEmail } from '../src/auth';
+import { ACCESS_EMAIL_HEADER, HOST_HEADER, IP_HASH_HEADER } from '../src/http';
+import { hashInstall, hashToken, newToken, normalizeEmail } from '../src/auth';
+import { rank } from '../src/permissions';
 import { canonicalSource } from '../src/routes/ids';
 import { decode, goFixed, goQuote, parseRFC3339 } from '../src/routes/respond';
 import { unix } from '../src/scoring/engine';
-import { createSession, grantRole, setDisplayName, setReviewerToken } from '../src/store/accounts';
+import { addPasskey, createSession, grantRole, setDisplayName, setReviewerToken } from '../src/store/accounts';
 import { saveSubscription } from '../src/store/billing';
 import { latestSequence, setListRequests, SNAPSHOT_KEY } from '../src/store/list';
 import { saveAdapterConfig } from '../src/store/misc';
@@ -55,6 +56,7 @@ class Harness {
 	do(method: string, path: string, body?: unknown, headers: Record<string, string> = {}): Promise<Response> {
 		const h = new Headers(headers);
 		if (!h.has(IP_HASH_HEADER)) h.set(IP_HASH_HEADER, 'hash-of-192.0.2.1');
+		if (!h.has('Sec-Fetch-Site')) h.set('Sec-Fetch-Site', 'same-origin');
 		return this.store.fetch(
 			new Request(ORIGIN + path, { method, headers: h, body: body === undefined ? undefined : typeof body === 'string' ? body : JSON.stringify(body) })
 		);
@@ -67,29 +69,38 @@ class Harness {
 
 	/** A session for email, as the magic link flow leaves one: the Cookie header. */
 	signIn(email: string): string {
-		const account = grantRole(this.db, email, 'member', unix(this.clock));
+		const account = grantRole(this.db, email, 'member', unix(this.clock), { host: 'job' });
 		return this.session(account.id);
 	}
 
-	session(accountId: string): string {
+	/** A session cookie for the account; with passkey, a session that signed in with a passkey just now. */
+	session(accountId: string, passkey = false): string {
 		const { raw, hash } = newToken();
-		createSession(this.db, hash, accountId, unix(this.clock), unix(this.clock + 30 * DAY));
-		return `${CookieName}=${raw}`;
+		const now = unix(this.clock);
+		const passkeyId = passkey
+			? addPasskey(this.db, { accountId, credentialId: 'cred-' + raw.slice(0, 12), publicKey: new Uint8Array([1]), signCount: 0, transports: [], backedUp: false, name: '' }, now)
+			: '';
+		createSession(this.db, { tokenHash: hash, accountId, method: passkey ? 'passkey' : 'email', passkeyId, now, expires: unix(this.clock + 30 * DAY) });
+		return `colander_session=${raw}`;
 	}
 
-	/** Signs in a curator or staff member; the headers a review console write sends. */
+	/**
+	 * Signs in a reviewer; the headers a review console write sends. Staff and admins work on the
+	 * admin host, as the edge forwards Access there; curators on the main host with a passkey session.
+	 */
 	reviewer(email: string, role: string, name: string): Record<string, string> {
-		const account = grantRole(this.db, email, role, unix(this.clock));
+		const account = grantRole(this.db, email, role, unix(this.clock), { host: 'job' });
 		setDisplayName(this.db, account.id, name);
-		return { Cookie: this.session(account.id), 'X-Colander-CSRF': '1' };
+		if (rank(role) >= rank('staff')) return { [HOST_HEADER]: 'admin', [ACCESS_EMAIL_HEADER]: account.email, 'X-Colander-CSRF': '1' };
+		return { Cookie: this.session(account.id, true), 'X-Colander-CSRF': '1' };
 	}
 
-	/** A reviewer bearer token, as POST /v1/account/reviewer-token issues one. */
+	/** A reviewer bearer token, as POST /v1/account/reviewer-token issues one: curator authority for 7 days. */
 	bearer(email: string, role: string, name: string): Record<string, string> {
-		const account = grantRole(this.db, email, role, unix(this.clock));
+		const account = grantRole(this.db, email, role, unix(this.clock), { host: 'job' });
 		setDisplayName(this.db, account.id, name);
-		const { raw, hash } = newToken();
-		setReviewerToken(this.db, account.id, hash, unix(this.clock));
+		const { raw, hash } = newToken('colander_rt_');
+		setReviewerToken(this.db, account.id, hash, unix(this.clock), unix(this.clock) + 7 * 86_400);
 		return { Authorization: 'Bearer ' + raw };
 	}
 }
@@ -671,7 +682,7 @@ describe('review', () => {
 
 			const decision = { verdict: 'slop', reason: 'Generated gossip narration.', signals: ['watermark'] };
 			const large = await expectStatus(h.do('POST', '/v1/review/sources/yt/@gossipnarrated/decision', decision, bearer), 403);
-			expect(await large.json()).toEqual({ error: { code: 'staff_required', message: 'Large sources need staff review.' } });
+			expect(await large.json()).toEqual({ error: { code: 'staff_required', message: 'Large sources need staff review. Staff decide them in the admin console.' } });
 			// Slop needs AI evidence: without a provenance signal or met provenance layer it is refused.
 			for (const v of ['slop', 'likely_slop']) {
 				const w = await expectStatus(h.do('POST', '/v1/review/sources/yt/@smallslopfarm/decision', { verdict: v, reason: 'Looks generated.' }, bearer), 400);
@@ -688,7 +699,7 @@ describe('review', () => {
 			let w = await expectStatus(h.do('POST', '/v1/appeals', { platform: 'yt', source_id: '@smallslopfarm', email: 'a@example.test', statement: 'Not slop.' }), 201);
 			const id = ((await w.json()) as { appeal: Appeal }).appeal.id;
 			w = await expectStatus(h.do('POST', `/v1/review/appeals/${id}/verify`, undefined, bearer), 403);
-			expect(await w.json()).toEqual({ error: { code: 'staff_required', message: 'Appeals need staff review.' } });
+			expect(await w.json()).toEqual({ error: { code: 'staff_required', message: 'Appeals need staff review. Staff decide them in the admin console.' } });
 			await expectStatus(h.do('POST', `/v1/review/appeals/${id}/resolve`, { outcome: 'denied', reasoning: 'x' }, bearer), 403);
 
 			// An appeal awaiting verification is unproven, so curators may still decide. Once the creator
@@ -699,7 +710,9 @@ describe('review', () => {
 			const appeal = (await w.json()) as { appeal: Appeal; secret: string };
 			await expectStatus(h.do('POST', `/v1/appeals/${appeal.appeal.id}/verify`, { secret: appeal.secret }), 200);
 			w = await expectStatus(h.do('POST', '/v1/review/sources/yt/@smallslopfarm/decision', clear, bearer), 403);
-			expect(await w.json()).toEqual({ error: { code: 'staff_required', message: 'Sources with an open appeal need staff review.' } });
+			expect(await w.json()).toEqual({
+				error: { code: 'staff_required', message: 'Sources with an open appeal need staff review. Staff decide them in the admin console.' }
+			});
 			const staff = h.reviewer('rae@colander.test', 'staff', 'Rae');
 			await expectStatus(h.do('POST', `/v1/review/appeals/${appeal.appeal.id}/verify`, undefined, staff), 200);
 			await expectStatus(h.do('POST', '/v1/review/sources/yt/@smallslopfarm/decision', clear, bearer), 403);
@@ -708,17 +721,23 @@ describe('review', () => {
 			expect(await code(await expectStatus(h.do('POST', `/v1/review/appeals/${appeal.appeal.id}/verify`, undefined, staff), 409))).toBe('appeal_state');
 		}));
 
-	it('requires the CSRF header on cookie writes, never on bearer ones', () =>
+	it('requires the CSRF header on cookie and Access writes, never on bearer ones, and a fresh passkey session on the main host', () =>
 		withHarness(async (h) => {
-			const staff = h.reviewer('rae@colander.test', 'staff', 'Rae');
+			const curator = h.reviewer('sam@colander.test', 'curator', 'Sam');
 			const body = { verdict: 'clear', reason: 'Original.' };
-			const w = await expectStatus(h.do('POST', '/v1/review/sources/yt/@chan/decision', body, { Cookie: staff.Cookie! }), 403);
+			const w = await expectStatus(h.do('POST', '/v1/review/sources/yt/@chan/decision', body, { Cookie: curator.Cookie! }), 403);
 			expect(await code(w)).toBe('csrf_required');
-			await expectStatus(h.do('GET', '/v1/review/queue', undefined, { Cookie: staff.Cookie! }), 200);
-			await expectStatus(h.do('POST', '/v1/review/sources/yt/@chan/decision', body, staff), 200);
+			await expectStatus(h.do('GET', '/v1/review/queue', undefined, { Cookie: curator.Cookie! }), 200);
+			await expectStatus(h.do('POST', '/v1/review/sources/yt/@chan/decision', body, curator), 200);
+			// The admin host wants the header too.
+			const { 'X-Colander-CSRF': _, ...staffNoCsrf } = h.reviewer('rae@colander.test', 'staff', 'Rae');
+			expect(await code(await expectStatus(h.do('POST', '/v1/review/sources/yt/@chan/decision', body, staffNoCsrf), 403))).toBe('csrf_required');
+			// A passkey sign-in older than 12 hours asks for the passkey again.
+			h.clock += 12 * 3_600_000 + 1000;
+			expect(await code(await expectStatus(h.do('GET', '/v1/review/queue', undefined, { Cookie: curator.Cookie! }), 403))).toBe('passkey_required');
 			// An expired session is signed out.
 			h.clock += 31 * DAY;
-			expect(await code(await expectStatus(h.do('GET', '/v1/review/queue', undefined, { Cookie: staff.Cookie! }), 401))).toBe('signed_out');
+			expect(await code(await expectStatus(h.do('GET', '/v1/review/queue', undefined, { Cookie: curator.Cookie! }), 401))).toBe('signed_out');
 		}));
 
 	it('keeps a pending_manual appeal in the queue and escalates it after 14 days (TestPendingManualAppealInQueue)', () =>
@@ -752,7 +771,7 @@ describe('review', () => {
 			h.clock += 40 * DAY;
 			await h.store.engine.fullPass(h.clock);
 			const staff = h.reviewer('rae@colander.test', 'staff', 'Rae');
-			const items = ((await (await expectStatus(h.do('GET', '/v1/review/queue?kind=escalations', undefined, { Cookie: staff.Cookie! }), 200)).json()) as {
+			const items = ((await (await expectStatus(h.do('GET', '/v1/review/queue?kind=escalations', undefined, staff), 200)).json()) as {
 				items: QueueItem[];
 			}).items;
 			expect(items).toHaveLength(1);
@@ -924,7 +943,7 @@ describe('trial and sync', () => {
 
 	it('stops a paid token as soon as its plan ends', () =>
 		withHarness(async (h) => {
-			const account = grantRole(h.db, 'maya@example.test', 'member', unix(h.clock));
+			const account = grantRole(h.db, 'maya@example.test', 'member', unix(h.clock), { host: 'job' });
 			const now = unix(h.clock);
 			const sub = { id: 'sub_1', accountId: account.id, customerId: 'cus_1', status: 'active', interval: 'month', periodStart: now - 86400, periodEnd: now + 29 * 86400, ending: false, startDate: now - 86400 };
 			saveSubscription(h.db, sub, now);

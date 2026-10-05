@@ -1,12 +1,16 @@
-// The edge Worker on getcolander.com (hosting plan sections 2 and 4). Workers Static Assets serves
-// the website; this code runs only for /v1/*, /ops/*, /healthz, /__dev/* and the two SPA shell
-// paths, and only on cache misses. It answers preflights, checks `since` and the query of the other cached GETs,
+// The edge Worker on getcolander.com and the admin host (hosting plan sections 2 and 4; contracts
+// 6.1 and 6.9). Workers Static Assets serves the website; this code runs only for /v1/*, /ops/*,
+// /healthz, /__dev/*, the admin pages, the home page and the two SPA shell paths, and only on
+// cache misses. It answers preflights, checks `since` and the query of the other cached GETs,
 // rate-limits misses per salted IP hash, serves snapshot misses from R2 (from the Store while R2
-// has none or fails) and forwards the rest of /v1 to the Store. The cron triggers run
-// src/scheduled.ts.
+// has none or fails), verifies Cloudflare Access on the admin host and GitHub OIDC on the ops
+// channel, and forwards the rest of /v1 to the Store with the headers it trusts (storeHeaders).
+// The cron triggers run src/scheduled.ts.
+import { adminHostname, adminOrigin, devAccessToken, devLocal, verifyAccess, type AccessIdentity } from './access';
+import { normalizeEmail } from './auth';
 import { testNow } from './dev';
-import { finish, IP_HASH_HEADER, ipKey, isCorsPath, json, jsonError, notFound, preflight, ROUTE_HEADER, setCache, tooMany } from './http';
-import { ops as runOps } from './ops';
+import { finish, ipKey, isCorsPath, json, jsonError, notFound, preflight, ROUTE_HEADER, setCache, storeHeaders, tooMany } from './http';
+import { opsCaller, ops as runOps } from './ops';
 import { scheduled } from './scheduled';
 import { SNAPSHOT_KEY } from './store/list';
 import { primary } from './store/store';
@@ -14,9 +18,6 @@ import { primary } from './store/store';
 // Only the handler and the Durable Object class are exported: named exports of the main module
 // are Worker entrypoints.
 export { Store } from './store/store';
-
-// Requests to these never reach the Store with the client's address.
-const CLIENT_ADDRESS_HEADERS = ['cf-connecting-ip', 'x-forwarded-for', 'x-real-ip', 'true-client-ip', 'cf-connecting-ipv6'];
 
 interface Handled {
 	/** The route pattern, the only part of a request that is ever logged (contract 8). */
@@ -29,19 +30,72 @@ export default {
 	async fetch(request, env, ctx): Promise<Response> {
 		const started = Date.now();
 		const url = new URL(request.url);
+		const admin = isAdminHost(url, env);
 		let handled: Handled;
 		try {
-			handled = await handle(request, url, env, ctx);
+			handled = admin ? await handleAdmin(request, url, env) : await handle(request, url, env, ctx);
 		} catch (err) {
 			const route = `${request.method} (error)`;
 			console.error(JSON.stringify({ message: 'internal error', route, error: String(err) }));
 			handled = { route, res: jsonError(500, 'internal', 'Something went wrong on our side. Please try again.') };
 		}
-		const res = finish(handled.res, request.method, url.pathname);
-		console.log(JSON.stringify({ route: handled.route, status: res.status, ms: Date.now() - started }));
+		const res = finish(handled.res, request.method, url.pathname, admin);
+		console.log(JSON.stringify({ route: handled.route, host: admin ? 'admin' : 'main', status: res.status, ms: Date.now() - started }));
 		return res;
 	}
 } satisfies ExportedHandler<Env>;
+
+/** Whether the request came to the admin host. */
+function isAdminHost(url: URL, env: Env): boolean {
+	const host = adminHostname(env);
+	return host !== '' && url.hostname.toLowerCase() === host;
+}
+
+/**
+ * The admin host: Access in front, A3T Identity behind it. Every request that reaches the Worker
+ * needs a valid Access token, static pages included; only the admin and review APIs exist here,
+ * without CORS, and the home page is the admin console. Dev mode's Access stub is the one
+ * exception, and only on admin.localhost.
+ */
+async function handleAdmin(request: Request, url: URL, env: Env): Promise<Handled> {
+	const path = url.pathname;
+	const method = request.method;
+	if (path === '/__dev/access') return { route: `${method} /__dev/access`, res: await devAccess(request, env) };
+	const access = await verifyAccess(request, env);
+	if (!access) {
+		return {
+			route: `${method} (access required)`,
+			res: jsonError(403, 'access_required', 'Sign in through Cloudflare Access to use the admin console.')
+		};
+	}
+	if (path === '/') return { route: 'GET (admin home)', res: Response.redirect(new URL('/admin', url).toString(), 302) };
+	if (path.startsWith('/v1/admin/') || path.startsWith('/v1/review/')) {
+		const ipHash = await hashIp(ipKey(request.headers.get('cf-connecting-ip') ?? ''), env.IP_SALT);
+		return forward(request, env, ipHash, access);
+	}
+	if (path.startsWith('/v1/') || path.startsWith('/ops') || path.startsWith('/__dev/') || path === '/healthz') {
+		return { route: `${method} (admin unmatched)`, res: notFound() };
+	}
+	if (path === '/200' || path === '/404') {
+		return { route: `${method} (site)`, res: await env.ASSETS.fetch(new Request(new URL('/__not_found__', url), request)) };
+	}
+	return { route: `${method} (site)`, res: await env.ASSETS.fetch(request) };
+}
+
+/**
+ * POST /__dev/access {"email", "subject"?}: dev mode's stand-in for an Access login on
+ * admin.localhost. Sets the CF_Authorization cookie the edge then reads, and answers the token for
+ * API clients. Anywhere else it does not exist.
+ */
+async function devAccess(request: Request, env: Env): Promise<Response> {
+	if (!devLocal(env) || request.method !== 'POST') return notFound();
+	const body = (await request.json().catch(() => null)) as { email?: unknown; subject?: unknown } | null;
+	const email = normalizeEmail(typeof body?.email === 'string' ? body.email : '');
+	if (!email) return jsonError(400, 'invalid_email', 'email must be an email address.');
+	const subject = typeof body?.subject === 'string' ? body.subject : '';
+	const token = await devAccessToken(env, email, subject);
+	return json(200, { token }, { 'Set-Cookie': `CF_Authorization=${token}; Path=/; Max-Age=28800; HttpOnly; SameSite=Strict` });
+}
 
 async function handle(request: Request, url: URL, env: Env, ctx: ExecutionContext): Promise<Handled> {
 	const path = url.pathname;
@@ -58,6 +112,13 @@ async function handle(request: Request, url: URL, env: Env, ctx: ExecutionContex
 		// Outside dev mode these routes do not exist: answer like any unknown path.
 		return { route: `${method} (site)`, res: await env.ASSETS.fetch(request) };
 	}
+	// The admin console lives on the admin host only; its API does not exist here.
+	if (path === '/admin' || path.startsWith('/admin/')) {
+		const origin = adminOrigin(env);
+		if (!origin) return { route: `${method} (site)`, res: await env.ASSETS.fetch(new Request(new URL('/__not_found__', url), request)) };
+		return { route: 'GET /admin/* (to the admin host)', res: Response.redirect(origin + path + url.search, 302) };
+	}
+	if (path.startsWith('/v1/admin/') || path === '/__dev/access') return { route: `${method} (unmatched)`, res: notFound() };
 	const dev = env.COLANDER_DEV === '1';
 	const ipHash = await hashIp(ipKey(request.headers.get('cf-connecting-ip') ?? ''), env.IP_SALT);
 	// The limiter shields the Store from cache misses. Local runtimes have no Workers Cache, so every
@@ -183,12 +244,17 @@ async function health(env: Env): Promise<Response> {
 	}
 }
 
-/** Everything the edge does not answer goes to the Store, with the client address hashed. */
-async function forward(request: Request, env: Env, ipHash: string): Promise<Handled> {
-	const headers = new Headers(request.headers);
-	for (const h of CLIENT_ADDRESS_HEADERS) headers.delete(h);
-	headers.delete(ROUTE_HEADER);
-	headers.set(IP_HASH_HEADER, ipHash);
+/**
+ * Everything the edge does not answer goes to the Store, with the client address hashed and only
+ * the identity headers the edge set itself.
+ */
+async function forward(request: Request, env: Env, ipHash: string, access?: AccessIdentity): Promise<Handled> {
+	const headers = storeHeaders(request.headers, {
+		ipHash,
+		host: access ? 'admin' : 'main',
+		requestId: request.headers.get('cf-ray') ?? '',
+		access
+	});
 	const fallback = `${request.method} (store)`;
 	const idempotent = request.method === 'GET' || request.method === 'HEAD';
 	for (let attempt = 1; ; attempt++) {
@@ -205,18 +271,12 @@ async function forward(request: Request, env: Env, ipHash: string): Promise<Hand
 	}
 }
 
-/** The ops channel: GitHub workflows post here with OPS_TOKEN; src/ops.ts runs the commands. */
+/**
+ * The ops channel: GitHub workflows on a protected main post here with a GitHub Actions OIDC token
+ * (src/ops.ts checks it); src/ops.ts runs the commands.
+ */
 async function ops(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
-	if (!env.OPS_TOKEN) return jsonError(503, 'ops_unavailable', 'The ops channel is not configured.');
-	if (!(await sameSecret(request.headers.get('Authorization') ?? '', `Bearer ${env.OPS_TOKEN}`))) {
-		return jsonError(401, 'unauthorized', 'A valid ops token is required.', { 'WWW-Authenticate': 'Bearer' });
-	}
-	return runOps(request, env, ctx.cache);
-}
-
-/** Constant-time comparison: both sides are hashed first so their lengths match. */
-async function sameSecret(given: string, expected: string): Promise<boolean> {
-	const digest = (s: string) => crypto.subtle.digest('SHA-256', new TextEncoder().encode(s));
-	const [a, b] = await Promise.all([digest(given), digest(expected)]);
-	return crypto.subtle.timingSafeEqual(a, b);
+	const caller = await opsCaller(request, env);
+	if (caller instanceof Response) return caller;
+	return runOps(request, env, ctx.cache, caller);
 }

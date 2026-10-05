@@ -327,47 +327,67 @@ describe('appeals.go', () => {
 	});
 });
 
-describe('accounts.go', () => {
-	it('signs in once per magic link, creating the account, and keeps sessions until they expire', async () => {
+describe('accounts', () => {
+	it('signs in once per legacy magic link, creating the account, and keeps sessions until they expire', async () => {
 		await withDb((db) => {
-			accounts.createMagicLink(db, 'tok', 'sam@example.com', '/account', 100, 200);
-			accounts.createMagicLink(db, 'old', 'sam@example.com', '/', 50, 99);
+			const link = (hash: string, created: number, expires: number) =>
+				db.run('INSERT INTO magic_links (token_hash, email, next, created_at, expires_at) VALUES (?, ?, ?, ?, ?)', hash, 'sam@example.com', '/', created, expires);
+			link('tok', 100, 200);
+			link('old', 50, 99);
 			const acct = accounts.useMagicLink(db, 'tok', 150)!;
 			expect(acct).toMatchObject({ email: 'sam@example.com', role: 'member', displayName: '', createdAt: 150 });
 			expect(accounts.useMagicLink(db, 'tok', 151)).toBeUndefined();
 			expect(accounts.useMagicLink(db, 'old', 151)).toBeUndefined();
-			// Signing in dropped the expired link.
-			expect(db.all('SELECT token_hash FROM magic_links')).toEqual([{ token_hash: 'tok' }]);
-			accounts.createMagicLink(db, 'late', 'sam@example.com', '/', 300, 400);
+			link('late', 300, 400);
 			expect(accounts.useMagicLink(db, 'late', 400)).toBeUndefined();
 
-			accounts.createSession(db, 's1', acct.id, 150, 300);
-			expect(accounts.sessionAccount(db, 's1', 299)!.id).toBe(acct.id);
-			expect(accounts.sessionAccount(db, 's1', 300)).toBeUndefined();
-			accounts.createSession(db, 's2', acct.id, 300, 600);
+			accounts.createSession(db, { tokenHash: 's1', accountId: acct.id, method: 'email', now: 150, expires: 300 });
+			expect(accounts.getSession(db, 's1', 299)).toMatchObject({ account: { id: acct.id }, method: 'email', passkeyId: '', authenticatedAt: 150, legacy: false });
+			expect(accounts.getSession(db, 's1', 300)).toBeUndefined();
+			accounts.createSession(db, { tokenHash: 's2', accountId: acct.id, method: 'email', now: 300, expires: 600 });
 			expect(db.all('SELECT token_hash FROM sessions')).toEqual([{ token_hash: 's2' }]);
 			accounts.deleteSession(db, 's2');
-			expect(accounts.sessionAccount(db, 's2', 301)).toBeUndefined();
+			expect(accounts.getSession(db, 's2', 301)).toBeUndefined();
 		});
 	});
 
 	it('grants roles, names accounts and replaces reviewer tokens', async () => {
 		await withDb((db) => {
-			const staff = accounts.grantRole(db, 'rae@example.com', 'staff', 5);
+			const staff = accounts.grantRole(db, 'rae@example.com', 'staff', 5, { host: 'job' });
 			expect(staff).toMatchObject({ email: 'rae@example.com', role: 'staff', createdAt: 5 });
-			expect(accounts.grantRole(db, 'rae@example.com', 'curator', 6)).toMatchObject({ id: staff.id, role: 'curator', createdAt: 5 });
+			expect(accounts.grantRole(db, 'rae@example.com', 'curator', 6, { host: 'job' })).toMatchObject({ id: staff.id, role: 'curator', createdAt: 5 });
 			accounts.setDisplayName(db, staff.id, 'Rae');
 			expect(accounts.getAccount(db, staff.id)!.displayName).toBe('Rae');
 			accounts.setDisplayName(db, staff.id, '');
 			expect(db.get('SELECT display_name FROM accounts')).toEqual({ display_name: null });
-			accounts.setReviewerToken(db, staff.id, 'r1', 1);
-			accounts.setReviewerToken(db, staff.id, 'r2', 2);
-			expect(accounts.reviewerAccount(db, 'r1')).toBeUndefined();
-			expect(accounts.reviewerAccount(db, 'r2')!.email).toBe('rae@example.com');
+			accounts.setReviewerToken(db, staff.id, 'r1', 1, 100);
+			accounts.setReviewerToken(db, staff.id, 'r2', 2, 200);
+			expect(accounts.reviewerToken(db, 'r1')).toBeUndefined();
+			expect(accounts.reviewerToken(db, 'r2')).toMatchObject({ account: { email: 'rae@example.com' }, expiresAt: 200, lastUsedAt: 0 });
 			expect(accounts.accountByEmail(db, 'nobody@example.com')).toBeUndefined();
+			// Every role change is in the audit log.
+			expect(db.all('SELECT action, target, before, after FROM audit_log ORDER BY id')).toEqual([
+				{ action: 'role_changed', target: staff.id, before: 'member', after: 'staff' },
+				{ action: 'role_changed', target: staff.id, before: 'staff', after: 'curator' }
+			]);
+		});
+	});
+
+	it('refuses roles outside the four, and audit rows that change', async () => {
+		await withDb((db) => {
+			const now = Math.floor(Date.now() / 1000);
+			expect(() => db.run("INSERT INTO accounts (id, email, role, created_at) VALUES ('a', 'a@x.y', 'owner', 1)")).toThrow(/invalid role/);
+			const a = accounts.grantRole(db, 'a@x.y', 'admin', now, { host: 'ops' });
+			expect(() => db.run("UPDATE accounts SET role = 'superuser' WHERE id = ?", a.id)).toThrow(/invalid role/);
+			expect(() => db.run("UPDATE audit_log SET action = 'nothing'")).toThrow(/insert-only/);
+			expect(() => db.run('DELETE FROM audit_log')).toThrow(/insert-only/);
+			// Rows past the 400-day retention may go.
+			accounts.audit(db, { action: 'old', host: 'job' }, Math.floor(Date.now() / 1000) - 401 * 86_400);
+			expect(db.run('DELETE FROM audit_log WHERE action = ?', 'old')).toBeGreaterThan(0);
 		});
 	});
 });
+
 
 describe('misc.go', () => {
 	it('serves the newest adapter config, one trial per install and compare-and-set sync', async () => {
@@ -417,7 +437,7 @@ describe('list.go', () => {
 describe('billing tables', () => {
 	it('picks the live subscription, stores payments and refunds, and lists credited donors once', async () => {
 		await withDb((db) => {
-			const acct = accounts.grantRole(db, 'pay@example.com', 'member', 1);
+			const acct = accounts.grantRole(db, 'pay@example.com', 'member', 1, { host: 'job' });
 			const sub = { accountId: acct.id, customerId: 'cus_1', status: 'canceled', interval: 'month', periodStart: 0, periodEnd: 100, ending: false, startDate: 0 };
 			expect(billing.saveSubscription(db, { ...sub, id: 'sub_old' }, 1)).toBe(true);
 			expect(billing.saveSubscription(db, { ...sub, id: 'sub_x', accountId: 'acc_missing' }, 1)).toBe(false);

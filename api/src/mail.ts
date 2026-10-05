@@ -63,14 +63,72 @@ function address(from: string): string | EmailAddress {
 	return m ? { name: m[1]!.replace(/^"(.*)"$/, '$1'), email: m[2]! } : from;
 }
 
-/** The sign-in email. */
-export function signIn(link: string): [subject: string, body: string] {
+/** The sign-in code email. */
+export function signInCode(code: string): [subject: string, body: string] {
 	return [
-		'Your Colander sign-in link',
-		'Here is your link to sign in to Colander:\n\n' +
-			link +
-			'\n\nIt works once and expires in 20 minutes.\n' +
-			'If you did not ask to sign in, you can ignore this email.\n\nColander'
+		`${code} is your Colander sign-in code`,
+		'Here is your code to sign in to Colander:\n\n    ' +
+			code +
+			'\n\nEnter it on the page where you asked for it. It works once and expires in 10 minutes.\n' +
+			'Colander never asks for this code by phone, chat or email. If you did not ask to sign in, you can ignore this email.\n\nColander'
+	];
+}
+
+/** Sent once when wrong codes used up an address's budget for the day. */
+export function codeSignInPaused(): [subject: string, body: string] {
+	return [
+		'Sign-in codes are paused for your Colander account',
+		'Someone entered too many wrong sign-in codes for this address, so we stopped sending and accepting codes for it for 24 hours.\n\n' +
+			'If that was you, wait a day and ask for a new code, or sign in with a passkey, which keeps working.\n' +
+			'If it was not you, you do not need to do anything: no code was accepted.\n\nColander'
+	];
+}
+
+/** A security notice to the account's address: what happened, and what to do if it was not them. */
+export function securityNotice(what: string, ifNotYou = 'sign in, open your account page and choose Sign out everywhere, then remove any passkey you do not recognise.'): [subject: string, body: string] {
+	return ['Colander account: ' + what.charAt(0).toLowerCase() + what.slice(1), `${what}.\n\nIf this was not you, ${ifNotYou}\n\nColander`];
+}
+
+/** Confirms an action held for some days, with the link that cancels it. */
+export function heldRequest(what: string, days: number, cancelLink: string): [subject: string, body: string] {
+	return [
+		`Your Colander request: ${what.toLowerCase()} in ${days} days`,
+		`We received a request to ${what.toLowerCase()} for your Colander account. ` +
+			`Your account has a passkey and the request was confirmed with an email code only, so it waits ${days} days.\n\n` +
+			'If this was not you, cancel it here:\n\n' +
+			cancelLink +
+			'\n\nSigning in with your passkey also cancels it.\n\nColander'
+	];
+}
+
+/** Confirms that an account and its data are deleted. */
+export function accountDeleted(): [subject: string, body: string] {
+	return [
+		'Your Colander account is deleted',
+		'We deleted your Colander account as you asked: your email, passkeys, sessions, plan and synced settings are gone.\n' +
+			'Decisions you made as a reviewer stay in the public decision log without your name.\n' +
+			'Blocking, tagging, reporting and appeals stay free on every platform, with no account.\n\nColander'
+	];
+}
+
+/** Tells the old address that support will move the account to another address. */
+export function emailChangeHeld(newEmail: string, days: number, cancelLink: string): [subject: string, body: string] {
+	return [
+		'Your Colander account is moving to another email address',
+		`After a support request, your Colander account will move to ${newEmail} in ${days} days. ` +
+			'When it moves, every session and passkey ends.\n\n' +
+			'If you did not ask for this, cancel it here:\n\n' +
+			cancelLink +
+			'\n\nSigning in with your passkey also cancels it.\n\nColander'
+	];
+}
+
+/** Tells both addresses that the move happened. */
+export function emailChanged(newEmail: string): [subject: string, body: string] {
+	return [
+		'Your Colander account moved to another email address',
+		`Your Colander account now uses ${newEmail}. Every session, passkey and reviewer token ended, so sign in again with the new address.\n\n` +
+			'If you did not ask for this, reply to this email.\n\nColander'
 	];
 }
 

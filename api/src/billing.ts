@@ -351,6 +351,57 @@ export class Billing {
 	}
 
 	/**
+	 * Settles billing before an account is deleted (contracts 6.8): a running Plus ends at once,
+	 * with its latest charge refunded when it is still refundable, and every Stripe customer of the
+	 * account is deleted; Stripe keeps what tax law requires. An account that never subscribed
+	 * needs no Stripe call. Throws UnavailableError when it has subscriptions and Stripe is not
+	 * configured, so nothing is deleted half way.
+	 */
+	async closeAccount(accountId: string, now: number): Promise<void> {
+		const customers = this.db.all<{ customer_id: string }>('SELECT DISTINCT customer_id FROM subscriptions WHERE account_id = ? AND customer_id != \'\'', accountId);
+		if (customers.length === 0) return;
+		if (!this.enabled()) throw new UnavailableError();
+		const sub = current(this.db, accountId);
+		if (sub && live(sub)) {
+			if (refundable(sub, now)) {
+				const form = new URLSearchParams({ reason: 'requested_by_customer', 'metadata[account_id]': accountId });
+				form.set(sub.latestPayment.startsWith('ch_') ? 'charge' : 'payment_intent', sub.latestPayment);
+				await this.call('POST', '/v1/refunds', form, 'colander-refund-' + sub.latestPayment);
+				markRefunded(this.db, sub.latestPayment, '', now);
+			}
+			this.saveSubscription(stripeSubscription(await this.call('DELETE', '/v1/subscriptions/' + encodeURIComponent(sub.id))), now);
+		}
+		for (const { customer_id } of customers) {
+			try {
+				await this.call('DELETE', '/v1/customers/' + encodeURIComponent(customer_id));
+			} catch (err) {
+				// A customer deleted before is already gone.
+				if (!(err instanceof StripeError && err.status === 404)) throw err;
+			}
+		}
+	}
+
+	/**
+	 * Checks a support request to change an account's email (docs/deploy.md, Account recovery):
+	 * the Checkout Session on the person's receipt must be this account's Plus checkout, with the
+	 * amount and the UTC date they quote. Returns false when anything differs.
+	 */
+	async checkoutMatches(accountId: string, sessionId: string, amountCents: number, date: string): Promise<boolean> {
+		if (!this.enabled()) throw new UnavailableError();
+		if (!/^cs_[A-Za-z0-9_]{1,250}$/.test(sessionId)) return false;
+		let o: Obj;
+		try {
+			o = await this.call('GET', '/v1/checkout/sessions/' + encodeURIComponent(sessionId));
+		} catch (err) {
+			if (err instanceof StripeError && err.status === 404) return false;
+			throw err;
+		}
+		const owner = str(o.client_reference_id) || meta(o.metadata).account_id;
+		const day = new Date(int(o.created) * 1000).toISOString().slice(0, 10);
+		return owner === accountId && int(o.amount_total) === amountCents && day === date;
+	}
+
+	/**
 	 * Verifies and applies one Stripe event; an event handled before is ignored. Throws
 	 * SignatureError for a bad signature; any other error means Stripe should retry. The objects
 	 * are read from Stripe first, then every write and the event id commit in one transaction.

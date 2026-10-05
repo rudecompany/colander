@@ -1,6 +1,8 @@
 // The ops channel (hosting plan section 2, flow 13; the contract is "The ops channel" in
-// docs/deploy.md). GitHub workflows POST /ops/<command> with OPS_TOKEN; the edge has already
-// checked the token. Commands that change data run in the Store through its ops() RPC; the edge
+// docs/deploy.md). GitHub workflows POST /ops/<command> with a GitHub Actions OIDC token: only a
+// workflow of this repository, running on main in this environment's GitHub environment, gets in
+// (opsCaller), and every command but status is audited with the run and the actor GitHub vouches
+// for. Commands that change data run in the Store through its ops() RPC; the edge
 // orchestrates the restores (restart the Store, publish above R2, purge the edge cache) and the
 // restore drill, which loads the newest dump into the scratch Store "drill".
 //
@@ -11,15 +13,19 @@
 import { hex, utf8 } from '@colander/shared/bytes';
 import { sha256 } from '@colander/shared/sha256';
 import { CONFIG_CONTEXT, signEnvelope } from '@colander/shared/signing';
+import { devLocal } from './access';
 import { normalizeEmail } from './auth';
 import { countsAgree, newestDump, restoreDump, tableCounts } from './backup';
+import { reapplyErasures } from './erase';
 import { json, jsonError } from './http';
+import { verifyJwt } from './jwt';
 import { STATUS, type DumpStatus, type PassStatus, type PublishStatus } from './jobs';
 import { r2Sequence } from './list/publisher';
 import { canonicalSource } from './routes/ids';
 import { rfc3339, trimSpace } from './routes/respond';
 import { unix } from './scoring/engine';
-import { grantRole, type Account } from './store/accounts';
+import { audit, accountByEmail, grantRole, hasAdmin, type Account } from './store/accounts';
+import { rank } from './permissions';
 import { latestSequence, RETENTION_SECONDS, SNAPSHOT_KEY } from './store/list';
 import { redactSeedNames } from './store/compliance';
 import { saveAdapterConfig } from './store/misc';
@@ -35,9 +41,65 @@ export interface OpsAnswer {
 	body: Record<string, unknown>;
 }
 
+/** Who called the ops channel, as GitHub's OIDC token says: for the audit log. */
+export interface OpsCaller {
+	/** the GitHub login that started the run, or "dev" */
+	actor: string;
+	runId: string;
+	workflow: string;
+}
+
+const GITHUB_ISSUER = 'https://token.actions.githubusercontent.com';
+export const GITHUB_JWKS = `${GITHUB_ISSUER}/.well-known/jwks`;
+
+/** The parts of Env the ops check reads. */
+export type OpsEnv = Pick<Env, 'COLANDER_DEV' | 'PUBLIC_URL' | 'OPS_GITHUB_REPOSITORY' | 'OPS_GITHUB_REPOSITORY_ID' | 'OPS_GITHUB_ENVIRONMENT'> & { OPS_TOKEN?: string };
+
+const unauthorized = () => jsonError(401, 'unauthorized', 'A GitHub Actions OIDC token from a workflow on main is required.', { 'WWW-Authenticate': 'Bearer' });
+
+/**
+ * Checks the ops channel's caller: `Authorization: Bearer <GitHub Actions OIDC token>` for the
+ * audience PUBLIC_URL, from the repository OPS_GITHUB_REPOSITORY (and its ID), on refs/heads/main,
+ * from a workflow file on main, in the GitHub environment OPS_GITHUB_ENVIRONMENT. Dev mode on
+ * localhost also takes the OPS_TOKEN bearer of api/.dev.vars, which no deployed environment has.
+ */
+export async function opsCaller(request: Request, env: OpsEnv): Promise<OpsCaller | Response> {
+	const auth = request.headers.get('Authorization') ?? '';
+	if (!auth.startsWith('Bearer ')) return unauthorized();
+	const token = auth.slice('Bearer '.length).trim();
+	if (devLocal(env) && env.OPS_TOKEN && (await sameSecret(token, env.OPS_TOKEN))) return { actor: 'dev', runId: '', workflow: 'dev' };
+	const repo = (env.OPS_GITHUB_REPOSITORY ?? '').trim();
+	const environment = (env.OPS_GITHUB_ENVIRONMENT ?? '').trim();
+	if (!repo || !environment) return jsonError(503, 'ops_unavailable', 'The ops channel is not configured.');
+	const claims = await verifyJwt(token, { jwksUrl: GITHUB_JWKS, issuer: GITHUB_ISSUER, audience: new URL(env.PUBLIC_URL).origin });
+	if (!claims) return unauthorized();
+	const repoId = (env.OPS_GITHUB_REPOSITORY_ID ?? '').trim();
+	const workflowRef = typeof claims.workflow_ref === 'string' ? claims.workflow_ref : '';
+	const ok =
+		claims.repository === repo &&
+		(repoId === '' || claims.repository_id === repoId) &&
+		claims.ref === 'refs/heads/main' &&
+		workflowRef.startsWith(`${repo}/.github/workflows/`) &&
+		workflowRef.endsWith('@refs/heads/main') &&
+		claims.environment === environment;
+	if (!ok) return unauthorized();
+	return {
+		actor: typeof claims.actor === 'string' ? claims.actor : '',
+		runId: typeof claims.run_id === 'string' ? claims.run_id : '',
+		workflow: workflowRef.slice(`${repo}/`.length, -'@refs/heads/main'.length)
+	};
+}
+
+/** Constant-time comparison: both sides are hashed first so their lengths match. */
+async function sameSecret(given: string, expected: string): Promise<boolean> {
+	const digest = (s: string) => crypto.subtle.digest('SHA-256', new TextEncoder().encode(s));
+	const [a, b] = await Promise.all([digest(given), digest(expected)]);
+	return crypto.subtle.timingSafeEqual(a, b);
+}
+
 /** Calls a Store's ops() RPC, which carries arguments and answers as JSON text. */
-async function call(stub: DurableObjectStub<Store>, command: string, args: OpsArgs = {}): Promise<OpsAnswer> {
-	const r = await stub.ops(command, JSON.stringify(args));
+async function call(stub: DurableObjectStub<Store>, command: string, args: OpsArgs = {}, caller?: OpsCaller): Promise<OpsAnswer> {
+	const r = await stub.ops(command, JSON.stringify(args), caller && JSON.stringify(caller));
 	return { status: r.status, body: JSON.parse(r.json) as Record<string, unknown> };
 }
 
@@ -55,8 +117,8 @@ const fail = (status: number, code: string, message: string, extra: Record<strin
 const send = (a: OpsAnswer): Response => json(a.status, a.body);
 const text = (v: unknown): string => (typeof v === 'string' ? v : '');
 
-/** The edge half: one command, after the edge checked OPS_TOKEN. */
-export async function ops(request: Request, env: Env, cache: CacheContext | undefined): Promise<Response> {
+/** The edge half: one command, after opsCaller let the caller in. */
+export async function ops(request: Request, env: Env, cache: CacheContext | undefined, caller: OpsCaller): Promise<Response> {
 	const command = new URL(request.url).pathname.slice('/ops/'.length);
 	if (!COMMANDS.has(command)) return jsonError(404, 'unknown_command', 'There is no ops command at this path.');
 	if (request.method !== 'POST') return jsonError(405, 'method_not_allowed', 'Ops commands are POST requests.', { Allow: 'POST' });
@@ -72,11 +134,11 @@ export async function ops(request: Request, env: Env, cache: CacheContext | unde
 			return p.errors ? send(fail(502, 'purge_failed', 'The edge cache refused the purge.', p)) : json(200, p);
 		}
 		case 'pitr-restore':
-			return send(await pitrRestore(env, cache, a));
+			return send(await pitrRestore(env, cache, a, caller));
 		case 'restore-dump': {
 			const key = text(a.key);
 			if (key === '' || a.confirm !== key) return send(unconfirmed('the dump key'));
-			const res = await call(primary(env), 'restore-dump', { key });
+			const res = await call(primary(env), 'restore-dump', { key }, caller);
 			if (res.status !== 200) return send(res);
 			await restart(env);
 			return send(await afterRestore(env, cache, res.body));
@@ -84,7 +146,7 @@ export async function ops(request: Request, env: Env, cache: CacheContext | unde
 		case 'drill':
 			return send(await drill(env));
 		default:
-			return send(await call(primary(env), command, a));
+			return send(await call(primary(env), command, a, caller));
 	}
 }
 
@@ -110,7 +172,7 @@ export const PITR_PREFIX = 'pitr/';
  * restore never waits for a later restart; the bookmarks outlive that instance in the backup
  * bucket, and the answer carries them, the undo bookmark included.
  */
-async function pitrRestore(env: Env, cache: CacheContext | undefined, a: OpsArgs): Promise<OpsAnswer> {
+async function pitrRestore(env: Env, cache: CacheContext | undefined, a: OpsArgs, caller: OpsCaller): Promise<OpsAnswer> {
 	const at = text(a.at);
 	if (at === '' || a.confirm !== at) return unconfirmed('the time in at');
 	const t = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/.test(at) ? Date.parse(at) : NaN;
@@ -120,7 +182,7 @@ async function pitrRestore(env: Env, cache: CacheContext | undefined, a: OpsArgs
 		return fail(400, 'invalid_time', 'at must be in the past 30 days: point-in-time recovery keeps no older history.');
 	}
 	const record = `${PITR_PREFIX}${new Date(now).toISOString()}.json`;
-	await resetting(call(primary(env), 'pitr-restore', { at: t, record }));
+	await resetting(call(primary(env), 'pitr-restore', { at: t, record }, caller));
 	const saved = await env.BACKUPS.get(record);
 	if (!saved) {
 		return fail(500, 'restore_unrecorded', `The Store restarted without recording ${record}: check the Worker logs for its bookmarks before anything else.`);
@@ -146,10 +208,12 @@ const restart = (env: Env) => resetting(call(primary(env), 'restart'));
  */
 async function afterRestore(env: Env, cache: CacheContext | undefined, restored: Record<string, unknown>): Promise<OpsAnswer> {
 	// A reset object breaks its stubs: primary() makes a new one, which starts a new instance.
+	// Accounts deleted after the restore point are deleted again before anything else.
+	const erased = await call(primary(env), 'reapply-erasures');
 	const published = await call(primary(env), 'publish');
 	const purge = await purgeEverything(cache);
 	console.log(JSON.stringify({ message: 'restored', ...published.body, cachePurged: purge.purged }));
-	return ok({ ...restored, ...published.body, cache_purged: purge.purged, ...(purge.errors ? { cache_errors: purge.errors } : {}) });
+	return ok({ ...restored, ...erased.body, ...published.body, cache_purged: purge.purged, ...(purge.errors ? { cache_errors: purge.errors } : {}) });
 }
 
 /**
@@ -185,14 +249,26 @@ async function drill(env: Env): Promise<OpsAnswer> {
 	return problems.length === 0 ? ok(body) : fail(500, 'drill_failed', problems.join(' '), body);
 }
 
+/** Commands that change nothing and are not audited: the probes call status every hour. */
+const UNAUDITED = new Set(['status', 'counts', 'publish', 'restart', 'drill-check', 'reapply-erasures']);
+
 /** The Store half: runs one command in this Store (Store.ops). */
-export async function storeOps(store: Store, ctx: DurableObjectState, env: Env, command: string, a: OpsArgs): Promise<OpsAnswer> {
+export async function storeOps(store: Store, ctx: DurableObjectState, env: Env, command: string, a: OpsArgs, caller?: OpsCaller): Promise<OpsAnswer> {
 	const db = store.db;
+	if (caller && !UNAUDITED.has(command)) {
+		audit(
+			db,
+			{ action: `ops:${command}`, host: 'ops', actorSub: `github:${caller.actor}`, requestId: caller.runId, reason: caller.workflow },
+			unix(store.now())
+		);
+	}
 	switch (command) {
 		case 'status':
 			return ok(await status(store, ctx, env));
 		case 'grant-role':
-			return grant(store, a);
+			return grant(store, a, caller);
+		case 'reapply-erasures':
+			return ok({ erased: await reapplyErasures(store, env) });
 		case 'import-seed': {
 			const answer = await importSeedFile(store, env, a);
 			if (store.jobs.dirty) await store.jobs.arm();
@@ -285,16 +361,33 @@ async function status(store: Store, ctx: DurableObjectState, env: Env): Promise<
 
 const accountJSON = (a: Account) => ({ id: a.id, email: a.email, display_name: a.displayName || null, role: a.role, created_at: rfc3339(a.createdAt) });
 
-/** `colander grant-role <email> <role>`. */
-function grant(store: Store, a: OpsArgs): OpsAnswer {
+/**
+ * `colander grant-role <email> <role>`. The bootstrap path to staff and admin: while no account is
+ * admin it grants any role, so the owner can make themselves admin once. After that it only moves
+ * member and curator accounts between member and curator; every other role change happens on the
+ * admin host, behind Access and its MFA, with an audited actor.
+ */
+function grant(store: Store, a: OpsArgs, caller?: OpsCaller): OpsAnswer {
 	const email = normalizeEmail(text(a.email));
 	if (!email) return fail(400, 'invalid_email', `${JSON.stringify(text(a.email))} is not an email address.`);
 	const role = text(a.role);
-	if (role !== 'member' && role !== 'curator' && role !== 'staff') {
-		return fail(400, 'invalid_role', `role must be member, curator or staff, not ${JSON.stringify(role)}.`);
+	if (!['member', 'curator', 'staff', 'admin'].includes(role)) {
+		return fail(400, 'invalid_role', `role must be member, curator, staff or admin, not ${JSON.stringify(role)}.`);
 	}
-	const acct = grantRole(store.db, email, role, unix(store.now()));
-	return ok({ account: accountJSON(acct), message: `${acct.email} (${acct.id}) is now ${acct.role}.` });
+	const db = store.db;
+	if (hasAdmin(db)) {
+		const current = accountByEmail(db, email)?.role ?? 'member';
+		if (rank(role) > rank('curator') || rank(current) > rank('curator')) {
+			return fail(
+				403,
+				'admin_exists',
+				'An admin exists, so the ops channel only moves accounts between member and curator. Change staff and admin roles on the admin host.'
+			);
+		}
+	}
+	const acct = grantRole(db, email, role, unix(store.now()), { host: 'ops', actorSub: caller ? `github:${caller.actor}` : undefined, requestId: caller?.runId });
+	const invite = rank(role) >= rank('curator') ? ' It needs a passkey invite from the admin host before it can review.' : '';
+	return ok({ account: accountJSON(acct), message: `${acct.email} (${acct.id}) is now ${acct.role}.${invite}` });
 }
 
 /** The licenses a paid product may use a seed list under, by their SPDX identifiers. */
