@@ -1,0 +1,45 @@
+# The seed registry's owner rule (docs/contracts.md 14.2), judged by code a pull request cannot
+# change. pull_request_target runs this file and scripts/check-seeds.ts as the base branch has
+# them, so a pull request that edits the checker, its rules or ci.yml cannot pass itself.
+# It never runs the pull request's code: it reads the pull request's registry and changed files
+# from git as data, with a read-only token and no secrets.
+name: Seed guard
+
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: seed-guard-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  seed-guard:
+    name: seed-guard
+    runs-on: ubuntu-latest
+    steps:
+      # The base branch, never the pull request.
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      # GitHub's test merge commit: its first parent is the base, so the two differ by exactly the
+      # pull request. The author and whoever pushed last must both be owners for an owner-only change.
+      - name: Only an owner changes a cleared entry, a clearance or the seed rules and checks
+        env:
+          PR: ${{ github.event.pull_request.number }}
+          SEED_ACTOR: ${{ github.event.pull_request.user.login }} ${{ github.actor }}
+        run: |
+          if ! git fetch --no-tags --depth=2 origin "refs/pull/$PR/merge"; then
+            echo "::error::GitHub has no merge commit for this pull request yet, or it has conflicts. Resolve them and push again."
+            exit 1
+          fi
+          SEED_HEAD=$(git rev-parse FETCH_HEAD)
+          SEED_BASE=$(git rev-parse "$SEED_HEAD^1")
+          export SEED_HEAD SEED_BASE
+          node scripts/check-seeds.ts

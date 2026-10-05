@@ -59,7 +59,9 @@ jobs:
       - name: No migration may delete, rename or transfer the Store class
         run: node scripts/wrangler-guard.ts api/wrangler.jsonc
       # The registry is valid, the repository holds no list, and only an owner (SEED_OWNERS) changed
-      # a cleared entry or a clearance since the pull request's base or the commit before the push.
+      # a cleared entry, a clearance or the seed rules and checks since the pull request's base or the
+      # commit before the push. A pull request can edit this copy, so for pull requests the required
+      # seed-guard check (seed-guard.yml) runs the base branch's copy as well.
       - name: Seed registry
         env:
           SEED_BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
