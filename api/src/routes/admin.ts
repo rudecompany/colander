@@ -57,7 +57,11 @@ function me(s: Store, request: Request): Response {
 	return json(200, { account: personJSON(s, st.account), authority: st.actor.authority, permissions: allowed });
 }
 
-/** GET /v1/admin/people?q=: up to 50 accounts whose email contains q, or every reviewer without q. Audited. */
+/**
+ * GET /v1/admin/people?q=: up to 50 accounts whose email contains q, or every reviewer without q.
+ * A search can reach members' addresses, so it is audited; the reviewer list, which staff open on
+ * every visit, is not.
+ */
 function people(s: Store, request: Request, url: URL): Response {
 	const st = staffFor(s, request, 'people.read');
 	if (st instanceof Response) return st;
@@ -65,7 +69,7 @@ function people(s: Store, request: Request, url: URL): Response {
 	const rows = q
 		? s.db.all<{ id: string }>("SELECT id FROM accounts WHERE instr(email, ?) > 0 ORDER BY email LIMIT 50", q)
 		: s.db.all<{ id: string }>("SELECT id FROM accounts WHERE role != 'member' ORDER BY role DESC, email LIMIT 50");
-	audit(s.db, { ...st.who, action: 'people_searched', reason: q || 'reviewers' }, unix(s.now()));
+	if (q) audit(s.db, { ...st.who, action: 'people_searched', reason: q }, unix(s.now()));
 	return json(200, { people: rows.map((r) => personJSON(s, getAccount(s.db, r.id)!)) });
 }
 

@@ -538,7 +538,7 @@ In dev mode on `http://localhost` only, `POST /__dev/access` `{"email", "subject
 | Request | Permission | Effect |
 | --- | --- | --- |
 | `GET /v1/admin/me` | staff | `{"account": Person, "authority", "permissions"}` |
-| `GET /v1/admin/people?q=` | staff | Up to 50 accounts whose email contains `q`, or every reviewer. Audited. |
+| `GET /v1/admin/people?q=` | staff | Up to 50 accounts whose email contains `q` (audited), or every reviewer. |
 | `PUT /v1/admin/people/role` `{"email", "role"}` | staff | Sets the role (creates a member account for a new address). `{"person": Person}` |
 | `POST /v1/admin/people/{id}/invite` | staff | `201` `{"invite", "url", "expires_at"}`: a single-use invite for a review account, valid 24 hours, bound to the account and its role, shown only to the issuer; the account gets an email notice. `url` is `{public_url}/account/invite#invite=<invite>`. |
 | `POST /v1/admin/people/{id}/revoke` | admin | Ends every session and deletes every passkey and the reviewer token |

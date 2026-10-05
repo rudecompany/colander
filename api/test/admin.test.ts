@@ -230,6 +230,7 @@ describe('the permission table', () => {
 		const status = async (...a: Parameters<typeof as>) => (await as(...a)).status;
 
 		expect(await status(staff, 'GET', '/v1/admin/people')).toBe(200);
+		expect(await status(staff, 'GET', '/v1/admin/people?q=example')).toBe(200);
 		expect(await status(staff, 'PUT', '/v1/admin/people/role', { email: email('new'), role: 'curator' })).toBe(200);
 		expect(await status(staff, 'PUT', '/v1/admin/people/role', { email: email('new'), role: 'staff' })).toBe(403);
 		expect(await status(staff, 'PUT', '/v1/admin/people/role', { email: otherStaff, role: 'member' })).toBe(403);
@@ -247,8 +248,10 @@ describe('the permission table', () => {
 		expect(await status(staff, 'GET', '/v1/admin/audit')).toBe(403);
 		const audit = await as(admin, 'GET', '/v1/admin/audit');
 		expect(audit.status).toBe(200);
-		const actions = ((await audit.json()) as { entries: { action: string }[] }).entries.map((e) => e.action);
-		expect(actions).toEqual(expect.arrayContaining(['invite_issued', 'revoked', 'role_changed', 'people_searched']));
+		const entries = ((await audit.json()) as { entries: { action: string; reason: string | null }[] }).entries;
+		expect(entries.map((e) => e.action)).toEqual(expect.arrayContaining(['invite_issued', 'revoked', 'role_changed']));
+		// A search by email is recorded; opening the reviewer list is not.
+		expect(entries.filter((e) => e.action === 'people_searched').map((e) => e.reason)).toEqual(['example']);
 		// Writes need the CSRF header and a same-origin fetch here too.
 		const { 'X-Colander-CSRF': _, ...noCsrf } = await accessHeaders(staff);
 		expect(await code(await send(`${ADMIN_ORIGIN}/v1/admin/people/role`, { method: 'PUT', headers: noCsrf, body: '{}' }))).toBe('csrf_required');
