@@ -162,6 +162,16 @@ describe('calibration sampling and export', () => {
 				{ frame: 'random:random-frame', n: 10 },
 				{ frame: 'seed:secret-list', n: 2 }
 			]);
+			// A frame file that does not read as its format is refused, not half sampled.
+			const jsonFrame = { ...f, id: 'json-frame', format: 'soul-over-ai' as const, sha256: null };
+			store.engine.seeds = new SeedRegistry([seeded, f, { ...jsonFrame, clearance: { status: 'pending', by: null, at: null } }], true);
+			expect((await op(store, state, 'calibration-sample', { frame: 'random:json-frame', n: 1 })).body.error.code).toBe('seed_not_cleared');
+			store.engine.seeds = new SeedRegistry([seeded, f, { ...jsonFrame, dev_only: true, license: 'LicenseRef-Colander-internal', license_url: null, attribution: null, clearance: { status: 'pending', by: null, at: null } }], true);
+			await env.BACKUPS.put(`${SEED_PREFIX}json-frame.json`, JSON.stringify({ file: 'not json' }));
+			expect((await op(store, state, 'calibration-sample', { frame: 'random:json-frame', n: 1 })).body.error).toEqual({
+				code: 'invalid_seed_file',
+				message: 'The file does not read as soul-over-ai: the file is not JSON.'
+			});
 			// A frame is never imported as leads, and a lead list is no frame.
 			expect((await op(store, state, 'calibration-sample', { frame: 'random:secret-list', n: 1 })).body.error.code).toBe('seed_not_cleared');
 			for (const args of [{ frame: 'everything', n: 1 }, { frame: 'community', n: 0 }, { frame: 'community' }, { frame: 'community', n: 1, extra: 1 }]) {

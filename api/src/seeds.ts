@@ -247,7 +247,13 @@ export async function calibrationSample(store: Store, env: Env, a: Args): Promis
 		if ('status' in obj) return obj;
 		const missing = missingRecords(entry, obj.records);
 		if (missing.length) return fail(409, 'records_required', `The object for ${entry.id} needs records.${missing.join(', records.')}.`);
-		const fresh = parseSeed(entry, obj.file).aliases.filter((x) => {
+		let parsed: Parsed;
+		try {
+			parsed = parseSeed(entry, obj.file);
+		} catch (err) {
+			return fail(400, 'invalid_seed_file', `The file does not read as ${entry.format}: ${(err as Error).message}.`);
+		}
+		const fresh = parsed.aliases.filter((x) => {
 			const ref = findSource(db, x.platform, x.alias);
 			return ref === undefined || !sampled(db, ref);
 		});
