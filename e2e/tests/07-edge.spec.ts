@@ -1,8 +1,9 @@
 // The edge (hosting plan sections 2 and 4): the website's SPA rewrites and real 404, the _headers
 // on static pages, the cache policy of every list answer, and a verified appeal reaching installs
 // within a minute. These run against the local Worker and against a deployed origin
-// (COLANDER_E2E_BASE_URL). Only the appeal timing writes: it needs a staff credential, the local
-// staff session or COLANDER_REVIEWER_TOKEN, and against a deployed origin COLANDER_PUBLIC_KEYS.
+// (COLANDER_E2E_BASE_URL). Only the appeal timing writes: it needs a staff session, the local one or
+// COLANDER_E2E_STAFF_COOKIE, and against a deployed origin COLANDER_PUBLIC_KEYS. A reviewer token
+// will not do: it carries curator authority only, and appeals need staff.
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { expect, test } from '@playwright/test';
@@ -105,9 +106,9 @@ test('list answers carry their cache policy: snapshot 200, delta 204 at the head
 });
 
 test('a verified appeal reaches installs as a signed delta within 60 s', async () => {
-	const token = process.env.COLANDER_REVIEWER_TOKEN;
-	test.skip(!LOCAL && !(token && process.env.COLANDER_PUBLIC_KEYS), 'needs COLANDER_REVIEWER_TOKEN and COLANDER_PUBLIC_KEYS against a deployed origin');
-	const staff = LOCAL ? { cookie: process.env.COLANDER_E2E_STAFF_COOKIE } : { auth: `Bearer ${token}` };
+	const cookie = process.env.COLANDER_E2E_STAFF_COOKIE;
+	test.skip(!LOCAL && !(cookie && process.env.COLANDER_PUBLIC_KEYS), 'needs COLANDER_E2E_STAFF_COOKIE and COLANDER_PUBLIC_KEYS against a deployed origin');
+	const staff = { cookie };
 	const keys = trustedKeys(process.env.COLANDER_PUBLIC_KEYS ?? readFileSync(resolve(REPO, 'testdata/dev-signing.pub'), 'utf8'));
 	// A fictional channel only this test uses, rated Slop by staff so it can be appealed.
 	const handle = '@colander-e2e-appeal';

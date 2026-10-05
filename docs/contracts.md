@@ -189,7 +189,7 @@ Cookie-authenticated routes are same-origin only and require the header `X-Colan
 | --- | --- | --- |
 | Install | `Authorization: Install <install id>` | Extension: tags, reports, trial |
 | Session | Cookie `colander_session` (HttpOnly, SameSite=Lax, Secure outside dev) | Website: account, billing, review console |
-| Reviewer | `Authorization: Bearer <reviewer token>` | Extension side panel: review API |
+| Reviewer | `Authorization: Bearer <reviewer token>` | Extension side panel: review API, with curator authority only (6.7) |
 | Plan | `Authorization: Plan <plan token>` | Extension: settings sync |
 
 ### 6.2 Tags
@@ -393,6 +393,7 @@ In dev mode (`COLANDER_DEV=1`) sign-in links are printed in the `wrangler dev` o
 ### 6.7 Review (curators and staff)
 
 Session cookie or Reviewer bearer token. Curators may decide sources that are not large and items; large sources and appeals need staff (`403 staff_required`).
+A reviewer token carries curator authority only, also a staff member's, because it works in any browser on any device: staff decide large sources and appeals with their session in the review console.
 
 | Request | Returns |
 | --- | --- |
@@ -463,7 +464,7 @@ A code also works when the website is open in another browser or on another devi
 | --- | --- | --- |
 | `POST /v1/pair` `{"kind": "plan" \| "reviewer"}` | Session | `201` `{"id", "code": "KXQ4-JP7M", "expires_at"}`. `plan` needs an active plan (`404 no_plan`); `reviewer` needs the curator or staff role (`403 forbidden`); any other kind is `400 invalid_kind`. A new code ends the account's earlier unused code of the same kind. 20 codes per account an hour. |
 | `GET /v1/pair/{id}` | Session | `200` `{"status": "pending" \| "claimed" \| "expired", "ext_version", "browser"}` for the account's own code, `404 not_found` for any other. The website checks every 2 seconds while the code is on screen. |
-| `POST /v1/pair/claim` `{"code", "ext_version", "browser"}` | none, any origin | `200` `{"kind", "token"}`: a plan token (section 5) minted now for the account, or a reviewer token that replaces the account's earlier one. `404 invalid_code` for a wrong, used or expired code; `404 no_plan` when the plan ended since the code was made; `403 forbidden` when the role went; these leave the code unused. 10 claims per IP per 10 minutes, wrong codes included (`429`). |
+| `POST /v1/pair/claim` `{"code", "ext_version", "browser"}` | none, any origin | `200` `{"kind", "token", "account"}`: a plan token (section 5) minted now for the account, or a reviewer token that replaces the account's earlier one; `account` is the account's email masked as `p***@example.com`, so the person sees whose account they connected. `404 invalid_code` for a wrong, used or expired code; `404 no_plan` when the plan ended since the code was made; `403 forbidden` when the role went; these leave the code unused. 10 claims per address per 10 minutes, an IPv6 address counted by its /48, wrong codes included (`429`). |
 
 A code is 8 Crockford base32 characters (40 bits), shown as two groups of 4.
 The server reads a typed code without regard to case, spaces or dashes, and reads I and L as 1 and O as 0.
@@ -472,7 +473,8 @@ Codes are stored only as SHA-256, last 10 minutes and work once; the hourly prun
 
 The website shows the code and the extension takes it, never the reverse: a link the extension opened could be crafted by someone else (the device-code phishing pattern), while a code the person types into their own extension leaks only if they hand it over.
 The website says "Never share this code" beside it, with its countdown.
-The person types it in Options under Plan or in the review side panel; the extension stores a plan token only after it verifies it (section 5).
+The person types it in Options under Plan or in the review side panel; the extension stores a plan token only after it verifies it (section 5), and shows the masked email of the account it came from.
+Wrong codes from all addresses together are counted, and the watchdog alerts when they reach 300 an hour; that count never refuses a claim, so a guesser cannot lock anyone out.
 
 Unpacked development builds of the Chrome extension carry a fixed manifest `key`, so the end-to-end tests can open its pages by ID; store packages never carry one.
 

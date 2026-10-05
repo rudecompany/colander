@@ -10,9 +10,9 @@ import { afterAll, beforeAll, describe, expect, inject, it, vi } from 'vitest';
 import { b64url } from '@colander/shared/bytes';
 import type { Appeal, Report } from '@colander/shared/api';
 import { isCorsPath } from '../src/http';
-import { newToken } from '../src/auth';
+import { CookieName, newToken } from '../src/auth';
 import { decide } from '../src/scoring/actions';
-import { grantRole, setReviewerToken } from '../src/store/accounts';
+import { createSession, grantRole, setReviewerToken } from '../src/store/accounts';
 import { ensureSource } from '../src/store/sources';
 import { saveAdapterConfig } from '../src/store/misc';
 import { latestSequence } from '../src/store/list';
@@ -73,14 +73,20 @@ async function check(
 
 const install = { Authorization: 'Install ' + b64url(new Uint8Array(16).fill(7)) };
 let bearer: Record<string, string>;
+/** Staff's session: a reviewer token carries curator authority only, and appeals need staff. */
+let staff: Record<string, string>;
 
 beforeAll(async () => {
 	const { raw, hash } = newToken();
+	const session = newToken();
 	bearer = { Authorization: 'Bearer ' + raw };
+	staff = { Cookie: `${CookieName}=${session.raw}`, 'X-Colander-CSRF': '1' };
 	await runInDurableObject(primary(), async (store: Store) => {
-		const staff = grantRole(store.db, 'rae@colander.test', 'staff', Math.floor(Date.now() / 1000));
-		setReviewerToken(store.db, staff.id, hash, Math.floor(Date.now() / 1000));
-		const ref = ensureSource(store.db, 'yt', '@chan', 'Chan', Math.floor(Date.now() / 1000));
+		const now = Math.floor(Date.now() / 1000);
+		const rae = grantRole(store.db, 'rae@colander.test', 'staff', now);
+		setReviewerToken(store.db, rae.id, hash, now);
+		createSession(store.db, session.hash, rae.id, now, now + 86400);
+		const ref = ensureSource(store.db, 'yt', '@chan', 'Chan', now);
 		decide(store.engine, { sourceRef: ref, verdict: 'slop', reason: 'Generated.', signals: 1 << 3, actor: 'staff' });
 		await store.publisher.publish(store.now());
 	});
@@ -139,8 +145,13 @@ describe('Cache-Control on every route', () => {
 		// Review, by bearer token.
 		await check('GET /v1/review/queue', 'GET', '/v1/review/queue', 200, 'none', { headers: bearer });
 		await check('GET /v1/review/sources/:platform/:source_id', 'GET', '/v1/review/sources/yt/@chan', 200, 'none', { headers: bearer });
-		await check('POST /v1/review/sources/:platform/:source_id/decision', 'POST', '/v1/review/sources/yt/@chan/decision', 200, 'none', {
+		// The appeal is under review, so deciding the source needs staff.
+		await check('POST /v1/review/sources/:platform/:source_id/decision', 'POST', '/v1/review/sources/yt/@chan/decision', 403, 'none', {
 			headers: bearer,
+			body: { verdict: 'slop', reason: 'Still generated.', signals: ['watermark'] }
+		});
+		await check('POST /v1/review/sources/:platform/:source_id/decision', 'POST', '/v1/review/sources/yt/@chan/decision', 200, 'none', {
+			headers: staff,
 			body: { verdict: 'slop', reason: 'Still generated.', signals: ['watermark'] }
 		});
 		await check('POST /v1/review/items/:platform/:item_id/decision', 'POST', '/v1/review/items/yt/abcdefghijk/decision', 200, 'none', {
@@ -151,9 +162,9 @@ describe('Cache-Control on every route', () => {
 			headers: bearer,
 			body: { reason: 'Decided already.' }
 		});
-		await check('POST /v1/review/appeals/:id/verify', 'POST', `/v1/review/appeals/${appeal.id}/verify`, 200, 'none', { headers: bearer });
+		await check('POST /v1/review/appeals/:id/verify', 'POST', `/v1/review/appeals/${appeal.id}/verify`, 200, 'none', { headers: staff });
 		await check('POST /v1/review/appeals/:id/resolve', 'POST', `/v1/review/appeals/${appeal.id}/resolve`, 200, 'none', {
-			headers: bearer,
+			headers: staff,
 			body: { outcome: 'denied', reasoning: 'The footage is generated.' }
 		});
 

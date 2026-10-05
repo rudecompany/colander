@@ -10,6 +10,7 @@ import { dump } from '../backup';
 import { Billing, billingConfig } from '../billing';
 import { devRoutes, testNow } from '../dev';
 import { jsonError, notFound, ROUTE_HEADER, setCache } from '../http';
+import { drained } from '../limits';
 import { Jobs, prune, STATUS, type DumpStatus, type PassStatus, type PublishStatus } from '../jobs';
 import { Publisher, r2Sequence } from '../list/publisher';
 import { Mailer } from '../mail';
@@ -51,6 +52,8 @@ export interface WatchdogStatus {
 	alerted: string[];
 	/** when the watchdog first ran here (unix ms): job ages count from it until a job reports */
 	since: number;
+	/** more wrong pairing codes came in than the baseline allows (src/limits.ts pair_claim_fail) */
+	pairGuessing: boolean;
 }
 
 /** The one Store instance that holds the data and runs the jobs. */
@@ -196,7 +199,8 @@ export class Store extends DurableObject<Env> {
 			r2,
 			dump: kv.get<DumpStatus>(STATUS.dump) ?? null,
 			alerted: kv.get<string[]>(STATUS.alerts) ?? [],
-			since
+			since,
+			pairGuessing: drained(this.db, now, '', 'pair_claim_fail')
 		};
 	}
 

@@ -24,8 +24,13 @@ export const LIMITERS = {
 	donate: { n: 10, per: HOUR },
 	/** pairing codes an account may make; each one ends the one before */
 	pair_create: { n: 20, per: HOUR },
-	/** a claim carries nothing but the code, so guesses are limited per IP */
-	pair_claim_ip: { n: 10, per: 10 * MINUTE }
+	/** a claim carries nothing but the code, so guesses are limited per address */
+	pair_claim_ip: { n: 10, per: 10 * MINUTE },
+	/**
+	 * wrong pairing codes from all addresses together, the baseline the watchdog alerts at
+	 * (src/scheduled.ts); it never refuses a claim
+	 */
+	pair_claim_fail: { n: 300, per: HOUR }
 } as const;
 
 export type Limiter = keyof typeof LIMITERS;
@@ -58,6 +63,13 @@ export function allow(db: Db, now: number, key: string, n: number, ...limiters: 
 		}
 		return 0;
 	});
+}
+
+/** Whether the bucket for key is empty now: requests came faster than the limiter refills. now is unix milliseconds. */
+export function drained(db: Db, now: number, key: string, name: Limiter): boolean {
+	const { n, per } = LIMITERS[name];
+	const row = db.get<{ tokens: number; at: number }>('SELECT tokens, at FROM limits WHERE name = ? AND key = ?', name, key);
+	return !!row && row.tokens + (now - row.at) * (n / per) < 1;
 }
 
 /** Drops buckets that have refilled completely: they hold no state worth keeping. */

@@ -36,7 +36,8 @@ Screenshots of key moments go to `e2e/screenshots/`, which is not committed.
 
 `COLANDER_E2E_BASE_URL=https://staging.getcolander.com pnpm -C e2e test` builds and starts nothing and runs `07-edge` against that origin; the journeys skip, because they need the seeded data, dev mail and the server log.
 `CF_ACCESS_CLIENT_ID` and `CF_ACCESS_CLIENT_SECRET` pass Cloudflare Access.
-The appeal timing writes, so it runs only with `COLANDER_REVIEWER_TOKEN` (a staff reviewer token, as for `scripts/smoke.ts --mutating`) and `COLANDER_PUBLIC_KEYS`; without them, the same command is a read-only smoke test of production.
+The appeal timing writes, so it runs only with `COLANDER_E2E_STAFF_COOKIE` (the `colander_session=...` cookie of a staff account signed in on that origin) and `COLANDER_PUBLIC_KEYS`; without them, the same command is a read-only smoke test of production.
+A reviewer token will not do, because it carries curator authority only and verifying an appeal needs staff.
 
 ## What it proves
 
@@ -53,6 +54,7 @@ The appeal timing writes, so it runs only with `COLANDER_REVIEWER_TOKEN` (a staf
 | `06-plans` | With billing switched off, Get Plus signs in through the emailed link and then shows the calm checkout-not-open message, with no script error or CSP violation. |
 | `07-edge` | Source and appeal pages (`/s/{platform}/{id}`, `/appeal/{platform}/{id}`, `/appeal/status/{id}`) answer the app shell with 200, and every other path, an unknown platform, an extra segment and the shell's own `/200` and `/404` included, a real 404 with the shell, and unknown API paths the JSON 404. Static pages carry the `_headers` security headers, and hashed assets are cached for a year. The snapshot 200, the delta 204 at the head and 410 past it carry their cache policies (with `Cloudflare-CDN-Cache-Control` locally, where no edge consumes it). A verified appeal reaches a client as a signed delta in under 60 seconds, and that delta 200 carries the list policy. |
 | `08-pairing` | Pat, the seeded member with Plus, shows a code on the account page and types it into Options under Plan: Plus turns on with a paid token for Pat's account, settings sync starts, per-platform strictness applies on the page, and the same code is refused a second time. |
+| `09-stores` | The website is built with the Chrome, Edge and Firefox listings. Edge, Firefox and Chrome each get their own store on the install button, and the line under it and the footer name the other two stores in order once the page switches to that browser's store. |
 
 ## Writing more
 

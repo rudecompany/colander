@@ -9,9 +9,11 @@ export const ROUTE_HEADER = 'x-colander-route';
 /**
  * The part of a client address that per-IP limits count: an IPv4 address whole, an IPv6 address
  * by its /64, since one host or home line usually holds a whole /64 and could rotate through it.
- * An IPv4-mapped IPv6 address counts as its IPv4 address. Anything unparsable is kept as it is.
+ * `prefix` 48 counts an IPv6 address by its /48 instead, for limits on guessing, since a site or a
+ * free tunnel gets a whole /48. An IPv4-mapped IPv6 address counts as its IPv4 address. Anything
+ * unparsable is kept as it is.
  */
-export function ipKey(ip: string): string {
+export function ipKey(ip: string, prefix: 48 | 64 = 64): string {
 	if (!ip.includes(':')) return ip;
 	let s = ip.toLowerCase();
 	let tail: number[] = [];
@@ -32,7 +34,7 @@ export function ipKey(ip: string): string {
 	const all = [...head, ...Array<number>(gap).fill(0), ...back];
 	if (all.some(Number.isNaN)) return ip;
 	if (all.slice(0, 5).every((w) => w === 0) && all[5] === 0xffff) return [all[6]! >> 8, all[6]! & 255, all[7]! >> 8, all[7]! & 255].join('.');
-	return `${all.slice(0, 4).map((w) => w.toString(16)).join(':')}::/64`;
+	return `${all.slice(0, prefix / 16).map((w) => w.toString(16)).join(':')}::/${prefix}`;
 }
 
 /**

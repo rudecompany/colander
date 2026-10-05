@@ -267,6 +267,8 @@ export interface PairStatus {
 export interface PairClaimed {
 	kind: PairKind;
 	token: string;
+	/** The account the code came from, as a masked email such as p***@example.com: the person sees whose account they connected. */
+	account: string;
 }
 
 /**

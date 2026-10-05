@@ -4,9 +4,9 @@
 //   COLANDER_BASE_URL=https://getcolander.com COLANDER_PUBLIC_KEYS=<base64,...> node scripts/smoke.ts
 //
 // Flags:
-//   --mutating       staging only: adds a tag round trip with a throwaway install ID and a staff
+//   --mutating       staging only: adds a tag round trip with a throwaway install ID and a reviewer
 //                    decision that must reach the edge as a signed delta within 60 seconds
-//                    (needs COLANDER_REVIEWER_TOKEN, the reviewer token of a staff account)
+//                    (needs COLANDER_REVIEWER_TOKEN, the reviewer token of a curator account)
 //   --expect-cache   requires `cf-cache-status: HIT` on a repeated snapshot and delta request
 //   --since <seq>    a sequence clients held before a deploy; its delta must still be served
 //
@@ -293,7 +293,7 @@ async function main(): Promise<void> {
 			expect(res.status === 200 && Array.isArray(body.reports) && body.reports.length === 0,
 				`GET /v1/reports for the new install answered ${res.status} ${JSON.stringify(body)}`);
 		});
-		await check('a staff decision reaches the edge as a signed delta within 60 s', async () => {
+		await check('a reviewer decision reaches the edge as a signed delta within 60 s', async () => {
 			const before = atHead();
 			const auth = { Authorization: `Bearer ${reviewerToken}`, 'Content-Type': 'application/json' };
 			const path = '/v1/review/sources/yt/@colander-smoke';

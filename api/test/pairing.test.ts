@@ -2,9 +2,10 @@
 // once within 10 minutes from any origin, stored only as a hash, and claims limited per IP.
 import { exports } from 'cloudflare:workers';
 import { beforeAll, describe, expect, inject, it } from 'vitest';
-import { normalizePairCode, type PairCreated, type PairStatus } from '@colander/shared/api';
+import { normalizePairCode, type PairClaimed, type PairCreated, type PairStatus } from '@colander/shared/api';
 import { importKeys, verifyPlanToken, type TrustedKey } from '@colander/shared/signing';
 import { prune } from '../src/jobs';
+import { maskEmail } from '../src/routes/pairing';
 import { grantRole } from '../src/store/accounts';
 import { saveSubscription } from '../src/store/billing';
 import { errorCode, expectStatus, Harness } from './api';
@@ -52,6 +53,10 @@ describe('pairing codes', () => {
 		for (const bad of ['', 'KXQ4-JP7', 'KXQ4-JP7MM', 'KXQ4-JP7U', 'KXQ4_JP7M']) expect(normalizePairCode(bad), bad).toBeNull();
 	});
 
+	it('names the account a code came from by a masked email', () => {
+		expect(['pat@colander.test', 'a@b.example', 'no-at-sign', ''].map(maskEmail)).toEqual(['p***@colander.test', 'a***@b.example', 'n***', '***']);
+	});
+
 	it('hands an active plan to the extension once, as a plan token for the account', async () => {
 		const h = await Harness.create();
 		const maya = await plusMember(h);
@@ -66,8 +71,10 @@ describe('pairing codes', () => {
 		// Typed in lowercase without the dash, from any origin.
 		const res = await claim(h, made.code.replace('-', '').toLowerCase());
 		await expectStatus(res, 200);
-		const got = (await res.json()) as { kind: string; token: string };
+		const got = (await res.json()) as PairClaimed;
 		expect(got.kind).toBe('plan');
+		// Whose account it is, so a person handed someone else's code can tell.
+		expect(got.account).toBe('m***@example.test');
 		const claims = await verifyPlanToken(got.token, devKeys);
 		expect(claims).toMatchObject({ sub: maya.id, plan: 'plus', trial: false, exp: h.s + 30 * 86400 + 3 * 86400 });
 		expect(await pairStatus(h, maya.cookie, made.id)).toEqual({ status: 'claimed', ext_version: '1.4.0', browser: 'firefox' });
@@ -124,6 +131,27 @@ describe('pairing codes', () => {
 		expect(await pairStatus(h, sam, made.id)).toMatchObject({ status: 'pending' });
 	});
 
+	// A token works in any browser on any device, so staff authority stays with the staff session.
+	it('gives staff a reviewer token with curator authority only', async () => {
+		const h = await Harness.create();
+		await h.run((store) => grantRole(store.db, 'rae@colander.test', 'staff', h.s));
+		const rae = await h.signIn('rae@colander.test');
+		const res = await claim(h, (await makeCode(h, rae, 'reviewer')).code);
+		await expectStatus(res, 200);
+		const got = (await res.json()) as PairClaimed;
+		expect(got).toMatchObject({ kind: 'reviewer', account: 'r***@colander.test' });
+		const bearer = ['Authorization', `Bearer ${got.token}`];
+		const decision = { verdict: 'likely_slop', reason: 'Generated narration over stock footage.', signals: ['watermark'] };
+		await expectStatus(await h.do('POST', '/v1/review/sources/yt/@bignarration/decision', { ...decision, large: true }, ...csrf(rae)), 200);
+		const refused = await h.do('POST', '/v1/review/sources/yt/@bignarration/decision', decision, ...bearer);
+		await expectStatus(refused, 403);
+		expect(await errorCode(refused)).toBe('staff_required');
+		// Curator work goes through, and is logged as a curator's.
+		await expectStatus(await h.do('POST', '/v1/review/sources/yt/@smallnarration/decision', decision, ...bearer), 200);
+		const small = await h.do('GET', '/v1/review/sources/yt/@smallnarration', undefined, ...bearer);
+		expect(((await small.json()) as { history: { actor: string }[] }).history.map((e) => e.actor)).toEqual(['curator']);
+	});
+
 	it('expires after 10 minutes, and a new code ends the one before', async () => {
 		const h = await Harness.create();
 		const maya = await plusMember(h);
@@ -163,6 +191,21 @@ describe('pairing codes', () => {
 		await expectStatus(await claim(h, 'AAAA-AAAA', 'ip-hash-203.0.113.9'), 404);
 		h.clock += MINUTE;
 		await expectStatus(await claim(h, made.code), 200);
+	});
+
+	it('counts wrong codes from all addresses for the watchdog, without refusing anyone', async () => {
+		const h = await Harness.create();
+		const maya = await plusMember(h);
+		const made = await makeCode(h, maya.cookie, 'plan');
+		const status = () => h.run((store) => store.watchdog().then((s) => s.pairGuessing));
+		for (let i = 0; i < 299; i++) await claim(h, 'AAAA-AAAA', `ip-hash-${i}`);
+		expect(await status()).toBe(false);
+		expect(await errorCode(await claim(h, 'AAAA-AAAA', 'ip-hash-299'))).toBe('invalid_code');
+		expect(await status()).toBe(true);
+		// A real code from a fresh address still works, and the alert ends as the count drains.
+		await expectStatus(await claim(h, made.code, 'ip-hash-fresh'), 200);
+		h.clock += 60 * MINUTE;
+		expect(await status()).toBe(false);
 	});
 
 	it('checks the claim body', async () => {

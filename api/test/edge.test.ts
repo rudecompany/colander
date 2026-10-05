@@ -250,7 +250,7 @@ describe('forwarding to the Store', () => {
 
 	it('hashes an IPv6 client by its /64 and an IPv4-mapped one as its IPv4 address', async () => {
 		expect(
-			['203.0.113.7', '2001:db8:1:2::1', '2001:0DB8:0001:0002:ffff:0:0:9', '2001:db8:1:3::1', '::1', '::ffff:203.0.113.7', '::ffff:cb00:7107', '2001:db8::1.2.3.4', 'fe80::1%eth0', 'junk'].map(ipKey)
+			['203.0.113.7', '2001:db8:1:2::1', '2001:0DB8:0001:0002:ffff:0:0:9', '2001:db8:1:3::1', '::1', '::ffff:203.0.113.7', '::ffff:cb00:7107', '2001:db8::1.2.3.4', 'fe80::1%eth0', 'junk'].map((ip) => ipKey(ip))
 		).toEqual(['203.0.113.7', '2001:db8:1:2::/64', '2001:db8:1:2::/64', '2001:db8:1:3::/64', '0:0:0:0::/64', '203.0.113.7', '203.0.113.7', '2001:db8:0:0::/64', 'fe80::1%eth0', 'junk']);
 		const store = vi.spyOn(Store.prototype, 'fetch');
 		for (const ip of ['2001:db8:1:2::1', '2001:db8:1:2:aaaa:bbbb:cccc:dddd', '2001:db8:1:3::1', '::ffff:203.0.113.7', '203.0.113.7']) {
@@ -260,6 +260,26 @@ describe('forwarding to the Store', () => {
 		expect(hashes[0]).toBe(hashes[1]);
 		expect(hashes[2]).not.toBe(hashes[0]);
 		expect(hashes[3]).toBe(hashes[4]);
+	});
+
+	// A free tunnel hands out a whole /48: 65,536 /64s would each get their own guesses.
+	it('hashes a pairing claim from IPv6 by its /48', async () => {
+		expect(['2001:db8:1:2::1', '2001:db8:1:ffff::9', '203.0.113.7', '::ffff:203.0.113.7'].map((ip) => ipKey(ip, 48))).toEqual([
+			'2001:db8:1::/48',
+			'2001:db8:1::/48',
+			'203.0.113.7',
+			'203.0.113.7'
+		]);
+		const store = vi.spyOn(Store.prototype, 'fetch');
+		const claim = (ip: string) =>
+			get('/v1/pair/claim', { method: 'POST', headers: { 'CF-Connecting-IP': ip, 'Content-Type': 'application/json' }, body: JSON.stringify({ code: 'AAAA-AAAA', ext_version: '1.0.0', browser: 'chrome' }) });
+		for (const ip of ['2001:db8:1:2::1', '2001:db8:1:3::1', '2001:db8:2:2::1']) await claim(ip);
+		await get('/v1/reports', { headers: { 'CF-Connecting-IP': '2001:db8:1:2::1', Authorization: 'Install abc' } });
+		const hashes = store.mock.calls.map((c) => (c[0] as Request).headers.get('x-colander-ip-hash'));
+		expect(hashes[0]).toBe(hashes[1]);
+		expect(hashes[2]).not.toBe(hashes[0]);
+		// Every other route still counts the /64.
+		expect(hashes[3]).not.toBe(hashes[0]);
 	});
 
 	it('logs the route pattern, status and duration only', async () => {

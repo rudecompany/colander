@@ -1,7 +1,9 @@
 // Pairing codes (contracts 7): the one handoff from the website to the extension in every browser.
 // A signed-in account asks for a short code, the person types it into their extension, and the
 // extension's claim gets a plan token or a reviewer token. Codes last 10 minutes, work once and are
-// stored only as SHA-256; claims are limited per IP, because the code is all a claim carries.
+// stored only as SHA-256; claims are limited per address (an IPv6 address by its /48, src/index.ts),
+// because the code is all a claim carries, and wrong codes from all addresses together are counted
+// for the watchdog (src/scheduled.ts).
 import { normalizePairCode, PAIR_BROWSERS, type PairBrowser, type PlanTokenPayload } from '@colander/shared/api';
 import { issuePlanToken } from '@colander/shared/signing';
 import { hashToken, session } from '../auth';
@@ -81,39 +83,55 @@ async function claim(s: Store, request: Request): Promise<Response> {
 	}
 	const wait = allow(s.db, s.now(), request.headers.get(IP_HASH_HEADER) ?? '', 1, 'pair_claim_ip');
 	if (wait > 0) return tooMany(wait / 1000);
+	const wrong = () => {
+		// Counted for the watchdog's alert only: a limit across all addresses would let a guesser
+		// lock everyone else out.
+		allow(s.db, s.now(), '', 1, 'pair_claim_fail');
+		return jsonError(404, 'invalid_code', 'This code is not valid. It may have expired or been used already. Make a new one on the website.');
+	};
 	const code = normalizePairCode(body.code);
-	const invalid = () => jsonError(404, 'invalid_code', 'This code is not valid. It may have expired or been used already. Make a new one on the website.');
-	if (!code) return invalid();
+	if (!code) return wrong();
 	const now = unix(s.now());
 	// Using the code and minting what it hands over commit together; a refusal rolls the use back,
 	// so the website never shows a code as connected when the extension got nothing.
-	let got: { reviewer: string } | { claims: PlanTokenPayload };
+	let got: { account: string } & ({ reviewer: string } | { claims: PlanTokenPayload });
 	try {
 		got = s.db.tx(() => {
 			const p = claimPairing(s.db, codeHash(code), body.ext_version, body.browser as PairBrowser, now);
-			if (!p) throw new Refused(invalid());
+			if (!p) throw new Refused();
+			const account = getAccount(s.db, p.accountId);
+			if (!account) throw new Refused();
+			const label = maskEmail(account.email);
 			if (p.kind === 'reviewer') {
-				const account = getAccount(s.db, p.accountId);
-				if (!account || !mayReview(account)) throw new Refused(jsonError(403, 'forbidden', 'This account can no longer review.'));
-				return { reviewer: s.auth.issueReviewerToken(p.accountId) };
+				if (!mayReview(account)) throw new Refused(jsonError(403, 'forbidden', 'This account can no longer review.'));
+				return { account: label, reviewer: s.auth.issueReviewerToken(p.accountId) };
 			}
 			try {
-				return { claims: s.billing.planClaims(p.accountId, now) };
+				return { account: label, claims: s.billing.planClaims(p.accountId, now) };
 			} catch (err) {
 				throw err instanceof NoPlanError ? new Refused(noPlan()) : err;
 			}
 		});
 	} catch (err) {
-		if (err instanceof Refused) return err.response;
+		if (err instanceof Refused) return err.response ?? wrong();
 		throw err;
 	}
-	if ('reviewer' in got) return json(200, { kind: 'reviewer', token: got.reviewer });
-	return json(200, { kind: 'plan', token: await issuePlanToken(await s.signingKey(), got.claims) });
+	if ('reviewer' in got) return json(200, { kind: 'reviewer', token: got.reviewer, account: got.account });
+	return json(200, { kind: 'plan', token: await issuePlanToken(await s.signingKey(), got.claims), account: got.account });
 }
 
-/** A claim that is answered with an error and leaves the code as it was. */
+/**
+ * The account a code came from, for the extension to show: p***@example.com. Enough for the
+ * person to see whether it is their own account, and nothing more.
+ */
+export function maskEmail(email: string): string {
+	const at = email.lastIndexOf('@');
+	return `${[...email][0] ?? ''}***${at < 0 ? '' : email.slice(at)}`;
+}
+
+/** A claim that is answered with an error and leaves the code as it was; without a response, a wrong code. */
 class Refused extends Error {
-	constructor(readonly response: Response) {
+	constructor(readonly response?: Response) {
 		super('refused');
 	}
 }

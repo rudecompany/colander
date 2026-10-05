@@ -31,14 +31,22 @@ import { explain, lookupSource, toLog, toSource } from './public';
 import { decode, fields, goFixed, optString, parseInt64, pathValue, rfc3339, runeCount, signalMask, signalNames, testBits, testNames, trimSpace, verdictCode } from './respond';
 import type { Api, Params } from './server';
 
-/** Authenticates a curator or staff member by bearer token or session cookie, or answers the error. */
+/**
+ * Authenticates a curator or staff member by bearer token or session cookie, or answers the error.
+ * A reviewer token carries curator authority only, also a staff member's: a token works in any
+ * browser on any device, so staff-only actions need the staff session.
+ */
 function reviewer(api: Api, request: Request): Account | Response {
 	const { store } = api;
 	const auth = request.headers.get('Authorization') ?? '';
 	let a: Account | Response;
 	if (auth.startsWith('Bearer ')) {
-		a = store.auth.reviewerAccount(trimSpace(auth.slice('Bearer '.length))) ??
-			jsonError(401, 'invalid_token', 'The reviewer token is not valid. Create a new one on the website.');
+		const r = store.auth.reviewerAccount(trimSpace(auth.slice('Bearer '.length)));
+		a = !r
+			? jsonError(401, 'invalid_token', 'The reviewer token is not valid. Create a new one on the website.')
+			: r.role === 'staff'
+				? { ...r, role: 'curator' }
+				: r;
 	} else {
 		a = session(store.auth, request);
 	}

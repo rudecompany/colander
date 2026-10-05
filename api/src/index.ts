@@ -59,7 +59,8 @@ async function handle(request: Request, url: URL, env: Env, ctx: ExecutionContex
 		return { route: `${method} (site)`, res: await env.ASSETS.fetch(request) };
 	}
 	const dev = env.COLANDER_DEV === '1';
-	const ipHash = await hashIp(ipKey(request.headers.get('cf-connecting-ip') ?? ''), env.IP_SALT);
+	// Pairing claims carry nothing but a guessable code, so they count an IPv6 address by its /48.
+	const ipHash = await hashIp(ipKey(request.headers.get('cf-connecting-ip') ?? '', path === '/v1/pair/claim' ? 48 : 64), env.IP_SALT);
 	// The limiter shields the Store from cache misses. Local runtimes have no Workers Cache, so every
 	// request would be a miss and one developer's browser would trip it: dev mode goes without.
 	if (!dev && !(await env.MISSES.limit({ key: ipHash })).success) return { route: `${method} (rate limited)`, res: tooMany(60) };
@@ -88,7 +89,7 @@ async function handle(request: Request, url: URL, env: Env, ctx: ExecutionContex
 }
 
 /**
- * Salted HMAC-SHA256 of the client address (ipKey: an IPv6 address by its /64), hex. The raw
+ * Salted HMAC-SHA256 of the client address (ipKey: an IPv6 address by its /64 or /48), hex. The raw
  * address is never stored or forwarded.
  */
 async function hashIp(ip: string, salt: string): Promise<string> {

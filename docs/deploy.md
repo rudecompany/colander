@@ -306,8 +306,9 @@ Set each one with `gh secret set NAME [--env ENV]` or `gh variable set NAME [--e
 
 ### 16. The staging smoke account
 
-The staging smoke test makes a staff decision and checks that it reaches the edge within 60 seconds, so it needs a staff reviewer token.
-1. Grant the role on staging: run the Ops workflow with environment `staging`, command `grant-role` and args `{"email": "smoke@getcolander.com", "role": "staff"}`.
+The staging smoke test makes a reviewer decision and checks that it reaches the edge within 60 seconds, so it needs a reviewer token.
+A reviewer token carries curator authority only, also a staff account's, and curator authority is all the smoke test and the restore drill need.
+1. Grant the role on staging: run the Ops workflow with environment `staging`, command `grant-role` and args `{"email": "smoke@getcolander.com", "role": "curator"}`.
 2. Sign in on https://staging.getcolander.com/account as that address.
 3. In the browser console on that page run `await (await fetch('/v1/account/reviewer-token', {method: 'POST', headers: {'X-Colander-CSRF': '1'}})).json()`.
 4. Store the token as the `staging` environment secret `STAGING_REVIEWER_TOKEN`.
@@ -555,6 +556,8 @@ Google publishing is keyless and has nothing to rotate.
 ### When something fails
 
 - The watchdog cron mails the alert address when the scoring pass, the list publication, R2 or the dumps fall behind.
+- It also mails `pair_guessing` when 300 or more wrong pairing codes come in within an hour from all addresses together, which looks like someone guessing codes.
+  Claims stay limited per address either way; look for `POST /v1/pair/claim` in the edge logs.
 - `probes.yml`, `drills.yml` and `adapters-daily.yml` open an issue named after the failing check, or comment on the open one.
   Close the issue once the cause is fixed.
 - GitHub turns off scheduled workflows after 60 days without activity in a public repository, so re-enable them under Actions if the repository goes quiet.
