@@ -1,6 +1,7 @@
 import { readdirSync, readFileSync } from 'node:fs';
 import { cloudflareTest } from '@cloudflare/vitest-plugin';
 import { defineConfig } from 'vitest/config';
+import { unstable_readConfig } from 'wrangler';
 import { contractFiles } from '../packages/shared/test/contract-files.ts';
 
 // node:sqlite still announces itself as experimental on Node 24; that notice is expected here.
@@ -21,8 +22,9 @@ function migrationSchema() {
 	return db.prepare('SELECT type, name, tbl_name, sql FROM sqlite_master ORDER BY name').all() as { type: string; name: string; tbl_name: string; sql: string | null }[];
 }
 
-// The Worker's required secrets for tests, with the published dev signing key. Passed as bindings
-// so a developer's api/.dev.vars never changes test results; also set in process.env so Wrangler
+// The Worker's required secrets for tests, with the published dev signing key. Passed as bindings,
+// together with every var in wrangler.jsonc, so a developer's api/.dev.vars (which `make dev`
+// writes, with a local PUBLIC_URL) never changes test results; also set in process.env so Wrangler
 // does not warn about missing secrets when there is no .dev.vars.
 const secrets = {
 	COLANDER_SIGNING_KEY: readFileSync(new URL('testdata/dev-signing.key', repo), 'utf8').trim(),
@@ -39,7 +41,7 @@ export default defineConfig({
 				plugins: [
 					cloudflareTest({
 						wrangler: { configPath: './wrangler.jsonc' },
-						miniflare: { bindings: { ...secrets, COLANDER_DEV: '1' } }
+						miniflare: { bindings: { ...unstable_readConfig({ config: './wrangler.jsonc' }).vars, ...secrets, COLANDER_DEV: '1' } }
 					})
 				],
 				test: {
