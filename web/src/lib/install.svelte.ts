@@ -3,6 +3,7 @@
 // variables are set (src/env.ts). Pages prerender the Chrome Web Store, so they work without
 // JavaScript and a wrong guess costs nothing, then switch to this browser's store once they run.
 import { PUBLIC_STORE_CHROME, PUBLIC_STORE_EDGE, PUBLIC_STORE_FIREFOX } from '$app/env/public';
+import { fmtList } from '@colander/shared/format';
 
 export interface Store {
 	/** The browser the label names. */
@@ -23,7 +24,7 @@ const FIREFOX: Store | null = PUBLIC_STORE_FIREFOX ? { name: 'Firefox', store: '
 export const STORES: Store[] = [CHROME, FIREFOX, EDGE].filter((s): s is Store => s !== null);
 
 /** The desktop browsers Colander runs in, for copy: "Chrome, Edge, Brave and Opera". */
-export const BROWSERS = ['Chrome', ...(FIREFOX ? ['Firefox'] : []), 'Edge', 'Brave', 'Opera'].join(', ').replace(/, (\w+)$/, ' and $1');
+export const BROWSERS = fmtList(['Chrome', ...(FIREFOX ? ['Firefox'] : []), 'Edge', 'Brave', 'Opera']);
 
 /** The store for a browser's user agent; any other browser gets the Chrome Web Store. */
 export function storeFor(ua: string): Store {

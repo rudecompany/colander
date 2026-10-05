@@ -126,14 +126,18 @@ for (const scheme of ['light', 'dark'] as const) {
 				await opts.waitForTimeout(300);
 				await shot(opts, `options-${s}-320-${scheme}`, true);
 			}
-			// A paid plan, handed over by the website after checkout.
-			const site = await ext.ctx.newPage();
-			await site.route('http://localhost:8787/account', (r) => r.fulfill({ contentType: 'text/html', body: '<!doctype html><title>Account</title>' }));
-			await site.goto('http://localhost:8787/account');
+			// A paid plan, connected with a pairing code from the website: first a code that is not valid.
 			const exp = Math.floor(Date.now() / 1000) + 365 * 86400;
-			await site.evaluate(([id, token]) => chrome.runtime.sendMessage(id, { type: 'colander:plan-token', token }), [EXT_ID, planToken({ trial: false, exp })] as const);
-			await expect.poll(() => ext.storage('entitlement')).toEqual({ plus: true, trial: false, exp });
 			await opts.setViewportSize({ width: 1440, height: 900 });
+			await opts.goto(`chrome-extension://${EXT_ID}/options.html#plan`);
+			await opts.getByLabel('Code from the website').fill('KXQ4-JP7M');
+			await opts.getByRole('button', { name: 'Connect' }).click();
+			await expect(opts.getByRole('alert')).toBeVisible();
+			await opts.waitForTimeout(200);
+			await shot(opts, `options-plan-code-error-${scheme}`, true);
+			ext.api.pair = { kind: 'plan', token: planToken({ trial: false, exp }) };
+			await opts.getByRole('button', { name: 'Connect' }).click();
+			await expect.poll(() => ext.storage('entitlement')).toEqual({ plus: true, trial: false, exp });
 			await opts.goto(`chrome-extension://${EXT_ID}/options.html#plan`);
 			await opts.waitForTimeout(300);
 			await shot(opts, `options-plan-paid-${scheme}`, true);
@@ -155,6 +159,12 @@ for (const scheme of ['light', 'dark'] as const) {
 			await expect(welcome.getByRole('heading', { name: 'Pin Colander' })).toBeVisible();
 			await welcome.waitForTimeout(300);
 			await shot(welcome, `welcome-3-${scheme}`);
+			const opened = ext.ctx.waitForEvent('page');
+			await welcome.getByRole('button', { name: 'Done' }).click();
+			await (await opened).close();
+			await expect(welcome.getByRole('heading', { name: 'You are set' })).toBeVisible();
+			await welcome.waitForTimeout(300);
+			await shot(welcome, `welcome-done-${scheme}`);
 			await welcome.setViewportSize({ width: 390, height: 844 });
 			await welcome.goto(`chrome-extension://${EXT_ID}/welcome.html`);
 			await welcome.waitForTimeout(400);
@@ -175,6 +185,14 @@ for (const scheme of ['light', 'dark'] as const) {
 			await side.reload();
 			await side.getByRole('button', { name: /Cat Rescue Tales/ }).waitFor();
 			await shot(side, `sidepanel-queue-${scheme}`);
+			// Connected curators get Review in the popup, beside Options.
+			const popup = await ext.ctx.newPage();
+			await popup.setViewportSize({ width: 360, height: 600 });
+			await popup.goto(`chrome-extension://${EXT_ID}/popup.html`);
+			await expect(popup.getByRole('button', { name: 'Review' })).toBeVisible();
+			await popup.waitForTimeout(200);
+			await shot(popup, `popup-review-${scheme}`);
+			await popup.close();
 			await side.getByRole('button', { name: /Cat Rescue Tales/ }).click();
 			await expect(side.getByRole('heading', { name: 'Cat Rescue Tales' })).toBeVisible();
 			await side.waitForTimeout(200);

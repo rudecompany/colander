@@ -7,6 +7,8 @@ a live listing. Empty when there is nothing to say.
 	import { install, STORES } from '#lib/install.svelte.ts';
 
 	const others = $derived(STORES.filter((s) => s.href !== install.store.href));
+	// The words between the links: "", ", " and " and ", as fmtList puts them.
+	const sep = (i: number) => (i === 0 ? '' : i === others.length - 1 ? ' and ' : ', ');
 </script>
 
-{#if install.store.hint}{install.store.hint}{' '}{/if}{#if others.length}Also in {#each others as s, i (s.href)}{i ? (i === others.length - 1 ? ' and ' : ', ') : ''}<a class="cl-link" href={s.href}>{s.store}</a>{/each}.{/if}
+{#if install.store.hint}{install.store.hint}{' '}{/if}{#if others.length}Also in {#each others as s, i (s.href)}{sep(i)}<a class="cl-link" href={s.href}>{s.store}</a>{/each}.{/if}

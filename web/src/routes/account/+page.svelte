@@ -226,6 +226,16 @@
 	.whoami {
 		margin-top: 16px;
 	}
+	/* On a phone, Sign out takes its own line; its text lines up with the line above, not its padding. */
+	@media (max-width: 639px) {
+		.whoami {
+			flex-direction: column;
+			align-items: flex-start;
+		}
+		.whoami :global(.uin-btn-ghost) {
+			margin-left: calc(-1 * var(--cl-s4));
+		}
+	}
 	.section-card {
 		display: grid;
 		gap: var(--cl-s3);

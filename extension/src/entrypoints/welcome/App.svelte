@@ -7,6 +7,7 @@ platform, and the last card links to connecting Plus with a code.
 <script lang="ts">
 	import { ColanderMark, DotField, FeedDemo, Lifecycle, StrictnessControl, type LifecycleStep } from '@colander/shared';
 	import { DEFINITION_PUBLIC, DEMO_THUMBS_NOTE, PLATFORM_SURFACES, TAGLINE } from '@colander/shared/copy';
+	import { fmtList } from '@colander/shared/format';
 	import { TOOLBAR } from '@colander/shared/glyphs';
 	import Button from '@colander/shared/components/ui/button/button.svelte';
 	import { PLATFORMS, PLATFORM_NAME, type Platform, type Strictness } from '@colander/shared/verdicts';
@@ -105,7 +106,7 @@ platform, and the last card links to connecting Plus with a code.
 				{#if done}
 					<section class="card" aria-labelledby="done-title">
 						<h2 id="done-title" class="cl-title">You are set</h2>
-						<p class="muted">Colander now runs on {chosen.map((p) => PLATFORM_NAME[p]).join(', ')}. The toolbar icon counts what it hides on each page, and every hidden item can be shown again.</p>
+						<p class="muted">Colander now runs on {fmtList(chosen.map((p) => PLATFORM_NAME[p]))}. The toolbar icon counts what it hides on each page, and every hidden item can be shown again.</p>
 						<p class="links">
 							<a class="cl-link" href="options.html#platforms">Change platforms<ArrowRight size={16} aria-hidden="true" /></a>
 							<a class="cl-link" href="options.html#strictness">Change strictness<ArrowRight size={16} aria-hidden="true" /></a>
