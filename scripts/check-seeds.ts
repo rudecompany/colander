@@ -100,8 +100,11 @@ if (base) {
 	const headOwners = head ? ownerList(at(head, RULES)) : SEED_OWNERS;
 	if (headOwners?.join() !== baseOwners.join()) changed.push('SEED_OWNERS');
 	// The rules, the checks and CODEOWNERS themselves: whoever could change them could pass anything.
-	const files = new Set(git('diff', '--name-only', base, ...(head ? [head] : []), '--').split('\n').filter(Boolean));
-	for (const path of OWNED.map((p) => p.slice(1))) if (path !== REGISTRY && files.has(path)) changed.push(path);
+	// Before base had the rules there was no owner rule to keep, so the change bringing them is free.
+	if (at(base, RULES) !== undefined) {
+		const files = new Set(git('diff', '--name-only', base, ...(head ? [head] : []), '--').split('\n').filter(Boolean));
+		for (const path of OWNED.map((p) => p.slice(1))) if (path !== REGISTRY && files.has(path)) changed.push(path);
+	}
 	if (changed.length && !byOwners) {
 		const others = actors.filter((a) => !baseOwners.includes(a));
 		problems.push(`${others.join(', ')} changed ${changed.join(', ')}, which only ${baseOwners.join(', ')} may change: a cleared entry, a clearance, the owner list or the seed rules and checks`);
