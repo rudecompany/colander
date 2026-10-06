@@ -422,7 +422,7 @@ There are no passwords and no emailed sign-in links.
 Sessions are the SHA-256 of 32 random bytes, last 30 days, record `last_seen_at` at most hourly, and are new on every sign-in and every step-up: the old token ends.
 A session from before code sign-in that still arrives under the old cookie name `colander_session` moves to `__Host-colander_session` with the same token, once, and only when no `__Host-` cookie came with it; sessions created since are never read under the old name.
 
-Step-up: export, deletion, removing a passkey, adding one to an account that already holds one, and reviewer pairing codes need a sign-in from the last 10 minutes (`403 recent_auth_required`), and with a passkey whenever the account holds one (`403 passkey_required`).
+Step-up: export, deletion, removing a passkey and adding one to an account that already holds one need a sign-in from the last 10 minutes (`403 recent_auth_required`), with a passkey whenever the account holds one (`403 passkey_required`); reviewer pairing codes always need a passkey sign-in from the last 10 minutes (section 7).
 The website then asks the person to confirm with their passkey, or with an emailed code when the account has none, and repeats the request.
 
 Held requests: an account that holds a passkey but was confirmed with an email code only may still ask for deletion, an export or removing a passkey it lost.
@@ -525,7 +525,7 @@ There are four roles in one column, with a fixed permission table in code (`api/
 
 Roles change only on accounts strictly below the actor's role and only to roles strictly below it, never on the actor's own account, and never to admin.
 Admin is granted only through the ops channel's bootstrap (`grant-role` grants staff and admin only until it first grants admin, and never again, even if no admin is left).
-Raising an account to curator or above ends its sessions and deletes its passkeys and reviewer token in the same transaction, so a passkey added while it was a member never carries review authority; lowering it below curator deletes the reviewer token.
+Raising an account to curator or above ends its sessions and deletes its passkeys, reviewer token and unused pairing codes in the same transaction, so a passkey added while it was a member never carries review authority; lowering it below curator deletes the reviewer token, and a reviewer code still waiting is then refused at the claim (`403 forbidden`).
 Nobody issues an invite for their own account.
 
 The admin hosts are `admin.getcolander.com`, `staging-admin.getcolander.com` and, in dev, `admin.localhost` on the dev port (`ADMIN_HOST`, 10).
