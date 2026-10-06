@@ -180,11 +180,11 @@ class Seeder {
 
 	/**
 	 * A channel with the name viewers report for it, and its channel ID and handle as a Data API
-	 * lookup without derived use links them, through the same store call enrichment uses.
+	 * lookup links them, through the same store call enrichment uses.
 	 */
 	youtube(alias: string, channelId: string, handle: string, name: string): void {
 		const ref = this.source('yt', alias, name);
-		this.attempt(() => setYouTube(this.db, ref, { channelId, handle, subscribers: null, uploadsPerDay: null }, this.unix));
+		this.attempt(() => setYouTube(this.db, ref, { channelId, handle }, this.unix));
 	}
 
 	/**
@@ -469,7 +469,7 @@ class Seeder {
 		this.decide(this.staff, 'yt', '@grandpasworkshop', '', 'clear', "Original footage and the creator's own narration.", 0, '', 0);
 		this.at(this.days(20));
 		this.decide(this.staff, 'tt', '@sloppyfacts', '', 'likely_slop', 'Generated facts videos with frequent errors; large audience, so held at Likely slop.', Sig.platform_label, 'filler', hollow, true);
-		// Staff record a channel's size themselves: no YouTube figure decides it without derived use.
+		// Staff record a channel's size themselves: no YouTube figure ever decides it.
 		this.decide(this.staff, 'yt', '@gossipnarrated', '', 'likely_slop', 'Synthetic narration over celebrity photos; a large channel, so held at Likely slop until a full review.', 0, 'deceptive', low | hollow | mass, true);
 		// TikTok reports no audience size, so community scoring holds Pet Pals at Likely slop until staff look.
 		this.decide(this.staff, 'tt', '@petpalsai', '', 'slop', 'Staff review confirmed generated pet clips posted around the clock to a small audience.', 0, 'filler', low | mass, false);

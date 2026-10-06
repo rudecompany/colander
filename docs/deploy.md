@@ -225,8 +225,8 @@ If a later change to `api/wrangler.jsonc` adds or changes routes or Custom Domai
 4. Leave `YOUTUBE_DAILY_UNITS` in `api/wrangler.jsonc` at `7000` for production and `1000` for staging; neither Worker spends more than its own per Pacific day.
    Both spend the one project's 10,000 units but each keeps its own ledger, so together they stay at 8,000, and a config test fails any change that passes that.
    Change both together if the project's quota changes.
-5. Leave `YOUTUBE_DERIVED_USE` empty.
-   Set it to `1` only after YouTube approves Colander's derived metrics in the Audit and Quota Extension Form; until then no subscriber count or uploads per day reaches a verdict (contracts 9.7).
+
+The Worker asks YouTube for a channel's ID and handle only: no subscriber count or uploads per day ever reaches a verdict, and no setting changes that (contracts 9.7).
 
 ### 13. Chrome Web Store developer account and item
 
@@ -505,7 +505,7 @@ Until then the registry's entries stay pending, `import-seed` refuses them, and 
   Never a second project for the same use: that splits one use case's quota.
 - K2. Before the Audit and Quota Extension Form: the privacy page names YouTube API Services and links Google's Privacy Policy (done), the terms bind users to YouTube's Terms of Service (add this with counsel), any page that shows API data carries YouTube's branding (no public page shows any), and a demo account for YouTube's reviewers.
 - K3. Submit the Audit and Quota Extension Form yourself, after counsel has said whether the extension's changes to YouTube's pages make it part of Colander's API client.
-  Include the derived-metrics amendment only if you want subscriber counts and uploads per day to feed scoring; until YouTube approves it, leave `YOUTUBE_DERIVED_USE` empty.
+  Ask for no derived metrics: Colander never lets YouTube figures feed scoring or public evidence.
 
 ## Part 2: reference
 

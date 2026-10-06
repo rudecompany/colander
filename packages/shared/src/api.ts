@@ -70,7 +70,7 @@ export interface Source {
 	slop_type: SlopType | null;
 	tests: Test[];
 	large: boolean;
-	/** Staff recorded the audience size (or, with YouTube derived use only, YouTube reported it). */
+	/** Staff recorded the audience size. No YouTube figure ever sets it. */
 	audience_known: boolean;
 	/** Always false in public responses; for reviewers, whether seed lists name the source as a review lead. */
 	imported: boolean;

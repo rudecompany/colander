@@ -95,7 +95,7 @@ The Edge and Firefox builds are made and tested, and wait for their store listin
 The other 1.1 items (articles and search results, the Family plan, Content Credentials) are not built, and Safari waits for a payments decision.
 
 Fairness rules are enforced in code and tested: tags alone never make anything Slop, a reviewer needs AI evidence to rate Slop or Likely slop, mixed sources are judged item by item, appeals unhide a source while staff review it, and curators cannot decide large or appealed sources.
-Audience size is unknown unless staff set it: TikTok, Instagram and Facebook give no audience figures, and YouTube's figures do not feed scoring until YouTube approves derived metrics.
+Audience size is unknown unless staff set it: TikTok, Instagram and Facebook give no audience figures, and YouTube's figures never feed scoring.
 So a Slop verdict on any platform waits for a reviewer, a curator or staff, until then; plan review capacity accordingly.
 
 Some things need people or accounts rather than code.

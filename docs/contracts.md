@@ -315,7 +315,7 @@ A report's status follows its source: it stays `under_review` until a reviewer d
 A lookup by any alias returns the same source.
 A source that only seed lists or the calibration set brought in (no verdict, tags, reports, appeals, decisions, items or log rows) answers `404 not_rated` too, with the same body as an unknown source, so no public answer can tell that a list names it.
 `POST /v1/appeals` (6.5) answers such a source the same way.
-`audience_known` is `true` once staff have recorded the source's size (the `large` decision field, 6.7), or, only with `YOUTUBE_DERIVED_USE` (9.7), when the YouTube Data API reported a subscriber count; `large` is then the recorded answer.
+`audience_known` is `true` once staff have recorded the source's size (the `large` decision field, 6.7); `large` is then the recorded answer. No YouTube Data API figure sets either (9.7).
 While it is `false`, the size is not known and `large` is `false`.
 
 Public pages never name a data source, and never show YouTube Data API data:
@@ -647,7 +647,7 @@ Plan, payment and donation state are never inputs.
 ### 9.3 Layers
 
 - Provenance (AI evidence) is met when any holds: at least 2 distinct installs reported `platform_label` on the target (for a source that is not mixed, on any of its items); staff recorded `platform_label`, `content_credentials`, `creator_statement` or `watermark`; or community AI consensus: `S + A >= 3`, `n >= 3` and `(S + A) / T >= 0.7`.
-- Behavior (sources; items inherit their source's) is met when any holds: `ai_item_share >= 0.8` over at least 5 items seen with evidence (Kagi's 80% rule, emitted as `mostly_ai`), where an item counts as AI-made only through independent evidence (platform label reports from 2 or more installs, or a reviewer decision), never through community AI consensus, so tags alone cannot make a source look mass-produced; staff recorded `high_volume`, `templated`, `near_duplicates`, `link_funnel` or `cross_posting`; or, only with `YOUTUBE_DERIVED_USE` (9.7), uploads per day of at least 10 from the YouTube Data API.
+- Behavior (sources; items inherit their source's) is met when any holds: `ai_item_share >= 0.8` over at least 5 items seen with evidence (Kagi's 80% rule, emitted as `mostly_ai`), where an item counts as AI-made only through independent evidence (platform label reports from 2 or more installs, or a reviewer decision), never through community AI consensus, so tags alone cannot make a source look mass-produced; or staff recorded `high_volume`, `templated`, `near_duplicates`, `link_funnel` or `cross_posting`. No YouTube Data API figure is an input (9.7).
 - Rubric is met when, among slop tags with `S >= 1`, at least two of the three tests are each selected by a weighted share of 0.5 or more. `mass_produced` also counts as selected when Behavior is met. Emits `rubric_low_effort` and `rubric_hollow` where they pass.
 - Consensus for slop: `S >= 3`, `n >= 3`, `S / T >= 0.7`, and the source is not frozen by burst detection. Emits `community_consensus`.
 - Not-slop consensus: `N >= 3` and `N / T >= 0.7`. Emits `not_slop_consensus`.
@@ -666,7 +666,7 @@ Imports from before the seed registry (migration 8) raise no lead either; only r
 3. Not-slop consensus: Clear.
 4. No provenance: not rated (no list entry).
 5. Split: Disputed.
-6. Provenance, Behavior and Consensus all met: Slop, except that it is capped at Likely slop and raises an escalation when the source is large, or when its audience size is unknown (staff never recorded its size, and, with `YOUTUBE_DERIVED_USE` only, the YouTube Data API reported no subscriber count). Only a reviewer can then make it Slop. Without `YOUTUBE_DERIVED_USE`, every source whose size staff have not recorded stays at Likely slop until a reviewer decides.
+6. Provenance, Behavior and Consensus all met: Slop, except that it is capped at Likely slop and raises an escalation when the source is large, or when its audience size is unknown (staff never recorded its size). Only a reviewer can then make it Slop, so every source whose size staff have not recorded stays at Likely slop until a reviewer decides.
 7. Provenance and (Behavior or Rubric), with `S >= 1`: Likely slop.
 8. Provenance only: AI-made.
 
@@ -680,7 +680,7 @@ Signals on a list entry are the union of the signals that fired for the layers t
 - Every list verdict carries `rescore_at = changed_at + 90 days`. At expiry, staff and curator decisions lapse and the target is scored again; if the result is Slop it becomes an escalation and stays Likely slop until reviewed.
 - An escalation is raised when: rule 6 is capped; 3 or more open reports exist on a source; a burst is detected; a verdict lapses into Slop; a live entry of a cleared lead or seed list (14.4) names a source that no reviewer has decided and on which staff have not suppressed seed lists (a seed lead). A reviewer's decision on the source closes the seed lead for good, and so do the entry's expiry, its list losing its clearance, and a suppression.
 - Burst: more than 20 slop tags in one hour on one source from installs younger than 7 days. The consensus layer of that source is frozen for 72 hours and an escalation is raised.
-- A source is large when staff set `large`, or, only with `YOUTUBE_DERIVED_USE` (9.7), when the YouTube Data API reports 100,000 subscribers or more. A source whose audience is unknown is treated like a large one for rule 6 only, and is not shown as large.
+- A source is large when staff set `large`; no subscriber count decides it (9.7). A source whose audience is unknown is treated like a large one for rule 6 only, and is not shown as large.
 - The scoring pass runs every 5 minutes and, debounced by 5 seconds, after any review decision, appeal change or report.
 - Every verdict change writes a decision log entry. Changes made by the scoring pass use actor `community` and a reason generated from the signals.
 
@@ -695,18 +695,18 @@ Dev mode has no edge analytics, so there the Worker counts the requests itself.
 
 The Worker follows the YouTube API Services Developer Policies:
 - Retention: figures and responses obtained with the API key alone are never kept 30 days.
-  Responses are not cached, so the per-channel figures are dated by the call that returned them; the hourly prune deletes them once they are 29 days old, and a source still needed is looked up again after 20 days.
+  Responses are not cached, and a lookup keeps no figure; the hourly prune deletes per-channel figures that older code wrote once they are 29 days old, and a source still needed is looked up again after 20 days.
   Dumps create that table but hold none of its rows, so no backup keeps the figures.
   Dumps taken before migration 5 did hold API data: restoring one runs that migration's data changes on its rows again, and the runbook deletes them (deploy.md, "Dumps from before migration 5").
 - Identifiers: a lookup links the channel ID and handle it returns to the source as aliases, and the channel ID becomes its canonical ID.
   The next lookup refreshes them, but they are not deleted: they are dumped, published in a source's `id` and `aliases`, and listed, until counsel confirms whether identifiers found through the API may be kept and shipped.
 - Names: the API's channel title is never stored. Source names and the decision log's `source_name` come from viewers' reports.
-- Derived metrics: subscriber counts and uploads per day feed scoring (Behavior's `high_volume`, `large` and a known audience) only when `YOUTUBE_DERIVED_USE` is `1`, which needs YouTube's approval first. Off, uploads per day is never computed and no figure is stored; a lookup only links a channel ID and its handle.
+- Derived metrics: none. A lookup asks for the channel's snippet only and links its channel ID and handle; no subscriber count or uploads per day is fetched, stored, scored or published, and no setting changes that.
 - Quota: every call is charged to a ledger of the Pacific date (YouTube resets quotas at midnight Pacific Time) with its unit cost before it is made, failed calls included, and no call is made once the day's charges would pass `YOUTUBE_DAILY_UNITS`.
   When YouTube answers `quotaExceeded`, the day counts as used up.
   Production and staging use one Google Cloud project and each keeps its own ledger, so their budgets together stay at 8,000 of the project's 10,000 units.
   A restore keeps the larger count of each day, so units spent stay spent.
-- Rate: each scoring pass looks up at most 10 channels, and background lookups stop once the day's charges reach 80% of the budget, which keeps the rest for appeal checks: with derived use a lookup can cost 21 units.
+- Rate: each scoring pass looks up at most 10 channels, and background lookups stop once the day's charges reach 80% of the budget, which keeps the rest for appeal checks: a lookup costs 1 unit.
   A channel that fails is logged and waits for its next refresh while the others go on; a used-up share ends the lookups until the next Pacific day.
   Appeal checks fall back to staff when the whole budget is used up.
 
@@ -734,7 +734,6 @@ The client address always comes from `CF-Connecting-IP`.
 | `RESEND_API_KEY` | secret, optional | unset | Resend, the fallback when the Email Sending binding fails |
 | `YOUTUBE_API_KEY` | secret, optional | unset | YouTube lookups (channel ID and handle) and automatic appeal verification (9.7) |
 | `YOUTUBE_DAILY_UNITS` | var | `8000`; `api/wrangler.jsonc` sets `7000` in production and `1000` in staging | YouTube Data API units the Worker may spend per Pacific day. Both environments share one project's 10,000, so their values add up to 8,000 at most (9.7). |
-| `YOUTUBE_DERIVED_USE` | var | empty, which is off | `1` lets subscriber counts and uploads per day feed scoring. Set it only after YouTube approves Colander's derived metrics (9.7). |
 | `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` | secret, optional | unset | Billing. Without them billing routes answer `503 billing_unavailable`. |
 | `STRIPE_PRICE_PLUS_MONTHLY`, `STRIPE_PRICE_PLUS_YEARLY` | var | empty | Price IDs of the Plus prices; checkout answers `503 billing_unavailable` until they are set |
 | `STRIPE_MANAGED_PAYMENTS` | var | empty, which is on | Plus checkout with Stripe Managed Payments as merchant of record. `0` turns it off. |

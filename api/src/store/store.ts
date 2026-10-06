@@ -117,7 +117,6 @@ export class Store extends DurableObject<Env> {
 		const budget = Number(env.YOUTUBE_DAILY_UNITS || DAILY_UNITS);
 		if (!Number.isSafeInteger(budget) || budget < 0) throw new Error('YOUTUBE_DAILY_UNITS must be a whole number of units');
 		if (youtubeKey) this.engine.youtube = new YouTube(youtubeKey, this.db, () => this.now(), budget);
-		this.engine.derived = env.YOUTUBE_DERIVED_USE === '1';
 		// Fictional dev_only lists count only in dev mode (docs/contracts.md 14).
 		this.engine.seeds = new SeedRegistry(REGISTRY, env.COLANDER_DEV === '1');
 		this.auth = new Auth(this.db, () => this.now(), env.COLANDER_DEV === '1');

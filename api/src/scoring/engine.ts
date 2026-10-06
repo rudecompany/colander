@@ -118,12 +118,6 @@ export class Engine implements PassScorer {
 	/** Set when YOUTUBE_API_KEY is: each pass starts by refreshing stale YouTube sources. */
 	youtube?: YouTube;
 	/**
-	 * YOUTUBE_DERIVED_USE: YouTube approved Colander's derived metrics, so subscriber counts and
-	 * uploads per day are fetched and feed scoring. Off, a source's size is known only when staff
-	 * recorded it, and nothing derived from YouTube Data API data reaches a verdict.
-	 */
-	derived = false;
-	/**
 	 * The seed registry: which lists' entries are review leads now. The Store builds it with dev
 	 * mode; tests replace it with their own entries.
 	 */
@@ -149,7 +143,7 @@ export class Engine implements PassScorer {
 		if (this.youtube) {
 			// Network calls happen outside any transaction. A failure only delays enrichment.
 			try {
-				await this.youtube.enrichStale(this.db, now, ENRICH_PER_PASS, this.derived);
+				await this.youtube.enrichStale(this.db, now, ENRICH_PER_PASS);
 			} catch (err) {
 				console.warn(JSON.stringify({ message: 'youtube enrichment failed', error: String(err) }));
 			}
@@ -199,15 +193,11 @@ export class Engine implements PassScorer {
 	}
 
 	/**
-	 * A source's size for rule 6 and the curator limits: what staff recorded, and the YouTube
-	 * subscriber count only with derived use.
+	 * A source's size for rule 6 and the curator limits: only what staff recorded. No YouTube Data
+	 * API figure ever feeds scoring (contracts 9.7).
 	 */
 	audience(src: Source): { large: boolean; known: boolean } {
-		const subscribers = this.derived ? src.subscribers : null;
-		return {
-			large: src.largeStaff || (subscribers !== null && subscribers >= this.th.largeSubscribers),
-			known: src.sizeReviewedAt > 0 || subscribers !== null
-		};
+		return { large: src.largeStaff, known: src.sizeReviewedAt > 0 };
 	}
 
 	private weights(reps: Map<string, Rep>, now: number): (install: string) => number {
@@ -277,8 +267,7 @@ export class Engine implements PassScorer {
 				decision: toDecision(d.decisions.get(it.ref)),
 				appealOpen: d.appealOpen,
 				frozen,
-				lapseHold: it.state.lapseHold || isLapsing(it.state, nowS),
-				uploadsPerDay: -1
+				lapseHold: it.state.lapseHold || isLapsing(it.state, nowS)
 			});
 			for (const v of byItem.get(it.ref) ?? []) {
 				input.votes.push(toVote(v));
@@ -308,7 +297,6 @@ export class Engine implements PassScorer {
 			frozen,
 			large: audience.large,
 			audienceKnown: audience.known,
-			uploadsPerDay: this.derived ? (src.uploadsPerDay ?? -1) : -1,
 			itemsSeen: seen,
 			aiItems,
 			labelInstalls: labelInstalls.size,

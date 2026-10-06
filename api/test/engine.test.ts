@@ -19,7 +19,7 @@ import { AppealExpired, AppealPendingManual, AppealAwaiting, AppealUnderReview, 
 import { SNAPSHOT_KEY } from '../src/store/list';
 import { putSync, startTrial } from '../src/store/misc';
 import { SeedRegistry, setSeedSuppression } from '../src/store/seeds';
-import { findItem, findSource, getSource, setYouTube, type Source } from '../src/store/sources';
+import { findItem, findSource, getSource, type Source } from '../src/store/sources';
 import { createReport, getReport, saveTags } from '../src/store/tags';
 import { applyUpdate, loadSourceData, log, openEscalations, reputation } from '../src/store/verdicts';
 import type { Store } from '../src/store/store';
@@ -120,12 +120,13 @@ class Fixture {
 	}
 
 	/**
-	 * Records YouTube data showing 20 uploads a day (the behavior layer) and 50,000 subscribers, with
-	 * derived use on (YOUTUBE_DERIVED_USE), so the figures reach scoring.
+	 * Meets a YouTube source's behavior layer the way the community does, by the 80% rule: five of its
+	 * items carry platform AI labels from two installs each. Staff also recorded its size, as not
+	 * large, so rule 6 can make it Slop. No YouTube Data API figure feeds scoring (contracts 9.7).
 	 */
-	highVolume(alias: string, channelId = 'UCzzzzzzzzzzzzzzzzzzzzz1'): void {
-		this.eng.derived = true;
-		setYouTube(this.db, this.source(alias).ref, { channelId, handle: alias, subscribers: 50_000, uploadsPerDay: 20 }, this.s);
+	mostlyAI(alias: string): void {
+		for (let i = 0; i < 5; i++) this.tagAs(installs(5000 + this.n, 2), 'yt', 'item', `${alias.slice(1, 7)}item${i}`.padEnd(11, 'x'), alias, 'slop', true);
+		this.db.run('UPDATE sources SET size_reviewed_at = ? WHERE id = ?', this.s, this.source(alias).ref);
 	}
 
 	appeal(ref: number, code: string) {
@@ -153,8 +154,8 @@ describe('engine', () => {
 	// Six mature installs tagging a TikTok source and five of its items as slop never make it Slop.
 	// Without platform labels, tags alone never count an item as AI-made for the 80% rule; with
 	// labels, the source is still held at Likely slop because its audience size is unknown, until
-	// staff decide. A YouTube source with API uploads a day and a known audience under 100,000 can
-	// reach Slop.
+	// staff decide. A source whose items carry AI evidence and whose size staff recorded can reach
+	// Slop.
 	it('never makes Slop from tags alone', () =>
 		withFixture(async (f) => {
 			const six = installs(0, 6);
@@ -166,7 +167,7 @@ describe('engine', () => {
 				for (let i = 0; i < 5; i++) f.tagAs(six, 'tt', 'item', `74${pad(10 * k + i, 17)}`, src.alias, 'slop', src.label);
 			}
 			f.tagAs(six, 'yt', 'source', '@ytfarm', '', 'slop', true);
-			f.highVolume('@ytfarm');
+			f.mostlyAI('@ytfarm');
 			f.clock += 40 * DAY;
 			await f.pass();
 			await f.pass();
@@ -201,8 +202,7 @@ describe('engine', () => {
 				if (i < 3) f.tagAs(installs(10 + 2 * i, 2), 'yt', 'item', item, '@mixedchan', 'ai_fine', true);
 				else f.tagAs(installs(10 + 2 * i, 2), 'yt', 'item', item, '@mixedchan', 'not_slop', false);
 			}
-			f.highVolume('@mixedchan');
-			f.clock += 40 * DAY;
+						f.clock += 40 * DAY;
 			await f.pass();
 			expect(f.source('@mixedchan').state, 'mixed source with labels only on items').toMatchObject({ verdict: '', mixed: true });
 
@@ -243,7 +243,7 @@ describe('engine', () => {
 	it('never restores a curator decision made during an appeal when it is denied', () =>
 		withFixture(async (f) => {
 			f.tags(8, '@farm', 'slop', true);
-			f.highVolume('@farm');
+			f.mostlyAI('@farm');
 			f.clock += 40 * DAY;
 			await f.pass();
 			const ref = f.source('@farm').ref;
@@ -302,7 +302,7 @@ describe('engine', () => {
 				f.s
 			);
 			f.tags(8, '@farm', 'slop', true);
-			f.highVolume('@farm');
+			f.mostlyAI('@farm');
 			f.clock += 40 * DAY;
 			await f.pass();
 			expect(getReport(f.db, report.id)).toMatchObject({ status: 'decided', verdict: 'slop' });
@@ -313,7 +313,7 @@ describe('engine', () => {
 	it('escalates an appeal left waiting for a manual check', () =>
 		withFixture(async (f) => {
 			f.tags(8, '@farm', 'slop', true);
-			f.highVolume('@farm');
+			f.mostlyAI('@farm');
 			f.clock += 40 * DAY;
 			await f.pass();
 			const ref = f.source('@farm').ref;
@@ -333,7 +333,7 @@ describe('engine', () => {
 	it('holds a lapsed Slop at Likely slop until staff look again', () =>
 		withFixture(async (f) => {
 			f.tags(8, '@farm', 'slop', true);
-			f.highVolume('@farm');
+			f.mostlyAI('@farm');
 			f.clock += 40 * DAY; // the taggers mature
 			await f.pass();
 			let src = f.source('@farm');
@@ -369,7 +369,7 @@ describe('engine', () => {
 	it('freezes consensus on a burst of slop tags from new installs', () =>
 		withFixture(async (f) => {
 			f.tags(3, '@target', 'ai_fine', true);
-			f.highVolume('@target');
+			f.mostlyAI('@target');
 			f.clock += 40 * DAY;
 			f.tags(25, '@target', 'slop', true);
 			f.clock += 10 * MINUTE;
@@ -385,7 +385,7 @@ describe('engine', () => {
 	it('restores the scored verdict when an appeal is denied', () =>
 		withFixture(async (f) => {
 			f.tags(8, '@farm', 'slop', true);
-			f.highVolume('@farm');
+			f.mostlyAI('@farm');
 			f.clock += 40 * DAY;
 			await f.pass();
 			const ref = f.source('@farm').ref;
@@ -407,7 +407,7 @@ describe('engine', () => {
 	it('clears the source when an appeal is upheld', () =>
 		withFixture(async (f) => {
 			f.tags(8, '@farm', 'slop', true);
-			f.highVolume('@farm');
+			f.mostlyAI('@farm');
 			f.clock += 40 * DAY;
 			await f.pass();
 			const ref = f.source('@farm').ref;
@@ -568,10 +568,10 @@ describe('curator limits', () => {
 				decide(f.eng, { sourceRef, verdict: 'slop', reason: 'Generated gossip narration.', signals: Sig.watermark, actor: 'curator', ...over });
 			f.tags(1, '@gossipnarrated', 'slop', false);
 			const big = f.source('@gossipnarrated').ref;
-			setYouTube(f.db, big, { channelId: 'UCzzzzzzzzzzzzzzzzzzzz43', handle: '@gossipnarrated', subscribers: 1_200_000, uploadsPerDay: null }, f.s);
-			// Without derived use a subscriber count makes no source large; staff record the size.
+			// Only staff record a source's size: no YouTube figure makes one large.
 			expect(f.eng.audience(f.source('@gossipnarrated'))).toEqual({ large: false, known: false });
-			f.eng.derived = true;
+			f.db.run('UPDATE sources SET large_staff = 1, size_reviewed_at = ? WHERE id = ?', f.s, big);
+			expect(f.eng.audience(f.source('@gossipnarrated'))).toEqual({ large: true, known: true });
 			expect(() => curator(big)).toThrow(new StaffRequiredError('Large sources'));
 			expect(() => curator(big)).toThrow('Large sources need staff review.');
 			// Items of a large source are open to curators.
@@ -658,14 +658,13 @@ describe('jobs', () => {
 		const T0 = T - 40 * DAY;
 		const { early, late } = await at(T0, async (f) => {
 			f.tags(8, '@early', 'slop', true);
-			f.highVolume('@early');
+			f.mostlyAI('@early');
 			f.db.run(
 				`WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < ?)
 				INSERT INTO sources (platform, canonical_id, created_at) SELECT 'tt', '@filler' || i, 1 FROM n`,
 				PASS_CHUNK
 			);
 			f.tags(8, '@late', 'slop', true);
-			f.highVolume('@late', 'UCzzzzzzzzzzzzzzzzzzzzz2');
 			f.store.jobs.schedule('pass', T);
 			await f.store.jobs.arm();
 			return { early: f.source('@early').ref, late: f.source('@late').ref };

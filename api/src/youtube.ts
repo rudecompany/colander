@@ -1,16 +1,18 @@
 // A small YouTube Data API v3 client for source enrichment and appeal checks (Go's
 // internal/youtube), within the YouTube API Services Developer Policies:
-// - Responses are not cached, so stored figures are as old as their lookup, and every stored piece
-//   of API data is deleted before it is 30 days old (RETENTION, by the hourly prune) and never dumped.
+// - Responses are not cached. A lookup keeps the channel ID and handle as aliases and nothing else;
+//   the API data tables (youtube_cache, and youtube_channels from before figures were dropped) are
+//   emptied before day 30 (RETENTION, by the hourly prune) and never dumped.
 // - Every call is charged to the Pacific day's quota ledger before it is made, and no call is made
 //   once the day's budget is used. Background lookups stop earlier (BACKGROUND_SHARE).
-// - Without YOUTUBE_DERIVED_USE nothing derived from API data reaches scoring (Engine.derived).
+// - Nothing derived from API data reaches scoring or a public page (contracts 9.7); an appeal check
+//   reads the live description.
 // Every call is a network request: never make one inside a transaction.
 import { lowerSimple } from '@colander/shared/ids';
 import type { Db } from './store/db';
 import { chargeYouTubeQuota, exhaustYouTubeQuota } from './store/misc';
-import { markYouTubeChecked, setYouTube, youTubeStale, type YouTubeInfo } from './store/sources';
-import { parseRFC3339, queryEscape, readBody } from './routes/respond';
+import { markYouTubeChecked, setYouTube, youTubeStale } from './store/sources';
+import { queryEscape, readBody } from './routes/respond';
 
 const DAY = 24 * 3_600_000;
 
@@ -23,13 +25,12 @@ export const ENRICH_PER_PASS = 10;
 /** The default daily budget (YOUTUBE_DAILY_UNITS), out of the 10,000 units YouTube grants a project. */
 export const DAILY_UNITS = 8_000;
 /**
- * Background lookups stop at this share of the day's budget. A lookup costs 1 unit, and with
- * derived use up to 20 more for the uploads pages, so without the stop they could spend the whole
- * day; the rest is kept for appeal checks.
+ * Background lookups stop at this share of the day's budget, so they could never spend the whole
+ * day: the rest is kept for appeal checks.
  */
 export const BACKGROUND_SHARE = 0.8;
 /** What each method costs (developers.google.com/youtube/v3/determine_quota_cost). */
-const UNITS: Record<string, number> = { '/channels': 1, '/playlistItems': 1 };
+const UNITS: Record<string, number> = { '/channels': 1 };
 
 const pacific = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Los_Angeles', year: 'numeric', month: '2-digit', day: '2-digit' });
 /** The quota day of a unix millisecond time: YouTube resets quotas at midnight Pacific Time. */
@@ -56,9 +57,6 @@ export interface Channel {
 	handle: string;
 	title: string;
 	description: string;
-	subscribers: number;
-	hiddenCount: boolean;
-	uploadsPlaylist: string;
 }
 
 /** Go's url.Values.Encode: keys sorted, each pair escaped. */
@@ -92,8 +90,6 @@ function list(v: unknown): unknown[] {
 /** Calls the Data API with an API key. */
 export class YouTube {
 	baseUrl = 'https://www.googleapis.com/youtube/v3';
-	/** How far back uploads are counted for uploads per day. */
-	window = 14 * DAY;
 
 	constructor(
 		public key: string,
@@ -139,7 +135,8 @@ export class YouTube {
 
 	/** Looks a channel up by channel ID (UC...) or handle (@name), while the day's charges stay within budget. */
 	async channel(alias: string, budget = this.budget): Promise<Channel> {
-		const params: Record<string, string> = { part: 'snippet,statistics,contentDetails' };
+		// Only the snippet: no statistic or playlist is ever read.
+		const params: Record<string, string> = { part: 'snippet' };
 		if (alias.startsWith('@')) params.forHandle = alias;
 		else params.id = alias;
 		const resp = obj(await this.get('/channels', params, budget));
@@ -147,49 +144,13 @@ export class YouTube {
 		if (it === undefined) throw new YouTubeNotFoundError();
 		const item = obj(it);
 		const snippet = obj(item.snippet);
-		const stats = obj(item.statistics);
-		const hidden = stats.hiddenSubscriberCount ?? false;
-		if (typeof hidden !== 'boolean') throw new Error('youtube /channels: hiddenSubscriberCount is not a boolean');
 		const handle = lowerSimple(str(snippet.customUrl, 'customUrl'));
-		const count = str(stats.subscriberCount, 'subscriberCount');
 		return {
 			id: str(item.id, 'id'),
 			handle: handle.startsWith('@') ? handle : '',
 			title: str(snippet.title, 'title'),
-			description: str(snippet.description, 'description'),
-			// Go's ParseInt with the error dropped: anything else is 0.
-			subscribers: /^[+-]?\d+$/.test(count) ? Number(count) : 0,
-			hiddenCount: hidden,
-			uploadsPlaylist: str(obj(obj(item.contentDetails).relatedPlaylists).uploads, 'uploads')
+			description: str(snippet.description, 'description')
 		};
-	}
-
-	/** Uploads per day in the window, counted from the uploads playlist, newest first. now is unix milliseconds. */
-	async uploadsPerDay(playlist: string, now: number, budget = this.budget): Promise<number> {
-		const cutoff = (now - this.window) / 1000;
-		let count = 0;
-		let token = '';
-		// ponytail: at most 20 pages (1,000 uploads); enough to tell 10 a day from fewer.
-		for (let page = 0; page < 20; page++) {
-			const params: Record<string, string> = { part: 'contentDetails', playlistId: playlist, maxResults: '50' };
-			if (token !== '') params.pageToken = token;
-			const resp = obj(await this.get('/playlistItems', params, budget));
-			let older = false;
-			for (const it of list(resp.items)) {
-				const at = str(obj(obj(it).contentDetails).videoPublishedAt, 'videoPublishedAt');
-				// A missing time is Go's zero time, older than any window.
-				const published = at === '' ? -Infinity : parseRFC3339(at);
-				if (published === undefined) throw new Error(`youtube /playlistItems: videoPublishedAt ${JSON.stringify(at)} is not RFC 3339`);
-				if (published < cutoff) {
-					older = true;
-					continue;
-				}
-				count++;
-			}
-			token = str(resp.nextPageToken, 'nextPageToken');
-			if (older || token === '') break;
-		}
-		return count / (this.window / DAY);
 	}
 
 	/** Whether a channel's current description holds code. */
@@ -199,23 +160,17 @@ export class YouTube {
 
 	/**
 	 * Looks up to limit YouTube sources up again whose last lookup is older than REFRESH_AFTER,
-	 * oldest first: their channel ID and handle, and with derived use their subscriber count and
-	 * uploads per day. A channel that fails is logged and waits for its next refresh while the
-	 * others go on. Lookups stop at BACKGROUND_SHARE of the day's budget until the Pacific day ends.
-	 * now is unix milliseconds.
+	 * oldest first, for their channel ID and handle only. A channel that fails is logged and waits
+	 * for its next refresh while the others go on. Lookups stop at BACKGROUND_SHARE of the day's
+	 * budget until the Pacific day ends. now is unix milliseconds.
 	 */
-	async enrichStale(db: Db, now: number, limit: number, derived: boolean): Promise<void> {
+	async enrichStale(db: Db, now: number, limit: number): Promise<void> {
 		const s = Math.floor(now / 1000);
 		const budget = Math.floor(this.budget * BACKGROUND_SHARE);
 		for (const src of youTubeStale(db, Math.floor((now - REFRESH_AFTER) / 1000), limit)) {
 			try {
 				const ch = await this.channel(src.canonicalId, budget);
-				const info: YouTubeInfo = { channelId: ch.id, handle: ch.handle, subscribers: null, uploadsPerDay: null };
-				if (derived) {
-					if (!ch.hiddenCount) info.subscribers = ch.subscribers;
-					if (ch.uploadsPlaylist !== '') info.uploadsPerDay = await this.uploadsPerDay(ch.uploadsPlaylist, now, budget);
-				}
-				setYouTube(db, src.ref, info, s);
+				setYouTube(db, src.ref, { channelId: ch.id, handle: ch.handle }, s);
 			} catch (err) {
 				if (err instanceof YouTubeQuotaError) {
 					console.warn(JSON.stringify({ message: 'youtube budget used', day: err.day }));

@@ -34,9 +34,6 @@ export interface Source {
 	largeStaff: boolean;
 	/** when staff last recorded the source's size, 0 when never */
 	sizeReviewedAt: number;
-	/** YouTube Data API figures (youtube_channels), only kept while YOUTUBE_DERIVED_USE is on */
-	subscribers: number | null;
-	uploadsPerDay: number | null;
 	/** when Colander last looked the channel up, found or not */
 	youtubeCheckedAt: number;
 	frozenUntil: number;
@@ -76,8 +73,6 @@ type SourceRow = StateRow & {
 	reviewed_at: number;
 	large_staff: number;
 	size_reviewed_at: number;
-	subscribers: number | null;
-	uploads_per_day: number | null;
 	youtube_checked_at: number;
 	frozen_until: number;
 	seed_suppressed_at: number;
@@ -88,10 +83,10 @@ type SourceRow = StateRow & {
 
 type ItemRow = StateRow & { id: number; platform: string; item_id: string; source_id: number; created_at: number };
 
-// The YouTube figures come from youtube_channels (y), whose rows the hourly prune deletes at 30 days.
+// No YouTube Data API figure is read: they never feed scoring (contracts 9.7).
 // The import_* columns of imports from before the seed registry stay unread (migration 0008).
 const sourceCols = `id, platform, canonical_id, ifnull(name, '') AS name, ifnull(reviewed_at, 0) AS reviewed_at, large_staff,
-	ifnull(size_reviewed_at, 0) AS size_reviewed_at, y.subscribers AS subscribers, y.uploads_per_day AS uploads_per_day,
+	ifnull(size_reviewed_at, 0) AS size_reviewed_at,
 	ifnull(youtube_checked_at, 0) AS youtube_checked_at, ifnull(frozen_until, 0) AS frozen_until,
 	ifnull(seed_suppressed_at, 0) AS seed_suppressed_at, ifnull(seed_suppress_reason, '') AS seed_suppress_reason,
 	ifnull(verdict, '') AS verdict, signals, detail, flags, ifnull(changed_at, 0) AS changed_at,
@@ -125,8 +120,6 @@ function scanSource(r: SourceRow): Source {
 		reviewedAt: r.reviewed_at,
 		largeStaff: r.large_staff !== 0,
 		sizeReviewedAt: r.size_reviewed_at,
-		subscribers: r.subscribers,
-		uploadsPerDay: r.uploads_per_day,
 		youtubeCheckedAt: r.youtube_checked_at,
 		frozenUntil: r.frozen_until,
 		seedSuppressedAt: r.seed_suppressed_at,
@@ -167,7 +160,7 @@ export function ensureSource(db: Db, platform: string, alias: string, name: stri
 
 /** Loads a source with its aliases, the canonical ID first. */
 export function getSource(db: Db, ref: number): Source | undefined {
-	const row = db.get<SourceRow>(`SELECT ${sourceCols} FROM sources LEFT JOIN youtube_channels y ON y.source_id = sources.id WHERE id = ?`, ref);
+	const row = db.get<SourceRow>(`SELECT ${sourceCols} FROM sources WHERE id = ?`, ref);
 	if (!row) return undefined;
 	const src = scanSource(row);
 	src.aliases = db.all<{ alias: string }>('SELECT alias FROM source_aliases WHERE source_id = ? ORDER BY alias', ref).map((r) => r.alias);
@@ -297,15 +290,11 @@ export interface YouTubeInfo {
 	channelId: string;
 	/** with @, lowercased, or "" */
 	handle: string;
-	/** only while YOUTUBE_DERIVED_USE is on, else null */
-	subscribers: number | null;
-	uploadsPerDay: number | null;
 }
 
 /**
- * Records channel data for ref, adds the channel ID and handle as aliases and merges any other
- * source that already owned one of them. The figures go to youtube_channels, which the hourly
- * prune empties at 30 days, and none is written when both are null. Returns the ref that survives.
+ * Records a lookup for ref: adds the channel ID and handle as aliases and merges any other source
+ * that already owned one of them. Returns the ref that survives.
  */
 export function setYouTube(db: Db, ref: number, info: YouTubeInfo, now: number): number {
 	return db.tx(() => {
@@ -323,17 +312,6 @@ export function setYouTube(db: Db, ref: number, info: YouTubeInfo, now: number):
 			}
 		}
 		db.run('UPDATE sources SET canonical_id = ?, youtube_checked_at = ? WHERE id = ?', info.channelId, now, keep);
-		if (info.subscribers === null && info.uploadsPerDay === null) db.run('DELETE FROM youtube_channels WHERE source_id = ?', keep);
-		else {
-			db.run(
-				`INSERT INTO youtube_channels (source_id, subscribers, uploads_per_day, fetched_at) VALUES (?, ?, ?, ?)
-				ON CONFLICT (source_id) DO UPDATE SET subscribers = excluded.subscribers, uploads_per_day = excluded.uploads_per_day, fetched_at = excluded.fetched_at`,
-				keep,
-				info.subscribers,
-				info.uploadsPerDay,
-				now
-			);
-		}
 		return keep;
 	});
 }

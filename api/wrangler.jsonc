@@ -75,9 +75,6 @@
 		// YouTube Data API units the Worker may spend per Pacific day. Both environments use one Google
 		// Cloud project's 10,000 units, so their budgets together stay at 8,000.
 		"YOUTUBE_DAILY_UNITS": "7000",
-		// "1" only after YouTube approves Colander's derived metrics: subscriber counts and uploads
-		// per day then feed scoring. Empty keeps every YouTube figure out of verdicts.
-		"YOUTUBE_DERIVED_USE": "",
 		// The admin host and its Cloudflare Access application: the team domain
 		// (<team>.cloudflareaccess.com) and the application's AUD tag. Until both are set, every
 		// admin-host request answers 403 (docs/deploy.md step 6a).
@@ -121,7 +118,6 @@
 				"STRIPE_PRICE_PLUS_YEARLY": "",
 				"STRIPE_MANAGED_PAYMENTS": "",
 				"YOUTUBE_DAILY_UNITS": "1000",
-				"YOUTUBE_DERIVED_USE": "",
 				"ADMIN_HOST": "staging-admin.getcolander.com",
 				"CF_ACCESS_TEAM_DOMAIN": "",
 				"CF_ACCESS_AUD": "",

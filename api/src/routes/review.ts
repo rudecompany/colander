@@ -206,7 +206,6 @@ function layers(ev: Evaluation, leads: SeedLead[], staff: boolean): Layers {
 	const lead = leadText(leads, staff);
 	if (lead) prov.push(lead);
 	const beh: string[] = [];
-	if (inp.uploadsPerDay >= 0) beh.push(`about ${goFixed(inp.uploadsPerDay, 1)} uploads a day over the last 14 days`);
 	if (inp.itemsSeen > 0) beh.push(`${inp.aiItems} of ${inp.itemsSeen} items with evidence carry AI evidence`);
 	if (r.mixed) beh.push('mixed source, so items are judged one by one');
 	const sums = r.sums;

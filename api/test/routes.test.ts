@@ -391,7 +391,7 @@ describe('appeals', () => {
 		withHarness(async (h) => {
 			const channel = 'UCzzzzzzzzzzzzzzzzzzzz42';
 			const ref = ensureSource(h.db, 'yt', '@oceanmysteries', 'Ocean Mysteries', unix(h.clock));
-			setYouTube(h.db, ref, { channelId: channel, handle: '@oceanmysteries', subscribers: null, uploadsPerDay: null }, unix(h.clock));
+			setYouTube(h.db, ref, { channelId: channel, handle: '@oceanmysteries' }, unix(h.clock));
 			const staff = h.reviewer('rae@colander.test', 'staff', 'Rae');
 			await expectStatus(
 				h.do(
@@ -553,7 +553,7 @@ describe('public pages', () => {
 	it('shows a source by any alias, with its evidence, and 404 not_rated for unknown ones', () =>
 		withHarness(async (h) => {
 			const ref = ensureSource(h.db, 'yt', '@farm', 'The Farm', unix(h.clock));
-			setYouTube(h.db, ref, { channelId: 'UCzzzzzzzzzzzzzzzzzzzz45', handle: '@farm', subscribers: 1000, uploadsPerDay: 14.237 }, unix(h.clock));
+			setYouTube(h.db, ref, { channelId: 'UCzzzzzzzzzzzzzzzzzzzz45', handle: '@farm' }, unix(h.clock));
 			for (let i = 0; i < 3; i++) {
 				await expectStatus(h.do('POST', '/v1/tags', { tags: [tag(`ai-${i}`, 'source', '@farm', '', 'ai_fine')] }, installAuth(10 + i)), 200);
 			}
@@ -568,12 +568,12 @@ describe('public pages', () => {
 				name: 'The Farm',
 				verdict: 'ai_made',
 				large: false,
-				// The stored subscriber count feeds nothing without derived use, so the size is unknown.
+				// No YouTube figure feeds scoring, so the size is unknown until staff record it.
 				audience_known: false,
 				imported: false,
 				attribution: null,
 				appeal_open: false,
-				// YouTube Data API figures are never published, even when stored with derived use.
+				// No YouTube Data API figure is ever published.
 				evidence: { taggers: 3, tags: { slop: 0, ai_fine: 3, not_slop: 0 }, items_seen: 0, ai_item_share: null, uploads_per_day: null }
 			});
 			expect(byHandle.source.updated_at).toBe('2026-10-01T12:00:00Z');
@@ -865,14 +865,9 @@ describe('review', () => {
 	it('enforces the curator limits, bearer tokens and AI evidence (TestCuratorLimitsAndReviewerToken)', () =>
 		withHarness(async (h) => {
 			const ref = ensureSource(h.db, 'yt', '@gossipnarrated', 'Celebrity Gossip Narrated', unix(h.clock));
-			// With derived use the subscriber count makes it large.
-			h.store.engine.derived = true;
-			setYouTube(
-				h.db,
-				ref,
-				{ channelId: 'UCzzzzzzzzzzzzzzzzzzzz43', handle: '@gossipnarrated', subscribers: 1_200_000, uploadsPerDay: null },
-				unix(h.clock)
-			);
+			// Staff recorded it as large.
+			setYouTube(h.db, ref, { channelId: 'UCzzzzzzzzzzzzzzzzzzzz43', handle: '@gossipnarrated' }, unix(h.clock));
+			h.db.run('UPDATE sources SET large_staff = 1, size_reviewed_at = ? WHERE id = ?', unix(h.clock), ref);
 			const member = h.signIn('maya@example.test');
 			const bearer = h.bearer('sam@colander.test', 'curator', 'Sam');
 
@@ -965,10 +960,12 @@ describe('review', () => {
 				const t = { ...tag(`slop-${i}`, 'source', '@farm', '', 'slop'), tests: ['low_effort', 'mass_produced'] };
 				await expectStatus(h.do('POST', '/v1/tags', { tags: [t] }, installAuth(20 + i)), 200);
 			}
-			// Twenty uploads a day with derived use, but the channel hides its subscriber count.
-			h.store.engine.derived = true;
-			const ref = findSource(h.db, 'yt', '@farm')!;
-			setYouTube(h.db, ref, { channelId: 'UCzzzzzzzzzzzzzzzzzzzz44', handle: '@farm', subscribers: null, uploadsPerDay: 20 }, unix(h.clock));
+			// Ten other installs saw platform AI labels on five of its items, two each: the 80% rule.
+			// Staff never recorded its size.
+			for (let i = 0; i < 10; i++) {
+				const t = tag(`item-${i}`, 'item', `farmitem${i % 5}xx`, '@farm', 'slop');
+				await expectStatus(h.do('POST', '/v1/tags', { tags: [t] }, installAuth(40 + i)), 200);
+			}
 			h.clock += 40 * DAY;
 			await h.store.engine.fullPass(h.clock);
 			const staff = h.reviewer('rae@colander.test', 'staff', 'Rae');
@@ -981,8 +978,8 @@ describe('review', () => {
 
 			// The review page explains each layer in a sentence.
 			const page = (await (await expectStatus(h.do('GET', '/v1/review/sources/yt/@farm', undefined, staff), 200)).json()) as ReviewSourceResponse;
-			expect(page.layers.provenance).toEqual({ met: true, signals: ['platform_label'], detail: '6 installs saw a platform AI label.' });
-			expect(page.layers.behavior).toEqual({ met: true, signals: ['high_volume'], detail: 'About 20.0 uploads a day over the last 14 days.' });
+			expect(page.layers.provenance).toEqual({ met: true, signals: ['platform_label'], detail: '16 installs saw a platform AI label.' });
+			expect(page.layers.behavior).toEqual({ met: true, signals: ['mostly_ai'], detail: '5 of 5 items with evidence carry AI evidence.' });
 			expect(page.layers.rubric.detail).toBe('Tests chosen: low effort, mass produced.');
 			// Reputation is fresh here: the installs agreed with the consensus verdict, so they weigh more (Go gives the same).
 			expect(page.layers.consensus).toEqual({
@@ -991,9 +988,9 @@ describe('review', () => {
 				detail: 'Weighted tags: slop 4.2, AI-made but fine 0.0, not slop 0.0 from 6 installs.'
 			});
 			expect(page.layers.rubric.signals).toEqual(['rubric_low_effort']);
-			expect(page.source.evidence).toEqual({ taggers: 6, tags: { slop: 6, ai_fine: 0, not_slop: 0 }, items_seen: 0, ai_item_share: null, uploads_per_day: null });
+			expect(page.source.evidence).toEqual({ taggers: 6, tags: { slop: 6, ai_fine: 0, not_slop: 0 }, items_seen: 5, ai_item_share: 1, uploads_per_day: null });
 			expect(page.history[0]!.reason).toBe(
-				'Likely slop. The platform labels it AI-generated, it posts at a volume no person could sustain, taggers found little human effort, and it is tagged as slop by the community. Held at Likely slop until staff review it, because its audience size is unknown.'
+				'Likely slop. The platform labels it AI-generated, most recent items are AI-made, taggers found little human effort, and it is tagged as slop by the community. Held at Likely slop until staff review it, because its audience size is unknown.'
 			);
 			expect(page.source.verdict).toBe('likely_slop');
 		}));

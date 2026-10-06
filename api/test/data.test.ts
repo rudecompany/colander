@@ -82,7 +82,7 @@ describe('sources.go', () => {
 			const channel = 'UCzzzzzzzzzzzzzzzzzzzzz1';
 			const byId = sources.ensureSource(db, 'yt', channel, '', 1);
 			tags.saveTags(db, 'h1', [tag({ targetId: channel, sourceId: channel })], 1);
-			const keep = sources.setYouTube(db, byId, { channelId: channel, handle: '@AncientWondersDaily', subscribers: null, uploadsPerDay: null }, 2);
+			const keep = sources.setYouTube(db, byId, { channelId: channel, handle: '@AncientWondersDaily' }, 2);
 			expect(keep).toBe(byHandle);
 			const src = sources.getSource(db, keep)!;
 			expect(src.aliases).toEqual([channel, '@ancientwondersdaily']);
@@ -141,7 +141,7 @@ describe('sources.go', () => {
 			// A lookup that finds the channel ID of another source folds the newer one in, entries too.
 			const byId = sources.ensureSource(db, 'yt', 'UCzzzzzzzzzzzzzzzzzzzzz7', '', 7);
 			db.run('UPDATE sources SET seed_suppressed_at = 9, seed_suppress_reason = ? WHERE id = ?', 'Objection', byId);
-			expect(sources.setYouTube(db, byId, { channelId: 'UCzzzzzzzzzzzzzzzzzzzzz7', handle: '@seeded', subscribers: null, uploadsPerDay: null }, 8)).toBe(ref);
+			expect(sources.setYouTube(db, byId, { channelId: 'UCzzzzzzzzzzzzzzzzzzzzz7', handle: '@seeded' }, 8)).toBe(ref);
 			expect(sources.getSource(db, ref)).toMatchObject({ seedSuppressedAt: 9, seedSuppressReason: 'Objection' });
 			expect(db.all('SELECT seed FROM seed_entries'), 'a suppression on either half holds for the channel').toEqual([]);
 			const other = sources.ensureSource(db, 'yt', '@other', '', 1);
