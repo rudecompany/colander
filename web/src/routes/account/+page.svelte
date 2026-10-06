@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onMount, tick } from 'svelte';
 	import { page } from '$app/state';
 	import type { Account, Plan } from '@colander/shared/api';
 	import Input from '@colander/shared/components/ui/input/input.svelte';
@@ -24,6 +24,9 @@
 	let nameStatus = $state<{ kind: 'idle' | 'saving' | 'saved' } | { kind: 'error'; message: string }>({ kind: 'idle' });
 	let billing = $state<{ kind: 'idle' | 'working' } | { kind: 'error'; message: string } | { kind: 'done'; message: string }>({ kind: 'idle' });
 	let reviewer = $state<{ kind: 'idle' } | { kind: 'done' | 'error'; message: string }>({ kind: 'idle' });
+	/** Counts disconnects: each one starts the side panel's code box over, so it never still says Connected. */
+	let disconnects = $state(0);
+	let disconnectedNote = $state<HTMLElement>();
 
 	const account = $derived(session.account);
 
@@ -73,11 +76,21 @@
 	async function disconnectReviewer() {
 		try {
 			await api('/v1/account/reviewer-token', { method: 'DELETE' });
+			disconnects++;
 			reviewer = { kind: 'done', message: 'Disconnected. The side panel can no longer review until you connect it again.' };
 			await refreshAccount();
+			// Disconnect went away with the connection: focus moves to what replaced it.
+			await tick();
+			disconnectedNote?.focus();
 		} catch (e) {
 			reviewer = { kind: 'error', message: errorText(e) };
 		}
+	}
+
+	/** A new connection replaces what Disconnect said. */
+	function reviewerConnected() {
+		reviewer = { kind: 'idle' };
+		void refreshAccount();
 	}
 
 	const PLAN_STATUS: Record<Plan['status'], string> = {
@@ -199,14 +212,14 @@
 					Connect Colander's side panel with a code, and review from the platforms as you browse. A code needs a passkey sign-in from
 					the last 10 minutes, and the connection lasts 7 days.
 				</p>
-				<ConnectBrowser kind="reviewer" onconnected={refreshAccount} />
+				{#key disconnects}<ConnectBrowser kind="reviewer" onconnected={reviewerConnected} />{/key}
 				{#if account.reviewer_token}
 					<div class="row connection">
 						<p class="cl-caption cl-muted">The side panel is connected until {fmtDate(account.reviewer_token.expires_at)}.</p>
 						<Button variant="quiet" size="md" onclick={disconnectReviewer}>Disconnect</Button>
 					</div>
 				{/if}
-				{#if reviewer.kind === 'done'}<Notice tone="success" title={reviewer.message} />{/if}
+				{#if reviewer.kind === 'done'}<div class="note" tabindex="-1" bind:this={disconnectedNote}><Notice tone="success" title={reviewer.message} /></div>{/if}
 				{#if reviewer.kind === 'error'}<Notice tone="error" title="Still connected"><p>{reviewer.message}</p></Notice>{/if}
 			</section>
 		{/if}
@@ -295,6 +308,10 @@
 		.connection :global(.uin-btn-ghost) {
 			margin-left: -12px;
 		}
+	}
+	/* Focus lands here only from script, after Disconnect went away. */
+	.note:focus {
+		outline: none;
 	}
 	.sub {
 		margin-top: var(--cl-s2);

@@ -1,4 +1,5 @@
 import { test, expect } from './fixtures.ts';
+import type { Account } from '@colander/shared/api';
 import { ACCOUNT, PLUS_ACCOUNT, STAFF, mockApi } from './mocks.ts';
 
 test('sign in by emailed code, then the account page shows the account', async ({ page }) => {
@@ -174,6 +175,44 @@ test('a reviewer code connects the side panel; an unused code ends after 10 minu
 	await expect(review.locator('.step')).toBeFocused();
 	await expect(review.getByRole('button', { name: 'Show a code' })).toBeVisible();
 	await expect(review.getByText('Connected', { exact: false })).toHaveCount(0);
+});
+
+test('the side panel connection shows only where it stands: connected, disconnected, then connected again', async ({ page }) => {
+	await page.clock.install();
+	let token: Account['reviewer_token'] = null;
+	await mockApi(page, {
+		'GET /v1/account': () => ({ json: { account: { ...STAFF, reviewer_token: token } } }),
+		'POST /v1/pair': { status: 201, json: { id: 'pair_rvw', code: 'RVW4-2K9P', expires_at: new Date(Date.now() + 600_000).toISOString() } },
+		// The extension takes each code at the first check.
+		'GET /v1/pair/*': () => ((token = { expires_at: '2026-10-13T10:00:00Z', last_used_at: null }), { json: { status: 'claimed', ext_version: '1.0.0', browser: 'chrome' } }),
+		'DELETE /v1/account/reviewer-token': () => ((token = null), { status: 204 })
+	});
+	await page.goto('/account');
+	const review = page.locator('section', { has: page.getByRole('heading', { name: 'Review', exact: true }) });
+	const connected = review.getByText('Connected Colander 1.0.0 in Chrome.');
+	const until = review.getByText('The side panel is connected until 13 October 2026.');
+	const disconnected = review.getByText('Disconnected. The side panel can no longer review until you connect it again.');
+	await review.getByRole('button', { name: 'Show a code' }).click();
+	await page.clock.runFor(2000);
+	await expect(connected).toBeVisible();
+	await expect(until).toBeVisible();
+	await expect(disconnected).toHaveCount(0);
+
+	await review.getByRole('button', { name: 'Disconnect' }).click();
+	await expect(disconnected).toBeVisible();
+	// Disconnect goes away with the connection, so focus moves to what replaced it.
+	await expect(review.locator('.note')).toBeFocused();
+	await expect(connected).toHaveCount(0);
+	await expect(until).toHaveCount(0);
+	await expect(review.getByRole('button', { name: 'Show a code' })).toBeVisible();
+
+	await review.getByRole('button', { name: 'Show a code' }).click();
+	await expect(review.getByText('RVW4-2K9P')).toBeVisible();
+	await expect(disconnected, 'a code on screen is not a connection yet').toBeVisible();
+	await page.clock.runFor(2000);
+	await expect(connected).toBeVisible();
+	await expect(until).toBeVisible();
+	await expect(disconnected).toHaveCount(0);
 });
 
 test('a member without a curator role, or without a plan, is not offered a code', async ({ page }) => {
