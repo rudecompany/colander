@@ -1,21 +1,26 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { page } from '$app/state';
 	import type { Account, Plan } from '@colander/shared/api';
 	import Input from '@colander/shared/components/ui/input/input.svelte';
 	import LogOut from '@lucide/svelte/icons/log-out';
 	import Plug from '@lucide/svelte/icons/plug';
 	import ListChecks from '@lucide/svelte/icons/list-checks';
+	import ShieldCheck from '@lucide/svelte/icons/shield-check';
 	import { api, ApiError, errorText } from '#lib/api.ts';
 	import { detectExtension, ExtensionRefused, sendToExtension, type ExtensionState } from '#lib/extension.ts';
 	import { fmtDate } from '@colander/shared';
-	import { loadAccount, session } from '#lib/session.svelte.ts';
+	import { loadAccount, refreshAccount, session } from '#lib/session.svelte.ts';
+	import AccountData from '#lib/components/AccountData.svelte';
+	import AccountSecurity from '#lib/components/AccountSecurity.svelte';
 	import ConnectBrowser from '#lib/components/ConnectBrowser.svelte';
-	import EmailSignIn from '#lib/components/EmailSignIn.svelte';
+	import SignIn from '#lib/components/SignIn.svelte';
 	import Loading from '#lib/components/Loading.svelte';
 	import Notice from '#lib/components/Notice.svelte';
 	import { PageHeader, PLAN_COPY, PriceCard } from '@colander/shared';
 	import Button from '@colander/shared/components/ui/button/button.svelte';
 	import AuthCard from '#lib/components/AuthCard.svelte';
+	import { adminOrigin } from '#lib/site.ts';
 
 	let ext = $state<ExtensionState>({ kind: 'checking' });
 	let displayName = $state('');
@@ -77,9 +82,13 @@
 	async function connectReviewer() {
 		reviewer = { kind: 'working' };
 		try {
-			const { token } = await api<{ token: string }>('/v1/account/reviewer-token', { method: 'POST' });
+			const { token, expires_at } = await api<{ token: string; expires_at: string }>('/v1/account/reviewer-token', { method: 'POST' });
 			await sendToExtension({ type: 'colander:reviewer-token', token });
-			reviewer = { kind: 'done', message: 'Connected. The side panel can now open the review queue. Any earlier token stopped working.' };
+			reviewer = {
+				kind: 'done',
+				message: `Connected until ${fmtDate(expires_at)}. The side panel can now open the review queue. Any earlier token stopped working.`
+			};
+			await refreshAccount();
 		} catch (e) {
 			reviewer = {
 				kind: 'error',
@@ -93,6 +102,16 @@
 		}
 	}
 
+	async function disconnectReviewer() {
+		try {
+			await api('/v1/account/reviewer-token', { method: 'DELETE' });
+			reviewer = { kind: 'done', message: 'Disconnected. The side panel can no longer review until you connect it again.' };
+			await refreshAccount();
+		} catch (e) {
+			reviewer = { kind: 'error', message: errorText(e) };
+		}
+	}
+
 	const PLAN_STATUS: Record<Plan['status'], string> = {
 		active: 'Active',
 		trialing: 'Trial',
@@ -100,7 +119,8 @@
 		canceled: 'Ended'
 	};
 
-	const ROLE_WORD = { member: 'Member', curator: 'Curator', staff: 'Staff' } as const;
+	const ROLE_WORD = { member: 'Member', curator: 'Curator', staff: 'Staff', admin: 'Admin' } as const;
+	const staff = $derived(account?.role === 'staff' || account?.role === 'admin');
 	const livePlan = $derived(account?.plan && account.plan.status !== 'canceled' ? account.plan : null);
 </script>
 
@@ -119,7 +139,7 @@
 		{#if session.status === 'error'}
 			<Notice tone="error" title="We could not check your session"><p>Colander may be busy. Try again in a moment.</p></Notice>
 		{/if}
-		<EmailSignIn next="/account" block />
+		<SignIn next="/account" block />
 	</AuthCard>
 {:else}
 	<div class="cl-container page-top">
@@ -189,26 +209,36 @@
 			<section class="uin-card uin-card-lg uin-card-pad section-card" aria-labelledby="review-title">
 				<h2 class="cl-title" id="review-title">Review</h2>
 				<p class="cl-body cl-muted">
-					You are a {account.role === 'staff' ? 'staff member' : 'curator'}.
-					{account.role === 'staff'
-						? 'You can decide any source and resolve appeals.'
-						: 'You can decide items and sources that are not large. Large sources and appeals need staff.'}
+					You are {account.role === 'curator' ? 'a curator' : account.role === 'admin' ? 'an admin' : 'a staff member'}. Here, and in the side
+					panel, you decide items and sources that are not large, with a passkey sign-in from the last 12 hours.
+					{staff ? 'Large sources, appeals and people are in the admin console.' : 'Large sources and appeals need staff.'}
 				</p>
 				<div class="row">
 					<Button variant="primary" size="xl" href="/console"><ListChecks size={16} aria-hidden="true" />Open the review console</Button>
+					{#if staff}
+						<Button variant="secondary" size="xl" href="{adminOrigin(page.url)}/admin"><ShieldCheck size={16} aria-hidden="true" />Open the admin console</Button>
+					{/if}
 					{#if ext.kind === 'installed'}
 						<Button variant="secondary" size="xl" onclick={connectReviewer} disabled={reviewer.kind === 'working'}>
 							<Plug size={16} aria-hidden="true" />Connect side panel
 						</Button>
 					{/if}
 				</div>
+				{#if account.reviewer_token}
+					<div class="row">
+						<p class="cl-caption cl-muted">The side panel is connected until {fmtDate(account.reviewer_token.expires_at)}.</p>
+						<Button variant="quiet" size="md" onclick={disconnectReviewer}>Disconnect</Button>
+					</div>
+				{/if}
 				{#if ext.kind !== 'installed' && ext.kind !== 'checking'}
-					<p class="cl-caption cl-muted">To use the side panel, open this page in Chrome with Colander installed.</p>
+					<p class="cl-caption cl-muted">To use the side panel, open this page in a browser with Colander installed.</p>
 				{/if}
 				{#if reviewer.kind === 'done'}<Notice tone="success" title={reviewer.message} />{/if}
 				{#if reviewer.kind === 'error'}<Notice tone="error" title="Not connected"><p>{reviewer.message}</p></Notice>{/if}
 			</section>
 		{/if}
+
+		<AccountSecurity {account} />
 
 		<section class="uin-card uin-card-lg uin-card-pad section-card" aria-labelledby="profile-title">
 			<h2 class="cl-title" id="profile-title">Profile</h2>
@@ -231,6 +261,8 @@
 				<dt>Member since</dt><dd>{fmtDate(account.created_at)}</dd>
 			</dl>
 		</section>
+
+		<AccountData {account} />
 	</div>
 {/if}
 

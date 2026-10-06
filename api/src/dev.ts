@@ -24,6 +24,9 @@ import type { Store } from './store/store';
 
 type Handler = (request: Request, url: URL) => Response | Promise<Response>;
 
+/** Who the seed's role changes are audited as. */
+const SEEDED = { host: 'job', reason: 'dev seed' } as const;
+
 /** The frozen clock in unix ms, or undefined when no test froze it. A malformed value fails the start. */
 export function testNow(env: Env): number | undefined {
 	const v = (env as Env & { COLANDER_TEST_NOW?: string }).COLANDER_TEST_NOW;
@@ -292,8 +295,8 @@ class Seeder {
 
 		// Reviewers.
 		this.at(this.days(120));
-		this.staff = grantRole(db, 'rae@colander.test', 'staff', this.unix);
-		this.curator = grantRole(db, 'sam@colander.test', 'curator', this.unix);
+		this.staff = grantRole(db, 'rae@colander.test', 'staff', this.unix, SEEDED);
+		this.curator = grantRole(db, 'sam@colander.test', 'curator', this.unix, SEEDED);
 		this.attempt(() => setDisplayName(db, this.staff.id, 'Rae'));
 		this.attempt(() => setDisplayName(db, this.curator.id, 'Sam'));
 		[this.staff.displayName, this.curator.displayName] = ['Rae', 'Sam'];

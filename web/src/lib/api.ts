@@ -1,8 +1,13 @@
 // A small fetch wrapper for the same-origin API (docs/contracts.md section 6).
-// Every non-GET request carries the CSRF header that cookie-authenticated routes require.
+// Every non-GET request carries the CSRF header that cookie-authenticated routes require. When the
+// server asks the person to confirm it is them (403 passkey_required or recent_auth_required), the
+// step-up dialog (StepUp.svelte) asks for a passkey or a code, and the request runs once more.
 import type { ApiError as ApiErrorBody } from '@colander/shared/api';
 
-export class ApiError extends Error {
+/** An error whose message is written for the person, so the page shows it as it is. */
+export class PlainError extends Error {}
+
+export class ApiError extends PlainError {
 	constructor(
 		readonly status: number,
 		readonly code: string,
@@ -14,7 +19,30 @@ export class ApiError extends Error {
 
 const FALLBACK_MESSAGE = 'Something went wrong on our side. Please try again in a moment.';
 
-export async function api<T>(path: string, init: { method?: string; body?: unknown; signal?: AbortSignal } = {}): Promise<T> {
+export type StepUpReason = 'passkey_required' | 'recent_auth_required';
+
+let stepUp: ((reason: StepUpReason) => Promise<boolean>) | undefined;
+
+/** Registers the step-up dialog (the layout does): it resolves true once the person confirmed, false when they gave up. */
+export function onStepUp(handler: typeof stepUp): void {
+	stepUp = handler;
+}
+
+type Init = { method?: string; body?: unknown; signal?: AbortSignal; stepUp?: boolean };
+
+export async function api<T>(path: string, init: Init = {}): Promise<T> {
+	try {
+		return await request<T>(path, init);
+	} catch (e) {
+		const reason = e instanceof ApiError && e.status === 403 ? e.code : '';
+		if (init.stepUp !== false && stepUp && (reason === 'passkey_required' || reason === 'recent_auth_required')) {
+			if (await stepUp(reason)) return request<T>(path, init);
+		}
+		throw e;
+	}
+}
+
+async function request<T>(path: string, init: Init): Promise<T> {
 	const method = init.method ?? 'GET';
 	const headers: Record<string, string> = { Accept: 'application/json' };
 	if (init.body !== undefined) headers['Content-Type'] = 'application/json';
@@ -57,5 +85,5 @@ export async function api<T>(path: string, init: { method?: string; body?: unkno
 
 /** The plain message to show for any thrown value. */
 export function errorText(e: unknown): string {
-	return e instanceof ApiError ? e.message : FALLBACK_MESSAGE;
+	return e instanceof PlainError ? e.message : FALLBACK_MESSAGE;
 }

@@ -20,9 +20,12 @@ The Worker in `api/` serves that folder and the API from the same origin, so eve
 | `/support/thanks` | Donation success | Prerendered |
 | `/supporters` | Credited supporters | Prerendered shell |
 | `/transparency` | Live list numbers, funding, independence rules, expiry | Prerendered shell |
-| `/account` | Sign-in, plan, cancel, connect this browser, reviewer token | Prerendered shell |
-| `/auth/callback?token=&next=` | Finishes an emailed sign-in link | Prerendered shell |
-| `/console` | Review console for curators and staff | Prerendered shell |
+| `/account` | Sign-in with a code or a passkey, plan, cancel, connect this browser, reviewer token, passkeys, sign out everywhere, download and delete | Prerendered shell |
+| `/account/invite#invite=` | Adds a reviewer's passkey with an invite, after an email sign-in | Prerendered shell |
+| `/account/cancel#<secret>` | Cancels a held request from its email link, when asked | Prerendered shell |
+| `/auth/callback?token=&next=` | Finishes a sign-in link mailed before codes, for one release | Prerendered shell |
+| `/console` | Review console for curators, after a passkey sign-in of the last 12 hours; staff get a link to the admin console | Prerendered shell |
+| `/admin`, `/admin/people`, `/admin/audit` | The admin console on the admin host: review with full authority, people and roles, invites, the audit log | Prerendered shell |
 | `/privacy`, `/terms` | Policies | Prerendered |
 
 `{platform}` is `yt`, `tt`, `ig` or `fb` (matched in `src/params.ts`); anything else is a 404.
@@ -50,6 +53,7 @@ Variables are declared in `src/env.ts` and inlined at build time.
 | Variable | Default | Purpose |
 | --- | --- | --- |
 | `PUBLIC_EXTENSION_ID` | empty | Chrome extension ID that receives `colander:plan-token` and `colander:reviewer-token` messages. When empty, the account page reports the extension as not installed. |
+| `PUBLIC_TURNSTILE_SITE_KEY` | empty | Turnstile site key for the sign-in code form; it also allows challenges.cloudflare.com in the page CSP. Empty: no challenge. |
 | `PUBLIC_STORE_URL` | `https://chromewebstore.google.com/search/Colander` | Where every Add to Chrome button points. |
 | `COLANDER_API` | `http://localhost:8787` | Dev only: where `vite dev` proxies `/v1`. |
 | `COLANDER_BUILD_API` | empty | Build only: an API origin, such as `http://127.0.0.1:8787`, to read `/v1/stats` and the latest decisions from at build. Pages prerender with those numbers and their time, then refresh them in place. Without it, live numbers appear once the page loads, and the build prints a warning: set it for every production build. |
@@ -61,8 +65,8 @@ pnpm install                 # at the repository root
 pnpm -C web dev              # http://localhost:5173, /v1 proxied to wrangler dev on :8787 (make dev)
 ```
 
-The Worker runs in dev mode (`COLANDER_DEV=1`), so sign-in links are printed in the `wrangler dev` output.
-Set `PUBLIC_URL=http://localhost:5173` in `api/.dev.vars` so those links open the dev site.
+The Worker runs in dev mode (`COLANDER_DEV=1`), so sign-in codes are printed in the `wrangler dev` output.
+Passkeys need the page and the Worker's `PUBLIC_URL` on the same origin, so try them on http://localhost:8787 (`make dev`).
 
 ## Build and check
 
@@ -98,6 +102,7 @@ pnpm -C web screenshots      # full-page screenshots of every page into web/scre
 ```
 
 The test server listens on 4173; set `PORT` to move it when that port is taken.
+It also serves `build-turnstile/` one port above, a second build with Turnstile's always-pass test site key, for `turnstile.spec.ts` (Playwright project `turnstile`).
 
 Every test mocks `/v1` with `page.route` using fixtures typed by `packages/shared/src/api.ts` (`tests/mocks.ts`).
 A shared fixture fails any test that logs a page error or a CSP violation.
@@ -110,7 +115,10 @@ A shared fixture fails any test that logs a page error or a CSP violation.
 | `source.spec.ts` | Source pages for all five verdicts, Not rated, unknown platforms, no support links, audience size not known, large or recorded by staff as not large, and no upload figures |
 | `appeal.spec.ts` | Start an appeal, copy the code, Verify, every status, missing secret |
 | `log.spec.ts` | Platform and verdict filters, address sync, load more with the cursor, reviewers named on appeal entries, item-level changes naming their item in the row |
-| `account.spec.ts` | Email sign-in and callback, safe `next`, connect this browser, one-click cancel at period end, then end now and refund, `409 not_refundable` |
+| `account.spec.ts` | Code sign-in with its focus steps and a wrong code, no request before the person starts on the form, a used-up code, an old link, connect this browser, one-click cancel at period end, then end now and refund, `409 not_refundable` |
+| `turnstile.spec.ts` | With Turnstile on and a stand-in for its script: nothing loads before the person starts, and every code request (the first, a new code, another address and a step-up) carries a token no other request used |
+| `passkeys.spec.ts` | With a Chromium virtual authenticator: add a passkey and sign in with it, the step-up dialog by passkey and by code, a reviewer asked for their passkey before adding one and a device that already holds one, the 72-hour wait without a passkey, download and delete, sign out everywhere, invites, the cancel link, the console's passkey gate, and the links that take staff to the admin host |
+| `admin.spec.ts` | The admin console on the admin host: full-authority review with the public source page on the main host and no public API calls, a client-side route that goes on to the admin host, not staff, roles below one's own, invites shown once, the receipt-checked email change, the audit log as a table and, on phones, as entries |
 | `plans.spec.ts` | Yearly preselected, `503 billing_unavailable`, sign-in before checkout with the Free and Plus cards keeping one height, redirect, closed checkout, `409 already_subscribed`, the welcome page and its full-width sign-in button |
 | `support.spec.ts` | Donation body and redirect, custom amounts and limits, `503 billing_unavailable`, closed payment |
 | `console.spec.ts` | Keyboard queue, evidence, decision body and CSRF header, curator limits (large sources, appeals in review) and `403 staff_required`, AI evidence before Slop and `400 ai_evidence_required` |

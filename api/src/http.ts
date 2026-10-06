@@ -3,8 +3,49 @@
 
 /** Set by the edge on every request it forwards to the Store; never trusted from clients. */
 export const IP_HASH_HEADER = 'x-colander-ip-hash';
+/** Set by the edge: main or admin, the host the request arrived on. */
+export const HOST_HEADER = 'x-colander-host';
+/** Set by the edge on the admin host: the email and the A3T subject Cloudflare Access verified. */
+export const ACCESS_EMAIL_HEADER = 'x-colander-access-email';
+export const ACCESS_SUBJECT_HEADER = 'x-colander-access-subject';
+/** Set by the edge: the cf-ray of the request, for the audit log. */
+export const REQUEST_ID_HEADER = 'x-colander-request-id';
 /** Set by the Store on its responses so the edge logs the route pattern, then removed. */
 export const ROUTE_HEADER = 'x-colander-route';
+
+/** The one header with the x-colander- prefix that clients send: the CSRF header. */
+const CSRF_HEADER = 'x-colander-csrf';
+/** Requests to the Store never carry the client's address. */
+const CLIENT_ADDRESS_HEADERS = ['cf-connecting-ip', 'x-forwarded-for', 'x-real-ip', 'true-client-ip', 'cf-connecting-ipv6'];
+
+/**
+ * The headers a request reaches the Store with. Every x-colander- header the client sent is
+ * dropped (except the CSRF header) before the edge sets its own, so no client can claim a host,
+ * an Access identity or an IP hash. On the admin host the product cookie and every Authorization
+ * scheme are dropped as well: staff act only through Access there.
+ */
+export function storeHeaders(
+	from: Headers,
+	trusted: { ipHash: string; host: 'main' | 'admin'; requestId: string; access?: { email: string; subject: string } }
+): Headers {
+	const headers = new Headers(from);
+	for (const name of [...headers.keys()]) {
+		if ((name.startsWith('x-colander-') && name !== CSRF_HEADER) || CLIENT_ADDRESS_HEADERS.includes(name)) headers.delete(name);
+	}
+	if (trusted.host === 'admin') {
+		headers.delete('cookie');
+		headers.delete('authorization');
+		headers.delete('cf-access-jwt-assertion');
+	}
+	headers.set(IP_HASH_HEADER, trusted.ipHash);
+	headers.set(HOST_HEADER, trusted.host);
+	headers.set(REQUEST_ID_HEADER, trusted.requestId);
+	if (trusted.access) {
+		headers.set(ACCESS_EMAIL_HEADER, trusted.access.email);
+		headers.set(ACCESS_SUBJECT_HEADER, trusted.access.subject);
+	}
+	return headers;
+}
 
 /**
  * The part of a client address that per-IP limits count: an IPv4 address whole, an IPv6 address
@@ -81,7 +122,7 @@ export function tooMany(retryAfterSeconds: number): Response {
 }
 
 // Routes the extension calls from any origin (contract 6); the rest are same-origin only.
-const CORS_PREFIXES = ['/v1/list/', '/v1/config/', '/v1/tags', '/v1/reports', '/v1/trial', '/v1/entitlement/refresh', '/v1/sync', '/v1/review/', '/v1/sources/'];
+const CORS_PREFIXES = ['/v1/list/', '/v1/config/', '/v1/tags', '/v1/reports', '/v1/trial', '/v1/install', '/v1/entitlement/refresh', '/v1/sync', '/v1/review/', '/v1/sources/'];
 
 export function isCorsPath(path: string): boolean {
 	return CORS_PREFIXES.some((pre) => path === pre || (path.startsWith(pre) && (pre.endsWith('/') || path[pre.length] === '/')));
@@ -93,7 +134,7 @@ export function preflight(): Response {
 		status: 204,
 		headers: {
 			'Access-Control-Allow-Origin': '*',
-			'Access-Control-Allow-Methods': 'GET, POST, PUT, OPTIONS',
+			'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
 			'Access-Control-Allow-Headers': 'Authorization, Content-Type',
 			// Chromium caps preflight caching at 2 hours.
 			'Access-Control-Max-Age': '7200'
@@ -111,14 +152,14 @@ const SECURITY_HEADERS = {
 };
 
 /**
- * Final touches on every Worker response: security headers, CORS on extension routes, `no-store`
- * unless a cache policy was set, and no body for HEAD.
+ * Final touches on every Worker response: security headers, CORS on extension routes of the main
+ * host (never on the admin host), `no-store` unless a cache policy was set, and no body for HEAD.
  */
-export function finish(res: Response, method: string, path: string): Response {
+export function finish(res: Response, method: string, path: string, admin = false): Response {
 	const out = new Response(method === 'HEAD' ? null : res.body, res);
 	for (const [k, v] of Object.entries(SECURITY_HEADERS)) out.headers.set(k, v);
 	if (!out.headers.has('Cache-Control')) out.headers.set('Cache-Control', 'no-store');
-	if (isCorsPath(path)) {
+	if (isCorsPath(path) && !admin) {
 		out.headers.set('Access-Control-Allow-Origin', '*');
 		out.headers.set('Access-Control-Expose-Headers', 'X-Colander-Sequence, Retry-After');
 	}

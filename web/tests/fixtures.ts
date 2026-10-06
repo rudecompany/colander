@@ -1,5 +1,6 @@
 // A test fixture that fails on page errors and CSP violations. Failed API responses are expected
 // in some tests and are not counted.
+import { generateKeyPairSync, randomBytes } from 'node:crypto';
 import { test as base, expect, type Page } from '@playwright/test';
 
 export const test = base.extend<{ pageErrors: string[] }>({
@@ -62,4 +63,36 @@ export function smallSvgText(page: Page): Promise<string[]> {
 			.filter(([, size]) => size < 11.95)
 			.map(([name, size]) => `"${name}" ${size.toFixed(1)}px`)
 	);
+}
+
+/**
+ * A Chromium virtual authenticator on the page (CDP WebAuthn): a platform authenticator with
+ * resident keys and user verification, which answers prompts by itself while presence is on. It
+ * can hold a passkey from the start (withPasskey), list what it holds, and stop answering for a
+ * while (presence(false)), as a person who has not touched it yet.
+ */
+export async function virtualAuthenticator(page: Page, opts: { withPasskey?: boolean } = {}) {
+	const cdp = await page.context().newCDPSession(page);
+	await cdp.send('WebAuthn.enable');
+	const { authenticatorId } = await cdp.send('WebAuthn.addVirtualAuthenticator', {
+		options: { protocol: 'ctap2', transport: 'internal', hasResidentKey: true, hasUserVerification: true, isUserVerified: true, automaticPresenceSimulation: true }
+	});
+	if (opts.withPasskey) {
+		const { privateKey } = generateKeyPairSync('ec', { namedCurve: 'P-256' });
+		await cdp.send('WebAuthn.addCredential', {
+			authenticatorId,
+			credential: {
+				credentialId: randomBytes(16).toString('base64'),
+				isResidentCredential: true,
+				rpId: 'localhost',
+				privateKey: privateKey.export({ format: 'der', type: 'pkcs8' }).toString('base64'),
+				userHandle: Buffer.from('acc_7f3k2m').toString('base64'),
+				signCount: 0
+			}
+		});
+	}
+	return {
+		credentials: async () => (await cdp.send('WebAuthn.getCredentials', { authenticatorId })).credentials,
+		presence: (enabled: boolean) => cdp.send('WebAuthn.setAutomaticPresenceSimulation', { authenticatorId, enabled })
+	};
 }

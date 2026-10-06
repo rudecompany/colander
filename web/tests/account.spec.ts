@@ -1,46 +1,85 @@
 import { test, expect } from './fixtures.ts';
 import { ACCOUNT, PLUS_ACCOUNT, mockApi } from './mocks.ts';
 
-test('sign in by emailed link, then the account page shows the account', async ({ page }) => {
+test('sign in by emailed code, then the account page shows the account', async ({ page }) => {
 	let signedIn = false;
 	const calls = await mockApi(page, {
-		'POST /v1/auth/email': { status: 202 },
-		'POST /v1/auth/verify': (c) => {
-			if (c.body.token !== 'tok_123') return { status: 400, json: { error: { code: 'invalid_token', message: 'This link is not valid.' } } };
+		'POST /v1/auth/code': { status: 202 },
+		'POST /v1/auth/code/verify': (c) => {
+			if (c.body.code !== '123456') return { status: 400, json: { error: { code: 'code_invalid', message: 'That code is not right. Check the latest email from Colander and try again.' } } };
 			signedIn = true;
 			return { json: { account: ACCOUNT } };
 		},
-		'GET /v1/account': () => (signedIn ? { json: { account: ACCOUNT } } : { status: 401, json: { error: { code: 'not_signed_in', message: 'Sign in.' } } })
+		'GET /v1/account': () => (signedIn ? { json: { account: ACCOUNT } } : { status: 401, json: { error: { code: 'signed_out', message: 'Sign in.' } } })
 	});
 
 	await page.goto('/account');
 	await expect(page.getByRole('heading', { level: 1 })).toHaveText('Sign in');
+	await expect(page.getByLabel('Email')).toHaveAttribute('autocomplete', 'username webauthn');
 	await page.getByLabel('Email').fill('maya@example.com');
-	await page.getByRole('button', { name: 'Email me a sign-in link' }).click();
-	await expect(page.getByText('Check your inbox')).toBeVisible();
-	// Focus follows the form: to the notice once sent, back to the field for another address.
-	await expect(page.locator('.sent-note')).toBeFocused();
+	await page.getByRole('button', { name: 'Email me a code' }).click();
+	await expect(page.getByText('We emailed a 6-digit code to maya@example.com.', { exact: false })).toBeVisible();
+	// Focus follows the form: to the code field once sent, back to the email for another address.
+	const code = page.getByLabel('Code');
+	await expect(code).toBeFocused();
+	await expect(code).toHaveAttribute('autocomplete', 'one-time-code');
+	await expect(code).toHaveAttribute('inputmode', 'numeric');
 	await page.getByRole('button', { name: 'Use a different address' }).click();
 	await expect(page.getByLabel('Email')).toBeFocused();
-	await page.getByRole('button', { name: 'Email me a sign-in link' }).click();
-	await expect(page.getByText('Check your inbox')).toBeVisible();
-	const send = calls.find((c) => c.path === '/v1/auth/email')!;
+	await page.getByRole('button', { name: 'Email me a code' }).click();
+	const send = calls.find((c) => c.path === '/v1/auth/code')!;
 	expect(send.body).toEqual({ email: 'maya@example.com', next: '/account' });
 	expect(send.headers['x-colander-csrf']).toBe('1');
 
-	await page.goto('/auth/callback?token=tok_123&next=/account');
-	await expect(page).toHaveURL(/\/account$/);
+	await code.fill('654321');
+	await page.getByRole('button', { name: 'Sign in' }).click();
+	await expect(page.getByRole('alert')).toContainText('That code is not right.');
+	await code.fill('123 456');
+	await page.getByRole('button', { name: 'Sign in' }).click();
 	await expect(page.getByRole('heading', { level: 1 })).toHaveText('Hello, Maya');
 	await expect(page.getByText('Signed in as maya@example.com')).toBeVisible();
 	await expect(page.getByText('Free.', { exact: false })).toBeVisible();
-	expect(calls.find((c) => c.path === '/v1/auth/verify')!.headers['x-colander-csrf']).toBe('1');
+	const verify = calls.filter((c) => c.path === '/v1/auth/code/verify');
+	expect(verify.map((c) => c.body)).toEqual([{ code: '654321' }, { code: '123456' }]);
+	expect(verify[0]!.headers['x-colander-csrf']).toBe('1');
 });
 
-test('an expired sign-in link explains what to do and never redirects off-site', async ({ page }) => {
-	await mockApi(page, { 'POST /v1/auth/verify': { status: 400, json: { error: { code: 'expired', message: 'Expired.' } } } });
+test('a sign-in form asks the server for nothing until the person starts on it', async ({ page }) => {
+	const calls = await mockApi(page);
+	await page.goto('/account');
+	await expect(page.getByRole('heading', { level: 1 })).toHaveText('Sign in');
+	await page.waitForLoadState('networkidle');
+	// No passkey challenge yet, so no cookie and nothing counted against the network's hourly passkey budget.
+	expect(calls.filter((c) => c.path.startsWith('/v1/auth/'))).toEqual([]);
+	await page.getByLabel('Email').focus();
+	if (await page.evaluate(async () => !!(await PublicKeyCredential.isConditionalMediationAvailable?.()))) {
+		await expect.poll(() => calls.filter((c) => c.path === '/v1/auth/passkey/options').length).toBe(1);
+	}
+});
+
+test('a used-up code offers a new one', async ({ page }) => {
+	let sent = 0;
+	await mockApi(page, {
+		'POST /v1/auth/code': () => (sent++, { status: 202 }),
+		'POST /v1/auth/code/verify': { status: 400, json: { error: { code: 'code_expired', message: 'This code has expired or was used up. Ask for a new one.' } } }
+	});
+	await page.goto('/account');
+	await page.getByLabel('Email').fill('maya@example.com');
+	await page.getByRole('button', { name: 'Email me a code' }).click();
+	await page.getByLabel('Code').fill('123456');
+	await page.getByRole('button', { name: 'Sign in' }).click();
+	await expect(page.getByRole('alert')).toHaveText('This code no longer works. Send a new one and use the newest email.');
+	await page.getByRole('button', { name: 'Send a new code' }).click();
+	await expect(page.getByText('We sent a new code to maya@example.com.', { exact: false })).toBeVisible();
+	expect(sent).toBe(2);
+});
+
+test('an old sign-in link explains the change and never redirects off-site', async ({ page }) => {
+	await mockApi(page, { 'POST /v1/auth/verify': { status: 400, json: { error: { code: 'link_invalid', message: 'Expired.' } } } });
 	await page.goto('/auth/callback?token=old&next=//evil.example');
-	await expect(page.getByText('This sign-in link has expired or was already used.', { exact: false })).toBeVisible();
+	await expect(page.getByText('Colander now signs you in with a 6-digit code instead.', { exact: false })).toBeVisible();
 	await expect(page).toHaveURL(/\/auth\/callback/);
+	await expect(page.getByRole('link', { name: 'Sign in with a code' })).toHaveAttribute('href', '/account');
 });
 
 test('connect this browser sends the plan token to the extension', async ({ page }) => {

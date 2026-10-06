@@ -7,8 +7,12 @@
 	"main": "src/index.ts",
 	// The newest date the pinned workerd supports. Advance it with Wrangler and rerun the tests.
 	"compatibility_date": "2026-10-01",
-	"routes": [{ "pattern": "getcolander.com", "custom_domain": true }],
-	// Only the custom domain serves the Worker: a workers.dev or preview URL would bypass Access on
+	// The site and API, and the admin host behind Cloudflare Access (docs/deploy.md step 18).
+	"routes": [
+		{ "pattern": "getcolander.com", "custom_domain": true },
+		{ "pattern": "admin.getcolander.com", "custom_domain": true }
+	],
+	// Only the custom domains serve the Worker: a workers.dev or preview URL would bypass Access on
 	// staging and split the edge cache.
 	"workers_dev": false,
 	"preview_urls": false,
@@ -21,8 +25,9 @@
 		"not_found_handling": "404-page",
 		// /200 and /404 are the SPA shells, which html_handling would serve as pages with status 200;
 		// the Worker answers them as not found. The _redirects rewrites to /200 stay inside Static
-		// Assets, so source and appeal pages still get the shell.
-		"run_worker_first": ["/v1/*", "/ops/*", "/healthz", "/__dev/*", "/200", "/404"]
+		// Assets, so source and appeal pages still get the shell. The home page and the admin pages
+		// run the Worker first, so it checks Access on the admin host and sends /admin there.
+		"run_worker_first": ["/v1/*", "/ops/*", "/healthz", "/__dev/*", "/200", "/404", "/", "/admin", "/admin/*"]
 	},
 	// Workers Cache in front of the list and public GETs. Responses carry explicit headers (src/http.ts).
 	"cache": { "enabled": true, "cross_version_cache": true },
@@ -72,13 +77,27 @@
 		"YOUTUBE_DAILY_UNITS": "7000",
 		// "1" only after YouTube approves Colander's derived metrics: subscriber counts and uploads
 		// per day then feed scoring. Empty keeps every YouTube figure out of verdicts.
-		"YOUTUBE_DERIVED_USE": ""
+		"YOUTUBE_DERIVED_USE": "",
+		// The admin host and its Cloudflare Access application: the team domain
+		// (<team>.cloudflareaccess.com) and the application's AUD tag. Until both are set, every
+		// admin-host request answers 403 (docs/deploy.md step 18).
+		"ADMIN_HOST": "admin.getcolander.com",
+		"CF_ACCESS_TEAM_DOMAIN": "",
+		"CF_ACCESS_AUD": "",
+		// The ops channel takes GitHub Actions OIDC tokens from workflows of this repository on main,
+		// in this GitHub environment (docs/deploy.md, The ops channel).
+		"OPS_GITHUB_REPOSITORY": "rudecompany/colander",
+		"OPS_GITHUB_REPOSITORY_ID": "1403629038",
+		"OPS_GITHUB_ENVIRONMENT": "production"
 	},
-	"secrets": { "required": ["COLANDER_SIGNING_KEY", "IP_SALT", "OPS_TOKEN"] },
+	"secrets": { "required": ["COLANDER_SIGNING_KEY", "IP_SALT"] },
 	"env": {
 		"staging": {
 			"name": "colander-staging",
-			"routes": [{ "pattern": "staging.getcolander.com", "custom_domain": true }],
+			"routes": [
+				{ "pattern": "staging.getcolander.com", "custom_domain": true },
+				{ "pattern": "staging-admin.getcolander.com", "custom_domain": true }
+			],
 			"workers_dev": false,
 			"preview_urls": false,
 			"durable_objects": { "bindings": [{ "name": "STORE", "class_name": "Store" }] },
@@ -102,9 +121,15 @@
 				"STRIPE_PRICE_PLUS_YEARLY": "",
 				"STRIPE_MANAGED_PAYMENTS": "",
 				"YOUTUBE_DAILY_UNITS": "1000",
-				"YOUTUBE_DERIVED_USE": ""
+				"YOUTUBE_DERIVED_USE": "",
+				"ADMIN_HOST": "staging-admin.getcolander.com",
+				"CF_ACCESS_TEAM_DOMAIN": "",
+				"CF_ACCESS_AUD": "",
+				"OPS_GITHUB_REPOSITORY": "rudecompany/colander",
+				"OPS_GITHUB_REPOSITORY_ID": "1403629038",
+				"OPS_GITHUB_ENVIRONMENT": "staging"
 			},
-			"secrets": { "required": ["COLANDER_SIGNING_KEY", "IP_SALT", "OPS_TOKEN"] }
+			"secrets": { "required": ["COLANDER_SIGNING_KEY", "IP_SALT"] }
 		}
 	}
 }

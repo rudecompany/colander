@@ -199,13 +199,15 @@ export interface LogEntry {
 	signals: number;
 	actor: string;
 	actorName: string;
+	/** internal, never published: the reviewer's account */
+	accountId?: string;
 }
 
 function addLog(db: Db, e: LogEntry): void {
 	db.run(
 		`INSERT INTO decision_log (at, platform, target_type, target_id, source_id, source_key,
-		source_name, from_verdict, to_verdict, reason, signals, actor, actor_name)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		source_name, from_verdict, to_verdict, reason, signals, actor, actor_name, account_id)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		e.at,
 		e.platform,
 		e.targetType,
@@ -218,7 +220,8 @@ function addLog(db: Db, e: LogEntry): void {
 		e.reason,
 		e.signals,
 		e.actor,
-		nullString(e.actorName)
+		nullString(e.actorName),
+		nullString(e.accountId ?? '')
 	);
 }
 

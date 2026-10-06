@@ -10,7 +10,7 @@ for (const scheme of ['light', 'dark'] as const) {
 			await mockApi(page, mocks);
 			await page.goto(path);
 			await page.waitForLoadState('networkidle');
-			if (path === '/console') {
+			if (path === '/console' || path === '/admin') {
 				await page.getByRole('button', { name: /History Bites/ }).click();
 				await page.getByRole('heading', { level: 2, name: 'History Bites 24/7' }).waitFor();
 			}

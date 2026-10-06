@@ -19,3 +19,12 @@ export async function loadAccount(): Promise<Account | null> {
 	}
 	return session.account;
 }
+
+/** Reloads the account in place, without the loading state, after a change on the account page. */
+export async function refreshAccount(): Promise<void> {
+	try {
+		session.account = (await api<{ account: Account }>('/v1/account')).account;
+	} catch (e) {
+		if (e instanceof ApiError && e.status === 401) session.account = null;
+	}
+}

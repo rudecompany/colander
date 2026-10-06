@@ -9,7 +9,7 @@
 	import Minus from '@lucide/svelte/icons/minus';
 	import { api, ApiError, errorText } from '#lib/api.ts';
 	import { loadAccount, session } from '#lib/session.svelte.ts';
-	import EmailSignIn from '#lib/components/EmailSignIn.svelte';
+	import SignIn from '#lib/components/SignIn.svelte';
 	import InstallButton from '#lib/components/InstallButton.svelte';
 	import Notice from '#lib/components/Notice.svelte';
 
@@ -142,7 +142,7 @@
 			{:else if step === 'signin'}
 				<div class="uin-card uin-card-lg uin-card-pad signin">
 					<p class="cl-body">Sign in to continue. We create your account with the first sign-in.</p>
-					<EmailSignIn next="/plans?checkout={price}" submitLabel="Email me a link" block />
+					<SignIn next="/plans?checkout={price}" block onsignedin={() => ((step = 'continue'), (resumed = true))} />
 				</div>
 			{:else if step === 'continue'}
 				<p class="cl-body cl-muted">You are signed in as {session.account?.email}.</p>

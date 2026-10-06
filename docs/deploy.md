@@ -10,8 +10,8 @@ Part 3 is day-2 operations.
 
 | Environment | Origin | Worker | Deployed by |
 | --- | --- | --- | --- |
-| production | https://getcolander.com | `colander` | `release.yml`, when you merge a release PR |
-| staging | https://staging.getcolander.com, behind Cloudflare Access | `colander-staging` | `deploy-staging.yml`, after every green CI run on main |
+| production | https://getcolander.com, and the admin host https://admin.getcolander.com behind Cloudflare Access | `colander` | `release.yml`, when you merge a release PR |
+| staging | https://staging.getcolander.com, behind Cloudflare Access, and the admin host https://staging-admin.getcolander.com | `colander-staging` | `deploy-staging.yml`, after every green CI run on main |
 | Chrome Web Store | the store item | - | `release.yml`, as a staged publish |
 
 The Worker names come from `api/wrangler.jsonc`; this runbook assumes the top level is production and `env.staging` is staging.
@@ -44,7 +44,8 @@ Commands run from the repository root after `pnpm install`.
 
 The domain is already registered with Cloudflare Registrar, so its zone exists and uses Cloudflare nameservers.
 1. In Domain Registration > Manage Domains, check that auto-renew is on for getcolander.com.
-2. Leave the zone's DNS empty for the apex and `staging`: the first deploy in step 9 creates both records as Worker Custom Domains.
+2. Leave the zone's DNS empty for the apex, `staging`, `admin` and `staging-admin`: the first deploy in step 9 creates all four records as Worker Custom Domains.
+   `staging-admin` is a first-level subdomain on purpose, so Universal SSL covers it.
 
 ### 3. Bot Fight Mode off
 
@@ -77,6 +78,57 @@ The watchdog cron mails alerts through the `ALERTS` binding, which only sends to
    Stripe cannot pass Access, and the webhook checks Stripe's signature itself.
 5. Turn on strict service token authentication under Access controls > Access settings, so a bad token gets 401 instead of a login page.
 
+### 6a. The admin hosts: A3T Identity, Access and MFA
+
+Staff and admin authority exists only on `admin.getcolander.com` and `staging-admin.getcolander.com` (contracts 6.9).
+Cloudflare Access sits in front of both, with A3T Identity as the identity provider and independent MFA.
+Access covers every path at the edge, static files included.
+The Worker checks the Access token again on the paths it runs for (`/`, `/admin` and `/admin/*`, `/v1/*`, `/ops/*`, `/__dev/*` and `/healthz`), and binds each staff member to their A3T subject.
+
+1. **A3T Identity client.** In A3T prod (for production) and in A3T dev (for staging), seed a Hydra OAuth client called `colander-access` with a copy of `infra/scripts/seed-admin-oauth-client.sh` from A3T Core:
+   - redirect URI `https://<team>.cloudflareaccess.com/cdn-cgi/access/callback`, with your Zero Trust team name;
+   - scopes `openid email profile`;
+   - token endpoint auth method `client_secret_basic`;
+   - `skip_consent: true`.
+   Keep the client ID and secret for the next step.
+2. **Fix email_verified first, or use One-time PIN only.** A3T's consent-server marks every email as verified without checking it, so an A3T account could claim a staff address.
+   Until the consent-server sets `email_verified` from Kratos's verifiable-address status, make Access One-time PIN (a verified mailbox) the only login method of the admin applications, with independent MFA keys enrolled beforehand (step 6).
+   Do not enable A3T Identity on them meanwhile: an Access email rule matches whatever identity provider the login came from, so an A3T login with a claimed staff address would pass it, and the Worker would bind that login's subject to the staff account.
+   The Worker accepts One-time PIN identities for staff accounts.
+3. **The identity provider.** In Zero Trust > Integrations > Identity providers, add A3T Identity as a generic OIDC provider with the endpoints from `https://id.a3t.app/.well-known/openid-configuration` (A3T dev's for staging), the client ID and secret from step 1, and PKCE on.
+   Under OIDC Claims add `sub`, so Access passes the A3T subject to the Worker in its token's `custom.sub` claim.
+   Select Test and check that `sub` appears in `oidc_fields`.
+4. **Two Access applications**, one per environment, each with its own AUD tag:
+   - `Colander admin` for `admin.getcolander.com`, and `Colander staging admin` for `staging-admin.getcolander.com`.
+   - Login methods: One-time PIN only while step 2 applies; after that A3T Identity only, with One-time PIN off.
+   - Policy `Staff`: action Allow. With A3T Identity, include the OIDC Claim `sub` equal to each staff member's A3T subject, one value per person, and never email addresses. While step 2 applies, include their email addresses instead.
+   - If you ever need both login methods at once (the break-glass in step 7), keep the email addresses in a policy of their own that also requires Login Methods: One-time PIN, so an A3T login never matches them.
+   - Session duration 8 hours.
+   - Independent MFA: require it, with security keys and platform biometrics allowed. Never turn on skipping MFA based on the identity provider's `amr` claim.
+   - Cookie settings: HttpOnly on, SameSite Strict, binding cookie on.
+   - Copy each application's AUD tag (Overview > Application Audience (AUD) Tag) and the team domain (`<team>.cloudflareaccess.com`).
+5. **The Worker's settings.** In `api/wrangler.jsonc` set `CF_ACCESS_TEAM_DOMAIN` and `CF_ACCESS_AUD` for production (the `Colander admin` AUD) and for staging (the `Colander staging admin` AUD), and keep `ADMIN_HOST` as `admin.getcolander.com` and `staging-admin.getcolander.com`.
+   None of them is secret.
+   Until both are set, every admin-host request answers 403, so the admin hosts are safe to deploy before Access exists.
+   The admin hosts are already in the `routes` of both environments; the first deploy in step 9 creates their Custom Domains.
+6. **Keys, under supervision.** Each staff member registers two keys (security keys, or a security key and a platform biometric) in A3T Identity and in Access independent MFA, in a session you watch, before their `sub` goes into the policy.
+   Access lets a person enroll their own MFA after signing in, so a policy entry for someone who has not enrolled yet would trust whoever signs in first.
+   You protect the Cloudflare account and the A3T admin account with two hardware keys each.
+   **Pin each subject before A3T logins are on.** Once their account is staff or admin (step 16), run the Ops command `pin-subject` for every staff member and for yourself with `{"email": "<their email>", "subject": "<their A3T subject>"}`, the subject you read in A3T Identity, before you add that `sub` to the policy.
+   The Worker then refuses any other subject for the account; without a pin it binds the first subject Access lets through.
+7. **Recovery.** When a staff member loses a key, take them out of the policy first, have an A3T admin provision a new passkey and reset their Access MFA enrollment, re-enroll under supervision, run `pin-subject` again if their A3T subject changed, then add them back.
+   A staff member who joins without an A3T identity needs one first: create an A3T tenant for Colander with `getcolander.com` as its email domain, or add a per-client switch to the consent-server, before you add them.
+   If A3T Identity is down, staff work pauses; the product keeps running.
+   The break-glass is One-time PIN with the email addresses in its own policy (step 4), for the people whose keys are already enrolled; turn it off again when A3T Identity is back.
+
+### 6b. Turnstile on the sign-in form (optional)
+
+Sign-in codes are already limited per address and per IP, and wrong codes pause code sign-in for an address.
+Turnstile adds a challenge in front of `POST /v1/auth/code`; turn it on if the watchdog's `sign_in_mail` alert fires.
+1. In the Cloudflare dashboard, go to Turnstile and add a widget for `getcolander.com` and `staging.getcolander.com`, mode Managed.
+2. Put the site key in the GitHub repository variable `TURNSTILE_SITE_KEY` (the website build reads it) and the secret key in the Worker secret `TURNSTILE_SECRET_KEY` of both environments (step 8).
+   Set both or neither: with only the secret, sign-in stops working.
+
 ### 7. Signing keys
 
 One Ed25519 key signs the list, the adapter configuration and plan tokens.
@@ -97,19 +149,19 @@ Write down the public keys:
 
 ### 8. R2 buckets and Worker secrets
 
-Before you start, have two things ready: the `colander-analytics` token from step 10 (it is a Worker secret), and the GitHub repository with its three environments from step 15 (the `OPS_TOKEN` lines write to them).
+Before you start, have the `colander-analytics` token from step 10 ready (it is a Worker secret).
 1. Log Wrangler in as the owner: `pnpm -C api exec wrangler login`.
 2. Run `scripts/cloudflare-bootstrap.sh`.
-   It reads the R2 bindings of both environments from `api/wrangler.jsonc`, creates the list and backup buckets with the `enam` location hint, sets lifecycle rules (backups expire after 90 days, unfinished multipart uploads after a day), and puts a 7-day bucket lock on the backup buckets.
+   It reads the R2 bindings of both environments from `api/wrangler.jsonc`, creates the list and backup buckets with the `enam` location hint, sets lifecycle rules (dumps, restore bookmarks and seed lists expire after 90 days, erasure records after 120, the audit log's daily copies after 400, unfinished multipart uploads after a day), and puts a 7-day bucket lock on the backup buckets and a 400-day lock on their `audit/` prefix.
    It is safe to run again.
 3. Run every secret command the script prints, for production and for staging.
    They read values from stdin, so nothing lands in shell history.
-   The `OPS_TOKEN` lines store the same value as a Worker secret and as a GitHub environment secret, so `gh` must be logged in.
+   The ops channel has no secret: the workflows prove themselves with GitHub OIDC tokens (Part 2, The ops channel).
 4. Check with `pnpm -C api exec wrangler secret list` and `pnpm -C api exec wrangler secret list --env staging`.
 
 ### 9. The first deploy of each environment
 
-The first deploy attaches the Custom Domains and creates the Store's Durable Object namespace, which needs more rights than CI tokens get.
+The first deploy attaches the Custom Domains (the site and the admin host of each environment) and creates the Store's Durable Object namespace, which needs more rights than CI tokens get.
 Do it once from your machine, still logged in as the owner:
 
 ```sh
@@ -279,8 +331,20 @@ Releases are proposed by a GitHub App, because pull requests opened with the wor
 2. Install it on `rudecompany/colander` only.
 3. Store its Client ID as the repository variable `RELEASE_APP_CLIENT_ID`, generate a private key, and store the whole PEM as the repository secret `RELEASE_APP_PRIVATE_KEY`.
 
+**Actions.**
+Allow only the actions the workflows use, pinned by full commit SHA (the workflows pin every action that way, and Dependabot keeps the pins current):
+
+```sh
+gh api -X PUT repos/rudecompany/colander/actions/permissions -F enabled=true -f allowed_actions=selected -F sha_pinning_required=true
+gh api -X PUT repos/rudecompany/colander/actions/permissions/selected-actions --input - <<'JSON'
+{ "github_owned_allowed": true, "verified_allowed": false,
+  "patterns_allowed": ["pnpm/action-setup@*", "cloudflare/wrangler-action@*", "googleapis/release-please-action@*", "google-github-actions/auth@*"] }
+JSON
+```
+
 **Environments.**
-Create the three environments, each limited to deployments from main:
+Create the three environments, each limited to deployments from main.
+The ops channel takes only GitHub OIDC tokens that name the environment of the Worker it calls, from a workflow on main, so these branch policies and the main ruleset above are what guard staging and production data:
 
 ```sh
 for env in staging production chrome-web-store; do
@@ -298,14 +362,17 @@ Required reviewers on `chrome-web-store` are fine if you want a second look befo
 **Secrets and variables.**
 Set each one with `gh secret set NAME [--env ENV]` or `gh variable set NAME [--env ENV]`, which read the value from stdin; the full table is in Part 2.
 
-### 16. The staging smoke account
+### 16. The first admin, and reviewers
 
-The staging smoke test makes a staff decision and checks that it reaches the edge within 60 seconds, so it needs a staff reviewer token.
-1. Grant the role on staging: run the Ops workflow with environment `staging`, command `grant-role` and args `{"email": "smoke@getcolander.com", "role": "staff"}`.
-2. Sign in on https://staging.getcolander.com/account as that address.
-3. In the browser console on that page run `await (await fetch('/v1/account/reviewer-token', {method: 'POST', headers: {'X-Colander-CSRF': '1'}})).json()`.
-4. Store the token as the `staging` environment secret `STAGING_REVIEWER_TOKEN`.
-   Requesting a new token replaces the old one, so use this account for nothing else.
+1. After the first production deploy, run the Ops workflow with environment `production`, command `grant-role` and args `{"email": "<your email>", "role": "admin"}`.
+   The ops channel grants admin only once, and never again even if no admin is left; every later role change happens on the admin host.
+   Do the same on staging.
+2. Open https://admin.getcolander.com, sign in through Access, and check that People shows you as Admin and bound to A3T Identity.
+3. Make staff and curators on People, then use Invite on each: send the link through a channel you trust.
+   The invite works once, within 24 hours, and only after the person signs in with their email; it adds the passkey that reviewing on getcolander.com and the side panel need.
+   An admin cannot invite themselves; admins and staff review on the admin host, where Access is the sign-in.
+
+The staging smoke test and the restore drill need no reviewer account: they decide on two fictional check channels through the ops command `check-decision`.
 
 ### 17. Check the whole path
 
@@ -332,37 +399,47 @@ Until `RELEASE_APP_CLIENT_ID` is set, release-please and every release job skip.
 | `CLOUDFLARE_API_TOKEN` | secret | `staging` | `colander-ci-staging` token |
 | `CF_ACCESS_CLIENT_ID` | secret | `staging` | Access service token Client ID |
 | `CF_ACCESS_CLIENT_SECRET` | secret | `staging` | Access service token Client Secret |
-| `OPS_TOKEN` | secret | `staging` | Same value as the staging Worker secret `OPS_TOKEN` |
-| `STAGING_REVIEWER_TOKEN` | secret | `staging` | Reviewer token of the staging smoke account (step 16) |
 | `STAGING_PUBLIC_KEYS` | variable | `staging` | Staging public key |
 | `CLOUDFLARE_API_TOKEN` | secret | `production` | `colander-ci-production` token |
-| `OPS_TOKEN` | secret | `production` | Same value as the production Worker secret `OPS_TOKEN` |
+| `TURNSTILE_SITE_KEY` | variable | repository | Optional: the Turnstile site key the website build embeds (step 6b) |
 | `CWS_PUBLISHER_ID` | variable | `chrome-web-store` | Chrome Web Store publisher ID |
 | `GCP_WORKLOAD_IDENTITY_PROVIDER` | variable | `chrome-web-store` | Full provider name from step 14 |
 | `GCP_SERVICE_ACCOUNT` | variable | `chrome-web-store` | `cws-publisher@<project>.iam.gserviceaccount.com` |
 
-Worker secrets, per environment, set with `wrangler secret put` and never stored in GitHub except `OPS_TOKEN`: `COLANDER_SIGNING_KEY`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `YOUTUBE_API_KEY`, `RESEND_API_KEY`, `CF_ANALYTICS_TOKEN`, `IP_SALT`, `OPS_TOKEN`.
+Worker secrets, per environment, set with `wrangler secret put` and never stored in GitHub: `COLANDER_SIGNING_KEY`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `YOUTUBE_API_KEY`, `RESEND_API_KEY`, `CF_ANALYTICS_TOKEN`, `IP_SALT`, and optionally `TURNSTILE_SECRET_KEY`.
+Worker vars in `api/wrangler.jsonc`, not secret: `CF_ACCESS_TEAM_DOMAIN`, `CF_ACCESS_AUD` and `ADMIN_HOST` per environment (step 6a), and `OPS_GITHUB_REPOSITORY`, `OPS_GITHUB_REPOSITORY_ID` and `OPS_GITHUB_ENVIRONMENT`.
 `.github/actionlint.yaml` lists every variable the workflows read, so CI fails on a misspelled one.
 
 ### The ops channel
 
 The workflows talk to the Worker through one authenticated channel, and the Worker must implement exactly this:
-- Request: `POST /ops/<command>` with `Authorization: Bearer <OPS_TOKEN>`, `Content-Type: application/json` and a JSON object body.
-  The Worker compares the token in constant time and answers 401 without detail when it is wrong.
+- Request: `POST /ops/<command>` with `Authorization: Bearer <GitHub Actions OIDC token>`, `Content-Type: application/json` and a JSON object body.
+  The job has `permissions: id-token: write` and asks GitHub for a token with the Worker's origin as its audience (`https://getcolander.com` or `https://staging.getcolander.com`); each token lives 5 minutes.
+- The Worker verifies the token against GitHub's published keys (`https://token.actions.githubusercontent.com/.well-known/jwks`) and requires: issuer `https://token.actions.githubusercontent.com`, audience its `PUBLIC_URL`, `repository` equal to `OPS_GITHUB_REPOSITORY` and `repository_id` to `OPS_GITHUB_REPOSITORY_ID`, `ref` `refs/heads/main`, a `workflow_ref` of this repository on `refs/heads/main`, and `environment` equal to `OPS_GITHUB_ENVIRONMENT`.
+  Anything else answers 401 without detail.
+  There is no static token, so a leaked secret cannot reach it; a workflow on another branch or in a fork gets no matching token.
+- Each workflow runs only the commands its jobs need (`403 not_this_workflow` otherwise): `ops.yml` every command, `probes.yml` `status`, `drills.yml` `drill` on production and `status`, `check-decision` and `pitr-restore` on staging, and `deploy-staging.yml` `check-decision`.
+  The job that asks for the token runs no third-party code: `deploy-staging.yml` installs and builds in a job without `id-token: write`, and smoke-tests in a separate job that runs only Node.
+- Every command except `status` writes the audit log with the GitHub login and run ID from the verified token, not from anything the client sends.
 - Response: JSON.
   Any 2xx status means the command succeeded; anything else means it failed, with a contract error body.
 - On staging the requests also carry the Access service token headers.
+- A local dev stack (`COLANDER_DEV=1` on `http://localhost`) also takes `OPS_TOKEN` from `api/.dev.vars`; no deployed environment has it.
 
 | Command | Body | Success answer |
 | --- | --- | --- |
 | `status` | `{}` | `head_seq` (Store list head), `r2_seq` (sequence in R2's `list/snapshot.bin`), `pass_age_s` (seconds since the last completed scoring pass), `publish_lag_s` (seconds the oldest verdict change not yet in R2's list has waited, 0 when R2 holds the head), `dump_age_s` (seconds since the newest successful dump), `dump_ms`, `rows_read_last_pass` |
-| `grant-role` | `{"email", "role"}` with role `member`, `curator` or `staff` | The account |
+| `grant-role` | `{"email", "role"}` with role `member`, `curator`, `staff` or `admin`. Until it first grants admin it grants any role, so the owner bootstraps the first admin; after that it moves only member and curator accounts between member and curator (`403 admin_exists`), even if no admin is left. Raising a role ends the account's sessions and passkeys. | The account |
 | `import-seed` | `{"key"}` and nothing else, key naming an object under `seeds/` in the environment's backup bucket. The object is a JSON object `{"file", "list", "source_name", "license", "attribution", "permission_doc"}`: file the list text, list `blocklist` or `warnlist`, license `CC0-1.0`, `CC-BY-4.0`, `MIT` or `LicenseRef-written-grant`. `attribution` (the credit) is required for CC BY and MIT, `permission_doc` (where the written grant is kept) for a written grant. Non-commercial, no-derivatives, share-alike, GPL and unlicensed lists answer `400 license_refused`. | Counts imported and the batch ID, never the list's name or license; entries become review leads, never verdicts |
-| `sign-config` | `{"file"}`, file being the adapter configuration JSON, signed byte for byte | Version and key ID |
+| `pin-subject` | `{"email", "subject"}`: binds a staff or admin account to its A3T subject before that person's first A3T sign-in, replacing an earlier pin (step 6a). `409 subject_taken` when another account holds it. | The account |
+| `sign-config` | `{}`: the Worker reads `extension/src/adapters/default-config.json` itself from `raw.githubusercontent.com` at the commit on main the run started from (the token's `sha`) and signs it byte for byte. A body with `file` is `400`. | Version, key ID and the commit |
 | `drill` | `{}` | `{"ok": true, ...}` after the dump drill passed (hosting plan section 3) |
 | `purge-cache` | `{"confirm": "purge-cache"}` | Done |
 | `restore-dump` | `{"key", "confirm"}`, confirm equal to key | Done |
 | `pitr-restore` | `{"at", "confirm"}`, `at` an RFC 3339 time and confirm equal to it | The bookmark and the undo bookmark, also kept in the backup bucket under `pitr/` |
+| `check-decision` | `{"source", "reason"}`, source `@colander-smoke` or `@colander-drill`: toggles that fictional channel between Clear and not rated, as a curator decision. Staging and dev only (`403` in production). | The source and the verdict it set |
+
+After either restore, the Worker deletes again every account erased since (the erasure records under `erasures/` in the backup bucket) before it publishes.
 
 The probes require `pass_age_s` under 900, `dump_age_s` under 25,200 and `publish_lag_s` under 21,600.
 The restore drill (`scripts/pitr-drill.ts`) uses `head_seq` and `r2_seq`.
@@ -396,7 +473,8 @@ Run the Ops workflow, choose the environment and command, and give the arguments
 The run log and its summary are the audit trail.
 Examples:
 - Make a curator: command `grant-role`, args `{"email": "sam@example.com", "role": "curator"}`.
-- Ship new adapter selectors: raise `version` in `extension/src/adapters/default-config.json`, merge it, then run command `sign-config` with that file.
+- Ship new adapter selectors: raise `version` in `extension/src/adapters/default-config.json`, merge it, then run command `sign-config` with args `{}`.
+  The Worker signs the file exactly as it is on main at that run's commit, never text from the run.
 - Import a seed list.
   The repository, the run log and its summary are public, so never commit a list or put it, its name or its license in the Ops inputs; the list travels in a private object of the backup bucket.
   1. Check the list's license file at the exact version you import.
@@ -454,17 +532,25 @@ The extension trusts every key in `COLANDER_PUBLIC_KEYS`, so rotation never brea
 
 | Credential | How often | How |
 | --- | --- | --- |
-| `OPS_TOKEN` | quarterly | Run the two `OPS_TOKEN` lines the bootstrap script prints, for each environment |
 | Cloudflare API tokens | yearly, before expiry | Roll the token in Manage account > Account API tokens and update `CLOUDFLARE_API_TOKEN` in its environment |
 | Access service token | yearly, before expiry | Zero Trust > Service Tokens > Rotate secret with a grace period, then update `CF_ACCESS_CLIENT_SECRET` |
-| `STAGING_REVIEWER_TOKEN` | when it stops working | Step 16 again |
+| Staff keys | when one is lost | Step 6a, Recovery |
 | GitHub App private key | yearly | Generate a new key in the App settings, update `RELEASE_APP_PRIVATE_KEY`, delete the old key |
 
 Google publishing is keyless and has nothing to rotate.
 
+### Account recovery
+
+- A member who lost a passkey signs in with an email code; removing the lost passkey with only a code waits 72 hours, then they add a new one.
+- A member who lost their mailbox writes to support. If they paid, ask for the Checkout Session ID on their Stripe receipt, the amount and the charge date, then on the admin host open People, find the account and use Change email (admins only).
+  The move waits 7 days with a cancel link to the old address, then ends every session, passkey and token. Members who never paid create a new account.
+- Curators, staff and admins are never moved to a new address: make the new address the reviewer instead, and issue an invite.
+- A reviewer who lost their passkey still signs in with a code with member rights; check who they are through another channel, then issue a new invite.
+- Admins remove a donor's supporter credit by the Checkout Session ID on the receipt, through `POST /v1/admin/donations/{id}/credit` on the admin host.
+
 ### When something fails
 
-- The watchdog cron mails the alert address when the scoring pass, the list publication, R2 or the dumps fall behind.
+- The watchdog cron mails the alert address when the scoring pass, the list publication, R2 or the dumps fall behind, and when more than 500 sign-in codes go out in an hour (`sign_in_mail`): check the audit log and turn on Turnstile (step 6b).
 - `probes.yml`, `drills.yml` and `adapters-daily.yml` open an issue named after the failing check, or comment on the open one.
   Close the issue once the cause is fixed.
 - GitHub turns off scheduled workflows after 60 days without activity in a public repository, so re-enable them under Actions if the repository goes quiet.

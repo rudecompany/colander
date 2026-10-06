@@ -61,6 +61,8 @@ Uses a reviewer token sent by the website's account page through externally_conn
 	let loading = $state(false);
 	let error = $state('');
 	let unauthorized = $state(false);
+	/** Reviewer tokens last 7 days; an expired one says so instead of "not accepted". */
+	let expired = $state(false);
 	let open = $state<QueueItem | null>(null);
 	let detail = $state<ReviewSourceResponse | null>(null);
 	let keys = $state(false);
@@ -117,7 +119,10 @@ Uses a reviewer token sent by the website's account page through externally_conn
 	];
 
 	function fail(e: unknown) {
-		if (e instanceof ReviewError && e.status === 401) unauthorized = true;
+		if (e instanceof ReviewError && e.status === 401) {
+			unauthorized = true;
+			expired = e.code === 'token_expired';
+		}
 		return e instanceof Error ? e.message : String(e);
 	}
 
@@ -300,7 +305,11 @@ Uses a reviewer token sent by the website's account page through externally_conn
 		<div class="pad">
 			<Card title="Review for curators" headingLevel={2}>
 				{#if unauthorized}
-					<p class="alert" role="alert"><CircleAlert size={16} aria-hidden="true" />Your reviewer token was not accepted. Connect again from your account page.</p>
+					<p class="alert" role="alert">
+						<CircleAlert size={16} aria-hidden="true" />{expired
+							? 'Your reviewer token ended after its 7 days. Connect again from your account page.'
+							: 'Your reviewer token was not accepted. Connect again from your account page.'}
+					</p>
 				{:else}
 					<p class="muted">Curators and staff review reports, appeals and escalations here. Open your account on the Colander website and choose Connect side panel, or paste a reviewer token.</p>
 				{/if}

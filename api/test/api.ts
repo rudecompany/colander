@@ -39,27 +39,42 @@ export class Harness {
 		return runInDurableObject(this.stub, fn);
 	}
 
-	/** Sends a request. headers alternate name, value; a string body is sent as is. */
+	/**
+	 * Sends a request as a same-origin browser fetch reaches the Store. headers alternate name,
+	 * value; a string body is sent as is.
+	 */
 	async do(method: string, path: string, body?: unknown, ...headers: string[]): Promise<Response> {
-		const h = new Headers({ [IP_HASH_HEADER]: 'ip-hash-192.0.2.1' });
+		const h = new Headers({ [IP_HASH_HEADER]: 'ip-hash-192.0.2.1', 'Sec-Fetch-Site': 'same-origin' });
 		for (let i = 0; i + 1 < headers.length; i += 2) h.set(headers[i]!, headers[i + 1]!);
 		const init: RequestInit = { method, headers: h };
 		if (body !== undefined) init.body = typeof body === 'string' ? body : JSON.stringify(body);
 		return this.stub.fetch(new Request(`https://getcolander.com${path}`, init));
 	}
 
-	/** Runs the dev-mode magic link flow for email and returns the session cookie header. */
+	/** Runs the dev-mode email code flow for email and returns the session cookie header. */
 	async signIn(email: string): Promise<string> {
 		this.mail = '';
-		await expectStatus(await this.do('POST', '/v1/auth/email', { email, next: '/review' }), 202);
-		const token = /token=([A-Za-z0-9_-]+)/.exec(this.mail)?.[1];
-		if (!token) throw new Error(`no sign-in link in dev mail output: ${this.mail}`);
-		const res = await this.do('POST', '/v1/auth/verify', { token }, 'X-Colander-CSRF', '1');
+		const sent = await this.do('POST', '/v1/auth/code', { email, next: '/account' }, 'X-Colander-CSRF', '1');
+		await expectStatus(sent, 202);
+		const flow = cookieOf(sent, 'colander_flow');
+		const code = lastCode(this.mail);
+		if (!code) throw new Error(`no sign-in code in dev mail output: ${this.mail}`);
+		const res = await this.do('POST', '/v1/auth/code/verify', { code }, 'X-Colander-CSRF', '1', 'Cookie', flow);
 		await expectStatus(res, 200);
-		const cookie = /^(colander_session=[^;]*)/.exec(res.headers.get('Set-Cookie') ?? '')?.[1];
-		if (!cookie) throw new Error('no session cookie');
-		return cookie;
+		return cookieOf(res, 'colander_session');
 	}
+}
+
+/** The name=value of a cookie a response sets, for the Cookie header of the next request. */
+export function cookieOf(res: Response, name: string): string {
+	const set = res.headers.getSetCookie().find((c) => c.startsWith(name + '=') && !c.startsWith(name + '=;'));
+	if (!set) throw new Error(`no ${name} cookie in ${JSON.stringify(res.headers.getSetCookie())}`);
+	return set.split(';')[0]!;
+}
+
+/** The newest 6-digit sign-in code in dev mail output. */
+export function lastCode(mail: string): string | undefined {
+	return [...mail.matchAll(/^ {4}(\d{6})$/gm)].at(-1)?.[1];
 }
 
 /** Fails with the body when the status differs, as Go's expect did. */

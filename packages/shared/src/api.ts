@@ -142,7 +142,7 @@ export interface Appeal {
 	resolved_at: ISODate | null;
 }
 
-export type Role = 'member' | 'curator' | 'staff';
+export type Role = 'member' | 'curator' | 'staff' | 'admin';
 
 export interface Plan {
 	plan: 'plus';
@@ -153,6 +153,17 @@ export interface Plan {
 	refundable: boolean;
 }
 
+/** An action held for days because it was confirmed with an email code only (contracts 6.6). */
+export interface HeldRequest {
+	id: string;
+	kind: 'delete' | 'export' | 'remove_passkey' | 'email_change';
+	created_at: ISODate;
+	due_at: ISODate;
+	/** set once it ran: a held export can then be downloaded for 7 days */
+	done_at: ISODate | null;
+	passkey_id?: string;
+}
+
 export interface Account {
 	id: string;
 	email: string;
@@ -160,6 +171,47 @@ export interface Account {
 	role: Role;
 	plan: Plan | null;
 	created_at: ISODate;
+	/** how this session signed in; null outside GET /v1/account and sign-in answers */
+	session?: { method: 'email' | 'passkey'; authenticated_at: ISODate } | null;
+	passkey_count?: number;
+	reviewer_token?: { expires_at: ISODate; last_used_at: ISODate | null } | null;
+	requests?: HeldRequest[];
+}
+
+export interface Passkey {
+	id: string;
+	name: string | null;
+	created_at: ISODate;
+	last_used_at: ISODate | null;
+	/** synced by a password manager or platform (backed up) */
+	synced: boolean;
+}
+
+/** An account as the admin host lists it. */
+export interface Person {
+	id: string;
+	email: string;
+	display_name: string | null;
+	role: Role;
+	created_at: ISODate;
+	passkey_count: number;
+	access_pinned: boolean;
+}
+
+/** One row of the audit log on the admin host. */
+export interface AuditEntry {
+	id: number;
+	at: ISODate;
+	actor_id: string | null;
+	actor_sub: string | null;
+	actor_email: string | null;
+	host: 'main' | 'admin' | 'ops' | 'job';
+	action: string;
+	target: string | null;
+	before: string | null;
+	after: string | null;
+	reason: string | null;
+	request_id: string | null;
 }
 
 export interface QueueItem {
