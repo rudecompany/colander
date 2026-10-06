@@ -70,7 +70,7 @@ Colander runs on Cloudflare as one TypeScript Worker on getcolander.com (`api/`)
 Staging runs the same Worker on staging.getcolander.com behind Cloudflare Access.
 GitHub Actions is the whole pipeline:
 
-- Every pull request runs CI; the required checks are `secrets`, `workflows`, `api`, `contract`, `web-and-extension` and `full-stack`.
+- Every pull request runs CI; the required checks are `secrets`, `workflows`, `api`, `contract`, `web-and-extension` and `full-stack`, plus `seed-guard` from `seed-guard.yml`, which only the seed registry's owner can pass for owner-only files (docs/deploy.md, step 15).
 - Staff and admin work happens on admin.getcolander.com behind Cloudflare Access with A3T Identity and hardware-key MFA; the ops channel takes only GitHub OIDC tokens from workflows on a protected main.
 - Every green commit on main deploys to staging and passes a smoke test there.
 - Merging the release PR that release-please keeps open deploys that commit to production, smoke-tests it and rolls it back on failure.
