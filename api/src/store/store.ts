@@ -68,6 +68,15 @@ export function primary(env: Env): DurableObjectStub<Store> {
 	return env.STORE.getByName('primary', { locationHint: 'enam' });
 }
 
+/**
+ * The signing key from its Worker secret. `wrangler secret put COLANDER_SIGNING_KEY < key-file`
+ * stores the file's trailing newline too, which base64 decoding refuses, so the secret is trimmed;
+ * a bad secret is a rejected promise, never a throw the caller does not expect.
+ */
+export async function signingKeyFromSecret(secret: string): Promise<SigningKey> {
+	return SigningKey.fromSeed(b64decode(secret.trim()));
+}
+
 export class Store extends DurableObject<Env> {
 	readonly db: Db;
 	readonly jobs: Jobs;
@@ -272,7 +281,7 @@ export class Store extends DurableObject<Env> {
 	}
 
 	readonly signingKey = (): Promise<SigningKey> =>
-		(this.key ??= SigningKey.fromSeed(b64decode(this.env.COLANDER_SIGNING_KEY)).catch((err) => {
+		(this.key ??= signingKeyFromSecret(this.env.COLANDER_SIGNING_KEY).catch((err) => {
 			this.key = undefined;
 			throw err;
 		}));
