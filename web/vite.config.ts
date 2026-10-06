@@ -45,11 +45,11 @@ async function live(): Promise<{ stats: unknown; log: unknown[]; asOf: string } 
 /** Modules 2 or more pages share, which travel in one chunk. */
 const COMMON = /[\\/](packages[\\/]shared[\\/]src|@lucide[\\/]svelte|web[\\/]src[\\/]lib)[\\/]/;
 /**
- * Sign-in, the account, admin and review console pieces, and the dialog they open stay out of it,
- * so pages without them (the landing page first) never load them.
+ * Sign-in, the account and its pairing codes, admin and review console pieces, and the dialog
+ * they open stay out of it, so pages without them (the landing page first) never load them.
  */
 const ACCOUNT_UI =
-	/[\\/](web[\\/]src[\\/]lib[\\/](components[\\/]((SignIn|CodeForm|StepUp|AccountSecurity|AccountData)\.svelte|console[\\/])|webauthn\.ts|turnstile\.ts|admin\.svelte\.ts)|packages[\\/]shared[\\/]src[\\/]components[\\/]ui[\\/]dialog[\\/])/;
+	/[\\/](web[\\/]src[\\/]lib[\\/](components[\\/]((SignIn|CodeForm|StepUp|AccountSecurity|AccountData|ConnectBrowser)\.svelte|console[\\/])|webauthn\.ts|turnstile\.ts|admin\.svelte\.ts)|packages[\\/]shared[\\/]src[\\/]components[\\/]ui[\\/]dialog[\\/])/;
 
 /** Where the build goes: build/, or WEB_OUT. */
 const out = process.env.WEB_OUT || 'build';
