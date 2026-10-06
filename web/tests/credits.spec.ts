@@ -49,12 +49,13 @@ test('the privacy page gives creators the legal basis and the way to ask, withou
 	await expect(creators.getByRole('link', { name: 'Your rights and contact' })).toHaveAttribute('href', '#contact');
 });
 
-test('the privacy page says what a reviewer account holds, and that labels go with it', async ({ page }) => {
+test('the privacy page says what a reviewer account holds, that labels go with it, and that an objection is kept', async ({ page }) => {
 	await mockApi(page);
 	await page.goto('/privacy');
 	const account = page.locator('#account');
 	await expect(account).toContainText('If you review, it also holds the decisions you made and the labels you gave');
 	await expect(account).toContainText('deleting the account erases your labels. Your decisions stay in the public decision log, without your name.');
+	await expect(page.locator('#retention')).toContainText('When a creator objects, we keep their channel');
 	await expect(page.locator('#retention')).toContainText(
 		'Labels that curators and staff give to measure how accurate the lists are stay for 24 months, then go, or sooner when the person who gave them deletes their account.'
 	);

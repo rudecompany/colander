@@ -238,6 +238,7 @@
 				<li>A pairing code works for 10 minutes. An hour after it ends we delete it, with the browser name and extension version that used it.</li>
 				<li>The record of sign-ins and account changes is kept 400 days, whether or not the account still exists. It names accounts by ID, never by email address.</li>
 				<li>Entries from outside lists expire on a date set for each list, and a source only a list named goes with them.</li>
+				<li>When a creator objects, we keep their channel's ID and handle with a note of the objection while it holds, so no list names it again.</li>
 				<li>
 					Labels that curators and staff give to measure how accurate the lists are stay for 24 months, then go, or sooner when the
 					person who gave them deletes their account.
