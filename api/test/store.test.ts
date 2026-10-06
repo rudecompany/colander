@@ -184,3 +184,14 @@ describe('router', () => {
 		expect(res.headers.get('x-colander-route')).toBe('GET (unmatched)');
 	});
 });
+
+describe('signing key secret', () => {
+	// `wrangler secret put COLANDER_SIGNING_KEY < key-file` keeps the key file's trailing newline.
+	it('accepts the key file as written, newline included, and rejects a broken one as a promise', async () => {
+		const { signingKeyFromSecret } = await import('../src/store/store');
+		const plain = await signingKeyFromSecret(env.COLANDER_SIGNING_KEY);
+		const fromFile = await signingKeyFromSecret(`${env.COLANDER_SIGNING_KEY}\n`);
+		expect(fromFile.publicBase64).toBe(plain.publicBase64);
+		await expect(signingKeyFromSecret('not base64!')).rejects.toThrow();
+	});
+});
