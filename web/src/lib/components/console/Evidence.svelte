@@ -179,7 +179,7 @@
 				<p class="cl-body cl-muted">A seed list is a review lead, never evidence. Decide on what the {noun} itself shows.</p>
 			{/if}
 			{#if !data.seeds}
-				<p class="cl-body cl-muted icon-line"><Lock size={16} aria-hidden="true" /> Which lists name it is for staff only.</p>
+				<p class="cl-body cl-muted icon-line"><Lock size={16} aria-hidden="true" /> Only staff see which lists name it, in the admin console.</p>
 			{:else}
 				{#if data.seeds.length === 0}
 					<p class="cl-body cl-muted">No seed list names this {noun}.</p>

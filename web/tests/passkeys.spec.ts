@@ -112,6 +112,25 @@ test('deletes the account behind a confirmation that says what happens to Plus',
 	expect(calls.find((c) => c.method === 'DELETE')!.headers['x-colander-csrf']).toBe('1');
 });
 
+test('tells a reviewer that the account holds their decisions and labels, and what deleting does to each', async ({ page }) => {
+	await mockApi(page, { 'GET /v1/account': { json: { account: CURATOR } } });
+	await page.goto('/account');
+	const data = page.getByRole('region', { name: 'Your data' });
+	await expect(data).toContainText('Your account holds your email, display name, sign-ins, passkeys, plan, synced settings, decisions and calibration labels.');
+	await page.getByRole('button', { name: 'Delete account' }).click();
+	const dialog = page.getByRole('dialog', { name: 'Delete your Colander account?' });
+	await expect(dialog).toContainText('We erase the labels you gave in the calibration set.');
+	await expect(dialog).toContainText('Your decisions stay in the public decision log without your name.');
+});
+
+test('tells a member nothing about reviewing', async ({ page }) => {
+	await mockApi(page, { 'GET /v1/account': { json: { account: ACCOUNT } } });
+	await page.goto('/account');
+	await expect(page.getByRole('region', { name: 'Your data' })).toContainText('Your account holds your email, display name, sign-ins, passkeys, plan and synced settings.');
+	await page.getByRole('button', { name: 'Delete account' }).click();
+	await expect(page.getByRole('dialog', { name: 'Delete your Colander account?' })).not.toContainText('calibration');
+});
+
 test('signs out everywhere', async ({ page }) => {
 	const calls = await mockApi(page, { 'GET /v1/account': { json: { account: ACCOUNT } }, 'POST /v1/auth/logout': { status: 204 } });
 	await page.goto('/account');
@@ -209,6 +228,8 @@ test('the console asks curators for a passkey sign-in first, and shows staff the
 	await mockApi(staff, { 'GET /v1/account': { json: { account: STAFF } }, 'GET /v1/admin/me': { json: ME }, ...review });
 	await staff.goto('/console');
 	await expect(staff.getByText('You review as a curator here')).toBeVisible();
+	// Which seed lists name a lead is staff authority, which only the admin host gives.
+	await expect(staff.getByText('Large sources, appeals, the seed lists behind a lead, and people are in the', { exact: false })).toBeVisible();
 	await expect(staff.getByText('Curator, Sam')).toBeVisible();
 	// The link leaves the site's router for the admin host, where Access signs staff in.
 	const admin = `${baseURL!.replace('//localhost', '//admin.localhost')}/admin`;

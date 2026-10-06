@@ -144,13 +144,17 @@
 			<h2>Your account</h2>
 			<p>
 				An account holds your email address, an optional display name, your role, your passkeys' public keys and names, your
-				sign-ins (how and when, never your address or device), your plan and, with Plus, your synced settings.
+				sign-ins (how and when, never your address or device), your plan and, with Plus, your synced settings. If you review, it also
+				holds the decisions you made and the labels you gave to measure how accurate outside lists are.
 			</p>
 			<ul class="dots-list">
 				<li>
 					Download it all from your account page as one file, or delete the account there. Deleting ends Plus at once, refunds your
 					last charge when it is still refundable, and asks our payment provider to delete you as a customer; it keeps only what tax law
 					requires.
+				</li>
+				<li>
+					If you review, deleting the account erases your labels. Your decisions stay in the public decision log, without your name.
 				</li>
 				<li>
 					For your safety we ask you to confirm it is you first. Once you have a passkey, an email code alone cannot export, delete or
@@ -234,7 +238,10 @@
 				<li>A pairing code works for 10 minutes. An hour after it ends we delete it, with the browser name and extension version that used it.</li>
 				<li>The record of sign-ins and account changes is kept 400 days, whether or not the account still exists. It names accounts by ID, never by email address.</li>
 				<li>Entries from outside lists expire on a date set for each list, and a source only a list named goes with them.</li>
-				<li>Staff labels that measure how accurate the lists are stay for 24 months, then go.</li>
+				<li>
+					Labels that curators and staff give to measure how accurate the lists are stay for 24 months, then go, or sooner when the
+					person who gave them deletes their account.
+				</li>
 				<li>Account data is kept until you delete the account, apart from billing records the law requires us to keep.</li>
 			</ul>
 		</section>

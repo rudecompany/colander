@@ -178,7 +178,7 @@ test('curators see that seed lists name a lead, never which', async ({ page }) =
 	await page.getByRole('tab', { name: /^Escalated/ }).click();
 	await page.getByRole('button', { name: /Everyday Trivia/ }).click();
 	const seeds = page.getByRole('region', { name: 'Seed lists' });
-	await expect(seeds).toContainText('Which lists name it is for staff only.');
+	await expect(seeds).toContainText('Only staff see which lists name it, in the admin console.');
 	await expect(page.locator('main')).not.toContainText('Example seed list');
 	await expect(seeds.getByRole('button', { name: 'Suppress seed lists' })).toHaveCount(0);
 	await page.getByRole('tab', { name: /^All/ }).click();

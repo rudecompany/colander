@@ -40,7 +40,7 @@ test('curators see staff-only limits, the server enforces them, and the side pan
 	// backs wait under Escalated, after the other escalations.
 	await site.getByRole('tab', { name: /^Escalated/ }).click();
 	await site.getByRole('button', { name: /Seed lead/ }).first().click();
-	await expect(site.getByRole('region', { name: 'Seed lists' })).toContainText('Which lists name it is for staff only.');
+	await expect(site.getByRole('region', { name: 'Seed lists' })).toContainText('Only staff see which lists name it, in the admin console.');
 	await expect(site.locator('main')).not.toContainText(/demo list/i);
 
 	// Forced past the console, the server answers 403 staff_required.

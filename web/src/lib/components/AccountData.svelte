@@ -31,6 +31,8 @@ only confirmed by email code can ask anyway, and the request waits 72 hours.
 	const requests = $derived(account.requests ?? []);
 	/** Staff and admin accounts are never deleted: an admin lowers the role first (contracts 6.6). */
 	const keeps = $derived(account.role === 'staff' || account.role === 'admin');
+	/** A reviewer's account also holds their decisions and calibration labels. */
+	const reviews = $derived(account.role !== 'member');
 
 	async function download() {
 		notice = null;
@@ -87,7 +89,8 @@ only confirmed by email code can ask anyway, and the request waits 72 hours.
 <section class="uin-card uin-card-lg uin-card-pad section-card" aria-labelledby="data-title">
 	<h2 class="cl-title" id="data-title">Your data</h2>
 	<p class="cl-body cl-muted">
-		Your account holds your email, display name, sign-ins, passkeys, plan and synced settings. Read how long we keep each in the
+		Your account holds your email, display name, sign-ins, passkeys, plan{reviews ? ', synced settings, decisions and calibration labels' : ' and synced settings'}.
+		Read how long we keep each in the
 		<a href="/privacy">privacy notice</a>.
 	</p>
 	<div class="row actions">
@@ -139,7 +142,10 @@ only confirmed by email code can ask anyway, and the request waits 72 hours.
 		{#if account.plan && account.plan.status !== 'canceled'}
 			<li>Plus ends now{account.plan.refundable ? ', and your last charge is refunded' : ''}.</li>
 		{/if}
-		{#if account.role !== 'member'}<li>Your decisions stay in the public decision log without your name.</li>{/if}
+		{#if reviews}
+			<li>We erase the labels you gave in the calibration set.</li>
+			<li>Your decisions stay in the public decision log without your name.</li>
+		{/if}
 	</ul>
 	{#snippet footer()}
 		<button type="button" class="uin-btn uin-btn-ghost uin-btn-xl" onclick={() => (confirming = false)}>Keep my account</button>
