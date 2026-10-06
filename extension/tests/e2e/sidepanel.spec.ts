@@ -20,6 +20,14 @@ test('queue, evidence and a decision', async ({ ext }) => {
 	await side.getByRole('button', { name: /Cat Rescue Tales/ }).click();
 	await expect(side.getByRole('heading', { name: 'Cat Rescue Tales' })).toBeVisible();
 	await expect(side.getByText('Consensus is still forming')).toBeVisible();
+	// A layer not met yet: its question runs on in the line of its name, as plain text.
+	const unmet = side.getByRole('list', { name: 'Layers not met yet' });
+	const question = unmet.getByText('Do people who usually disagree both call it slop?');
+	await expect(question).toHaveCSS('display', 'inline');
+	const [nameBox, questionBox] = [await unmet.getByText('Community consensus', { exact: true }).boundingBox(), await question.boundingBox()];
+	expect(Math.abs(questionBox!.y - nameBox!.y)).toBeLessThan(4);
+	// It has data, so the evidence card above never calls it a layer with no data yet.
+	await expect(side.getByText('no data yet', { exact: false })).toHaveCount(0);
 	await expect(side.getByText('Staged rescue videos made with AI, posted every hour.')).toBeVisible();
 	expect(ext.api.sent.find((s) => s.path.startsWith('/v1/review/queue'))!.auth).toBe('Bearer rvw_test');
 	await side.getByRole('button', { name: 'Record decision' }).click();

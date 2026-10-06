@@ -290,11 +290,12 @@ again instead of sending the token.
 			verdict: d.source.verdict,
 			word: null,
 			title: EVIDENCE_TITLE,
-			rows: LAYER_KEYS.map((k) => ({
+			// Only those: the card would fold the others into "no data yet", and they have data.
+			rows: LAYER_KEYS.filter((k) => d.layers[k].met).map((k) => ({
 				key: k,
 				label: LAYER_SHORT[k],
 				texts: [sentence(d.layers[k].detail), ...d.layers[k].signals.map((g) => sentence(SIGNAL_TEXT[g]))],
-				agreed: d.layers[k].met
+				agreed: true
 			})),
 			list: null,
 			sourceUrl: null,
@@ -398,7 +399,7 @@ again instead of sending the token.
 					{#if LAYER_KEYS.some((k) => !detail!.layers[k].met)}
 						<ul class="unmet" aria-label="Layers not met yet">
 							{#each LAYER_KEYS.filter((k) => !detail!.layers[k].met) as k (k)}
-								<li><span class="ring" aria-hidden="true"></span><span><b>{LAYER_WORD[k]}</b> <span class="q">{LAYER_QUESTION[k]}</span><br />{detail.layers[k].detail}</span></li>
+								<li><span class="ring" aria-hidden="true"></span><span><b>{LAYER_WORD[k]}</b> <span class="question">{LAYER_QUESTION[k]}</span><br />{detail.layers[k].detail}</span></li>
 							{/each}
 						</ul>
 					{/if}
@@ -815,7 +816,7 @@ again instead of sending the token.
 	.unmet b {
 		font: var(--cl-body-strong);
 	}
-	.unmet .q {
+	.unmet .question {
 		color: var(--cl-text-muted);
 	}
 	.ring {

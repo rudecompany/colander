@@ -197,6 +197,10 @@ for (const scheme of ['light', 'dark'] as const) {
 			await expect(side.getByRole('heading', { name: 'Cat Rescue Tales' })).toBeVisible();
 			await side.waitForTimeout(200);
 			await shot(side, `sidepanel-evidence-${scheme}`);
+			// The evidence by layer, and a layer not met yet with its question beside its name.
+			await side.getByRole('heading', { name: 'Evidence by layer' }).evaluate((h) => h.scrollIntoView({ block: 'center' }));
+			await side.waitForTimeout(200);
+			await shot(side, `sidepanel-layers-${scheme}`);
 			await side.getByRole('heading', { name: 'Decision' }).scrollIntoViewIfNeeded();
 			await shot(side, `sidepanel-decision-${scheme}`);
 			await side.setViewportSize({ width: 360, height: 860 });
