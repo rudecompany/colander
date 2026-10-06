@@ -759,13 +759,15 @@ function cancelRoute(s: Store, request: Request, id: string): Response {
 	return r ? new Response(null, { status: 204 }) : jsonError(404, 'not_found', 'Nothing with this ID is waiting.');
 }
 
-/** DELETE /v1/account/reviewer-token: disconnects the side panel. */
+/** DELETE /v1/account/reviewer-token: disconnects the side panel, and ends a reviewer code not used yet. */
 function revokeReviewerToken(s: Store, request: Request): Response {
 	const ses = signedIn(s.auth, request);
 	if (ses instanceof Response) return ses;
 	const now = unix(s.now());
 	s.db.tx(() => {
-		if (deleteReviewerToken(s.db, ses.account.id)) audit(s.db, { ...main(request, ses.account.id), action: 'token_revoked', target: ses.account.id }, now);
+		const token = deleteReviewerToken(s.db, ses.account.id);
+		const codes = endPairings(s.db, ses.account.id, 'reviewer');
+		if (token || codes > 0) audit(s.db, { ...main(request, ses.account.id), action: 'token_revoked', target: ses.account.id }, now);
 	});
 	return new Response(null, { status: 204 });
 }

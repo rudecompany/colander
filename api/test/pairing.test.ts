@@ -174,6 +174,21 @@ describe('pairing codes', () => {
 		expect(await h.run((store) => store.db.all('SELECT 1 FROM reviewer_tokens'))).toEqual([]);
 	});
 
+	it('ends an unused reviewer code on Disconnect, so no code shown before it connects the side panel again', async () => {
+		const h = await Harness.create();
+		const sam = await reviewer(h, 'sam@colander.test', 'curator');
+		const first = await (await claim(h, (await makeCode(h, sam, 'reviewer')).code)).json<{ token: string }>();
+		const waiting = await makeCode(h, sam, 'reviewer');
+		await expectStatus(await h.do('DELETE', '/v1/account/reviewer-token', undefined, ...csrf(sam)), 204);
+		expect(await errorCode(await h.do('GET', '/v1/review/queue', undefined, 'Authorization', `Bearer ${first.token}`))).toBe('invalid_token');
+		expect(await errorCode(await claim(h, waiting.code))).toBe('invalid_code');
+		// A code alone, with no token yet, ends the same way, and both are in the audit log.
+		const alone = await makeCode(h, sam, 'reviewer');
+		await expectStatus(await h.do('DELETE', '/v1/account/reviewer-token', undefined, ...csrf(sam)), 204);
+		expect(await errorCode(await claim(h, alone.code))).toBe('invalid_code');
+		expect(await h.run((store) => store.db.all("SELECT action FROM audit_log WHERE action = 'token_revoked'"))).toHaveLength(2);
+	});
+
 	// A token works in any browser on any device, so staff authority stays on the admin host.
 	it('gives staff and admins a reviewer token with curator authority only', async () => {
 		const h = await Harness.create();

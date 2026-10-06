@@ -404,7 +404,7 @@ There are no passwords and no emailed sign-in links.
 | `GET /v1/account/export` | Everything kept about the account as a JSON attachment: the account, passkeys (name, dates, whether synced), session dates, the reviewer token's dates, the subscription summary, the synced settings, the decisions it authored, waiting requests, its recent pairing codes (kind, times, browser and version, never the code) and its audit events. |
 | `DELETE /v1/account` | Ends Plus and deletes the account (6.8). `204`, and the session cookie is cleared. Staff and admin accounts are never deleted (`403 staff_account`): an admin lowers the role on the admin host first. |
 | `POST /v1/account/requests` `{"kind", "passkey_id"?}`, `DELETE /v1/account/requests/{id}` | Held requests, below |
-| `DELETE /v1/account/reviewer-token` | Disconnects the side panel. A reviewer token comes only from a reviewer pairing code (section 7). |
+| `DELETE /v1/account/reviewer-token` | Disconnects the side panel and ends an unused reviewer code. A reviewer token comes only from a reviewer pairing code (section 7). |
 
 ```json
 {
