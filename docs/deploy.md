@@ -528,6 +528,9 @@ The workflows talk to the Worker through one authenticated channel, and the Work
 | `check-decision` | `{"source", "reason"}`, source `@colander-smoke` or `@colander-drill`: toggles that fictional channel between Clear and not rated, as a curator decision. Staging and dev only (`403` in production). | The source and the verdict it set |
 
 After either restore, the Worker deletes again every account erased since (the erasure records under `erasures/` in the backup bucket) before it publishes.
+It also ends every session, reviewer token, unused pairing code and sign-in flow, and repeats what the audit log records was taken away after the restore point (a dump's restore point is the time in its name): revoked accounts and moved addresses lose their passkeys again, removed passkeys go again, lowered roles are lowered again, A3T subjects are pinned again, and cancelled or refused held requests stay cancelled.
+Nothing is given back, so a role raised after the restore point is not raised again.
+Both answers add `revocations_reapplied`, the number of audit rows it repeated.
 
 The probes require `pass_age_s` under 900, `dump_age_s` under 25,200 and `publish_lag_s` under 21,600.
 The restore drill (`scripts/pitr-drill.ts`) uses `head_seq` and `r2_seq`.
@@ -588,10 +591,12 @@ Point-in-time restore covers the last 30 days:
 2. Run Ops with command `pitr-restore`, args `{"at": "2026-11-02T14:05:00Z"}` and confirm `2026-11-02T14:05:00Z`.
 3. The answer holds an undo bookmark; keep it from the run summary (the backup bucket keeps it too, under `pitr/`).
 4. The Store restarts on the restored data, publishes a list sequence above any that installs hold, and the edge cache is purged.
+5. Everyone signs in again and reconnects the side panel, and no credential or role taken away since comes back; grant again any role raised after the restore point, and issue again any passkey invite still open.
 
 If the Store namespace itself is gone, restore the newest dump from the backup bucket:
 1. Find the newest dump's key: run Ops with command `drill`, whose answer names it as `key` even when the empty Store fails the comparison, or browse the `dumps/` prefix of the backup bucket in the Cloudflare dashboard (the bootstrap script prints the bucket names; Wrangler has no command that lists objects).
 2. Run Ops with command `restore-dump`, args `{"key": "<dump key>"}` and confirm set to the same key.
+3. As after a point-in-time restore, everyone signs in again; grant again any role raised after the dump, and issue again any passkey invite still open.
 
 Until then the empty Store publishes nothing: it never puts an empty list above the one in R2, which every install would take, and the watchdog alerts `store_empty`.
 To start from an empty list on purpose instead (a reset staging environment), delete `list/snapshot.bin` from the lists bucket with `pnpm -C api exec wrangler r2 object delete <lists bucket>/list/snapshot.bin --remote`.

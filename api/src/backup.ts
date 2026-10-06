@@ -59,6 +59,15 @@ export function dumpTables(db: Db): { name: string; sql: string }[] {
 export const dumpKey = (now: number): string => `${DUMP_PREFIX}${new Date(now).toISOString()}.sql.gz`;
 
 /**
+ * When the dump under key was taken (unix ms), read back from the name dumpKey gave it; 0 for any
+ * other name, so a restore of it then repeats every revocation the audit log holds.
+ */
+export function dumpTime(key: string): number {
+	const t = key.startsWith(DUMP_PREFIX) && key.endsWith('.sql.gz') ? Date.parse(key.slice(DUMP_PREFIX.length, -'.sql.gz'.length)) : NaN;
+	return Number.isNaN(t) ? 0 : t;
+}
+
+/**
  * The dump as SQL lines. It reads the tables lazily, so the caller must keep writes out until it
  * is done: the backup runs it inside blockConcurrencyWhile.
  */

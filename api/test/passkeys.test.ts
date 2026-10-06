@@ -182,6 +182,8 @@ describe('passkeys', () => {
 		await expectStatus(await h.do('POST', '/v1/auth/logout', { everywhere: true }, ...CSRF, 'Cookie', owner), 204);
 		for (const c of [elsewhere, pk, owner]) await expectStatus(await h.do('GET', '/v1/account', undefined, 'Cookie', c), 401);
 		expect(await h.run((store) => store.db.all('SELECT credential_id FROM passkeys'))).toEqual([{ credential_id: mine.id }]);
+		// The audit row names the passkey it kept, so a restore can take the others again.
+		expect(await h.run((store) => store.db.all("SELECT a.after = p.id AS kept FROM audit_log a, passkeys p WHERE a.action = 'signed_out_everywhere'"))).toEqual([{ kept: 1 }]);
 		expect(h.mail).toContain('every other passkey was taken off');
 		expect(await errorCode(await passkeySignIn(h, intruder))).toBe('passkey_invalid');
 	});

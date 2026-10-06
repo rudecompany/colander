@@ -12,7 +12,8 @@ import worker from '../src/index';
 import { AUDIT_EXPORTED, AUDIT_PREFIX, dump, DUMP_PREFIX, dumpKey } from '../src/backup';
 import { STATUS } from '../src/jobs';
 import { ADAPTER_CONFIG_PATH, ADMIN_BOOTSTRAPPED, PITR_PREFIX, SEED_PREFIX, storeOps } from '../src/ops';
-import { audit, grantRole } from '../src/store/accounts';
+import { addPasskey, audit, createSession, ensureAccount, getAccount, grantRole, holdRequest, revokeCredentials } from '../src/store/accounts';
+import { claimPairing, createPairing } from '../src/store/pairings';
 import { log } from '../src/store/verdicts';
 import { findSource, getSource, sourceRefs } from '../src/store/sources';
 import { SNAPSHOT_KEY } from '../src/store/list';
@@ -584,6 +585,100 @@ describe('restores', () => {
 		expect(res.body.r2_seq).toBe(res.body.head_seq);
 		await runInDurableObject(primary(), (store: Store) => {
 			expect(store.db.all('SELECT canonical_id FROM sources')).toEqual([{ canonical_id: '@kept' }]);
+		});
+	});
+
+	/** A passkey for the account, made at time. */
+	const passkey = (store: Store, accountId: string, name: string, at: number) =>
+		addPasskey(store.db, { accountId, credentialId: `cred-${name}`, publicKey: new Uint8Array([1]), signCount: 0, transports: [], backedUp: false, name }, at);
+
+	// The incident case: an admin revokes a compromised curator, then restores to the last good moment.
+	it('restore-dump never gives back a credential or a role that was taken away after the dump', async () => {
+		const early = Math.floor(Date.now() / 1000) - 100;
+		const rex = await runInDurableObject(primary(), (store: Store) => {
+			const a = grantRole(store.db, 'rex@example.test', 'curator', early, { host: 'job' });
+			const passkeyId = passkey(store, a.id, 'rex', early);
+			createSession(store.db, { tokenHash: 'session-rex', accountId: a.id, method: 'passkey', passkeyId, now: early, expires: early + 86_400 });
+			createPairing(store.db, a.id, 'reviewer', 'code-rex', early, early + 86_400);
+			return { id: a.id, token: store.auth.issueReviewerToken(a.id).token };
+		});
+		const key = await runInDurableObject(primary(), async (store: Store, state) => (await dump(state, store.db, env.BACKUPS, Date.now())).key);
+		const later = Math.floor(Date.now() / 1000);
+		await runInDurableObject(primary(), (store: Store) => {
+			const who = { host: 'admin' as const, actorId: 'acc_rae' };
+			revokeCredentials(store.db, rex.id);
+			audit(store.db, { ...who, action: 'revoked', target: rex.id }, later);
+			grantRole(store.db, 'rex@example.test', 'member', later, who);
+		});
+
+		const res = await op('restore-dump', { key, confirm: key });
+		expect(res.status).toBe(200);
+		expect(res.body.revocations_reapplied).toBeGreaterThanOrEqual(2);
+		await runInDurableObject(primary(), (store: Store) => {
+			const db = store.db;
+			expect(store.auth.reviewerAccount(rex.token)).toBeUndefined();
+			expect(getAccount(db, rex.id)!.role).toBe('member');
+			for (const t of ['sessions', 'passkeys', 'reviewer_tokens', 'pairings']) expect(db.all(`SELECT 1 FROM ${t} WHERE account_id = ?`, rex.id), t).toEqual([]);
+			// The audit log still says what happened, and now the data agrees with it.
+			expect(db.all<{ action: string }>('SELECT action FROM audit_log WHERE target = ? ORDER BY id', rex.id).map((r) => r.action)).toEqual(['role_changed', 'revoked', 'role_changed']);
+		});
+	});
+
+	it('reapply-revocations ends every session, token, code and flow, takes away again what ended after the restore point, and gives nothing back', async () => {
+		const stub = fresh();
+		const ids = await runInDurableObject(stub, (store: Store) => {
+			const db = store.db;
+			const before = S - 100;
+			const who = { host: 'admin' as const, actorId: 'acc_rae' };
+			// The restored data, as it was at the restore point S.
+			const ann = grantRole(db, 'ann@example.test', 'staff', before, { host: 'ops' });
+			passkey(store, ann.id, 'ann', before);
+			const bob = grantRole(db, 'bob@example.test', 'curator', before, who);
+			const bobKeys = ['bob-1', 'bob-2', 'bob-3'].map((n) => passkey(store, bob.id, n, before));
+			const cat = grantRole(db, 'cat@example.test', 'curator', before, who);
+			passkey(store, cat.id, 'cat', before);
+			const dan = grantRole(db, 'dan@example.test', 'staff', before, { host: 'ops' });
+			db.run("UPDATE accounts SET access_subject = 'a3t:lost' WHERE id = ?", dan.id);
+			const eve = ensureAccount(db, 'eve@example.test', before);
+			for (const kind of ['delete', 'email_change'] as const) holdRequest(db, { accountId: eve.id, kind, cancelHash: `cancel-${kind}`, dueAt: S + 3600 }, before);
+			// Fay was revoked long before the restore point and enrolled again since: that stays.
+			const fay = grantRole(db, 'fay@example.test', 'curator', before - 100, who);
+			audit(db, { ...who, action: 'revoked', target: fay.id }, before - 50);
+			passkey(store, fay.id, 'fay', before);
+			createSession(db, { tokenHash: 'session-bob', accountId: bob.id, method: 'email', now: before, expires: S + 86_400 });
+			store.auth.issueReviewerToken(bob.id);
+			createPairing(db, bob.id, 'reviewer', 'code-waiting', before, S + 600);
+			createPairing(db, bob.id, 'plan', 'code-used', before, S + 600);
+			claimPairing(db, 'code-used', '1.0.0', 'chrome', before);
+			db.run("INSERT INTO auth_flows (token_hash, kind, account_id, role, created_at, expires_at) VALUES ('invite-cat', 'invite', ?, 'curator', ?, ?)", cat.id, before, S + 86_400);
+
+			// The audit log since the restore point, which the restore kept.
+			const at = (n: number) => S + n;
+			audit(db, { ...who, action: 'role_changed', target: ann.id, before: 'staff', after: 'member' }, at(1));
+			audit(db, { ...who, action: 'role_changed', target: ann.id, before: 'member', after: 'curator' }, at(2));
+			audit(db, { host: 'main', action: 'passkey_removed', target: bob.id, before: bobKeys[0] }, at(3));
+			audit(db, { host: 'main', action: 'signed_out_everywhere', target: bob.id, after: bobKeys[2] }, at(4));
+			audit(db, { ...who, action: 'revoked', target: cat.id }, at(5));
+			audit(db, { host: 'ops', action: 'access_pinned', target: dan.id, before: 'a3t:lost', after: 'a3t:new' }, at(6));
+			audit(db, { host: 'main', action: 'request_cancelled', target: eve.id, before: 'delete', reason: 'passkey sign-in' }, at(7));
+			audit(db, { host: 'job', action: 'email_change_refused', target: eve.id, reason: 'only member accounts move to a new address' }, at(8));
+			return { ann: ann.id, bob: bob.id, cat: cat.id, dan: dan.id, eve: eve.id, fay: fay.id, bobKeys };
+		});
+
+		expect((await inStore(stub, T + 60_000, 'reapply-revocations', { since: T })).body).toEqual({ revocations_reapplied: 8 });
+		await runInDurableObject(stub, (store: Store) => {
+			const db = store.db;
+			const role = (id: string) => getAccount(db, id)!.role;
+			const keys = (id: string) => db.all<{ id: string }>('SELECT id FROM passkeys WHERE account_id = ? ORDER BY id', id).map((r) => r.id);
+			// Lowered again; the raise after it is not repeated, so the member's own passkey stays harmless.
+			expect([role(ids.ann), keys(ids.ann)]).toEqual(['member', [expect.any(String)]]);
+			expect(keys(ids.bob)).toEqual([ids.bobKeys[2]]);
+			expect([role(ids.cat), keys(ids.cat)]).toEqual(['curator', []]);
+			expect(getAccount(db, ids.dan)!.accessSubject).toBe('a3t:new');
+			expect(db.all('SELECT kind FROM account_requests WHERE account_id = ? AND cancelled_at IS NULL', ids.eve)).toEqual([]);
+			expect(keys(ids.fay)).toHaveLength(1);
+			for (const t of ['sessions', 'reviewer_tokens', 'auth_flows']) expect(db.all(`SELECT 1 FROM ${t}`), t).toEqual([]);
+			expect(db.all('SELECT kind FROM pairings')).toEqual([{ kind: 'plan' }]);
 		});
 	});
 

@@ -556,6 +556,7 @@ The audit log is one insert-only table: `at`, `actor_id`, `actor_sub` (`a3t:`, `
 Triggers refuse any update and any delete of a row younger than 400 days; a restore keeps the rows written since the dump.
 Every day its new rows are copied to `audit/` in the backup bucket, under a 400-day bucket lock.
 A point-in-time restore copies the rows first, its own `ops:pitr-restore` row included, and after the restart puts back from `audit/` every row written after the restore point.
+After either restore every session, reviewer token, unused pairing code and sign-in flow ends, and what the rows written after the restore point took away goes again: passkeys of revoked accounts and moved addresses, removed passkeys and those a sign out everywhere took (its row names the passkey it kept), lowered roles, A3T subject pins, and cancelled or refused held requests; a raised role is not raised again.
 It names members by account ID, never by address: a people search records the IDs it found, and an email change a short hash of each address (`sha256:` and 16 hex digits of SHA-256 over `audit:` and the address), so no member's address outlives their account in it.
 
 ## 7. Website and extension handoff

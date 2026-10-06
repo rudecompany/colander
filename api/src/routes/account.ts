@@ -504,7 +504,9 @@ async function authLogout(s: Store, request: Request): Promise<Response> {
 			s.db.run('DELETE FROM sessions WHERE account_id = ?', ses.account.id);
 			deleteReviewerToken(s.db, ses.account.id);
 			endPairings(s.db, ses.account.id);
-			audit(s.db, { ...main(request, ses.account.id), action: 'signed_out_everywhere', target: ses.account.id }, now);
+			// The passkey it kept, when it took the others: a restore takes them again (reapplyRevocations).
+			const kept = n > 0 ? ses.passkeyId : undefined;
+			audit(s.db, { ...main(request, ses.account.id), action: 'signed_out_everywhere', target: ses.account.id, after: kept }, now);
 			return n;
 		});
 		if (removed > 0) await sendQuietly(s, ses.account.email, securityNotice('Every other passkey was taken off your account'));

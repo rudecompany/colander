@@ -3,7 +3,7 @@
 import { env } from 'cloudflare:workers';
 import { evictDurableObject, runDurableObjectAlarm, runInDurableObject } from 'cloudflare:test';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { API_DATA_TABLES, countsAgree, dump, DUMP_PREFIX, dumpKey, dumpLines, dumpTables, loadDump, newestDump, parseInsert, restoreDump, tableCounts } from '../src/backup';
+import { API_DATA_TABLES, countsAgree, dump, DUMP_PREFIX, dumpKey, dumpLines, dumpTables, dumpTime, loadDump, newestDump, parseInsert, restoreDump, tableCounts } from '../src/backup';
 import { nextDump, STATUS } from '../src/jobs';
 import { audit, createSession, grantRole, setDisplayName } from '../src/store/accounts';
 import type { Db } from '../src/store/db';
@@ -84,6 +84,8 @@ describe('dump and restore', () => {
 			fill(store);
 			const d = await dump(state, store.db, env.BACKUPS, T);
 			expect(d.key).toBe(`dumps/${new Date(T).toISOString()}.sql.gz`);
+			// A restore reads the time back from the name; any other name gives 0, the whole audit log.
+			expect([d.key, 'dumps/latest.sql.gz', `seeds/${new Date(T).toISOString()}.sql.gz`].map(dumpTime)).toEqual([T, 0, 0]);
 			expect(d.bytes).toBe(new TextEncoder().encode(dumpText(store, state)).length);
 			expect(d.size).toBe((await env.BACKUPS.head(d.key))!.size);
 			expect(d.size).toBeLessThan(d.bytes);
