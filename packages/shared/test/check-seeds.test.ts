@@ -8,7 +8,7 @@ import { dirname, join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 const ROOT = new URL('../../../', import.meta.url).pathname;
-const FILES = ['scripts/check-seeds.ts', 'packages/shared/src/seeds.ts', 'packages/shared/src/seed-registry.json', '.github/CODEOWNERS'];
+const FILES = ['scripts/check-seeds.ts', 'packages/shared/src/seeds.ts', 'packages/shared/src/seed-registry.json', '.github/CODEOWNERS', '.github/dependabot.yml'];
 const REGISTRY = 'packages/shared/src/seed-registry.json';
 
 let repo = '';
@@ -85,6 +85,16 @@ describe('check-seeds', () => {
 			'mallory changed aislist-cc0-20260115-blocklist, packages/shared/src/seeds.ts, scripts/check-seeds.ts, which only slantview may change'
 		);
 		expect(check({ SEED_BASE: base, SEED_HEAD: head, SEED_ACTOR: 'slantview slantview' }).code).toBe(0);
+	});
+
+	// Dependabot groups every minor and patch action bump in one pull request: one that touched the
+	// owner-only seed-guard.yml would fail seed-guard and hold the whole group.
+	it('fails unless Dependabot leaves the owner-only workflow alone', () => {
+		expect(check({}).code).toBe(0);
+		edit('.github/dependabot.yml', (t) => t.replace(/\n\s*exclude-paths:\n\s*- \.github\/workflows\/seed-guard\.yml/, ''));
+		const res = check({});
+		expect(res.code).toBe(1);
+		expect(res.out).toContain('.github/dependabot.yml must list .github/workflows/seed-guard.yml under exclude-paths');
 	});
 
 	it('validates the pull request registry with the base rules', () => {
