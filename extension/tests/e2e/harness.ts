@@ -200,7 +200,7 @@ export const test = base.extend<{ ext: Ext }>({
 });
 
 /** A review queue entry and its source, for the side panel (contract 6.7). */
-export const REVIEW_QUEUE = () => [{ id: 'q_1', kind: 'report', priority: 2, created_at: new Date(Date.now() - 3600_000).toISOString(), platform: 'yt', source_id: '@catrescuetales', source_name: 'Cat Rescue Tales', summary: '3 reports: staged rescue narration', large: false, verdict: 'likely_slop', computed_verdict: 'slop', report_count: 3 }];
+export const REVIEW_QUEUE = () => [{ id: 'q_1', kind: 'report', priority: 2, created_at: new Date(Date.now() - 3600_000).toISOString(), platform: 'yt', source_id: '@catrescuetales', source_name: 'Cat Rescue Tales', summary: '3 reports: staged rescue narration', large: false, verdict: 'likely_slop', computed_verdict: 'slop', report_count: 3, lead: false }];
 
 export const REVIEW_SOURCE = {
 	source: {
@@ -209,6 +209,7 @@ export const REVIEW_SOURCE = {
 		updated_at: '2026-08-01T00:00:00Z', rescore_at: '2026-10-30T00:00:00Z',
 		evidence: { taggers: 41, tags: { slop: 35, ai_fine: 4, not_slop: 2 }, items_seen: 23, ai_item_share: 0.91, uploads_per_day: null }
 	},
+	seed_lists: 1,
 	layers: {
 		provenance: { met: true, signals: ['platform_label'], detail: '6 installs saw the platform label on its items.' },
 		behavior: { met: true, signals: ['mostly_ai', 'high_volume'], detail: '91% of 23 recent items carry AI evidence.' },

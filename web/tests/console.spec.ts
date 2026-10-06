@@ -1,5 +1,5 @@
 import { test, expect } from './fixtures.ts';
-import { APPEAL, CURATOR, ME, QUEUE, STAFF, mockApi, reviewSource } from './mocks.ts';
+import { APPEAL, CURATOR, ME, SEED_ENTRY, STAFF, mockApi, queueReply, reviewSource } from './mocks.ts';
 
 /** Staff review in the admin console on the admin host, curators in /console on the main host. */
 const consolePath = (account: typeof STAFF) => (account.role === 'staff' ? '/admin' : '/console');
@@ -8,10 +8,11 @@ const STAFF_ME = { ...ME, account: { ...ME.account, id: 'acc_sam', email: 'sam@e
 const review = (account: typeof STAFF, extra: Parameters<typeof mockApi>[1] = {}) => ({
 	'GET /v1/account': { json: { account } },
 	'GET /v1/admin/me': { json: STAFF_ME },
-	'GET /v1/review/queue': { json: { items: QUEUE, next_cursor: null } },
+	'GET /v1/review/queue': queueReply,
+	// Seed provenance comes only with staff authority, which only the admin host gives.
 	'GET /v1/review/sources/*': (c: { path: string }) => {
 		const [, , , , p, id] = c.path.split('/');
-		return { json: reviewSource(`${p}:${decodeURIComponent(id)}`) };
+		return { json: reviewSource(`${p}:${decodeURIComponent(id)}`, account.role === 'staff') };
 	},
 	...extra
 });
@@ -137,6 +138,61 @@ test('Slop and Likely slop wait for AI evidence, and the server answer is shown'
 	await page.getByRole('button', { name: 'Review decision' }).click();
 	await page.getByRole('dialog').getByRole('button', { name: 'Write to the log' }).click();
 	await expect(page.getByRole('alert').filter({ hasText: 'AI evidence needed' })).toContainText('need AI evidence on this source');
+});
+
+// A seed lead is never evidence. Staff on the admin host see which lists name the source, with
+// provenance, and can suppress seed lists on it; curators see only that lists name it (contracts 6.7).
+test('staff see the provenance of a seed lead and can suppress it; curators see only a count', async ({ page }) => {
+	const calls = await mockApi(page, review(STAFF, { 'POST /v1/review/sources/*/suppress-seeds': { json: reviewSource('yt:@everydaytrivia') } }));
+	await page.goto(consolePath(STAFF));
+	// A lead nothing backs waits under Escalated, after the other escalations, so it never buries the reports under All.
+	await expect(page.getByRole('button', { name: /Ancient Facts Daily/ })).toBeVisible();
+	await expect(page.getByRole('button', { name: /Everyday Trivia/ })).toHaveCount(0);
+	await page.getByRole('tab', { name: /^Escalated/ }).click();
+	const row = page.getByRole('button', { name: /Everyday Trivia/ });
+	await expect(row).toContainText('Seed lead');
+	await row.click();
+	const seeds = page.getByRole('region', { name: 'Seed lists' });
+	await expect(seeds).toContainText('A seed list is a review lead, never evidence.');
+	await expect(seeds).toContainText('Example seed list');
+	await expect(seeds).toContainText(/Listed as @everydaytrivia in the file dated 15 Sept? 2026\./);
+	await seeds.getByRole('button', { name: 'Suppress seed lists' }).click();
+	await page.getByLabel(/Why suppress seed lists here/).fill('Objection under Article 21, by email');
+	await seeds.getByRole('button', { name: 'Suppress seed lists' }).click();
+	await expect(page.getByText('Seed lists suppressed. No import lists it again.')).toBeVisible();
+	const post = calls.find((c) => c.method === 'POST' && c.path === '/v1/review/sources/yt/%40everydaytrivia/suppress-seeds')!;
+	expect(post.body).toEqual({ reason: 'Objection under Article 21, by email' });
+});
+
+test('curators see that seed lists name a lead, never which', async ({ page }) => {
+	await mockApi(
+		page,
+		review(CURATOR, {
+			'GET /v1/review/sources/*': (c: { path: string }) => {
+				const [, , , , p, id] = c.path.split('/');
+				return { json: reviewSource(`${p}:${decodeURIComponent(id)}`, false) };
+			}
+		})
+	);
+	await page.goto('/console');
+	await page.getByRole('tab', { name: /^Escalated/ }).click();
+	await page.getByRole('button', { name: /Everyday Trivia/ }).click();
+	const seeds = page.getByRole('region', { name: 'Seed lists' });
+	await expect(seeds).toContainText('Only staff see which lists name it, in the admin console.');
+	await expect(page.locator('main')).not.toContainText('Example seed list');
+	await expect(seeds.getByRole('button', { name: 'Suppress seed lists' })).toHaveCount(0);
+	await page.getByRole('tab', { name: /^All/ }).click();
+	await page.getByRole('button', { name: /History Bites/ }).click();
+	await expect(page.getByRole('heading', { name: /Seed lists/ }), 'no section where no list names the source').toHaveCount(0);
+});
+
+test("staff see where staff saw a source on Colander's own list", async ({ page }) => {
+	const own = { ...SEED_ENTRY, seed: 'staff-research', name: 'Colander staff research', license: 'LicenseRef-Colander-internal', note: 'Named in a published report on AI music' };
+	await mockApi(page, review(STAFF, { 'GET /v1/review/sources/*': { json: { ...reviewSource('yt:@everydaytrivia'), seeds: [own] } } }));
+	await page.goto(consolePath(STAFF));
+	await page.getByRole('tab', { name: /^Escalated/ }).click();
+	await page.getByRole('button', { name: /Everyday Trivia/ }).click();
+	await expect(page.getByRole('region', { name: 'Seed lists' })).toContainText('Where staff saw it: Named in a published report on AI music');
 });
 
 test('members are told the console is for curators and staff', async ({ page }) => {

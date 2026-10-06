@@ -87,8 +87,9 @@ export function youTubeQuotaUsed(db: Db, day: string): number {
 }
 
 /**
- * Deletes YouTube Data API data fetched before `before` (unix seconds): the per-channel figures,
- * and cached responses, which only code from before migration 0005 writes (after a rollback).
+ * Deletes YouTube Data API data fetched before `before` (unix seconds): per-channel figures, which
+ * only code from before figures were dropped wrote, and cached responses, which only code from
+ * before migration 0005 writes (after a rollback).
  * Ledger days before `beforeDay` go too.
  */
 export function purgeYouTube(db: Db, before: number, beforeDay: string): void {

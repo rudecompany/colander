@@ -9,6 +9,7 @@ import store from './migrations/0004_store.sql';
 import compliance from './migrations/0005_compliance.sql';
 import auth from './migrations/0006_auth.sql';
 import pairing from './migrations/0007_pairing.sql';
+import seeds from './migrations/0008_seeds.sql';
 import { complianceData } from './compliance';
 import type { Db } from './db';
 
@@ -30,7 +31,8 @@ export const MIGRATIONS: Migration[] = [
 	{ version: 4, name: '0004_store.sql', sql: store },
 	{ version: 5, name: '0005_compliance.sql', sql: compliance, data: complianceData },
 	{ version: 6, name: '0006_auth.sql', sql: auth, data: authData },
-	{ version: 7, name: '0007_pairing.sql', sql: pairing }
+	{ version: 7, name: '0007_pairing.sql', sql: pairing },
+	{ version: 8, name: '0008_seeds.sql', sql: seeds }
 ];
 
 /** Reviewer tokens from before 0006 keep working this long, while curators enroll a passkey (contracts 6.6). */

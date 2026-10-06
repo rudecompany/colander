@@ -2,7 +2,7 @@
 // review console with the session cookie and CSRF header and by the extension side panel with a
 // reviewer bearer token. Each decision and appeal action is one transaction with its inline
 // rescore and decision log entry (src/scoring/actions.ts).
-import type { ItemSummary, Layer, Layers, QueueItem, ReportDetail } from '@colander/shared/api';
+import { CALIBRATION_KINDS, CALIBRATION_LANGUAGES, type ItemSummary, type Layer, type Layers, type QueueItem, type ReportDetail, type SeedProvenance } from '@colander/shared/api';
 import type { Platform, SlopType, Verdict } from '@colander/shared/verdicts';
 import { FLAG_LARGE } from '@colander/shared/list';
 import { json, jsonError } from '../http';
@@ -18,11 +18,14 @@ import { unix, type Evaluation } from '../scoring/engine';
 import { BehaviorSignals, ProvenanceSignals, slopTypeCode } from '../scoring/rules';
 import { csrfOk, csrfRequired, hostOf, signedIn, TTL } from '../auth';
 import { authority as rolesAuthority, rank, type Role } from '../permissions';
-import type { Account } from '../store/accounts';
-import { staffOf } from '../staff';
+import { audit, type Account } from '../store/accounts';
+import { staffOf, type Staff } from '../staff';
+import { recordObjection } from '../seeds';
 import { AppealPendingManual, AppealUnderReview, appealsBySource, appealsWithStatus, getAppeal, type Appeal } from '../store/appeals';
+import { addLabel, LABELS, nextCalibration, type CalibrationTask, type Label } from '../store/calibration';
 import { ConflictError, NotFoundError } from '../store/db';
-import { ensureItem, ensureSource, findItem, getSource, namedSeedList, type Source } from '../store/sources';
+import { leadSummaries, namedDataset, recordProvenanceRead, seedLeads, setSeedSuppression, type SeedLead } from '../store/seeds';
+import { ensureItem, ensureSource, findItem, findSource, getSource, namedSeedList, type Source } from '../store/sources';
 import { dismissReport, getReport, openReports, reportsBySource, type Report } from '../store/tags';
 import { log, openEscalations } from '../store/verdicts';
 import { toAppeal } from './appeals';
@@ -37,6 +40,8 @@ import type { Api, Params } from './server';
 interface Reviewer {
 	account: Account;
 	authority: Role;
+	/** on the admin host: the audit fields of the staff member's requests */
+	who?: Staff['who'];
 }
 
 /**
@@ -50,7 +55,7 @@ function reviewer(api: Api, request: Request): Reviewer | Response {
 	if (hostOf(request) === 'admin') {
 		if (!csrfOk(request)) return csrfRequired();
 		const st = staffOf(store, request);
-		return st instanceof Response ? st : { account: st.account, authority: st.actor.authority };
+		return st instanceof Response ? st : { account: st.account, authority: st.actor.authority, who: st.who };
 	}
 	const auth = request.headers.get('Authorization') ?? '';
 	let a: Account;
@@ -82,14 +87,14 @@ function clip(s: string, n: number): string {
 	return chars.length <= n ? s : chars.slice(0, n - 1).join('') + '…';
 }
 
-/** GET /v1/review/queue?kind=all|reports|appeals|escalations&cursor= */
+/** GET /v1/review/queue?kind=all|reports|appeals|escalations|leads&cursor= */
 export function reviewQueue(api: Api, request: Request, url: URL): Response {
 	const a = reviewer(api, request);
 	if (a instanceof Response) return a;
 	const { db } = api.store;
 	const kind = url.searchParams.get('kind') || 'all';
-	if (!['all', 'reports', 'appeals', 'escalations'].includes(kind)) {
-		return jsonError(400, 'invalid_kind', 'kind must be all, reports, appeals or escalations.');
+	if (!['all', 'reports', 'appeals', 'escalations', 'leads'].includes(kind)) {
+		return jsonError(400, 'invalid_kind', 'kind must be all, reports, appeals, escalations or leads.');
 	}
 	let offset = 0;
 	const c = url.searchParams.get('cursor') ?? '';
@@ -107,7 +112,7 @@ export function reviewQueue(api: Api, request: Request, url: URL): Response {
 	}
 	const sources = new Map<number, Source>();
 	const items: (QueueItem & { created: number })[] = [];
-	const add = (ref: number, q: { id: string; kind: QueueItem['kind']; priority: number; summary: string; created: number }): void => {
+	const add = (ref: number, q: { id: string; kind: QueueItem['kind']; priority: number; summary: string; created: number; lead?: boolean }): void => {
 		let src = sources.get(ref);
 		if (!src) {
 			src = getSource(db, ref);
@@ -129,6 +134,7 @@ export function reviewQueue(api: Api, request: Request, url: URL): Response {
 			verdict: optString<Verdict>(src.state.verdict),
 			computed_verdict: optString<Verdict>(src.state.computed),
 			report_count: bySource.get(ref)?.length ?? 0,
+			lead: q.lead ?? false,
 			created: q.created
 		});
 	};
@@ -140,13 +146,26 @@ export function reviewQueue(api: Api, request: Request, url: URL): Response {
 			add(ap.sourceRef, { id: 'q_' + ap.id, kind: 'appeal', priority: 1, summary, created: ap.createdAt });
 		}
 	}
-	if (kind === 'all' || kind === 'escalations') {
+	if (kind === 'all' || kind === 'escalations' || kind === 'leads') {
 		// ponytail: loads every open escalation's source per request, seed leads included; page in SQL
-		// once imports put thousands of leads in the queue.
+		// once imports put tens of thousands of leads in the queue.
+		const leads = leadSummaries(db, api.store.engine.seeds, unix(api.store.now()));
 		for (const e of openEscalations(db)) {
-			// An appeal staff have left waiting comes first; a seed lead, which is not evidence, comes last.
-			const priority = e.kind === 'appeal' ? 1 : e.kind === 'seed' ? 4 : 2;
-			add(e.sourceRef, { id: 'q_esc_' + e.id, kind: 'escalation', priority, summary: e.summary, created: e.createdAt });
+			if (kind === 'leads' && e.kind !== 'seed') continue;
+			if (e.kind !== 'seed') {
+				// An appeal staff have left waiting comes first.
+				add(e.sourceRef, { id: 'q_esc_' + e.id, kind: 'escalation', priority: e.kind === 'appeal' ? 1 : 2, summary: e.summary, created: e.createdAt });
+				continue;
+			}
+			// A seed lead is not evidence and comes last, unless a report or a slop tag backs it or a
+			// calibrated seed list names its channel ID. The summary names no list: curators see it.
+			// kind=all carries only the backed ones, so thousands of leads do not bury the reports.
+			const l = leads.get(e.sourceRef);
+			if (!l) continue; // its entries expired since the last pass, which closes it
+			const backed = l.calibrated || bySource.has(e.sourceRef) || db.get("SELECT 1 FROM tags WHERE source_id = ? AND verdict = 'slop' LIMIT 1", e.sourceRef) !== undefined;
+			if (kind === 'all' && !backed) continue;
+			const lists = l.lists === 1 ? '1 seed list' : `${l.lists} seed lists`;
+			add(e.sourceRef, { id: 'q_esc_' + e.id, kind: 'escalation', priority: backed ? 3 : 4, summary: `Seed lead on ${lists}, not evidence`, created: e.createdAt, lead: true });
 		}
 	}
 	if (kind === 'all' || kind === 'reports') {
@@ -164,8 +183,19 @@ export function reviewQueue(api: Api, request: Request, url: URL): Response {
 	return json(200, { items: page, next_cursor: end < items.length ? String(end) : null });
 }
 
+/**
+ * How a source's seed leads read in the provenance layer: the lists by name, license and use for
+ * staff, a count for curators. Either way they are review leads, never evidence.
+ */
+function leadText(leads: SeedLead[], staff: boolean): string | undefined {
+	const lists = [...new Map(leads.map((l) => [l.entry.id, l.entry])).values()];
+	if (lists.length === 0) return undefined;
+	if (!staff) return `on ${lists.length === 1 ? '1 seed list' : `${lists.length} seed lists`}, a review lead that is not evidence`;
+	return `listed on ${lists.map((e) => `${e.name} (${e.license}${e.use === 'seed' ? ', calibrated' : ''})`).join(' and ')}, a review lead that is not evidence`;
+}
+
 /** Explains each evidence layer in one plain sentence for the review console. */
-function layers(ev: Evaluation): Layers {
+function layers(ev: Evaluation, leads: SeedLead[], staff: boolean): Layers {
 	const { result: r, input: inp } = ev;
 	const src = ev.data.source;
 	const prov: string[] = [];
@@ -173,9 +203,9 @@ function layers(ev: Evaluation): Layers {
 	if (labels > 0) prov.push(`${labels} installs saw a platform AI label`);
 	if (r.mixed && inp.rollupLabelInstalls > inp.labelInstalls) prov.push('labels on its items do not count, because the source is mixed');
 	if (r.provenance.met && r.provenance.signals === 0) prov.push('taggers agree it is AI-made');
-	if (src.importBatch !== 0) prov.push(`listed on ${src.importSource} (${src.importLicense}) as a ${src.importList} entry, a review lead that is not evidence`);
+	const lead = leadText(leads, staff);
+	if (lead) prov.push(lead);
 	const beh: string[] = [];
-	if (inp.uploadsPerDay >= 0) beh.push(`about ${goFixed(inp.uploadsPerDay, 1)} uploads a day over the last 14 days`);
 	if (inp.itemsSeen > 0) beh.push(`${inp.aiItems} of ${inp.itemsSeen} items with evidence carry AI evidence`);
 	if (r.mixed) beh.push('mixed source, so items are judged one by one');
 	const sums = r.sums;
@@ -223,25 +253,59 @@ function toItems(ev: Evaluation): ItemSummary[] {
 	});
 }
 
+/** A seed lead with its full provenance, for staff only. */
+function toProvenance(l: SeedLead): SeedProvenance {
+	return {
+		seed: l.entry.id,
+		name: l.entry.name,
+		license: l.entry.license,
+		use: l.entry.use,
+		platform: l.platform as Platform,
+		alias: l.alias,
+		batch: l.batch,
+		imported_at: rfc3339(l.importedAt),
+		listed_at: rfc3339(l.listedAt),
+		expires_at: rfc3339(l.expiresAt),
+		note: l.note
+	};
+}
+
+/** Whether this request acts with staff authority: only staff and admins on the admin host do. */
+const staffAuthority = (r: Reviewer): boolean => rank(r.authority) >= rank('staff');
+
 /**
- * The review console's view of a source: what the public sees plus the seed provenance, which only
- * reviewers see, and layers, reports, appeals and items.
+ * The review console's view of a source: what the public sees, layers, reports, appeals and
+ * items, and its seed leads. Every reviewer sees whether seed lists name it and how many; only
+ * staff authority, which exists on the admin host alone, sees which lists, with their license,
+ * the batch and the line (contracts 6.7), and each such read is recorded (seed list review 30).
  */
-function writeReviewSource(api: Api, ref: number): Response {
+function writeReviewSource(api: Api, ref: number, r: Reviewer): Response {
 	const { db } = api.store;
 	const ev = explain(api, ref);
 	const src = ev.data.source;
+	const staff = staffAuthority(r);
+	const now = unix(api.store.now());
+	const leads = seedLeads(db, api.store.engine.seeds, ref, now);
+	if (staff && leads.length > 0) recordProvenanceRead(db, r.account.id, src.platform, src.canonicalId, [...new Set(leads.map((l) => l.entry.id))], now);
 	const reports = reportsBySource(db, ref);
 	const appeals = appealsBySource(db, ref);
 	const history = log(db, { sourceRef: ref, limit: 100 });
 	const active = activeInstalls(api.store);
+	const lists = new Set(leads.map((l) => l.entry.id)).size;
 	return json(200, {
 		source: {
 			...toSource(ev),
-			imported: src.importBatch !== 0,
-			attribution: src.importBatch !== 0 ? `${src.importSource} (${src.importLicense}), ${src.importList}` : null
+			imported: lists > 0,
+			attribution: staff && lists > 0 ? leads.map((l) => `${l.entry.name} (${l.entry.license}), ${l.entry.use}`).filter((x, i, all) => all.indexOf(x) === i).join('; ') : null
 		},
-		layers: layers(ev),
+		seed_lists: lists,
+		...(staff
+			? {
+					seeds: leads.map(toProvenance),
+					seed_suppression: src.seedSuppressedAt ? { at: rfc3339(src.seedSuppressedAt), reason: src.seedSuppressReason } : null
+				}
+			: {}),
+		layers: layers(ev, leads, staff),
 		reports: reports.map((rp) => toReportDetail(rp, active)),
 		appeals: appeals.map(toAppeal),
 		items: toItems(ev),
@@ -255,7 +319,95 @@ export function reviewSource(api: Api, request: Request, _url: URL, params: Para
 	if (a instanceof Response) return a;
 	const ref = lookupSource(api, params);
 	if (ref instanceof Response) return ref;
-	return writeReviewSource(api, ref);
+	return writeReviewSource(api, ref, a);
+}
+
+/**
+ * POST /v1/review/sources/{platform}/{source_id}/suppress-seeds {"reason", "lift"?}: staff authority only.
+ * Suppresses seed lists on a source (a GDPR Article 21 objection, or a case staff closed): its
+ * entries and calibration item go and no import lists it again. "lift": true lifts it. Each one is
+ * recorded in the backup bucket, for restores, and audited.
+ */
+export async function reviewSuppressSeeds(api: Api, request: Request, _url: URL, params: Params): Promise<Response> {
+	const a = reviewer(api, request);
+	if (a instanceof Response) return a;
+	if (!staffAuthority(a)) return staffRequired('Seed list suppressions');
+	const body = await decode(request, 4 << 10, { reason: 'string', lift: 'bool?' } as const);
+	if (body instanceof Response) return body;
+	const reason = trimSpace(body.reason);
+	if (runeCount(reason) < 1 || runeCount(reason) > 500) return jsonError(400, 'invalid_reason', 'The reason must be 1 to 500 characters. Only staff see it.');
+	const ref = lookupSource(api, params);
+	if (ref instanceof Response) return ref;
+	const { store } = api;
+	const now = store.now();
+	const lift = body.lift === true;
+	// Recorded first, so no restore gives back what an objection took away (contracts 14.4).
+	await recordObjection(store, getSource(store.db, ref)!, lift, reason, now);
+	store.db.tx(() => {
+		setSeedSuppression(store.db, ref, !lift, reason, unix(now));
+		// Staff only reach this on the admin host. The source's ID only: no channel and no reason enters the 400-day log.
+		audit(store.db, { ...a.who!, action: lift ? 'seeds_unsuppressed' : 'seeds_suppressed', target: `src:${ref}` }, unix(now));
+	});
+	store.jobs.touch([ref], now);
+	return writeReviewSource(api, ref, a);
+}
+
+/** The calibration item on the wire: only what the labeler needs to find it, nothing about its verdict, tags or lists. */
+const toTask = (t: CalibrationTask | undefined) => ({ item: t ? { platform: t.platform as Platform, source_id: t.canonicalId, labels: t.labels } : null });
+
+/**
+ * GET /v1/review/calibration/next: the next source this reviewer has not labeled, blind (seed
+ * design section 8). Staff authority (the admin host) also gets items whose two labels disagree,
+ * for a third.
+ */
+export function reviewCalibrationNext(api: Api, request: Request): Response {
+	const a = reviewer(api, request);
+	if (a instanceof Response) return a;
+	return json(200, toTask(nextCalibration(api.store.db, a.account.id, staffAuthority(a))));
+}
+
+const labelSchema = { label: 'string', tests: 'strings', evidence: 'strings', note: 'string?', language: 'string?', kind: 'string?' } as const;
+
+/**
+ * POST /v1/review/calibration/{platform}/{source_id}/label {"label", "tests", "evidence", "note",
+ * "language", "kind"}: records this reviewer's blind label and answers the next item.
+ */
+export async function reviewCalibrationLabel(api: Api, request: Request, _url: URL, params: Params): Promise<Response> {
+	const a = reviewer(api, request);
+	if (a instanceof Response) return a;
+	const body = await decode(request, 4 << 10, labelSchema);
+	if (body instanceof Response) return body;
+	if (!(LABELS as readonly string[]).includes(body.label)) return jsonError(400, 'invalid_label', `label must be one of ${LABELS.join(', ')}.`);
+	const tests = testBits(body.tests);
+	if (tests === undefined) return jsonError(400, 'invalid_tests', 'tests may hold low_effort, mass_produced and hollow.');
+	if (tests !== 0 && body.label !== 'slop') return jsonError(400, 'invalid_tests', 'Tests go with the label slop only.');
+	const evidence = signalMask(body.evidence ?? []);
+	if (evidence instanceof Error || (evidence & ~ProvenanceSignals) !== 0) {
+		return jsonError(400, 'invalid_evidence', 'evidence may hold platform_label, content_credentials, creator_statement and watermark.');
+	}
+	const note = trimSpace(body.note ?? '');
+	if (runeCount(note) > 500) return jsonError(400, 'invalid_note', 'The note must be at most 500 characters.');
+	// The report groups every judged source by language and by music or video (seed list review 16).
+	const judged = body.label !== 'gone' && body.label !== 'unsure';
+	const language = judged ? (body.language ?? '') : '';
+	const kind = judged ? (body.kind ?? '') : '';
+	if (judged && !(CALIBRATION_LANGUAGES as readonly string[]).includes(language)) {
+		return jsonError(400, 'invalid_language', `language must be one of ${CALIBRATION_LANGUAGES.join(', ')}.`);
+	}
+	if (judged && !(CALIBRATION_KINDS as readonly string[]).includes(kind)) return jsonError(400, 'invalid_kind', 'kind must be music or video.');
+	const platform = pathValue(params, 'platform');
+	const id = canonicalSource(platform, pathValue(params, 'source_id'));
+	const { db } = api.store;
+	const ref = validPlatform(platform) && id !== undefined ? findSource(db, platform, id) : undefined;
+	if (ref === undefined) return jsonError(404, 'not_in_calibration', 'This source is not in the calibration set.');
+	try {
+		addLabel(db, ref, a.account.id, staffAuthority(a), { label: body.label as Label, tests, evidence, note, language, kind }, unix(api.store.now()));
+	} catch (err) {
+		if (err instanceof NotFoundError) return jsonError(404, 'not_in_calibration', 'This source is not in the calibration set.');
+		if (err instanceof ConflictError) return jsonError(409, 'already_labeled', 'You labeled this source already, or it has all the labels it needs.');
+		throw err;
+	}
+	return json(200, toTask(nextCalibration(db, a.account.id, staffAuthority(a))));
 }
 
 const decisionSchema = {
@@ -270,9 +422,12 @@ const decisionSchema = {
 
 type DecisionBody = { verdict: string; reason: string; signals?: string[]; slop_type?: string; tests?: string[]; large?: boolean };
 
-/** Answers 400 source_named when text for the public decision log names a seed list, which it never may. */
+/**
+ * Answers 400 source_named when text for the public decision log names a seed list, which it never
+ * may: any list Colander imported, and any dataset in the registry, by name or ID.
+ */
 function namesSeedList(api: Api, text: string): Response | undefined {
-	const name = namedSeedList(api.store.db, text);
+	const name = namedSeedList(api.store.db, text) ?? namedDataset(api.store.engine.seeds, text);
 	if (name === undefined) return undefined;
 	return jsonError(400, 'source_named', `The text names the seed list ${name}. The decision log is public and never names a data source.`);
 }
@@ -352,7 +507,7 @@ export async function reviewSourceDecision(api: Api, request: Request, _url: URL
 	}
 	const { store } = api;
 	const ref = ensureSource(store.db, platform, id, '', unix(store.now()));
-	return decide(api, { ...input, sourceRef: ref }) ?? writeReviewSource(api, ref);
+	return decide(api, { ...input, sourceRef: ref }) ?? writeReviewSource(api, ref, a);
 }
 
 /** POST /v1/review/items/{platform}/{item_id}/decision: the decision body plus source_id. */
@@ -378,7 +533,7 @@ export async function reviewItemDecision(api: Api, request: Request, _url: URL, 
 		ensureItem(db, platform, itemId, ensureSource(db, platform, sourceId, '', now), now);
 		item = findItem(db, platform, itemId)!;
 	}
-	return decide(api, { ...input, sourceRef: item.sourceRef, itemRef: item.ref }) ?? writeReviewSource(api, item.sourceRef);
+	return decide(api, { ...input, sourceRef: item.sourceRef, itemRef: item.ref }) ?? writeReviewSource(api, item.sourceRef, a);
 }
 
 /** POST /v1/review/reports/{id}/dismiss {"reason"}: closes a report with no verdict change. */

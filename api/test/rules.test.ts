@@ -13,6 +13,8 @@ const DAY = 86_400_000;
 describe('rules', () => {
 	const th = Default;
 	const slop5 = votes(5, 'slop', 1, lowHollow);
+	/** The behavior layer the way the community meets it: the 80% rule over five items with AI evidence. */
+	const mostlyAI = { itemsSeen: 5, aiItems: 5 };
 	const cases: {
 		name: string;
 		in: Partial<Input>;
@@ -26,7 +28,7 @@ describe('rules', () => {
 	}[] = [
 		{
 			name: 'tags alone never reach Slop: no behavior layer means Likely slop at most',
-			in: { votes: votes(40, 'slop', 1, lowHollow), uploadsPerDay: -1 },
+			in: { votes: votes(40, 'slop', 1, lowHollow) },
 			verdict: 'likely_slop',
 			rule: 7,
 			signals: Sig.community_consensus | Sig.rubric_low_effort | Sig.rubric_hollow,
@@ -34,73 +36,73 @@ describe('rules', () => {
 		},
 		{
 			name: 'provenance, behavior and consensus make Slop',
-			in: { votes: slop5, labelInstalls: 2, uploadsPerDay: 14, audienceKnown: true },
+			in: { votes: slop5, labelInstalls: 2, ...mostlyAI, audienceKnown: true },
 			verdict: 'slop',
 			rule: 6,
-			signals: Sig.platform_label | Sig.high_volume | Sig.community_consensus
+			signals: Sig.platform_label | Sig.mostly_ai | Sig.community_consensus
 		},
 		{
 			name: '80% rule over at least 5 items counts as behavior',
-			in: { votes: slop5, rollupLabelInstalls: 2, uploadsPerDay: -1, itemsSeen: 5, aiItems: 4, audienceKnown: true },
+			in: { votes: slop5, rollupLabelInstalls: 2, itemsSeen: 5, aiItems: 4, audienceKnown: true },
 			verdict: 'slop',
 			rule: 6,
 			signals: Sig.mostly_ai
 		},
 		{
 			name: 'a source of unknown size is capped at Likely slop and escalated',
-			in: { votes: slop5, labelInstalls: 2, uploadsPerDay: 14 },
+			in: { votes: slop5, labelInstalls: 2, ...mostlyAI },
 			verdict: 'likely_slop',
 			rule: 6,
 			capped: 'audience'
 		},
 		{
 			name: 'large source is capped at Likely slop and escalated',
-			in: { votes: slop5, labelInstalls: 2, uploadsPerDay: 14, large: true },
+			in: { votes: slop5, labelInstalls: 2, ...mostlyAI, large: true },
 			verdict: 'likely_slop',
 			rule: 6,
 			capped: 'large'
 		},
 		{
 			name: 'mixed source with source-level AI evidence is AI-made, never slop',
-			in: { votes: slop5, labelInstalls: 2, uploadsPerDay: 14, itemsSeen: 10, aiItems: 3, audienceKnown: true },
+			in: { votes: slop5, labelInstalls: 2, itemsSeen: 10, aiItems: 3, audienceKnown: true },
 			verdict: 'ai_made',
 			rule: 8
 		},
 		{
 			name: "item labels do not count toward a mixed source's provenance",
-			in: { votes: votes(2, 'slop', 1, lowHollow), rollupLabelInstalls: 6, uploadsPerDay: 14, itemsSeen: 10, aiItems: 3, audienceKnown: true },
+			in: { votes: votes(2, 'slop', 1, lowHollow), rollupLabelInstalls: 6, itemsSeen: 10, aiItems: 3, audienceKnown: true },
 			verdict: '',
 			rule: 4
 		},
 		{
 			name: 'item labels count toward provenance of a source that is not mixed',
-			in: { votes: votes(2, 'slop', 1, lowHollow), rollupLabelInstalls: 2, uploadsPerDay: -1 },
+			in: { votes: votes(2, 'slop', 1, lowHollow), rollupLabelInstalls: 2 },
 			verdict: 'likely_slop',
 			rule: 7,
 			signals: Sig.platform_label
 		},
 		{
 			name: 'split tags are Disputed',
-			in: { votes: [...votes(3, 'slop', 1, 0), ...votes(3, 'not_slop', 1, 0)], labelInstalls: 2, uploadsPerDay: 14 },
+			in: { votes: [...votes(3, 'slop', 1, 0), ...votes(3, 'not_slop', 1, 0)], labelInstalls: 2, ...mostlyAI },
 			verdict: 'disputed',
 			rule: 5
 		},
 		{
 			name: 'verified appeal is Disputed whatever the evidence',
-			in: { votes: slop5, labelInstalls: 2, uploadsPerDay: 14, appealOpen: true, audienceKnown: true },
+			in: { votes: slop5, labelInstalls: 2, ...mostlyAI, appealOpen: true, audienceKnown: true },
 			verdict: 'disputed',
 			rule: 1,
 			signals: Sig.open_appeal | Sig.community_consensus
 		},
 		{
 			name: 'appeal outranks a staff decision',
-			in: { votes: slop5, appealOpen: true, decision: { verdict: 'slop', signals: 0, slopType: '', tests: 0 }, uploadsPerDay: -1 },
+			in: { votes: slop5, appealOpen: true, decision: { verdict: 'slop', signals: 0, slopType: '', tests: 0 } },
 			verdict: 'disputed',
 			rule: 1
 		},
 		{
 			name: 'staff decision wins over the computed verdict',
-			in: { votes: slop5, labelInstalls: 2, uploadsPerDay: 14, decision: { verdict: 'clear', signals: 0, slopType: '', tests: 0 }, audienceKnown: true },
+			in: { votes: slop5, labelInstalls: 2, ...mostlyAI, decision: { verdict: 'clear', signals: 0, slopType: '', tests: 0 }, audienceKnown: true },
 			verdict: 'clear',
 			rule: 2,
 			signals: Sig.staff_review,
@@ -108,7 +110,7 @@ describe('rules', () => {
 		},
 		{
 			name: 'staff decision none removes the rating',
-			in: { votes: slop5, labelInstalls: 2, uploadsPerDay: 14, decision: { verdict: 'none', signals: 0, slopType: '', tests: 0 }, audienceKnown: true },
+			in: { votes: slop5, labelInstalls: 2, ...mostlyAI, decision: { verdict: 'none', signals: 0, slopType: '', tests: 0 }, audienceKnown: true },
 			verdict: '',
 			rule: 2
 		},
@@ -117,7 +119,6 @@ describe('rules', () => {
 			in: {
 				votes: slop5,
 				labelInstalls: 2,
-				uploadsPerDay: -1,
 				decision: { verdict: 'slop', signals: Sig.link_funnel, slopType: '', tests: 0 },
 				audienceKnown: true
 			},
@@ -127,47 +128,47 @@ describe('rules', () => {
 		},
 		{
 			name: 'not-slop consensus is Clear even without AI evidence',
-			in: { votes: votes(4, 'not_slop', 1, 0), uploadsPerDay: -1 },
+			in: { votes: votes(4, 'not_slop', 1, 0) },
 			verdict: 'clear',
 			rule: 3,
 			signals: Sig.not_slop_consensus
 		},
 		{
 			name: 'no provenance is not rated',
-			in: { votes: votes(2, 'slop', 1, lowHollow), uploadsPerDay: 30 },
+			in: { votes: votes(2, 'slop', 1, lowHollow), ...mostlyAI },
 			verdict: '',
 			rule: 4
 		},
 		{
 			name: 'platform label from one install is not enough',
-			in: { votes: votes(1, 'slop', 1, 0), labelInstalls: 1, uploadsPerDay: -1 },
+			in: { votes: votes(1, 'slop', 1, 0), labelInstalls: 1 },
 			verdict: '',
 			rule: 4
 		},
 		{
 			name: 'AI evidence only is AI-made',
-			in: { votes: votes(3, 'ai_fine', 1, 0), labelInstalls: 2, uploadsPerDay: -1 },
+			in: { votes: votes(3, 'ai_fine', 1, 0), labelInstalls: 2 },
 			verdict: 'ai_made',
 			rule: 8,
 			signals: Sig.platform_label
 		},
 		{
 			name: 'burst freeze removes the consensus layer',
-			in: { votes: slop5, labelInstalls: 2, uploadsPerDay: 14, frozen: true },
+			in: { votes: slop5, labelInstalls: 2, ...mostlyAI, frozen: true },
 			verdict: 'likely_slop',
 			rule: 7,
 			excluded: Sig.community_consensus
 		},
 		{
 			name: 'lapsed Slop holds at Likely slop until reviewed',
-			in: { votes: slop5, labelInstalls: 2, uploadsPerDay: 14, lapseHold: true, audienceKnown: true },
+			in: { votes: slop5, labelInstalls: 2, ...mostlyAI, lapseHold: true, audienceKnown: true },
 			verdict: 'likely_slop',
 			rule: 6,
 			capped: 'lapsed'
 		},
 		{
 			name: 'items are scored on their own and inherit source behavior',
-			in: { item: true, votes: slop5, labelInstalls: 2, uploadsPerDay: -1, sourceBehavior: { met: true, signals: Sig.mostly_ai } },
+			in: { item: true, votes: slop5, labelInstalls: 2, sourceBehavior: { met: true, signals: Sig.mostly_ai } },
 			verdict: 'slop',
 			rule: 6,
 			signals: Sig.mostly_ai
@@ -216,7 +217,7 @@ describe('rules', () => {
 		},
 		{
 			name: 'low-weight new installs cannot form consensus',
-			in: { votes: votes(20, 'slop', th.weight(Date.now(), Date.now(), 0, 0), lowHollow), labelInstalls: 2, uploadsPerDay: 14 },
+			in: { votes: votes(20, 'slop', th.weight(Date.now(), Date.now(), 0, 0), lowHollow), labelInstalls: 2, ...mostlyAI },
 			verdict: 'likely_slop',
 			rule: 7,
 			excluded: Sig.community_consensus

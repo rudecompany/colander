@@ -58,6 +58,21 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: No migration may delete, rename or transfer the Store class
         run: node scripts/wrangler-guard.ts api/wrangler.jsonc
+      # The registry is valid, the repository holds no list, and only an owner (SEED_OWNERS) changed
+      # a cleared entry, a clearance or the seed rules and checks since the pull request's base or the
+      # commit before the push. A pull request can edit this copy, so for pull requests the required
+      # seed-guard check (seed-guard.yml) runs the base branch's copy as well.
+      - name: Seed registry
+        env:
+          SEED_BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+          SEED_ACTOR: ${{ github.actor }}
+        run: |
+          if [ -n "$SEED_BASE" ] && [ "$SEED_BASE" != 0000000000000000000000000000000000000000 ]; then
+            git fetch --no-tags --depth=1 origin "$SEED_BASE"
+          else
+            unset SEED_BASE
+          fi
+          node scripts/check-seeds.ts
       - run: pnpm -C api check
       # Includes the dump-compat check: a seeded Store's dump loads into stock SQLite with the
       # schema of the migration files and passes integrity_check (api/test/harness/dev.test.ts).

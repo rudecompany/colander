@@ -23,7 +23,7 @@ test('reviews with full authority: staff decide large sources here', async ({ pa
 	await expect(page.getByRole('heading', { level: 2, name: 'Ancient Facts Daily' })).toBeVisible();
 	// A large source: no staff-only lock here.
 	await expect(page.getByText('Staff decision needed')).toHaveCount(0);
-	await expect(page.getByRole('navigation', { name: 'Admin console' }).getByRole('link')).toHaveText(['Review', 'People']);
+	await expect(page.getByRole('navigation', { name: 'Admin console' }).getByRole('link')).toHaveText(['Review', 'Calibration', 'People']);
 	// The public page lives on the main host, which has the verdict; the admin host serves no public API.
 	await expect(page.getByRole('link', { name: 'Public source page' })).toHaveAttribute('href', new RegExp(`^${baseURL}/s/`));
 	await page.waitForLoadState('networkidle');

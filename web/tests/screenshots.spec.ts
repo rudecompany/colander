@@ -1,7 +1,7 @@
 // Full-page screenshots of every page, desktop 1440 and mobile 390, light and dark.
 // Run with `pnpm screenshots` (writes to screenshots/). Skipped in the normal test run.
 import { test } from '@playwright/test';
-import { mockApi, PLUS_ACCOUNT, STAFF, CURATOR, CURATOR_NEW, PASSKEYS, ME, PEOPLE, AUDIT, APPEAL, QUEUE, reviewSource } from './mocks.ts';
+import { mockApi, PLUS_ACCOUNT, STAFF, CURATOR, CURATOR_NEW, PASSKEYS, ME, PEOPLE, AUDIT, APPEAL, queueReply, reviewSource, CALIBRATION_ITEM } from './mocks.ts';
 
 test.skip(!process.env.SCREENSHOTS, 'Set SCREENSHOTS=1 to capture screenshots.');
 
@@ -104,10 +104,10 @@ const shots: Shot[] = [
 		path: '/console',
 		setup: {
 			'GET /v1/account': { json: { account: CURATOR } },
-			'GET /v1/review/queue': { json: { items: QUEUE, next_cursor: null } },
+			'GET /v1/review/queue': queueReply,
 			'GET /v1/review/sources/*': (c) => {
 				const [, , , , p, id] = c.path.split('/');
-				return { json: reviewSource(`${p}:${decodeURIComponent(id)}`) };
+				return { json: reviewSource(`${p}:${decodeURIComponent(id)}`, false) };
 			}
 		},
 		after: async (page) => {
@@ -120,7 +120,7 @@ const shots: Shot[] = [
 		path: '/admin',
 		setup: {
 			'GET /v1/admin/me': { json: ME },
-			'GET /v1/review/queue': { json: { items: QUEUE, next_cursor: null } },
+			'GET /v1/review/queue': queueReply,
 			'GET /v1/review/sources/*': (c) => {
 				const [, , , , p, id] = c.path.split('/');
 				return { json: reviewSource(`${p}:${decodeURIComponent(id)}`) };
@@ -131,6 +131,55 @@ const shots: Shot[] = [
 			await page.getByRole('heading', { name: 'Ancient Facts Daily', level: 2 }).waitFor();
 		}
 	},
+	// A seed lead: curators see that a list names it; staff on the admin host see which, and can suppress it.
+	{
+		name: 'console-lead',
+		path: '/console',
+		setup: {
+			'GET /v1/account': { json: { account: CURATOR } },
+			'GET /v1/review/queue': queueReply,
+			'GET /v1/review/sources/*': (c) => {
+				const [, , , , p, id] = c.path.split('/');
+				return { json: reviewSource(`${p}:${decodeURIComponent(id)}`, false) };
+			}
+		},
+		after: async (page) => {
+			await page.getByRole('tab', { name: /^Escalated/ }).click();
+			await page.getByRole('button', { name: /Everyday Trivia/ }).click();
+			await page.getByRole('heading', { name: /Seed lists/ }).waitFor();
+		}
+	},
+	{
+		name: 'admin-lead',
+		path: '/admin',
+		setup: {
+			'GET /v1/admin/me': { json: ME },
+			'GET /v1/review/queue': queueReply,
+			'GET /v1/review/sources/*': (c) => {
+				const [, , , , p, id] = c.path.split('/');
+				return { json: reviewSource(`${p}:${decodeURIComponent(id)}`) };
+			}
+		},
+		after: async (page) => {
+			await page.getByRole('tab', { name: /^Escalated/ }).click();
+			await page.getByRole('button', { name: /Everyday Trivia/ }).click();
+			await page.getByRole('heading', { name: /Seed lists/ }).waitFor();
+		}
+	},
+	{
+		name: 'console-calibration',
+		path: '/console/calibration',
+		setup: {
+			'GET /v1/account': { json: { account: CURATOR } },
+			'GET /v1/review/calibration/next': { json: { item: CALIBRATION_ITEM } }
+		},
+		after: async (page) => {
+			await page.getByText('Slop', { exact: true }).click();
+			await page.getByLabel('Language').selectOption('en');
+			await page.getByText('Other video', { exact: true }).click();
+		}
+	},
+	{ name: 'admin-calibration', path: '/admin/calibration', setup: { 'GET /v1/admin/me': { json: ME }, 'GET /v1/review/calibration/next': { json: { item: CALIBRATION_ITEM } } } },
 	{ name: 'admin-people', path: '/admin/people', setup: { 'GET /v1/admin/me': { json: ME }, 'GET /v1/admin/people': { json: { people: PEOPLE } } } },
 	{ name: 'admin-audit', path: '/admin/audit', setup: { 'GET /v1/admin/me': { json: ME }, 'GET /v1/admin/audit': { json: { entries: AUDIT, next_cursor: null } } } },
 	{
@@ -140,6 +189,7 @@ const shots: Shot[] = [
 	},
 	{ name: 'privacy', path: '/privacy' },
 	{ name: 'terms', path: '/terms' },
+	{ name: 'credits', path: '/credits' },
 	{ name: 'not-found', path: '/no-such-page' }
 ];
 
@@ -159,6 +209,8 @@ for (const shot of shots) {
 				await page.waitForLoadState('networkidle');
 				await page.evaluate(() => document.fonts.ready);
 				if (shot.after) await shot.after(page);
+				// A full-page capture draws the sticky header where the page was scrolled to.
+				await page.evaluate(() => window.scrollTo(0, 0));
 				await page.screenshot({ path: `${out}/${shot.name}-${v.id}-${scheme}.png`, fullPage: true });
 			});
 		}

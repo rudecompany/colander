@@ -152,6 +152,20 @@ describe('Cache-Control on every route', () => {
 			...staff,
 			body: { verdict: 'slop', reason: 'Still generated.', signals: ['watermark'] }
 		});
+		// Seed list suppressions need staff authority, which exists on the admin host only.
+		await check('POST /v1/review/sources/:platform/:source_id/suppress-seeds', 'POST', '/v1/review/sources/yt/@chan/suppress-seeds', 403, 'none', {
+			headers: bearer,
+			body: { reason: 'Objection by email.' }
+		});
+		await check('POST /v1/review/sources/:platform/:source_id/suppress-seeds', 'POST', '/v1/review/sources/yt/@chan/suppress-seeds', 200, 'none', {
+			...staff,
+			body: { reason: 'Objection by email.' }
+		});
+		await check('GET /v1/review/calibration/next', 'GET', '/v1/review/calibration/next', 200, 'none', { headers: bearer });
+		await check('POST /v1/review/calibration/:platform/:source_id/label', 'POST', '/v1/review/calibration/yt/@chan/label', 404, 'none', {
+			headers: bearer,
+			body: { label: 'slop', tests: [], evidence: [], language: 'en', kind: 'video' }
+		});
 		await check('POST /v1/review/items/:platform/:item_id/decision', 'POST', '/v1/review/items/yt/abcdefghijk/decision', 200, 'none', {
 			...staff,
 			body: { verdict: 'clear', reason: 'Original.', source_id: '@chan' }

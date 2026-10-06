@@ -11,7 +11,9 @@ import { pruneLimits } from './limits';
 import { Default } from './scoring/rules';
 import type { Db } from './store/db';
 import { RETENTION_SECONDS } from './store/list';
+import { pruneCalibration } from './store/calibration';
 import { purgeYouTube } from './store/misc';
+import { expireSeeds, pruneProvenanceReads, type SeedRegistry } from './store/seeds';
 import { sourceRefsAfter } from './store/sources';
 import { pacificDay, RETENTION } from './youtube';
 
@@ -117,6 +119,28 @@ export function nextDump(now: number): number {
 	const slot = 6 * HOUR;
 	const offset = 3 * HOUR + 17 * MINUTE;
 	return Math.floor((now - offset) / slot) * slot + offset + slot;
+}
+
+/** The next daily seeds job strictly after now: 04:00 UTC (expiry, revocation by deploy, calibration retention). */
+export function nextSeeds(now: number): number {
+	const day = 24 * HOUR;
+	const at = 4 * HOUR;
+	return Math.floor((now - at) / day) * day + at + day;
+}
+
+/**
+ * The daily seeds job (docs/contracts.md 14.4): entries that are no review lead any more go (expired,
+ * or their list is no longer cleared after a deploy), with the calibration items of a withdrawn list
+ * and the sources that existed only for them, and calibration rows and staff provenance reads past
+ * 24 months. A scoring pass then closes their leads.
+ */
+export function seedsJob(db: Db, seeds: SeedRegistry, jobs: Jobs, now: number): number {
+	const refs = expireSeeds(db, seeds, Math.floor(now / 1000));
+	const pruned = pruneCalibration(db, Math.floor(now / 1000));
+	const reads = pruneProvenanceReads(db, Math.floor(now / 1000));
+	if (refs.length > 0) jobs.schedule('pass', now);
+	console.log(JSON.stringify({ message: 'seeds job', sources: refs.length, calibrationPruned: pruned, provenanceReadsPruned: reads }));
+	return nextSeeds(now);
 }
 
 /** Audit rows are kept this long in the Store, and longer in R2 under the bucket lock. */

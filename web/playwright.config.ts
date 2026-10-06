@@ -20,10 +20,17 @@ export default defineConfig({
 		{ name: 'turnstile', testMatch: /turnstile\.spec\.ts$/, use: { ...devices['Desktop Chrome'], baseURL: `http://localhost:${turnstilePort}` } }
 	],
 	// Tests run against fresh production builds with an Edge listing and no Firefox listing, so both
-	// kinds of store show in the install buttons.
+	// kinds of store show in the install buttons, and a fictional seed registry, so /credits shows a
+	// dataset (tests/seed-registry.ts).
 	webServer: {
 		command: 'pnpm build && pnpm build:turnstile && node tests/static-server.ts',
-		env: { PUBLIC_STORE_EDGE: EDGE_STORE, PUBLIC_STORE_FIREFOX: '', PORT: String(port), TURNSTILE_PORT: String(turnstilePort) },
+		env: {
+			PUBLIC_STORE_EDGE: EDGE_STORE,
+			PUBLIC_STORE_FIREFOX: '',
+			PORT: String(port),
+			TURNSTILE_PORT: String(turnstilePort),
+			COLANDER_SEED_REGISTRY: new URL('tests/seed-registry.ts', import.meta.url).pathname
+		},
 		port,
 		timeout: 180_000,
 		reuseExistingServer: false

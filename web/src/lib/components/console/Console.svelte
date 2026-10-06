@@ -15,6 +15,7 @@ on the admin host (/admin).
 	import '@colander/shared/components/ui/dialog/dialog.css';
 	import RefreshCw from '@lucide/svelte/icons/refresh-cw';
 	import { PerforatedDisc, PlatformTag, fmtAgo } from '@colander/shared';
+	import ArrowLink from '#lib/components/ArrowLink.svelte';
 	import { api, errorText } from '#lib/api.ts';
 	import { fmtDateTime } from '@colander/shared';
 	import DecisionForm, { type Target } from '#lib/components/console/DecisionForm.svelte';
@@ -23,7 +24,7 @@ on the admin host (/admin).
 	import Notice from '#lib/components/Notice.svelte';
 	import { VerdictChip } from '@colander/shared';
 
-	let { authority, name }: { authority: Role; name: string | null } = $props();
+	let { authority, name, calibrationHref }: { authority: Role; name: string | null; calibrationHref?: string } = $props();
 	/** What the evidence and decision forms check: admins decide as staff. */
 	const role = $derived<Role>(authority === 'curator' ? 'curator' : 'staff');
 
@@ -34,6 +35,11 @@ on the admin host (/admin).
 	let platform = $state<Platform | ''>('');
 	let queue = $state<QueueItem[]>([]);
 	let cursor = $state<string | null>(null);
+	// Escalations load apart: the server's kind=all carries only the seed leads a report, a slop tag
+	// or a calibrated list backs, so thousands of leads cannot bury the reports, while
+	// kind=escalations carries every lead, after the other escalations (contracts 6.7).
+	let escalations = $state<QueueItem[]>([]);
+	let escalationsCursor = $state<string | null>(null);
 	let queueStatus = $state<'loading' | 'ready' | 'more' | 'error'>('loading');
 	let queueError = $state('');
 	let active = $state(0);
@@ -43,23 +49,41 @@ on the admin host (/admin).
 	let flash = $state('');
 	let buttons: HTMLButtonElement[] = $state([]);
 
-	const KIND_OF: Record<Kind, QueueItem['kind'] | null> = { all: null, reports: 'report', appeals: 'appeal', escalations: 'escalation' };
-	const count = (k: Kind) => queue.filter((q) => !KIND_OF[k] || q.kind === KIND_OF[k]).length;
-	const shown = $derived(queue.filter((q) => (!platform || q.platform === platform) && (!KIND_OF[kind] || q.kind === KIND_OF[kind])));
-	const openItem = $derived(queue.find((q) => q.id === openId) ?? null);
+	const KIND_OF: Record<Kind, QueueItem['kind'] | null> = { all: null, reports: 'report', appeals: 'appeal', escalations: null };
+	const listOf = (k: Kind) => (k === 'escalations' ? escalations : queue);
+	const count = (k: Kind) => listOf(k).filter((q) => !KIND_OF[k] || q.kind === KIND_OF[k]).length;
+	const shown = $derived(listOf(kind).filter((q) => (!platform || q.platform === platform) && (!KIND_OF[kind] || q.kind === KIND_OF[kind])));
+	const openItem = $derived(queue.find((q) => q.id === openId) ?? escalations.find((q) => q.id === openId) ?? null);
+	const nextCursor = $derived(kind === 'escalations' ? escalationsCursor : cursor);
 
 	onMount(() => loadQueue(false));
+
+	const queuePage = (k: 'all' | 'escalations', after: string | null) => {
+		const q = new URLSearchParams({ kind: k });
+		if (after) q.set('cursor', after);
+		return api<{ items: QueueItem[]; next_cursor: string | null }>(`/v1/review/queue?${q}`);
+	};
 
 	async function loadQueue(more: boolean) {
 		queueStatus = more ? 'more' : 'loading';
 		queueError = '';
 		try {
-			const q = new URLSearchParams({ kind: 'all' });
-			if (more && cursor) q.set('cursor', cursor);
-			const res = await api<{ items: QueueItem[]; next_cursor: string | null }>(`/v1/review/queue?${q}`);
-			queue = more ? [...queue, ...res.items] : res.items;
-			cursor = res.next_cursor;
-			if (!more) active = 0;
+			if (more && kind === 'escalations') {
+				const res = await queuePage('escalations', escalationsCursor);
+				escalations = [...escalations, ...res.items];
+				escalationsCursor = res.next_cursor;
+			} else if (more) {
+				const res = await queuePage('all', cursor);
+				queue = [...queue, ...res.items];
+				cursor = res.next_cursor;
+			} else {
+				const [all, esc] = await Promise.all([queuePage('all', null), queuePage('escalations', null)]);
+				queue = all.items;
+				cursor = all.next_cursor;
+				escalations = esc.items;
+				escalationsCursor = esc.next_cursor;
+				active = 0;
+			}
 			queueStatus = 'ready';
 		} catch (e) {
 			queueError = errorText(e);
@@ -129,6 +153,7 @@ on the admin host (/admin).
 		<h1 class="cl-title">Review queue</h1>
 		<span class="uin-badge uin-badge-lg">{AUTHORITY_WORD[authority]}{name ? `, ${name}` : ''}</span>
 		<p class="keys cl-caption cl-muted" aria-hidden="true"><Kbd>J</Kbd><Kbd>K</Kbd> move <Kbd>Enter</Kbd> open</p>
+		{#if calibrationHref}<ArrowLink href={calibrationHref} size="sm">Calibration set</ArrowLink>{/if}
 		<p class="sr-only">Keyboard: J and K move through the queue, Enter opens the highlighted item.</p>
 	</header>
 
@@ -183,7 +208,7 @@ on the admin host (/admin).
 							>
 								<span class="q-top">
 									<PlatformTag platform={q.platform} />
-									<span class="q-kind">{KIND_WORD[q.kind]}</span>
+									<span class="q-kind">{q.lead ? 'Seed lead' : KIND_WORD[q.kind]}</span>
 									{#if q.report_count > 0}<span class="q-meta">{q.report_count} {q.report_count === 1 ? 'report' : 'reports'}</span>{/if}
 									{#if q.large}<span class="uin-badge uin-badge-md">Large source</span>{/if}
 									<span class="cl-figure q-age">{age(q.created_at)}</span>
@@ -197,7 +222,7 @@ on the admin host (/admin).
 						</li>
 					{/each}
 				</ol>
-				{#if cursor}
+				{#if nextCursor}
 					<Button variant="secondary" size="md" block onclick={() => loadQueue(true)} loading={queueStatus === 'more'}>Load more</Button>
 				{/if}
 			{/if}

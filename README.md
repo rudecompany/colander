@@ -57,7 +57,7 @@ Platform page selectors ship as signed declarative configuration, so a site rede
 
 | Command | What it covers |
 | --- | --- |
-| `make test-api` | The Wrangler config guard, type checks, the Worker's tests inside workerd (the store, every scoring rule, the HTTP API, billing against a fake Stripe, backups, ops and the list format against the contract fixtures), a dump that loads into stock SQLite, and dry-run deploys of both environments |
+| `make test-api` | The Wrangler config guard, the seed registry check, type checks, the Worker's tests inside workerd (the store, every scoring rule, the HTTP API, billing against a fake Stripe, backups, ops and the list format against the contract fixtures), a dump that loads into stock SQLite, and dry-run deploys of both environments |
 | `make test-web` | Type checks, then the website's Playwright tests with axe accessibility checks in light and dark |
 | `make test-extension` | Type checks, unit tests, the extension's Playwright tests on saved platform fixtures, including the speed budgets, and the Firefox build's smoke test in Playwright's Firefox (`pnpm -C extension exec playwright install firefox` once) |
 | `make e2e` | The Worker under `wrangler dev`, the website and the extension together: blocking from the real list, tag, report, review, appeal, side panel, trial, pairing codes for Plus and review, and a privacy audit |
@@ -70,7 +70,7 @@ Colander runs on Cloudflare as one TypeScript Worker on getcolander.com (`api/`)
 Staging runs the same Worker on staging.getcolander.com behind Cloudflare Access.
 GitHub Actions is the whole pipeline:
 
-- Every pull request runs CI; the required checks are `secrets`, `workflows`, `api`, `contract`, `web-and-extension` and `full-stack`.
+- Every pull request runs CI; the required checks are `secrets`, `workflows`, `api`, `contract`, `web-and-extension` and `full-stack`, plus `seed-guard` from `seed-guard.yml`, which only the seed registry's owner can pass for owner-only files (docs/deploy.md, step 15).
 - Staff and admin work happens on admin.getcolander.com behind Cloudflare Access with A3T Identity and hardware-key MFA; the ops channel takes only GitHub OIDC tokens from workflows on a protected main.
 - Every green commit on main deploys to staging and passes a smoke test there.
 - Merging the release PR that release-please keeps open deploys that commit to production, smoke-tests it and rolls it back on failure.
@@ -95,14 +95,16 @@ The Edge and Firefox builds are made and tested, and wait for their store listin
 The other 1.1 items (articles and search results, the Family plan, Content Credentials) are not built, and Safari waits for a payments decision.
 
 Fairness rules are enforced in code and tested: tags alone never make anything Slop, a reviewer needs AI evidence to rate Slop or Likely slop, mixed sources are judged item by item, appeals unhide a source while staff review it, and curators cannot decide large or appealed sources.
-Audience size is unknown unless staff set it: TikTok, Instagram and Facebook give no audience figures, and YouTube's figures do not feed scoring until YouTube approves derived metrics.
+Audience size is unknown unless staff set it: TikTok, Instagram and Facebook give no audience figures, and YouTube's figures never feed scoring.
 So a Slop verdict on any platform waits for a reviewer, a curator or staff, until then; plan review capacity accordingly.
 
 Some things need people or accounts rather than code.
 
 - Instagram and Facebook selectors are tested on hand-built fixtures only; run `pnpm -C extension test:live` with signed-in storage states before those platforms ship.
 - Outside seed lists are review leads only and never decide a verdict.
-  The `import-seed` ops command reads a list object from the private bucket and accepts only CC0-1.0, CC-BY-4.0, MIT or a written grant; it refuses non-commercial, no-derivatives, share-alike, GPL and unlicensed lists.
+  They come only from the seed registry (`packages/shared/src/seed-registry.json`), and `import-seed` takes only entries the owner has cleared there, with the list in a private bucket object; the day-one candidates all wait for that clearance (docs/deploy.md, step 20).
+  Only `/credits` names a dataset, and only one whose license asks for credit.
+- The calibration set has its tooling (sampling, blind labeling at `/console/calibration` and, with third labels for staff, `/admin/calibration`, export and `scripts/calibration-report.ts`), but the labels themselves need about 100 hours of staff time.
 - Stripe Managed Payments needs Stripe's eligibility approval and its terms accepted in the dashboard.
 - The extension asks for the `scripting` permission in addition to the spec's minimal list, because per-platform site access needs runtime content script registration; the spec's permission list should add it.
 - The open questions in the spec still stand: legal review of labels and platform terms, the calibration set behind the thresholds, the code and data licenses, and trademark clearance for the name.

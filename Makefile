@@ -22,9 +22,10 @@ extension-zip:
 
 test: test-api test-web test-extension
 
-# The Store migration guard, type checks, the Worker's Vitest suite inside workerd, and dry-run deploys.
+# The Store migration guard, the seed registry check, type checks, the Worker's Vitest suite inside workerd, and dry-run deploys.
 test-api:
 	node scripts/wrangler-guard.ts api/wrangler.jsonc
+	node scripts/check-seeds.ts
 	pnpm -C api check
 	pnpm -C api test
 	pnpm -C api deploy:dry

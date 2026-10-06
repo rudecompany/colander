@@ -47,6 +47,16 @@ export const PRIVACY_NEVER: string[] = [
 export const PRIVACY_INSTALL_ID =
 	'The install ID is 16 random bytes made on this device. The server stores only a hash of it. Delete local data to replace it.';
 
+/*
+ * Outside data. Seed lists are review leads only, and no surface names one: /credits names the
+ * datasets whose license asks for credit, and the extension's about text points there.
+ */
+export const ABOUT_DATA = {
+	title: 'Where the list comes from',
+	body: "The list comes from tags, reports and reviews by Colander's community and staff. Some openly licensed lists from other projects help staff choose which sources to review first. They never decide a verdict.",
+	credits: 'Lists whose license asks for credit are named on the credits page.'
+} as const;
+
 /** Draft rows: check against extension/wxt.config.ts before each release. */
 export const PERMISSIONS: { permission: string; why: string; never: string }[] = [
 	{

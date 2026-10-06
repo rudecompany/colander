@@ -7,6 +7,7 @@ import { FLAG_LARGE, FLAG_STAFF_REVIEWED } from '@colander/shared/list';
 import type { Jobs, PassScorer } from '../jobs';
 import { expireAppeals } from '../store/appeals';
 import type { Db } from '../store/db';
+import { seedLeads, SeedRegistry } from '../store/seeds';
 import { setFrozen, sourceRefs, type Item, type Source, type State } from '../store/sources';
 import {
 	applyUpdate,
@@ -117,11 +118,10 @@ export class Engine implements PassScorer {
 	/** Set when YOUTUBE_API_KEY is: each pass starts by refreshing stale YouTube sources. */
 	youtube?: YouTube;
 	/**
-	 * YOUTUBE_DERIVED_USE: YouTube approved Colander's derived metrics, so subscriber counts and
-	 * uploads per day are fetched and feed scoring. Off, a source's size is known only when staff
-	 * recorded it, and nothing derived from YouTube Data API data reaches a verdict.
+	 * The seed registry: which lists' entries are review leads now. The Store builds it with dev
+	 * mode; tests replace it with their own entries.
 	 */
-	derived = false;
+	seeds = new SeedRegistry();
 	/** The full pass's reputation, loaded at its start and kept across its chunks. A restart mid-pass reloads it. */
 	private passReps?: Map<string, Rep>;
 
@@ -143,7 +143,7 @@ export class Engine implements PassScorer {
 		if (this.youtube) {
 			// Network calls happen outside any transaction. A failure only delays enrichment.
 			try {
-				await this.youtube.enrichStale(this.db, now, ENRICH_PER_PASS, this.derived);
+				await this.youtube.enrichStale(this.db, now, ENRICH_PER_PASS);
 			} catch (err) {
 				console.warn(JSON.stringify({ message: 'youtube enrichment failed', error: String(err) }));
 			}
@@ -193,15 +193,11 @@ export class Engine implements PassScorer {
 	}
 
 	/**
-	 * A source's size for rule 6 and the curator limits: what staff recorded, and the YouTube
-	 * subscriber count only with derived use.
+	 * A source's size for rule 6 and the curator limits: only what staff recorded. No YouTube Data
+	 * API figure ever feeds scoring (contracts 9.7).
 	 */
 	audience(src: Source): { large: boolean; known: boolean } {
-		const subscribers = this.derived ? src.subscribers : null;
-		return {
-			large: src.largeStaff || (subscribers !== null && subscribers >= this.th.largeSubscribers),
-			known: src.sizeReviewedAt > 0 || subscribers !== null
-		};
+		return { large: src.largeStaff, known: src.sizeReviewedAt > 0 };
 	}
 
 	private weights(reps: Map<string, Rep>, now: number): (install: string) => number {
@@ -271,8 +267,7 @@ export class Engine implements PassScorer {
 				decision: toDecision(d.decisions.get(it.ref)),
 				appealOpen: d.appealOpen,
 				frozen,
-				lapseHold: it.state.lapseHold || isLapsing(it.state, nowS),
-				uploadsPerDay: -1
+				lapseHold: it.state.lapseHold || isLapsing(it.state, nowS)
 			});
 			for (const v of byItem.get(it.ref) ?? []) {
 				input.votes.push(toVote(v));
@@ -302,7 +297,6 @@ export class Engine implements PassScorer {
 			frozen,
 			large: audience.large,
 			audienceKnown: audience.known,
-			uploadsPerDay: this.derived ? (src.uploadsPerDay ?? -1) : -1,
 			itemsSeen: seen,
 			aiItems,
 			labelInstalls: labelInstalls.size,
@@ -435,9 +429,9 @@ export class Engine implements PassScorer {
 				want.appeal = `Appeal filed more than ${Math.trunc(th.appealExpiry / DAY)} days ago still waits for staff to check its code`;
 			}
 			// A seed list entry is a review lead and never evidence (9.3): until a reviewer decides the
-			// source, it only puts the source in the queue. The summary is for reviewers, never public.
-			if (src.importBatch !== 0 && src.reviewedAt === 0) {
-				want.seed = `Seed lead, not evidence: listed on ${src.importSource} (${src.importLicense}) as a ${src.importList} entry`;
+			// source, it only puts the source in the queue. The summary names no list: curators see it.
+			if (src.reviewedAt === 0 && src.seedSuppressedAt === 0 && seedLeads(db, this.seeds, ref, nowS).length > 0) {
+				want.seed = 'Seed lead, not evidence';
 			}
 			syncEscalations(db, ref, 0, ['capped', 'lapsed', 'reports', 'appeal', 'seed'], want, nowS);
 			return changed;

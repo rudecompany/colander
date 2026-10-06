@@ -1,0 +1,9 @@
+# Only the owner may change which outside datasets Colander may use (docs/contracts.md section 14).
+# Branch protection must require review from code owners and the seed-guard check (docs/deploy.md,
+# step 15), and scripts/check-seeds.ts fails a change to a cleared entry, a clearance or any file
+# below made by anyone else.
+/packages/shared/src/seed-registry.json @slantview
+/packages/shared/src/seeds.ts @slantview
+/scripts/check-seeds.ts @slantview
+/.github/workflows/seed-guard.yml @slantview
+/.github/CODEOWNERS @slantview

@@ -19,7 +19,8 @@ import { AppealAwaiting, AppealPendingManual, createAppeal, transitionAppeal, ty
 import { saveSubscription } from './store/billing';
 import { latestSequence } from './store/list';
 import { verdictCounts } from './store/misc';
-import { ensureSource, findItem, findSource, importSeed, recordSeedImport, setYouTube, sourceRefs, type SeedImport } from './store/sources';
+import { applyImport, planImport } from './store/seeds';
+import { ensureSource, findItem, findSource, setYouTube, sourceRefs } from './store/sources';
 import { createReport, dismissReport, saveTags, type TagInput } from './store/tags';
 import type { Store } from './store/store';
 
@@ -179,19 +180,24 @@ class Seeder {
 
 	/**
 	 * A channel with the name viewers report for it, and its channel ID and handle as a Data API
-	 * lookup without derived use links them, through the same store call enrichment uses.
+	 * lookup links them, through the same store call enrichment uses.
 	 */
 	youtube(alias: string, channelId: string, handle: string, name: string): void {
 		const ref = this.source('yt', alias, name);
-		this.attempt(() => setYouTube(this.db, ref, { channelId, handle, subscribers: null, uploadsPerDay: null }, this.unix));
+		this.attempt(() => setYouTube(this.db, ref, { channelId, handle }, this.unix));
 	}
 
-	/** A seed list import, through the same store calls the import-seed command uses: review leads only. */
-	importSeed(list: string, ...aliases: string[]): void {
-		const seed: SeedImport = { sourceName: 'Demo list', list, license: 'CC0-1.0', attribution: '', permissionDoc: '', sha256: '0'.repeat(64), entries: aliases.length };
+	/**
+	 * The registry's fictional dev_only list, imported through the same store calls the import-seed
+	 * command uses: review leads only.
+	 */
+	importSeed(...aliases: string[]): void {
 		this.attempt(() => {
-			const batch = recordSeedImport(this.db, seed, this.unix);
-			for (const alias of aliases) importSeed(this.db, batch, 'yt', alias, seed, this.unix);
+			const entry = this.store.engine.seeds.lead('demo-list');
+			if (!entry) throw new Error('the registry has no demo-list usable in dev mode');
+			// Colander's own lists carry a note of where staff saw each channel (contracts 14.1).
+			const plan = planImport(this.db, entry.id, aliases.map((alias) => ({ platform: 'yt', alias, note: 'Seen in a fictional demo report' })));
+			applyImport(this.db, entry, plan, { sha256: '0'.repeat(64), entries: aliases.length, records: {}, listedAt: this.unix }, this.unix);
 		});
 	}
 
@@ -320,8 +326,7 @@ class Seeder {
 		// Seed lists, imported through the calls the import-seed command uses. The names are
 		// fictional. Their entries are review leads only: they never give a verdict.
 		this.at(this.days(45));
-		this.importSeed('blocklist', '@catrescuetales', '@dailymotivationmachine');
-		this.importSeed('warnlist', '@biblestoriesanimated');
+		this.importSeed('@catrescuetales', '@dailymotivationmachine', '@biblestoriesanimated');
 
 		// The bulk of community tagging happens a month ago, by installs that are mature at the end.
 		this.at(this.days(40));
@@ -464,7 +469,7 @@ class Seeder {
 		this.decide(this.staff, 'yt', '@grandpasworkshop', '', 'clear', "Original footage and the creator's own narration.", 0, '', 0);
 		this.at(this.days(20));
 		this.decide(this.staff, 'tt', '@sloppyfacts', '', 'likely_slop', 'Generated facts videos with frequent errors; large audience, so held at Likely slop.', Sig.platform_label, 'filler', hollow, true);
-		// Staff record a channel's size themselves: no YouTube figure decides it without derived use.
+		// Staff record a channel's size themselves: no YouTube figure ever decides it.
 		this.decide(this.staff, 'yt', '@gossipnarrated', '', 'likely_slop', 'Synthetic narration over celebrity photos; a large channel, so held at Likely slop until a full review.', 0, 'deceptive', low | hollow | mass, true);
 		// TikTok reports no audience size, so community scoring holds Pet Pals at Likely slop until staff look.
 		this.decide(this.staff, 'tt', '@petpalsai', '', 'slop', 'Staff review confirmed generated pet clips posted around the clock to a small audience.', 0, 'filler', low | mass, false);

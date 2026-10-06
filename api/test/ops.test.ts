@@ -11,9 +11,14 @@ import { CONFIG_CONTEXT, importKeys, verifyEnvelope } from '@colander/shared/sig
 import worker from '../src/index';
 import { AUDIT_EXPORTED, AUDIT_PREFIX, dump, DUMP_PREFIX, dumpKey } from '../src/backup';
 import { STATUS } from '../src/jobs';
-import { ADAPTER_CONFIG_PATH, ADMIN_BOOTSTRAPPED, PITR_PREFIX, SEED_PREFIX, storeOps } from '../src/ops';
+import { ADAPTER_CONFIG_PATH, ADMIN_BOOTSTRAPPED, PITR_PREFIX, storeOps } from '../src/ops';
+import { OBJECTION_PREFIX, SEED_PREFIX } from '../src/seeds';
 import { addPasskey, audit, createSession, ensureAccount, getAccount, grantRole, holdRequest, revokeCredentials } from '../src/store/accounts';
 import { claimPairing, createPairing } from '../src/store/pairings';
+import { SeedRegistry } from '../src/store/seeds';
+import { REGISTRY } from '@colander/shared/seed-registry';
+import type { SeedEntry } from '@colander/shared/seeds';
+import { clearedEntry, listSeed } from './seed-fixtures';
 import { log } from '../src/store/verdicts';
 import { findSource, getSource, sourceRefs } from '../src/store/sources';
 import { SNAPSHOT_KEY } from '../src/store/list';
@@ -59,15 +64,16 @@ async function resetPrimary(): Promise<void> {
 	await runInDurableObject(primary(), async (store: Store, state) => {
 		store.db.tx(() => {
 			store.db.run('PRAGMA defer_foreign_keys = ON');
-			for (const t of ['tags', 'items', 'source_aliases', 'decision_log', 'decisions', 'escalations', 'reports', 'appeals', 'sources', 'seed_imports', 'installs', 'accounts', 'adapter_configs', 'list_sequences', 'jobs']) {
+			for (const t of ['tags', 'items', 'source_aliases', 'decision_log', 'decisions', 'escalations', 'reports', 'appeals', 'seed_entries', 'calibration_labels', 'calibration_items', 'sources', 'seed_imports', 'installs', 'accounts', 'adapter_configs', 'list_sequences', 'jobs']) {
 				store.db.run(`DELETE FROM ${t}`);
 			}
 		});
 		for (const key of [...Object.values(STATUS), ADMIN_BOOTSTRAPPED, AUDIT_EXPORTED]) state.storage.kv.delete(key);
 		await state.storage.deleteAlarm();
+		store.engine.seeds = new SeedRegistry(REGISTRY, true);
 	});
 	await env.LISTS.delete(SNAPSHOT_KEY);
-	for (const prefix of [DUMP_PREFIX, PITR_PREFIX, SEED_PREFIX, AUDIT_PREFIX]) for (const o of (await env.BACKUPS.list({ prefix })).objects) await env.BACKUPS.delete(o.key);
+	for (const prefix of [DUMP_PREFIX, PITR_PREFIX, SEED_PREFIX, AUDIT_PREFIX, OBJECTION_PREFIX]) for (const o of (await env.BACKUPS.list({ prefix })).objects) await env.BACKUPS.delete(o.key);
 }
 
 beforeEach(resetPrimary);
@@ -241,142 +247,145 @@ describe('pin-subject', () => {
 });
 
 describe('import-seed', () => {
-	const seed = '! A tiny synthetic list\n@SlopFarmOne\r\n\nUCzzzzzzzzzzzzzzzzzzzzz9\nnot a channel\n';
-	const fields = { file: seed, list: 'blocklist', source_name: 'Open Seed List', license: 'CC0-1.0' };
-	const how = 'Ask its maintainer for written permission and import it as LicenseRef-written-grant with permission_doc.';
-	const refused = `Refusing to import: the list's license does not allow use in a paid product. Non-commercial, no-derivatives, share-alike and GPL lists are refused. ${how}`;
-	let seeds = 0;
-	/** Puts a seed object in the backup bucket, as the runbook does with wrangler, and returns its key. */
-	const put = async (body: unknown): Promise<string> => {
-		const key = `${SEED_PREFIX}${++seeds}.json`;
-		await env.BACKUPS.put(key, typeof body === 'string' ? body : JSON.stringify(body));
-		return key;
-	};
-	const untouched = async () =>
-		expect(await runInDurableObject(primary(), (store: Store) => [sourceRefs(store.db), store.db.all('SELECT * FROM seed_imports')])).toEqual([[], []]);
-
-	it.each([
-		['CC BY-NC 4.0', 'license_refused', refused],
-		['CC-BY-NC-SA-4.0', 'license_refused', refused],
-		['CC-BY-ND-4.0', 'license_refused', refused],
-		['CC-BY-SA-4.0', 'license_refused', refused],
-		['GPL-3.0-only', 'license_refused', refused],
-		['', 'license_refused', `Refusing to import: the list has no license, and unlicensed lists may not be used. ${how}`],
-		['NOASSERTION', 'license_refused', `Refusing to import: the list has no license, and unlicensed lists may not be used. ${how}`],
-		['Apache-2.0', 'invalid_license', 'license must be one of CC0-1.0, CC-BY-4.0, MIT, LicenseRef-written-grant.']
-	])('refuses a list licensed %j, and touches nothing', async (license, code, message) => {
-		const res = await op('import-seed', { key: await put({ ...fields, license }) });
-		expect(res).toEqual({ status: 400, body: { error: { code, message } } });
-		await untouched();
-	});
-
-	it('needs the credit CC BY and MIT ask for, the written grant, and the other fields of the object', async () => {
-		for (const [bad, message] of [
-			[{ ...fields, file: '' }, 'file and source_name are required.'],
-			[{ ...fields, source_name: ' ' }, 'file and source_name are required.'],
-			[{ ...fields, list: 'greylist' }, 'list must be blocklist or warnlist.'],
-			[{ ...fields, license: 'CC-BY-4.0' }, 'CC-BY-4.0 and MIT need attribution: the credit or copyright notice the license asks for.'],
-			[{ ...fields, license: 'mit' }, 'CC-BY-4.0 and MIT need attribution: the credit or copyright notice the license asks for.'],
-			[{ ...fields, license: 'LicenseRef-written-grant' }, 'LicenseRef-written-grant needs permission_doc: where the written grant is kept.'],
-			['not json', ' does not hold a JSON object.'],
-			[['a list'], ' does not hold a JSON object.']
-		] as const) {
-			const key = await put(bad);
-			expect((await op('import-seed', { key })).body.error.message).toBe(message.startsWith(' ') ? key + message : message);
-		}
-		await untouched();
-	});
-
-	// The ops workflow logs its arguments and answer where anyone can read them, so a list, its name
-	// and its license only ever travel in a private object of the backup bucket.
-	it('takes only the key of an object under seeds/ in the backup bucket, and answers without naming the list', async () => {
-		const only = `import-seed takes only key: an object under ${SEED_PREFIX} in the backup bucket that holds the list and its license. The ops run log is public, so nothing about a list may be in the arguments.`;
-		for (const args of [fields, { ...fields, key: await put(fields) }, {}, { key: 'dumps/2026-10-03T03:17:00.000Z.sql.gz' }, { key: SEED_PREFIX }]) {
-			expect(await op('import-seed', args)).toEqual({ status: 400, body: { error: { code: 'invalid_args', message: only } } });
-		}
-		expect(await op('import-seed', { key: 'seeds/none.json' })).toEqual({ status: 404, body: { error: { code: 'no_seed', message: 'There is no object seeds/none.json in the backup bucket.' } } });
-		await untouched();
-		const res = await op('import-seed', { key: await put({ ...fields, license: 'CC-BY-4.0', attribution: 'Open Seed List by Example Maintainer, CC BY 4.0' }) });
-		expect(res.status).toBe(200);
-		expect(JSON.stringify(res.body)).not.toMatch(/open seed list|example maintainer|CC-BY|blocklist/i);
-	});
-
-	// Seed entries are review leads: the scoring pass gives them no verdict and puts them in the
-	// review queue, and the run is recorded with its license, credit and file hash.
-	it('imports the whole file in one transaction as review leads, recorded for audits', async () => {
-		const stub = fresh();
-		// A reviewer named the list in the public log before Colander imported it.
-		await runInDurableObject(stub, (store: Store) => {
-			store.db.run("INSERT INTO decision_log (at, platform, target_type, target_id, source_key, reason, actor) VALUES (1, 'yt', 'source', '@x', '@x', 'Also on the open seed list.', 'staff')");
+	const file = '! A tiny synthetic list\n@SlopFarmOne  ! seen in a news report\r\n\nUCzzzzzzzzzzzzzzzzzzzzz9\nnot a channel\n';
+	// T is in 2030: the entry's upstream date is a few days before it, so its entries are live.
+	const entry = clearedEntry({ sha256: hex(sha256(utf8(file))), upstream: { ref: 'abc123', date: '2030-03-01' } });
+	const records = { dpia: 'DPIA-2026-01', lia: 'LIA-2026-01' };
+	/** Puts an entry's object in the backup bucket, as the runbook does with wrangler. */
+	const put = (id: string, body: unknown) => env.BACKUPS.put(`${SEED_PREFIX}${id}.json`, typeof body === 'string' ? body : JSON.stringify(body));
+	/** Runs import-seed in a Store whose registry is entries. */
+	const run = (stub: DurableObjectStub<Store>, entries: SeedEntry[], args: Record<string, unknown>): Promise<{ status: number; body: any }> =>
+		runInDurableObject(stub, (store: Store, state) => {
+			store.now = () => T;
+			store.engine.seeds = new SeedRegistry(entries);
+			return storeOps(store, state, env, 'import-seed', args);
 		});
-		const key = await put({ ...fields, license: 'cc-by-4.0', attribution: 'Open Seed List by Example Maintainer, CC BY 4.0' });
-		const res = await inStore(stub, T, 'import-seed', { key });
+	const untouched = async (stub = primary()) =>
+		expect(await runInDurableObject(stub, (store: Store) => [sourceRefs(store.db), store.db.all('SELECT * FROM seed_imports'), store.db.all('SELECT * FROM seed_entries')])).toEqual([[], [], []]);
+
+	// The registry as committed: the day-one candidates wait for the owner's clearance.
+	it('refuses every registry entry the owner has not cleared, and anything that is not one', async () => {
+		for (const seed of ['aislist-cc0-20260115-blocklist', 'cevval-yt-ai-music', 'soul-over-ai-cc-by', 'staff-research']) {
+			expect(await op('import-seed', { seed, apply: true })).toEqual({
+				status: 409,
+				body: { error: { code: 'seed_not_cleared', message: `${seed} is pending, not cleared: only the owner clears a dataset, in the registry, after counsel.` } }
+			});
+		}
+		expect((await op('import-seed', { seed: 'nothing-here' })).body.error).toEqual({
+			code: 'unknown_seed',
+			message: '"nothing-here" is not in the seed registry (packages/shared/src/seed-registry.json).'
+		});
+		for (const args of [{}, { key: 'seeds/2026-10-03.json' }, { seed: 7 }, { seed: 'staff-research', apply: 'yes' }, { seed: 'staff-research', file: 'x' }]) {
+			expect((await op('import-seed', args)).body.error.code, JSON.stringify(args)).toBe('invalid_args');
+		}
+		await untouched();
+	});
+
+	it('imports a fictional dev_only list in dev mode only', async () => {
+		// Colander's own lists carry a note of where staff saw each channel.
+		await put('demo-list', { file: '@demoone Seen in a demo report\n@demotwo Seen in another demo report\n' });
+		const res = await op('import-seed', { seed: 'demo-list', apply: true });
+		expect(res.body).toMatchObject({ seed: 'demo-list', entries: 2, added: 2, applied: true });
+		const prod = await run(fresh(), REGISTRY as SeedEntry[], { seed: 'demo-list' });
+		expect(prod.body.error.code, 'the same registry outside dev mode').toBe('seed_not_cleared');
+	});
+
+	it('checks the object against the registry: present, the cleared file byte for byte, and the clearance records', async () => {
+		const stub = fresh();
+		expect((await run(stub, [entry], { seed: 'secret-list' })).body.error.code).toBe('no_seed_object');
+		await put('secret-list', { file: file + 'UCzzzzzzzzzzzzzzzzzzzz10\n', records });
+		expect((await run(stub, [entry], { seed: 'secret-list' })).body.error).toEqual({
+			code: 'seed_hash_mismatch',
+			message: "The file in seeds/secret-list.json is not the one the registry cleared: its SHA-256 differs from the registry's."
+		});
+		await put('secret-list', { file, records: { dpia: 'DPIA-2026-01' } });
+		expect((await run(stub, [entry], { seed: 'secret-list' })).body.error).toEqual({
+			code: 'records_required',
+			message: 'The object for secret-list needs records.lia: where the assessment or grant is kept. Processing starts only after them.'
+		});
+		const grant = { ...entry, license: 'LicenseRef-written-grant', license_url: null };
+		await put('secret-list', { file, records });
+		expect((await run(stub, [grant], { seed: 'secret-list' })).body.error.message).toMatch(/needs records\.permission_doc/);
+		const invalid = { ...entry, clearance: { status: 'cleared' as const, by: 'someone', at: '2026-10-01' } };
+		expect((await run(stub, [invalid], { seed: 'secret-list' })).body.error).toEqual({
+			code: 'seed_invalid',
+			message: 'The registry entry is not valid: clearance.by must be one of the owners: slantview.'
+		});
+		const frame = { ...entry, use: 'frame' as const };
+		expect((await run(stub, [frame], { seed: 'secret-list' })).body.error.code).toBe('seed_is_frame');
+		await untouched(stub);
+	});
+
+	// Seed entries are review leads: a dry run first, then apply writes the batch and the entries in
+	// one transaction and starts the scoring pass that puts them in the review queue. The ops run
+	// log is public, so the answer carries counts and the registry ID only, never a channel.
+	it('dry-runs, then lists the file as review leads, recorded for audits', async () => {
+		const stub = primary();
+		await put('secret-list', { file, records });
+		await runInDurableObject(stub, (store: Store) => {
+			// A reviewer named the list in the public log before Colander imported it.
+			store.db.run("INSERT INTO decision_log (at, platform, target_type, target_id, source_key, reason, actor) VALUES (1, 'yt', 'source', '@x', '@x', 'Also on the secret seed list.', 'staff')");
+		});
+		const counts = { seed: 'secret-list', entries: 2, by_platform: { yt: 2 }, added: 2, kept: 0, dropped: 0, suppressed: 0, skipped: 1, excluded: 0 };
+		const dry = await run(stub, [entry], { seed: 'secret-list' });
+		expect(dry).toEqual({ status: 200, body: { ...counts, applied: false, message: 'Dry run: nothing was written. Run again with "apply": true to list 2 sources as review leads.' } });
+		expect(await runInDurableObject(stub, (store: Store) => [sourceRefs(store.db), store.db.all('SELECT * FROM jobs')])).toEqual([[], []]);
+
+		const res = await run(stub, [entry], { seed: 'secret-list', apply: true });
 		expect(res).toEqual({
 			status: 200,
 			body: {
-				imported: 2,
-				skipped: 1,
+				...counts,
+				applied: true,
 				batch: 1,
-				message: 'Imported 2 YouTube channels as review leads, skipped 1 lines. They never give a verdict; the scoring pass now puts them in the review queue.'
+				message: 'Listed 2 sources as review leads (2 new, 0 dropped). They never give a verdict; the scoring pass now puts them in the review queue.'
 			}
 		});
-		await runInDurableObject(stub, async (store: Store) => {
-			store.now = () => T;
-			expect(store.db.all('SELECT reason, reason_original FROM decision_log')).toEqual([{ reason: 'Also on the [withheld].', reason_original: 'Also on the open seed list.' }]);
-			store.db.run('DELETE FROM decision_log');
-			await store.engine.fullPass(T);
-			const refs = sourceRefs(store.db);
-			expect(refs).toHaveLength(2);
-			for (const ref of refs) {
-				const src = getSource(store.db, ref)!;
-				expect(src).toMatchObject({ importSource: 'Open Seed List', importLicense: 'CC-BY-4.0', importList: 'blocklist', importBatch: 1 });
-				expect(src.state).toMatchObject({ verdict: '', flags: 0 });
-			}
-			expect(findSource(store.db, 'yt', '@slopfarmone'), 'the handle is lowercased to its canonical form').toBeDefined();
-			expect(log(store.db, { limit: 1 })).toEqual([]);
-			expect(store.db.all("SELECT kind FROM escalations WHERE resolved_at IS NULL")).toEqual([{ kind: 'seed' }, { kind: 'seed' }]);
-			const sha = hex(sha256(utf8(seed)));
-			expect(store.db.all('SELECT * FROM seed_imports')).toEqual([
-				{
-					id: 1,
-					source_name: 'Open Seed List',
-					list: 'blocklist',
-					license: 'CC-BY-4.0',
-					attribution: 'Open Seed List by Example Maintainer, CC BY 4.0',
-					permission_doc: null,
-					sha256: sha,
-					entries: 2,
-					imported_at: S,
-					cleared_at: null
-				}
-			]);
-		});
-		const grant = await inStore(stub, T, 'import-seed', {
-			key: await put({ file: '@aimadebutfine\n', list: 'warnlist', source_name: 'Partner List', license: 'LicenseRef-written-grant', permission_doc: 'contracts/partner-2026-10.pdf' })
-		});
-		expect(grant.body).toMatchObject({ imported: 1, batch: 2 });
-		await runInDurableObject(stub, (store: Store) => {
-			expect(store.db.get("SELECT license, permission_doc FROM seed_imports WHERE id = 2")).toEqual({ license: 'LicenseRef-written-grant', permission_doc: 'contracts/partner-2026-10.pdf' });
-		});
-	});
-
-	it("reads lines as Go's import-seed did: a byte order mark stays, so that line is skipped; U+0085 is trimmed", async () => {
-		const stub = fresh();
-		const res = await inStore(stub, T, 'import-seed', { key: await put({ ...fields, file: '\ufeff@BomFirst\n@NelChannel\u0085\n\u2003@Spaced\u3000\n' }) });
-		expect(res.body).toMatchObject({ imported: 2, skipped: 1 });
-		await runInDurableObject(stub, (store: Store) => {
-			expect(findSource(store.db, 'yt', '@nelchannel')).toBeDefined();
-			expect(findSource(store.db, 'yt', '@spaced')).toBeDefined();
-			expect(findSource(store.db, 'yt', '@bomfirst')).toBeUndefined();
-		});
-	});
-
-	it('starts the scoring pass at once in the primary Store', async () => {
-		const res = await inStore(primary(), T, 'import-seed', { key: await put(fields) });
-		expect(res.status).toBe(200);
-		await runInDurableObject(primary(), async (store: Store, state) => {
+		expect(JSON.stringify(res.body)).not.toMatch(/secret seed list|slopfarm|UCz|CC0/i);
+		await runInDurableObject(stub, async (store: Store, state) => {
 			expect(store.db.all('SELECT name, due_at FROM jobs')).toEqual([{ name: 'pass', due_at: T }]);
 			expect(await state.storage.getAlarm()).toBe(T);
+			expect(store.db.all('SELECT reason, reason_original FROM decision_log')).toEqual([{ reason: 'Also on the [withheld].', reason_original: 'Also on the secret seed list.' }]);
+			store.db.run('DELETE FROM decision_log');
+			store.now = () => T;
+			await store.engine.fullPass(T);
+			for (const ref of sourceRefs(store.db)) expect(getSource(store.db, ref)!.state).toMatchObject({ verdict: '', flags: 0 });
+			expect(findSource(store.db, 'yt', '@slopfarmone'), 'the handle is lowercased to its canonical form, its note ignored').toBeDefined();
+			expect(log(store.db, { limit: 1 })).toEqual([]);
+			expect(store.db.all('SELECT kind FROM escalations WHERE resolved_at IS NULL')).toEqual([{ kind: 'seed' }, { kind: 'seed' }]);
+			expect(store.db.all('SELECT seed, platform, alias, batch, listed_at FROM seed_entries ORDER BY alias')).toEqual([
+				{ seed: 'secret-list', platform: 'yt', alias: '@slopfarmone', batch: 1, listed_at: Date.UTC(2030, 2, 1) / 1000 },
+				{ seed: 'secret-list', platform: 'yt', alias: 'UCzzzzzzzzzzzzzzzzzzzzz9', batch: 1, listed_at: Date.UTC(2030, 2, 1) / 1000 }
+			]);
+			expect(store.db.get('SELECT seed, source_name, list, license, attribution, permission_doc, sha256, entries, imported_at, listed_at, added, dropped, records, revoked_at FROM seed_imports')).toEqual({
+				seed: 'secret-list',
+				source_name: 'Secret Seed List',
+				list: 'lead',
+				license: 'CC0-1.0',
+				attribution: null,
+				permission_doc: null,
+				sha256: entry.sha256,
+				entries: 2,
+				imported_at: S,
+				listed_at: Date.UTC(2030, 2, 1) / 1000,
+				added: 2,
+				dropped: 0,
+				records: JSON.stringify(records),
+				revoked_at: null
+			});
+		});
+
+		// The next version drops a channel: its entry goes, and so does the source it alone made.
+		const next = '@SlopFarmOne\n@NewFarm\n';
+		const v2 = { ...entry, sha256: hex(sha256(utf8(next))) };
+		await put('secret-list', { file: next, records });
+		expect((await run(stub, [v2], { seed: 'secret-list', apply: true })).body).toMatchObject({ entries: 2, added: 1, kept: 1, dropped: 1, batch: 2 });
+		await runInDurableObject(stub, (store: Store) => {
+			expect(findSource(store.db, 'yt', 'UCzzzzzzzzzzzzzzzzzzzzz9'), 'a source only the list made').toBeUndefined();
+			expect(store.db.all('SELECT alias, batch FROM seed_entries ORDER BY alias')).toEqual([
+				{ alias: '@newfarm', batch: 2 },
+				{ alias: '@slopfarmone', batch: 2 }
+			]);
 		});
 	});
 });
@@ -585,6 +594,64 @@ describe('restores', () => {
 		expect(res.body.r2_seq).toBe(res.body.head_seq);
 		await runInDurableObject(primary(), (store: Store) => {
 			expect(store.db.all('SELECT canonical_id FROM sources')).toEqual([{ canonical_id: '@kept' }]);
+		});
+	});
+
+	// An objection under GDPR Article 21 outlives a restore. The record in the backup bucket names the
+	// channel, because the dump may lack its source or give its ID to another channel; the audit log
+	// says who did it by the source's ID only.
+	it('restore-dump repeats every seed list suppression and lift since, by channel, and audits each without naming it', async () => {
+		const entry = clearedEntry();
+		const now = Math.floor(Date.now() / 1000);
+		const staff = await accessHeaders('rae@colander.test');
+		const suppress = async (alias: string, body: Record<string, unknown>) => {
+			const res = await worker.fetch(
+				new IncomingRequest(`${ADMIN_ORIGIN}/v1/review/sources/yt/${encodeURIComponent(alias)}/suppress-seeds`, {
+					method: 'POST',
+					body: JSON.stringify(body),
+					headers: { ...staff, 'Content-Type': 'application/json', 'CF-Connecting-IP': `198.51.100.${++client % 250}` }
+				} as RequestInit<IncomingRequestCfProperties>),
+				env,
+				{ waitUntil: () => {}, passThroughOnException: () => {} } as unknown as ExecutionContext
+			);
+			expect(res.status, await res.clone().text()).toBe(200);
+		};
+		const rae = await runInDurableObject(primary(), (store: Store) => {
+			listSeed(store.db, entry, ['@objector', '@withdrawn'], now);
+			return grantRole(store.db, 'rae@colander.test', 'staff', now, { host: 'ops' }).id;
+		});
+		await suppress('@withdrawn', { reason: 'Objection under Article 21, case 6' });
+		const key = await runInDurableObject(primary(), async (store: Store, state) => (await dump(state, store.db, env.BACKUPS, Date.now())).key);
+		await suppress('@objector', { reason: 'Objection under Article 21, case 7' });
+		await suppress('@withdrawn', { reason: 'The creator withdrew it', lift: true });
+		await runInDurableObject(primary(), (store: Store) => listSeed(store.db, entry, ['@late'], now));
+		await suppress('@late', { reason: 'Objection under Article 21, case 8' });
+		const refs = await runInDurableObject(primary(), (store: Store) => ['@objector', '@withdrawn', '@late'].map((a) => findSource(store.db, 'yt', a)!));
+
+		const res = await op('restore-dump', { key, confirm: key });
+		expect(res.status).toBe(200);
+		expect(res.body.suppressions_reapplied).toBe(4);
+		await runInDurableObject(primary(), (store: Store) => {
+			const db = store.db;
+			const suppressed = (alias: string) => {
+				const ref = findSource(db, 'yt', alias);
+				return ref === undefined ? undefined : getSource(db, ref)!.seedSuppressedAt > 0;
+			};
+			expect(['@objector', '@withdrawn', '@late'].map(suppressed)).toEqual([true, false, true]);
+			expect(db.all('SELECT alias FROM seed_entries')).toEqual([]);
+			// The next import of the list skips both objectors, and lists the channel whose objection was lifted.
+			listSeed(db, entry, ['@objector', '@withdrawn', '@late'], now);
+			expect(db.all('SELECT alias FROM seed_entries')).toEqual([{ alias: '@withdrawn' }]);
+			// The restore kept the audit rows written since the dump: who did what, to which source ID.
+			expect(db.all("SELECT actor_id, host, action, target, reason FROM audit_log WHERE action LIKE 'seeds_%' ORDER BY id")).toEqual(
+				[
+					['seeds_suppressed', refs[1]],
+					['seeds_suppressed', refs[0]],
+					['seeds_unsuppressed', refs[1]],
+					['seeds_suppressed', refs[2]]
+				].map(([action, ref]) => ({ actor_id: rae, host: 'admin', action, target: `src:${ref}`, reason: null }))
+			);
+			expect(JSON.stringify(db.all('SELECT * FROM audit_log')), 'no channel and no reason in the 400-day log').not.toMatch(/@objector|@withdrawn|@late|Article|withdrew/);
 		});
 	});
 

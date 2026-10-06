@@ -16,12 +16,12 @@ on:
       command:
         description: The ops command
         type: choice
-        options: [status, grant-role, pin-subject, import-seed, sign-config, drill, purge-cache, restore-dump, pitr-restore]
+        options: [status, grant-role, pin-subject, import-seed, revoke-seed, calibration-sample, calibration-export, sign-config, drill, purge-cache, restore-dump, pitr-restore]
       args:
         description: 'Arguments as a JSON object, for example {"email": "sam@example.com", "role": "curator"}. Staff and admin only until the first admin is made.'
         default: '{}'
       confirm:
-        description: 'Destructive commands only: pitr-restore needs args.at typed again, restore-dump args.key, purge-cache the word purge-cache'
+        description: 'Destructive commands only: pitr-restore needs args.at typed again, restore-dump args.key, revoke-seed args.seed, purge-cache the word purge-cache'
         default: ''
 
 permissions:
@@ -63,6 +63,7 @@ jobs:
           case "$COMMAND" in
           pitr-restore) expected=$(jq -r '.at // ""' <<<"$ARGS") ;;
           restore-dump) expected=$(jq -r '.key // ""' <<<"$ARGS") ;;
+          revoke-seed) expected=$(jq -r '.seed // ""' <<<"$ARGS") ;;
           purge-cache) expected=purge-cache ;;
           *) destructive=0 ;;
           esac

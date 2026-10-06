@@ -47,7 +47,9 @@ function fill(store: Store): void {
 		1_790_000_000
 	);
 	const ref = db.get<{ id: number }>("SELECT id FROM sources WHERE canonical_id = '@slopfarm'")!.id;
-	setYouTube(db, ref, { channelId: 'UCzzzzzzzzzzzzzzzzzzzzz1', handle: '@slopfarm', subscribers: 12_345, uploadsPerDay: 3 }, 1_790_000_000);
+	setYouTube(db, ref, { channelId: 'UCzzzzzzzzzzzzzzzzzzzzz1', handle: '@slopfarm' }, 1_790_000_000);
+	// Figures from before Colander stopped keeping any: API data, so never dumped.
+	db.run('INSERT INTO youtube_channels (source_id, subscribers, uploads_per_day, fetched_at) VALUES (?, 12345, 3, 1790000000)', ref);
 	db.run('UPDATE sources SET uploads_per_day = 0.1 + 0.2 WHERE id = ?', ref);
 	putSync(db, 'acc_1', 0, '{"a":"line\\nbreak","b":[1,2.5]}', 1_790_000_000);
 	db.run("INSERT INTO list_sequences (seq, created_at) VALUES (1790000000, 1790000000)");

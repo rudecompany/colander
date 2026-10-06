@@ -24,9 +24,11 @@ The Worker in `api/` serves that folder and the API from the same origin, so eve
 | `/account/invite#invite=` | Adds a reviewer's passkey with an invite, after an email sign-in | Prerendered shell |
 | `/account/cancel#<secret>` | Cancels a held request from its email link, when asked | Prerendered shell |
 | `/auth/callback?token=&next=` | Finishes a sign-in link mailed before codes, for one release | Prerendered shell |
-| `/console` | Review console for curators, after a passkey sign-in of the last 12 hours; staff get a link to the admin console | Prerendered shell |
-| `/admin`, `/admin/people`, `/admin/audit` | The admin console on the admin host: review with full authority, people and roles, invites, the audit log | Prerendered shell |
-| `/privacy`, `/terms` | Policies | Prerendered |
+| `/console` | Review console for curators, after a passkey sign-in of the last 12 hours; staff get a link to the admin console. Reviewers here see that seed lists name a lead, never which | Prerendered shell |
+| `/console/calibration` | Blind labeling of the calibration set, behind the same passkey sign-in, with curator authority | Prerendered shell |
+| `/admin`, `/admin/calibration`, `/admin/people`, `/admin/audit` | The admin console on the admin host: review with full authority (staff see which seed lists name a lead and can suppress them), the calibration set with third labels where two disagree, people and roles, invites, the audit log | Prerendered shell |
+| `/privacy`, `/terms` | Policies; the privacy page's Creators section lists where data about a source comes from | Prerendered |
+| `/credits` | The datasets whose license asks for credit, the one page that names a dataset | Prerendered from the seed registry by `+page.server.ts`, so the registry never reaches a page's JavaScript |
 
 `{platform}` is `yt`, `tt`, `ig` or `fb` (matched in `src/params.ts`); anything else is a 404.
 Support and donation links never appear on `/s/*` or `/appeal/*` pages, including the footer.
@@ -122,7 +124,9 @@ A shared fixture fails any test that logs a page error or a CSP violation.
 | `admin.spec.ts` | The admin console on the admin host: full-authority review with the public source page on the main host and no public API calls, a client-side route that goes on to the admin host, not staff, roles below one's own, invites shown once, the receipt-checked email change, the audit log as a table and, on phones, as entries |
 | `plans.spec.ts` | Yearly preselected, `503 billing_unavailable`, sign-in before checkout with the Free and Plus cards keeping one height, redirect, closed checkout, `409 already_subscribed`, the welcome page with its pairing code and its full-width sign-in button |
 | `support.spec.ts` | Donation body and redirect, custom amounts and limits, `503 billing_unavailable`, closed payment |
-| `console.spec.ts` | Keyboard queue, evidence, decision body and CSRF header, curator limits (large sources, appeals in review) and `403 staff_required`, AI evidence before Slop and `400 ai_evidence_required` |
+| `console.spec.ts` | Keyboard queue, evidence, decision body and CSRF header, curator limits (large sources, appeals in review) and `403 staff_required`, AI evidence before Slop and `400 ai_evidence_required`, seed provenance and suppression for staff on the admin host and only a count for curators |
+| `calibration.spec.ts` | A blind label posted with its language and kind and the next item shown, the empty set, the console's link to it, a 24-character channel ID on one line at 390 px, and staff labeling from the admin console's Calibration tab |
+| `credits.spec.ts` | `/credits` shows exactly the credits a fictional test registry (`tests/seed-registry.ts`, which the test build reads through `COLANDER_SEED_REGISTRY`) gives, in light and dark; the privacy page's Creators section; and no other file of the built site names a dataset by any of its names |
 | `a11y.spec.ts` | axe WCAG 2.2 A and AA rules on every page, light and dark |
 | `brand.spec.ts` | The vocabulary table's "Not" words and exclamation marks never appear, nothing is below 12 px (figure labels as rendered too), controls are at least 32 px, nothing spills out of a card |
 | `reflow.spec.ts` | No page scrolls sideways or spills out of a card at 390 and 320 px, the stat cells on the landing page and /transparency keep their labels inside at 1024 and 1100 px, and figure labels stay at 12 px and up |

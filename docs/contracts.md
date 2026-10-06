@@ -9,7 +9,7 @@ Behavior described in `docs/product-requirements.md` (the spec) is not repeated 
 
 | Path | What | Stack |
 | --- | --- | --- |
-| `packages/shared` | `@colander/shared`: verdict enums and words, signals, glyphs, the Colander theme (`colander.css`), Mittsu components, API types, and the list format, Ed25519 signing and canonical IDs (client and server halves, WebCrypto only) | TypeScript, Svelte 5 |
+| `packages/shared` | `@colander/shared`: verdict enums and words, signals, glyphs, the Colander theme (`colander.css`), Mittsu components, API types, the list format, Ed25519 signing and canonical IDs (client and server halves, WebCrypto only), and the seed source registry (section 14) | TypeScript, Svelte 5 |
 | `extension` | The MV3 browser extension, one codebase for Chrome, Edge, Brave, Opera and Firefox | WXT, Svelte 5, TypeScript |
 | `api` | `@colander/api`: every backend service in one Cloudflare Worker (list, tag, scoring, review, appeals, public API, accounts, billing), with one SQLite Durable Object, `Store`, as the database and R2 for the signed list and the backups | TypeScript, Cloudflare Workers |
 | `web` | Public website, account pages and the review console, built static and served by the Worker as its static assets | SvelteKit (adapter-static), Svelte 5, Mittsu |
@@ -313,15 +313,18 @@ A report's status follows its source: it stays `under_review` until a reviewer d
 
 `verdict` is `null` when the source is known but not rated. Fields without data are `null`.
 A lookup by any alias returns the same source.
-`audience_known` is `true` once staff have recorded the source's size (the `large` decision field, 6.7), or, only with `YOUTUBE_DERIVED_USE` (9.7), when the YouTube Data API reported a subscriber count; `large` is then the recorded answer.
+A source that only seed lists or the calibration set brought in (no verdict, tags, reports, appeals, decisions, items or log rows) answers `404 not_rated` too, with the same body as an unknown source, so no public answer can tell that a list names it.
+`POST /v1/appeals` (6.5) answers such a source the same way.
+`audience_known` is `true` once staff have recorded the source's size (the `large` decision field, 6.7); `large` is then the recorded answer. No YouTube Data API figure sets either (9.7).
 While it is `false`, the size is not known and `large` is `false`.
 
 Public pages never name a data source, and never show YouTube Data API data:
-- `imported` is always `false` and `attribution` always `null`. Both stay in the wire format for older clients and are deprecated. Seed lists are review leads only (9.3), so nothing public depends on them. The review API fills both in for reviewers (6.7).
+- `imported` is always `false` and `attribution` always `null`. Both stay in the wire format for older clients and are deprecated. Seed lists are review leads only (9.3), so nothing public depends on them. The review API fills in `imported` for reviewers and `attribution` for staff (6.7).
 - `evidence.uploads_per_day` is always `null`.
 - `name` comes from viewers' reports, never from the YouTube Data API, so it is `null` until someone reports the source.
 
-The decision log never names a data source either: reasons the scoring service writes never mention seed lists, and reviewers cannot publish a reason or reasoning that names one (6.7).
+The decision log never names a data source either: reasons the scoring service writes never mention seed lists, and reviewers cannot publish a reason or reasoning that names one, imported or only in the registry, by name or ID (6.7).
+The one public page that names datasets is `/credits` (14.3).
 Log entries written before this rule were rewritten, and staff keep the original text internally: where the scoring service's reason named a seed list it now says "It met a rule Colander no longer uses", and a list's name in a reviewer's or an appeal's words reads `[withheld]`.
 When a list is imported, its name is withheld the same way wherever the log already holds it.
 
@@ -353,11 +356,11 @@ When a list is imported, its name is withheld the same way wherever the log alre
 
 | Request | Auth | Effect |
 | --- | --- | --- |
-| `POST /v1/appeals` `{"platform","source_id","email","statement"}` | none, 5 per IP per day | Creates an appeal. `201` `{"appeal": Appeal, "secret": "..."}`. The secret lets the creator check status and verify. It is also emailed as a link. |
+| `POST /v1/appeals` `{"platform","source_id","email","statement"}` | none, 5 per IP per day | Creates an appeal. `201` `{"appeal": Appeal, "secret": "..."}`. The secret lets the creator check status and verify. It is also emailed as a link. An unknown source, or one only seed lists or the calibration set brought in, gets `404 not_rated` "Colander has no information about this source."; a known source without a verdict gets `404 not_rated` "This source has no verdict to appeal." |
 | `GET /v1/appeals/{id}?secret=` | secret | `{"appeal": Appeal}` |
 | `POST /v1/appeals/{id}/verify` `{"secret"}` | secret | Checks for the code on the account. YouTube is checked through the Data API when a key is configured and the day's budget allows (9.7), at most 10 times per appeal and 30 times per IP an hour. Otherwise the appeal moves to `pending_manual` for staff. |
 | `POST /v1/review/appeals/{id}/verify` | staff | Staff confirm the code is on the account |
-| `POST /v1/review/appeals/{id}/resolve` `{"outcome": "upheld" \| "denied", "reasoning"}` | staff | Upheld sets Clear. Denied restores the scored verdict. Both write the decision log, so `reasoning` that names an imported seed list gets `400 source_named`. |
+| `POST /v1/review/appeals/{id}/resolve` `{"outcome": "upheld" \| "denied", "reasoning"}` | staff | Upheld sets Clear. Denied restores the scored verdict. Both write the decision log, so `reasoning` that names a seed list gets `400 source_named` (6.7). |
 
 ```json
 {
@@ -401,7 +404,7 @@ There are no passwords and no emailed sign-in links.
 | `GET /v1/account/passkeys` | `{"passkeys": [{"id", "name", "created_at", "last_used_at", "synced"}], "current"}`, `current` the passkey this session signed in with |
 | `POST /v1/account/passkeys/options`, `POST /v1/account/passkeys` `{"credential", "name"}` | Adds a passkey (`201` `{"passkey"}`), at most 10 per account (`409 too_many_passkeys`), with an email notice. A member needs a sign-in from the last 10 minutes, with a passkey once the account holds one; a curator, staff member or admin only from a passkey sign-in of that account (`403 passkey_required` with only a code; their first passkey comes from an invite, `403 invite_required`). Registration challenges use the passkey cookie too. |
 | `DELETE /v1/account/passkeys/{id}` | Removes a passkey after a passkey sign-in of the last 10 minutes, with an email notice. Sessions that signed in with it count as email sign-ins from then on. |
-| `GET /v1/account/export` | Everything kept about the account as a JSON attachment: the account, passkeys (name, dates, whether synced), session dates, the reviewer token's dates, the subscription summary, the synced settings, the decisions it authored, waiting requests, its recent pairing codes (kind, times, browser and version, never the code) and its audit events. |
+| `GET /v1/account/export` | Everything kept about the account as a JSON attachment: the account, passkeys (name, dates, whether synced), session dates, the reviewer token's dates, the subscription summary, the synced settings, the decisions it authored, its calibration labels (14.5, never the frame that sampled the source), waiting requests, its recent pairing codes (kind, times, browser and version, never the code) and its audit events. |
 | `DELETE /v1/account` | Ends Plus and deletes the account (6.8). `204`, and the session cookie is cleared. Staff and admin accounts are never deleted (`403 staff_account`): an admin lowers the role on the admin host first. |
 | `POST /v1/account/requests` `{"kind", "passkey_id"?}`, `DELETE /v1/account/requests/{id}` | Held requests, below |
 | `DELETE /v1/account/reviewer-token` | Disconnects the side panel and ends an unused reviewer code. A reviewer token comes only from a reviewer pairing code (section 7). |
@@ -431,6 +434,7 @@ A staff or admin account cannot ask for deletion (`403 staff_account`), and a de
 Then deletions and passkey removals run on their own, and a held export may be downloaded after a code sign-in of the last 10 minutes for 7 days.
 
 Every sign-in, credential change, role change, staff action and read of personal data writes the audit log (6.9).
+The one exception is a staff read of which seed lists name a source: `seed_provenance_reads` (6.7) records it for 24 months, longer than the audit log, and since it names the channel it stays out of the audit log; a restore loses its rows written after the restore point.
 In dev mode (`COLANDER_DEV=1`) codes and other mail are printed in the `wrangler dev` output instead of emailed.
 
 ### 6.7 Review (curators and staff)
@@ -443,9 +447,12 @@ Curators may decide sources that are not large and items; large sources and appe
 
 | Request | Returns |
 | --- | --- |
-| `GET /v1/review/queue?kind=all\|reports\|appeals\|escalations&cursor=` | `{"items": [QueueItem], "next_cursor"}` ordered by priority then age |
-| `GET /v1/review/sources/{platform}/{source_id}` | `{"source": Source, "layers": Layers, "reports": [ReportDetail], "appeals": [Appeal], "items": [ItemSummary], "history": [LogEntry]}`. Unlike the public page, `source.imported` is true when a seed list names the source, and `source.attribution` then names the list, its license and the list kind, for example `Example List (CC0-1.0), blocklist`. |
-| `POST /v1/review/sources/{platform}/{source_id}/decision` | Body `{"verdict": Verdict \| "none", "reason", "signals": [Signal], "slop_type", "tests", "large": bool?}`. Writes the log and publishes. Slop and Likely slop need AI evidence: `400 ai_evidence_required` unless the provenance layer is met or the body records a provenance signal. Curators get `403 staff_required` for large sources and for sources with an appeal in `pending_manual` or `under_review`. A reason that names an imported seed list gets `400 source_named`, as does appeal `reasoning` (6.5). |
+| `GET /v1/review/queue?kind=all\|reports\|appeals\|escalations\|leads&cursor=` | `{"items": [QueueItem], "next_cursor"}` ordered by priority then age. `leads` lists only seed leads, and `escalations` includes them all; `all` includes only the priority-3 ones that something backs, so thousands of leads do not bury the reports. |
+| `GET /v1/review/sources/{platform}/{source_id}` | `{"source": Source, "seed_lists": n, "layers": Layers, "reports": [ReportDetail], "appeals": [Appeal], "items": [ItemSummary], "history": [LogEntry]}`, and with staff authority (the admin host) also `"seeds": [SeedProvenance]` and `"seed_suppression": {"at", "reason"} \| null`. Unlike the public page, `source.imported` is true when a live seed list entry (14.4) names the source, and `seed_lists` counts those lists for every reviewer. Only staff authority learns which lists: `source.attribution` then names each with its license and use, for example `Example List (CC0-1.0), lead`, and is `null` with curator authority, which is all getcolander.com and a reviewer token give, also to staff. Each read that shows a staff account any `seeds` is recorded in `seed_provenance_reads` (account, source, registry IDs, time), never shown, and deleted after 24 months. |
+| `POST /v1/review/sources/{platform}/{source_id}/decision` | Body `{"verdict": Verdict \| "none", "reason", "signals": [Signal], "slop_type", "tests", "large": bool?}`. Writes the log and publishes. Slop and Likely slop need AI evidence: `400 ai_evidence_required` unless the provenance layer is met or the body records a provenance signal. Curators get `403 staff_required` for large sources and for sources with an appeal in `pending_manual` or `under_review`. A reason that names a seed list Colander imported, or any registry dataset by any of its names (14.3), gets `400 source_named`, as does appeal `reasoning` (6.5). |
+| `POST /v1/review/sources/{platform}/{source_id}/suppress-seeds` `{"reason", "lift": bool?}` | Staff authority only, so the admin host only (`403 staff_required` elsewhere). Suppresses seed lists on the source, for an objection under GDPR Article 21 or a case staff closed: its seed entries and calibration item are deleted, and no import or sample takes it again. `"lift": true` lifts it. `reason` (1 to 500 characters) is for staff and never published. Answers the review source. |
+| `GET /v1/review/calibration/next` | `{"item": CalibrationItem \| null}`: the next calibration item this reviewer has not labeled (14.5). Staff authority (the admin host) also gets items whose two labels disagree, for a third. |
+| `POST /v1/review/calibration/{platform}/{source_id}/label` `{"label", "tests", "evidence", "note"?, "language"?, "kind"?}` | Records this reviewer's label and answers the next item as above. `label` is `slop`, `ai_not_slop`, `not_ai`, `gone` or `unsure`; `tests` (low_effort, mass_produced, hollow) go with `slop` only; `evidence` holds the provenance signals the labeler saw on the platform; `note` is at most 500 characters. Every label but `gone` and `unsure` needs `language`, one of `CALIBRATION_LANGUAGES` in `packages/shared/src/api.ts` (`en`, `es` and so on, `other`, or `none` for no words), and `kind`, `music` or `video` (`400 invalid_language`, `400 invalid_kind`); `gone` and `unsure` record neither. `404 not_in_calibration`, `409 already_labeled`. |
 | `POST /v1/review/items/{platform}/{item_id}/decision` | Same body plus `"source_id"` |
 | `POST /v1/review/reports/{id}/dismiss` `{"reason"}` | Closes a report with no verdict change |
 
@@ -462,12 +469,32 @@ Curators may decide sources that are not large and items; large sources and appe
   "large": false,
   "verdict": "likely_slop",
   "computed_verdict": "slop",
-  "report_count": 3
+  "report_count": 3,
+  "lead": false
 }
 ```
 
-`kind` is `report`, `appeal` or `escalation`. Escalations are raised by the scoring service (section 9).
-Priority 1 is an appeal, or an appeal escalation; 2 is any other escalation except a seed lead; 3 is a report; 4 is a seed lead (9.5). A large source moves up by one, never above 1.
+`kind` is `report`, `appeal` or `escalation`. Escalations are raised by the scoring service (section 9); `lead` is true for a seed lead, an escalation of its own kind (9.5), whose summary counts the seed lists and never names one, for example `Seed lead on 2 seed lists, not evidence`.
+Priority 1 is an appeal, or an appeal escalation; 2 is any other escalation except a seed lead; 3 is a report, or a seed lead backed by an open report, a slop tag or a calibrated `seed` list that names its YouTube channel ID; 4 is any other seed lead. A large source moves up by one, never above 1.
+
+```json
+{
+  "seed": "example-list",
+  "name": "Example List",
+  "license": "CC0-1.0",
+  "use": "lead",
+  "platform": "yt",
+  "alias": "@somechannel",
+  "batch": 3,
+  "imported_at": "...",
+  "listed_at": "...",
+  "expires_at": "...",
+  "note": null
+}
+```
+
+`SeedProvenance` is one live seed entry: the registry entry, the ID as the file listed it, the import batch, when that batch ran, the upstream date of the file (from which expiry counts), when the entry stops being a lead, and `note`, where staff saw the source for Colander's own lists (14.1), otherwise `null`.
+`CalibrationItem` is `{"platform", "source_id", "labels"}`: only what a labeler needs to find the source on its platform, and how many labels it has; never its verdict, tags or seed lists.
 `Layers` is `{"provenance": Layer, "behavior": Layer, "rubric": Layer, "consensus": Layer}` with `Layer = {"met": bool, "signals": [Signal], "detail": "Plain sentence"}`.
 
 ### 6.8 Billing and entitlements
@@ -503,7 +530,7 @@ A donor's credit is changed or cleared on request by an admin, by the Checkout S
 
 Deleting an account (`DELETE /v1/account`) settles billing first: a running Plus ends at once, its latest charge is refunded when it is still refundable, and every Stripe customer of the account is deleted (Stripe keeps what tax law requires).
 Without Stripe keys an account that ever subscribed cannot be deleted (`503 billing_unavailable`), so nothing is deleted half way.
-Then, in one transaction, the account goes with its sessions, passkeys, flows, reviewer token, pairing codes, held requests and subscriptions; its synced settings go; its decisions and log entries keep no name, so the log shows a former reviewer; and an `account_deleted` audit row remains.
+Then, in one transaction, the account goes with its sessions, passkeys, flows, reviewer token, pairing codes, held requests and subscriptions; its synced settings and calibration labels go; its decisions and log entries keep no name, so the log shows a former reviewer; and an `account_deleted` audit row remains.
 An erasure record in the backup bucket makes a later restore of a dump or of an earlier point in time delete the account again before anything else.
 Later Stripe webhooks for the account are ignored as belonging to an unknown account.
 `DELETE /v1/install` (Install) erases what the server holds for one install: its tags, reports, trial and the trial's synced settings; the sources they touched are scored again.
@@ -519,6 +546,7 @@ There are four roles in one column, with a fixed permission table in code (`api/
 | Checkout, cancel, refund, plan tokens | yes | yes | yes | yes | Main host, session |
 | Review queue and source detail; decide items and sources that are not large; dismiss reports | - | yes | yes | yes | Main host with a fresh passkey session or a reviewer token; the admin host |
 | Decide large sources, set the large flag, verify and resolve appeals | - | - | yes | yes | Admin host only |
+| See which seed lists name a lead, with their provenance; suppress seed lists on a source; give the third calibration label | - | - | yes | yes | Admin host only |
 | People list; grant or revoke curator; issue curator passkey invites | - | - | yes | yes | Admin host only |
 | Grant or revoke staff; invite staff and admins; end every credential of an account; change a member's email | - | - | - | yes | Admin host only |
 | Change supporter credit, read the audit log | - | - | - | yes | Admin host only |
@@ -557,6 +585,7 @@ Triggers refuse any update and any delete of a row younger than 400 days; a rest
 Every day its new rows are copied to `audit/` in the backup bucket, under a 400-day bucket lock.
 A point-in-time restore copies the rows first, its own `ops:pitr-restore` row included, and after the restart puts back from `audit/` every row written after the restore point.
 After either restore every session, reviewer token, unused pairing code and sign-in flow ends, and what the rows written after the restore point took away goes again: passkeys of revoked accounts and moved addresses, removed passkeys and those a sign out everywhere took (its row names the passkey it kept), lowered roles, A3T subject pins, and cancelled or refused held requests; a raised role is not raised again.
+Seed list suppressions and lifts are repeated from their own records (14.4).
 It names members by account ID, never by address: a people search records the IDs it found, and an email change a short hash of each address (`sha256:` and 16 hex digits of SHA-256 over `audit:` and the address), so no member's address outlives their account in it.
 
 ## 7. Website and extension handoff
@@ -618,16 +647,17 @@ Plan, payment and donation state are never inputs.
 ### 9.3 Layers
 
 - Provenance (AI evidence) is met when any holds: at least 2 distinct installs reported `platform_label` on the target (for a source that is not mixed, on any of its items); staff recorded `platform_label`, `content_credentials`, `creator_statement` or `watermark`; or community AI consensus: `S + A >= 3`, `n >= 3` and `(S + A) / T >= 0.7`.
-- Behavior (sources; items inherit their source's) is met when any holds: `ai_item_share >= 0.8` over at least 5 items seen with evidence (Kagi's 80% rule, emitted as `mostly_ai`), where an item counts as AI-made only through independent evidence (platform label reports from 2 or more installs, or a reviewer decision), never through community AI consensus, so tags alone cannot make a source look mass-produced; staff recorded `high_volume`, `templated`, `near_duplicates`, `link_funnel` or `cross_posting`; or, only with `YOUTUBE_DERIVED_USE` (9.7), uploads per day of at least 10 from the YouTube Data API.
+- Behavior (sources; items inherit their source's) is met when any holds: `ai_item_share >= 0.8` over at least 5 items seen with evidence (Kagi's 80% rule, emitted as `mostly_ai`), where an item counts as AI-made only through independent evidence (platform label reports from 2 or more installs, or a reviewer decision), never through community AI consensus, so tags alone cannot make a source look mass-produced; or staff recorded `high_volume`, `templated`, `near_duplicates`, `link_funnel` or `cross_posting`. No YouTube Data API figure is an input (9.7).
 - Rubric is met when, among slop tags with `S >= 1`, at least two of the three tests are each selected by a weighted share of 0.5 or more. `mass_produced` also counts as selected when Behavior is met. Emits `rubric_low_effort` and `rubric_hollow` where they pass.
 - Consensus for slop: `S >= 3`, `n >= 3`, `S / T >= 0.7`, and the source is not frozen by burst detection. Emits `community_consensus`.
 - Not-slop consensus: `N >= 3` and `N / T >= 0.7`. Emits `not_slop_consensus`.
 - Split: `S >= 2`, `N + A >= 2` and `0.3 <= S / T <= 0.7`.
 
-An entry on an imported seed list is a review lead, never evidence: it meets no layer, and on its own it never gives a verdict or a list entry.
+An entry of a seed list (section 14) is a review lead, never evidence: it meets no layer, and on its own it never gives a verdict or a list entry.
 A source with community or staff evidence gets exactly the verdict that evidence gives without the seed list.
 The lead only puts the source in the review queue (9.5).
 Imports from before the license check, which took lists of any license, were cleared: for audits, staff keep only each list's name, license, entry count and a hash of the cleared IDs.
+Imports from before the seed registry (migration 8) raise no lead either; only registry entries in `seed_entries` do.
 
 ### 9.4 Verdict, first rule that matches wins
 
@@ -636,7 +666,7 @@ Imports from before the license check, which took lists of any license, were cle
 3. Not-slop consensus: Clear.
 4. No provenance: not rated (no list entry).
 5. Split: Disputed.
-6. Provenance, Behavior and Consensus all met: Slop, except that it is capped at Likely slop and raises an escalation when the source is large, or when its audience size is unknown (staff never recorded its size, and, with `YOUTUBE_DERIVED_USE` only, the YouTube Data API reported no subscriber count). Only a reviewer can then make it Slop. Without `YOUTUBE_DERIVED_USE`, every source whose size staff have not recorded stays at Likely slop until a reviewer decides.
+6. Provenance, Behavior and Consensus all met: Slop, except that it is capped at Likely slop and raises an escalation when the source is large, or when its audience size is unknown (staff never recorded its size). Only a reviewer can then make it Slop, so every source whose size staff have not recorded stays at Likely slop until a reviewer decides.
 7. Provenance and (Behavior or Rubric), with `S >= 1`: Likely slop.
 8. Provenance only: AI-made.
 
@@ -648,9 +678,9 @@ Signals on a list entry are the union of the signals that fired for the layers t
 ### 9.5 Expiry, escalations and brigading
 
 - Every list verdict carries `rescore_at = changed_at + 90 days`. At expiry, staff and curator decisions lapse and the target is scored again; if the result is Slop it becomes an escalation and stays Likely slop until reviewed.
-- An escalation is raised when: rule 6 is capped; 3 or more open reports exist on a source; a burst is detected; a verdict lapses into Slop; a seed list imported with `import-seed` names a source no reviewer has decided yet (a seed lead, the lowest priority in the queue). A reviewer's decision on the source closes the seed lead for good.
+- An escalation is raised when: rule 6 is capped; 3 or more open reports exist on a source; a burst is detected; a verdict lapses into Slop; a live entry of a cleared lead or seed list (14.4) names a source that no reviewer has decided and on which staff have not suppressed seed lists (a seed lead). A reviewer's decision on the source closes the seed lead for good, and so do the entry's expiry, its list losing its clearance, and a suppression.
 - Burst: more than 20 slop tags in one hour on one source from installs younger than 7 days. The consensus layer of that source is frozen for 72 hours and an escalation is raised.
-- A source is large when staff set `large`, or, only with `YOUTUBE_DERIVED_USE` (9.7), when the YouTube Data API reports 100,000 subscribers or more. A source whose audience is unknown is treated like a large one for rule 6 only, and is not shown as large.
+- A source is large when staff set `large`; no subscriber count decides it (9.7). A source whose audience is unknown is treated like a large one for rule 6 only, and is not shown as large.
 - The scoring pass runs every 5 minutes and, debounced by 5 seconds, after any review decision, appeal change or report.
 - Every verdict change writes a decision log entry. Changes made by the scoring pass use actor `community` and a reason generated from the signals.
 
@@ -665,18 +695,18 @@ Dev mode has no edge analytics, so there the Worker counts the requests itself.
 
 The Worker follows the YouTube API Services Developer Policies:
 - Retention: figures and responses obtained with the API key alone are never kept 30 days.
-  Responses are not cached, so the per-channel figures are dated by the call that returned them; the hourly prune deletes them once they are 29 days old, and a source still needed is looked up again after 20 days.
+  Responses are not cached, and a lookup keeps no figure; the hourly prune deletes per-channel figures that older code wrote once they are 29 days old, and a source still needed is looked up again after 20 days.
   Dumps create that table but hold none of its rows, so no backup keeps the figures.
   Dumps taken before migration 5 did hold API data: restoring one runs that migration's data changes on its rows again, and the runbook deletes them (deploy.md, "Dumps from before migration 5").
 - Identifiers: a lookup links the channel ID and handle it returns to the source as aliases, and the channel ID becomes its canonical ID.
   The next lookup refreshes them, but they are not deleted: they are dumped, published in a source's `id` and `aliases`, and listed, until counsel confirms whether identifiers found through the API may be kept and shipped.
 - Names: the API's channel title is never stored. Source names and the decision log's `source_name` come from viewers' reports.
-- Derived metrics: subscriber counts and uploads per day feed scoring (Behavior's `high_volume`, `large` and a known audience) only when `YOUTUBE_DERIVED_USE` is `1`, which needs YouTube's approval first. Off, uploads per day is never computed and no figure is stored; a lookup only links a channel ID and its handle.
+- Derived metrics: none. A lookup asks for the channel's snippet only and links its channel ID and handle; no subscriber count or uploads per day is fetched, stored, scored or published, and no setting changes that.
 - Quota: every call is charged to a ledger of the Pacific date (YouTube resets quotas at midnight Pacific Time) with its unit cost before it is made, failed calls included, and no call is made once the day's charges would pass `YOUTUBE_DAILY_UNITS`.
   When YouTube answers `quotaExceeded`, the day counts as used up.
   Production and staging use one Google Cloud project and each keeps its own ledger, so their budgets together stay at 8,000 of the project's 10,000 units.
   A restore keeps the larger count of each day, so units spent stay spent.
-- Rate: each scoring pass looks up at most 10 channels, and background lookups stop once the day's charges reach 80% of the budget, which keeps the rest for appeal checks: with derived use a lookup can cost 21 units.
+- Rate: each scoring pass looks up at most 10 channels, and background lookups stop once the day's charges reach 80% of the budget, which keeps the rest for appeal checks: a lookup costs 1 unit.
   A channel that fails is logged and waits for its next refresh while the others go on; a used-up share ends the lookups until the next Pacific day.
   Appeal checks fall back to staff when the whole budget is used up.
 
@@ -704,7 +734,6 @@ The client address always comes from `CF-Connecting-IP`.
 | `RESEND_API_KEY` | secret, optional | unset | Resend, the fallback when the Email Sending binding fails |
 | `YOUTUBE_API_KEY` | secret, optional | unset | YouTube lookups (channel ID and handle) and automatic appeal verification (9.7) |
 | `YOUTUBE_DAILY_UNITS` | var | `8000`; `api/wrangler.jsonc` sets `7000` in production and `1000` in staging | YouTube Data API units the Worker may spend per Pacific day. Both environments share one project's 10,000, so their values add up to 8,000 at most (9.7). |
-| `YOUTUBE_DERIVED_USE` | var | empty, which is off | `1` lets subscriber counts and uploads per day feed scoring. Set it only after YouTube approves Colander's derived metrics (9.7). |
 | `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` | secret, optional | unset | Billing. Without them billing routes answer `503 billing_unavailable`. |
 | `STRIPE_PRICE_PLUS_MONTHLY`, `STRIPE_PRICE_PLUS_YEARLY` | var | empty | Price IDs of the Plus prices; checkout answers `503 billing_unavailable` until they are set |
 | `STRIPE_MANAGED_PAYMENTS` | var | empty, which is on | Plus checkout with Stripe Managed Payments as merchant of record. `0` turns it off. |
@@ -750,3 +779,91 @@ One entry, `yt:s:@catrescuetales`, sets flag bit 5 (`imported`), as lists publis
 The TypeScript encoder in `packages/shared/src/list.ts`, which the Worker publishes with, is the byte-for-byte reference: it must reproduce `list-snapshot.bin` and `list-delta.bin` from `list-expected.json`.
 The signers in `packages/shared/src/signing.ts` must reproduce `config-envelope.json` and `plan-token.txt`, and the decoders the Worker and the extension use must verify and decode all fixtures.
 Never edit the fixtures by hand; change the generator and rerun it.
+
+## 14. Seed sources
+
+Outside datasets reach Colander only through the seed registry, `packages/shared/src/seed-registry.json`.
+Its shape is `packages/shared/src/seed-registry.schema.json`; its rules are `validateEntry` in `packages/shared/src/seeds.ts`, which CI runs through `scripts/check-seeds.ts` and the Worker runs again before every import.
+The Worker bundles the registry; the website reads it only to prerender `/credits`; the extension never reads it.
+
+### 14.1 Entries
+
+| Field | Meaning |
+| --- | --- |
+| `id` | Stable ID, 3 to 63 lowercase letters, digits and dashes. Also the key `seeds/<id>.json` of its object in the private backup bucket. |
+| `name`, `homepage` | The dataset's own name and page, as `/credits` shows them |
+| `aliases` | Other names people know the dataset by, each at least 4 characters, such as a short name or its domain; at least one for a third-party dataset (14.3) |
+| `platforms` | The platforms read from the file; a `lines` file holds one |
+| `license`, `license_url`, `attribution` | SPDX identifier (or `LicenseRef-written-grant`, `LicenseRef-Colander-internal`), its URL, and the exact credit the license requires, `null` when it requires none |
+| `collection`, `scraped` | How the maintainer collected the list, citing their README or a statement from them, and whether it was scraped from a platform (`null` until they have said) |
+| `use` | `lead`, `seed` or `frame` (14.2) |
+| `format` | `lines` (one ID per line; `!` and `#` start comment lines; for Colander's own lists, `LicenseRef-Colander-internal`, the ID needs a note after it of where staff saw it, kept for staff, and a line without one is skipped; other lists' notes are ignored), `ubo` (uBlock Origin or Adblock Plus rules; every YouTube channel ID in a rule; a rule that names a channel only by handle is excluded, since a handle can pass to another owner, and `[Adblock Plus 2.0]` headers are comments) or `soul-over-ai` (Soul Over AI's artist JSON array; only artists whose own disclosure is `full`, never removed ones) |
+| `sha256` | Hex SHA-256 of the file text the owner cleared; every import must match it |
+| `upstream` | The upstream version imported (`ref`, a commit or version) and its date, from which expiry counts |
+| `expires_after_days` | An entry stops being a lead this many days after the upstream date of the batch that last listed it, 1 to 730 |
+| `calibration` | `{"report": "YYYY-MM-DD", "groups": [{"group", "n", "ai", "slop"}]}`, blind label counts from `scripts/calibration-report.ts`; required for `seed` |
+| `dev_only` | Fictional data for `make dev` and tests: usable only with `COLANDER_DEV=1`, never cleared, licensed `LicenseRef-Colander-internal` |
+| `clearance` | `{"status": "pending" \| "cleared" \| "refused" \| "revoked", "by", "at"}`; only the owner clears |
+
+The registry is public, like the repository: it never holds a list, the clearance records or notes on refused lists.
+Those live in the private bucket (14.4).
+
+### 14.2 Rules
+
+- Only `CC0-1.0`, `CC-BY-4.0`, `MIT`, `LicenseRef-written-grant` and `LicenseRef-Colander-internal` can be cleared.
+  Non-commercial, no-derivatives, share-alike, GPL and unlicensed lists never are.
+- `CC-BY-4.0` and `MIT` need `attribution`; every other license but `LicenseRef-written-grant` takes none, so `/credits` names only datasets whose license asks for credit; a public license needs `license_url`.
+- A third-party dataset needs at least one alias.
+- `cleared` needs `by` in `SEED_OWNERS` (the owner's GitHub login, `slantview`), `at`, `sha256`, `upstream.date`, and `scraped: false`.
+- `lead`: the entries put their sources in the review queue as seed leads (9.5).
+  Every new dataset starts here.
+- `seed`: a lead list that passed blind calibration in every group it reports: at least 100 labeled sources overall and 30 per group, with 95% Wilson lower bounds of 0.90 on the share that is AI-made and 0.80 on the share that is slop (`CALIBRATION` in `seeds.ts`), and expiry within 180 days of its upstream date.
+  The block needs the group `all` and at least one group of each kind the report writes, by platform, audience, language and music or video (`CALIBRATION_GROUPS`), copied whole from the report: a list stays `lead` until it has them all.
+  Its leads rank with reports (6.7).
+  It is still never evidence and never gives a verdict.
+- `frame`: a sampling pool for the calibration set (14.5).
+  It is never imported as leads and never evidence.
+- Changes need the owner.
+  `.github/CODEOWNERS` gives the registry, `seeds.ts`, `scripts/check-seeds.ts`, `.github/workflows/seed-guard.yml` and itself to `@slantview`.
+  `scripts/check-seeds.ts` fails any change to a cleared entry, to a clearance, to an entry added or taken out other than as pending, to `SEED_OWNERS`, or to any of those files but the registry, unless the GitHub actors are owners as the base commit listed them.
+  The `api` job runs it on every push and pull request; the required `seed-guard` check (`seed-guard.yml`, on `pull_request_target`) runs the base branch's copy of the checker and its rules against the pull request's commit, so a pull request cannot change the check that judges it, and needs both its author and its last pusher to be owners.
+- The same check fails when any file in the repository is a byte-for-byte copy of a registered list.
+- It also fails unless `.github/dependabot.yml` excludes `seed-guard.yml`, so no Dependabot pull request touches an owner-only file; the owner bumps its pins by hand.
+
+### 14.3 Credits
+
+`/credits` names exactly the cleared, third-party entries whose license asks for credit (`credits()` in `seeds.ts`), with the exact `attribution` text and links to each dataset and license, and says what Colander changes.
+It prerenders from the registry, so the deploy that carries a clearance also carries its credit, before any import can run.
+No other page or file of the website names a dataset, and neither does the extension; tests scan both builds for every name of every third-party dataset, `datasetNames()` in `seeds.ts`: its name, ID, aliases, homepage and, on GitHub, the owner and repository there.
+The same names are what `400 source_named` (6.7) refuses in the decision log, for every registry entry, and what an import withholds from the log.
+The website's tests build with a fictional registry (`web/tests/seed-registry.ts`), so `/credits` renders a dataset's card in them.
+The extension's about text (Options, Privacy) says where the list comes from and links to `/credits`.
+
+### 14.4 Imports, expiry, revocation and suppression
+
+The private object `seeds/<id>.json` in the environment's backup bucket is `{"file": "<the list text>", "records": {"dpia", "lia", "permission_doc"}}`: the cleared file, and where the data protection impact assessment, the legitimate interest assessment and, for a written grant only, the grant are kept.
+
+| Ops command | Body | Effect |
+| --- | --- | --- |
+| `import-seed` | `{"seed", "apply": bool?}` | Checks the entry: in the registry and valid (`404 unknown_seed`, `409 seed_invalid`), cleared (`409 seed_not_cleared`; a `dev_only` entry only in dev mode), not a frame (`409 seed_is_frame`); then the object: present (`404 no_seed_object`), its file matching `sha256` (`409 seed_hash_mismatch`), its records there (`409 records_required`). It reads the file by `format` and answers the change: `entries`, `by_platform`, `added`, `kept`, `dropped`, `suppressed`, `skipped`, `excluded`. Without `"apply": true` nothing is written. With it, one transaction records the batch in `seed_imports`, lists every entry in `seed_entries` with the upstream date, deletes the dropped ones and the sources only they made, and withholds the list's name wherever the public log holds it; a scoring pass then raises the leads. |
+| `revoke-seed` | `{"seed", "reason", "confirm"}`, `confirm` equal to `seed` | Deletes every entry of the seed at once and every calibration item sampled from it as `seed:<id>` or `random:<id>`, with their labels, marks its batches revoked with the reason, deletes the sources only they made, starts a scoring pass, and deletes `seeds/<id>.json` from the private bucket. Answers `entries`, `sampled`, `sources` and `file`, `deleted` or `kept` when the bucket refused. The reason appears in the public run log: it never names a creator or holds legal advice. |
+
+An entry is live, and raises a lead, while its registry entry is usable (cleared, or `dev_only` in dev mode), its use is `lead` or `seed`, and its upstream date plus `expires_after_days` lies ahead.
+The daily `seeds` job at 04:00 UTC deletes the entries that are not live (expired, or their list lost its clearance in a deploy), every calibration item sampled from an entry that is withdrawn (gone from the registry, or not usable: refused, revoked or no longer cleared, as opposed to expired), the sources only they made, and staff provenance reads (6.7) older than 24 months, and starts a scoring pass; until it runs, leads already check liveness when they are read.
+Staff suppress seed lists on a source with `suppress-seeds` (6.7): an import skips it, and its entries and calibration item go.
+Each suppression and lift is first recorded as its own object under `objections/` in the backup bucket, naming the channel by every alias of the source, under a 7-day bucket lock and deleted after 120 days, and is audited as `seeds_suppressed` or `seeds_unsuppressed` with the target `src:<source ID>`, never the channel or the reason.
+After a restore of a dump or of an earlier point in time, the Worker repeats every record in order before it publishes; a suppressed channel that the restored data lacks gets a source of its own, so no import lists it again.
+Answers carry counts and the registry ID only, never a channel: the ops run log is public.
+Like every seed list command, these run from the Ops workflow alone (`docs/deploy.md`, "The ops channel").
+
+### 14.5 The calibration set
+
+| Ops command | Body | Effect |
+| --- | --- | --- |
+| `calibration-sample` | `{"frame", "n"}`, `n` 1 to 1,000 | Adds up to `n` random sources to `calibration_items` from `seed:<id>` (a live lead or seed list's entries), `community` (sources with tags or reports) or `random:<id>` (a cleared frame's object, read like an import). Sources already sampled or suppressed are left out. Answers `sampled` and `available`. |
+| `calibration-export` | `{}` | Writes every item with its labels (with their language, kind and staff note), current verdict, computed verdict and seed lists to `calibration/<time>.json` in the private backup bucket and answers only the key and counts. |
+
+Curators and staff label each item blind through `/console/calibration` (6.7): two labels each, and staff settle a disagreement with a third through `/admin/calibration` on the admin host.
+`scripts/calibration-report.ts` reads an export and prints, per frame and per group (all, each platform, the audience size staff recorded, each language, and music or video, each settled on what most labelers recorded), the counts and Wilson lower bounds, Cohen's kappa between the first two labelers, and the computed verdicts against the settled labels.
+A `seed:<id>` frame's `calibration` block goes into the registry entry when the owner promotes the list.
+Labels are never evidence and never published, and the daily `seeds` job deletes calibration items 24 months after their last label.

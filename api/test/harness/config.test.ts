@@ -27,8 +27,8 @@ describe.each([
 	});
 
 	it('keeps YouTube figures out of scoring and the spend under the daily quota', () => {
-		// Derived use needs YouTube's written approval first (Developer Policies III.E.4).
-		expect(c.vars.YOUTUBE_DERIVED_USE).toBe('');
+		// No switch lets YouTube Data API figures feed scoring (contracts 9.7).
+		expect(c.vars).not.toHaveProperty('YOUTUBE_DERIVED_USE');
 		expect(Number(c.vars.YOUTUBE_DAILY_UNITS)).toBeGreaterThan(0);
 		expect(Number(c.vars.YOUTUBE_DAILY_UNITS)).toBeLessThanOrEqual(10_000);
 	});

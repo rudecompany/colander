@@ -11,7 +11,7 @@ import { IP_HASH_HEADER, json, jsonError, REQUEST_ID_HEADER, tooMany } from '../
 import { allow, available } from '../limits';
 import { codeSignInPaused, heldRequest, securityNotice, signInCode } from '../mail';
 import { rank } from '../permissions';
-import { decode, pathValue, rfc3339, trimSpace } from './respond';
+import { decode, pathValue, rfc3339, signalNames, testNames, trimSpace } from './respond';
 import { unix } from '../scoring/engine';
 import {
 	addPasskey,
@@ -655,6 +655,24 @@ function exportAccount(s: Store, request: Request): Response {
 				a.id
 			)
 			.map((d) => ({ at: at(d.created_at), platform: d.platform, source: d.source_key, verdict: d.verdict, reason: d.reason, as: d.actor })),
+		// Labels in the calibration set, without the frame that sampled the source: that would name a list.
+		calibration_labels: s.db
+			.all<{ platform: string; source_key: string; label: string; tests: number; evidence: number; note: string | null; language: string | null; kind: string | null; labeled_at: number }>(
+				`SELECT s.platform, s.canonical_id AS source_key, l.label, l.tests, l.evidence, l.note, l.language, l.kind, l.labeled_at
+				FROM calibration_labels l JOIN sources s ON s.id = l.source_id WHERE l.account_id = ? ORDER BY l.labeled_at, l.source_id`,
+				a.id
+			)
+			.map((l) => ({
+				at: at(l.labeled_at),
+				platform: l.platform,
+				source: l.source_key,
+				label: l.label,
+				tests: testNames(l.tests),
+				evidence: signalNames(l.evidence),
+				note: l.note || null,
+				language: l.language,
+				kind: l.kind
+			})),
 		requests: heldRequests(s.db, a.id, now).map(requestJSON),
 		pairings: s.db
 			.all<{ kind: string; created_at: number; expires_at: number; claimed_at: number | null; browser: string | null; ext_version: string | null }>(

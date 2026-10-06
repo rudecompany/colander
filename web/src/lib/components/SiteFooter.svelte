@@ -50,7 +50,8 @@ while their case is open.
 			title: 'Legal',
 			links: [
 				{ href: '/privacy', label: 'Privacy' },
-				{ href: '/terms', label: 'Terms' }
+				{ href: '/terms', label: 'Terms' },
+				{ href: '/credits', label: 'Credits' }
 			]
 		}
 	]);

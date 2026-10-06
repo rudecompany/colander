@@ -66,12 +66,10 @@ export interface Input {
 	frozen: boolean;
 
 	// Sources only. A seed list entry is never an input: it is a review lead, not evidence (9.3).
-	/** staff set it large, or (with YOUTUBE_DERIVED_USE) the YouTube Data API reported 100,000 subscribers */
+	/** staff set it large. No YouTube Data API figure is ever an input (9.7). */
 	large: boolean;
-	/** staff recorded the source's size, or (with YOUTUBE_DERIVED_USE) the YouTube Data API reported subscribers */
+	/** staff recorded the source's size */
 	audienceKnown: boolean;
-	/** from the YouTube Data API with YOUTUBE_DERIVED_USE only; < 0 when unknown */
-	uploadsPerDay: number;
 	/** items with evidence either way */
 	itemsSeen: number;
 	/** of those, items with independent AI evidence (labels from 2 installs or a reviewer) */
@@ -102,7 +100,6 @@ export function newInput(fields: Partial<Input>): Input {
 		frozen: false,
 		large: false,
 		audienceKnown: false,
-		uploadsPerDay: 0,
 		itemsSeen: 0,
 		aiItems: 0,
 		rollupLabelInstalls: 0,
@@ -209,7 +206,6 @@ export class Thresholds {
 	aiConsensusRatio = 0.7;
 
 	// Behavior (9.3).
-	uploadsPerDay = 10;
 	mostlyAIShare = 0.8;
 	mostlyAIMinItems = 5;
 
@@ -227,8 +223,7 @@ export class Thresholds {
 	splitLow = 0.3;
 	splitHigh = 0.7;
 
-	// Size, expiry and brigading (9.5).
-	largeSubscribers = 100_000;
+	// Expiry and brigading (9.5).
 	rescore = 90 * DAY;
 	burstTags = 20;
 	burstWindow = HOUR;
@@ -269,7 +264,6 @@ export class Thresholds {
 	behavior(input: Input): Layer {
 		if (input.item) return input.sourceBehavior;
 		const l = noLayer();
-		if (input.uploadsPerDay >= this.uploadsPerDay) [l.met, l.signals] = [true, Sig.high_volume];
 		if (input.itemsSeen >= this.mostlyAIMinItems && input.aiItems / input.itemsSeen >= this.mostlyAIShare) {
 			[l.met, l.signals] = [true, l.signals | Sig.mostly_ai];
 		}

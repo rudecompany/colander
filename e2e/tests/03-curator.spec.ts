@@ -36,6 +36,13 @@ test('curators see staff-only limits, the server enforces them, and the side pan
 	await expect(site.getByRole('button', { name: 'Resolve' })).toHaveCount(0);
 	await expect(site.getByRole('status').filter({ hasText: 'Staff decision needed' })).toContainText('An appeal is open on this source');
 
+	// A seed lead: curators see that a seed list names the source, never which list. Leads nothing
+	// backs wait under Escalated, after the other escalations.
+	await site.getByRole('tab', { name: /^Escalated/ }).click();
+	await site.getByRole('button', { name: /Seed lead/ }).first().click();
+	await expect(site.getByRole('region', { name: 'Seed lists' })).toContainText('Only staff see which lists name it, in the admin console.');
+	await expect(site.locator('main')).not.toContainText(/demo list/i);
+
 	// Forced past the console, the server answers 403 staff_required.
 	const forced = await site.evaluate(async () => {
 		const post = async (path: string, body: unknown) => {
@@ -47,10 +54,11 @@ test('curators see staff-only limits, the server enforces them, and the side pan
 		return {
 			large: await post('/v1/review/sources/yt/%40gossipnarrated/decision', { verdict: 'slop', reason: 'Forced past the console by a curator.', signals: [], slop_type: null, tests: [] }),
 			verify: await post(`/v1/review/appeals/${pending.id}/verify`, {}),
-			resolve: await post(`/v1/review/appeals/${pending.id}/resolve`, { outcome: 'upheld', reasoning: 'Forced past the console by a curator.' })
+			resolve: await post(`/v1/review/appeals/${pending.id}/resolve`, { outcome: 'upheld', reasoning: 'Forced past the console by a curator.' }),
+			suppress: await post('/v1/review/sources/yt/%40catrescuetales/suppress-seeds', { reason: 'Forced past the console by a curator.' })
 		};
 	});
-	expect(forced).toEqual({ large: [403, 'staff_required'], verify: [403, 'staff_required'], resolve: [403, 'staff_required'] });
+	expect(forced).toEqual({ large: [403, 'staff_required'], verify: [403, 'staff_required'], resolve: [403, 'staff_required'], suppress: [403, 'staff_required'] });
 
 	// The side panel: a reviewer code from the account page, typed into the panel.
 	await site.goto(`${ORIGIN}/account`);

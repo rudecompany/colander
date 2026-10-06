@@ -9,6 +9,7 @@ import { hashToken, newToken } from '../src/auth';
 import { Billing } from '../src/billing';
 import { reapplyErasures } from '../src/erase';
 import { grantRole, putFlow, setDisplayName } from '../src/store/accounts';
+import { addCalibrationItems, addLabel } from '../src/store/calibration';
 import { cookieOf, errorCode, expectStatus, Harness } from './api';
 import { SoftAuthenticator, type Misbehave } from './authenticator';
 import { ORIGIN, sign, StripeFake } from './stripe-fake';
@@ -401,7 +402,20 @@ describe('account data', () => {
 		await expectStatus(out, 200);
 		expect(out.headers.get('Content-Disposition')).toBe('attachment; filename="colander-account.json"');
 		const data = (await out.json()) as Record<string, unknown>;
-		expect(Object.keys(data).sort()).toEqual(['account', 'audit', 'decisions', 'exported_at', 'pairings', 'passkeys', 'requests', 'reviewer_token', 'sessions', 'subscription', 'synced_settings']);
+		expect(Object.keys(data).sort()).toEqual([
+			'account',
+			'audit',
+			'calibration_labels',
+			'decisions',
+			'exported_at',
+			'pairings',
+			'passkeys',
+			'requests',
+			'reviewer_token',
+			'sessions',
+			'subscription',
+			'synced_settings'
+		]);
 		expect(data.synced_settings).toEqual({ version: 2, updated_at: '1970-01-01T00:00:05Z', data: { strictness: 'strict' } });
 		expect((data.passkeys as unknown[]).length).toBe(1);
 		expect(JSON.stringify(data)).not.toMatch(/token_hash|public_key|credential_id/);
@@ -442,7 +456,14 @@ describe('account data', () => {
 				"INSERT INTO decision_log (at, platform, target_type, target_id, source_id, source_key, reason, actor, actor_name, account_id) VALUES (1, 'yt', 'source', '@x', 900, '@x', 'Fine.', 'curator', 'Maya', ?)",
 				id
 			);
+			// A calibration label holds the labeler's judgment and note.
+			addCalibrationItems(store.db, [900], 'community', 1);
+			addLabel(store.db, 900, id, false, { label: 'not_ai', tests: 0, evidence: 0, note: 'Filmed by hand.', language: 'en', kind: 'video' }, 1);
 		});
+		const exported = (await (await h.do('GET', '/v1/account/export', undefined, 'Cookie', cookie)).json()) as { calibration_labels: unknown[] };
+		expect(exported.calibration_labels).toEqual([
+			{ at: '1970-01-01T00:00:01Z', platform: 'yt', source: '@x', label: 'not_ai', tests: [], evidence: [], note: 'Filmed by hand.', language: 'en', kind: 'video' }
+		]);
 		h.mail = '';
 		await expectStatus(await h.do('DELETE', '/v1/account', undefined, ...CSRF, 'Cookie', cookie), 204);
 		expect(f.recorded('POST', '/v1/refunds')).toHaveLength(1);
@@ -454,9 +475,10 @@ describe('account data', () => {
 				store.db.get<{ n: number }>('SELECT count(*) AS n FROM subscriptions')!.n,
 				store.db.get('SELECT account_id, actor_name FROM decisions'),
 				store.db.get('SELECT actor_name, account_id FROM decision_log WHERE source_id = 900'),
-				store.db.get("SELECT target FROM audit_log WHERE action = 'account_deleted'")
+				store.db.get("SELECT target FROM audit_log WHERE action = 'account_deleted'"),
+				store.db.get<{ n: number }>('SELECT count(*) AS n FROM calibration_labels')!.n
 			])
-		).toEqual([0, 0, { account_id: null, actor_name: null }, { actor_name: null, account_id: null }, { target: id }]);
+		).toEqual([0, 0, { account_id: null, actor_name: null }, { actor_name: null, account_id: null }, { target: id }, 0]);
 		expect(await env.BACKUPS.head(`erasures/${id}`)).not.toBeNull();
 		// A later webhook for the subscription belongs to an unknown account and changes nothing.
 		const late = f.cancel(subscription);

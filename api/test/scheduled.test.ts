@@ -4,7 +4,7 @@ import { env } from 'cloudflare:workers';
 import { createScheduledController, runInDurableObject } from 'cloudflare:test';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import worker from '../src/index';
-import { nextDump, STATUS } from '../src/jobs';
+import { nextDump, nextSeeds, STATUS } from '../src/jobs';
 import { nextAuditExport } from '../src/backup';
 import { alerts, ANALYTICS_CRON, PULL_HOURS, THRESHOLDS, UNREACHABLE_KEY } from '../src/scheduled';
 import { SNAPSHOT_KEY } from '../src/store/list';
@@ -64,7 +64,8 @@ describe('watchdog', () => {
 				{ name: 'pass', due_at: T },
 				{ name: 'prune', due_at: T },
 				{ name: 'publish', due_at: T },
-				{ name: 'requests', due_at: T }
+				{ name: 'requests', due_at: T },
+				{ name: 'seeds', due_at: nextSeeds(T) }
 			]);
 			expect(await state.storage.getAlarm()).toBe(T);
 		});
@@ -77,14 +78,24 @@ describe('watchdog', () => {
 		await env.LISTS.put(SNAPSHOT_KEY, new Uint8Array([1]), { customMetadata: { seq: String(S - 50), created: String(S - 50) } });
 		await inStore((store) => store.db.run('INSERT INTO list_sequences (seq, created_at) VALUES (?, ?)', S - 50, S - 50));
 		const status = await inStore((store) => store.watchdog());
-		expect(status).toMatchObject({ now: T, jobs: ['audit', 'dump', 'pass', 'prune', 'publish', 'requests', 'rescore'], alarmLost: false, head: { seq: S - 50, createdAt: S - 50 }, r2: { seq: S - 50, created: S - 50 }, alerted: [], since: T, pairGuessing: false });
+		expect(status).toMatchObject({
+			now: T,
+			jobs: ['audit', 'dump', 'pass', 'prune', 'publish', 'requests', 'rescore', 'seeds'],
+			alarmLost: false,
+			head: { seq: S - 50, createdAt: S - 50 },
+			r2: { seq: S - 50, created: S - 50 },
+			alerted: [],
+			since: T,
+			pairGuessing: false
+		});
 		// R2 holds the head, so no publication was asked for.
 		expect(await inStore((store) => store.db.all('SELECT name FROM jobs ORDER BY name'))).toEqual([
 			{ name: 'audit' },
 			{ name: 'dump' },
 			{ name: 'pass' },
 			{ name: 'prune' },
-			{ name: 'requests' }
+			{ name: 'requests' },
+			{ name: 'seeds' }
 		]);
 	});
 

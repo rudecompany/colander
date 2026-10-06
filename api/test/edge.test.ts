@@ -421,7 +421,8 @@ describe('/ops/*', () => {
 		expect(await as('probes.yml', 'status')).toEqual([200, 'ok']);
 		expect(await as('probes.yml', 'grant-role')).toEqual(refused);
 		// deploy-staging installs and builds npm code: its token decides the check channel and nothing else.
-		for (const command of ['status', 'grant-role', 'pin-subject', 'sign-config', 'import-seed', 'restore-dump', 'pitr-restore', 'purge-cache']) {
+		const seedCommands = ['import-seed', 'revoke-seed', 'calibration-sample', 'calibration-export'];
+		for (const command of ['status', 'grant-role', 'pin-subject', 'sign-config', ...seedCommands, 'restore-dump', 'pitr-restore', 'purge-cache']) {
 			expect(await as('deploy-staging.yml', command, 'staging'), command).toEqual(refused);
 		}
 		// Past the workflow check: the Store here runs with production's settings, which refuse check-decision.
@@ -432,10 +433,18 @@ describe('/ops/*', () => {
 		expect(await as('drills.yml', 'status', 'staging')).toEqual([200, 'ok']);
 		expect(await as('drills.yml', 'pitr-restore', 'staging')).toEqual([400, 'confirmation_required']);
 		expect(await as('drills.yml', 'grant-role', 'staging')).toEqual(refused);
+		// The seed list commands run from the Ops workflow alone, on either environment.
+		for (const command of seedCommands) {
+			for (const environment of ['production', 'staging']) {
+				expect(await as('drills.yml', command, environment), `${command} on ${environment}`).toEqual(refused);
+				expect(await as('probes.yml', command, environment), `${command} on ${environment}`).toEqual(refused);
+			}
+		}
 		// Any other workflow of the repository runs nothing; the Ops workflow runs everything.
 		expect(await as('release.yml', 'status')).toEqual(refused);
 		expect(await as('ci.yml', 'status')).toEqual(refused);
 		expect(await as('ops.yml', 'grant-role')).toEqual([400, 'invalid_email']);
+		expect(await as('ops.yml', 'import-seed')).toEqual([400, 'invalid_args']);
 	});
 
 	it('is closed when no repository or environment is configured', async () => {

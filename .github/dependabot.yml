@@ -10,6 +10,10 @@ updates:
         update-types: [minor, patch]
   - package-ecosystem: github-actions
     directory: /
+    # Only the seed registry's owner may change seed-guard.yml (scripts/check-seeds.ts), so its
+    # pins are bumped by hand (docs/deploy.md, step 15) and never block the weekly group.
+    exclude-paths:
+      - .github/workflows/seed-guard.yml
     schedule:
       interval: weekly
     groups:

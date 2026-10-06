@@ -199,7 +199,7 @@
 				<p class="cl-body cl-muted">
 					You are {account.role === 'curator' ? 'a curator' : account.role === 'admin' ? 'an admin' : 'a staff member'}. In the review console,
 					with a passkey sign-in from the last 12 hours, and in the side panel, you decide items and sources that are not large.
-					{staff ? 'Large sources, appeals and people are in the admin console.' : 'Large sources and appeals need staff.'}
+					{staff ? 'Large sources, appeals, the seed lists behind a lead, and people are in the admin console.' : 'Large sources and appeals need staff.'}
 				</p>
 				<div class="row">
 					<Button variant="primary" size="xl" href="/console"><ListChecks size={16} aria-hidden="true" />Open the review console</Button>

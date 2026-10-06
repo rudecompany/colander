@@ -70,10 +70,11 @@ export interface Source {
 	slop_type: SlopType | null;
 	tests: Test[];
 	large: boolean;
-	/** Staff recorded the audience size (or, with YouTube derived use only, YouTube reported it). */
+	/** Staff recorded the audience size. No YouTube figure ever sets it. */
 	audience_known: boolean;
+	/** Always false in public responses; for reviewers, whether seed lists name the source as a review lead. */
 	imported: boolean;
-	/** Always null: public responses never name a data source. Kept for wire compatibility. */
+	/** Always null in public responses, which never name a data source; with staff authority (the admin host), the lists that name it. */
 	attribution: string | null;
 	appeal_open: boolean;
 	updated_at: ISODate | null;
@@ -227,6 +228,8 @@ export interface QueueItem {
 	verdict: Verdict | null;
 	computed_verdict: Verdict | null;
 	report_count: number;
+	/** A seed lead: seed lists name the source, which is not evidence (kind is escalation). */
+	lead: boolean;
 }
 
 export interface Layer {
@@ -258,14 +261,60 @@ export interface ItemSummary {
 	platform_label_reports: number;
 }
 
+/** One seed list entry behind a lead, with its full provenance. Staff authority (the admin host) only. */
+export interface SeedProvenance {
+	/** the registry ID */
+	seed: string;
+	name: string;
+	license: string;
+	use: 'lead' | 'seed' | 'frame';
+	platform: Platform;
+	/** the ID as the list file named it */
+	alias: string;
+	batch: number;
+	imported_at: ISODate;
+	/** the upstream date of the file that last listed it */
+	listed_at: ISODate;
+	expires_at: ISODate;
+	/** for Colander's own lists, where staff saw the source */
+	note: string | null;
+}
+
 export interface ReviewSourceResponse {
 	source: Source;
+	/** how many seed lists name the source as a review lead */
+	seed_lists: number;
+	/** staff authority (the admin host) only: each entry with its provenance */
+	seeds?: SeedProvenance[];
+	/** staff authority (the admin host) only: set while staff suppress seed lists on the source */
+	seed_suppression?: { at: ISODate; reason: string } | null;
 	layers: Layers;
 	reports: ReportDetail[];
 	appeals: Appeal[];
 	items: ItemSummary[];
 	history: LogEntry[];
 }
+
+/** A blind calibration item: only what the labeler needs to find it on its platform. */
+export interface CalibrationItem {
+	platform: Platform;
+	source_id: string;
+	/** labels it has so far, from other reviewers */
+	labels: number;
+}
+
+export type CalibrationLabel = 'slop' | 'ai_not_slop' | 'not_ai' | 'gone' | 'unsure';
+
+/**
+ * What a source is in, as a labeler records it with any label but gone and unsure: a language
+ * code, other, or none (no words, such as instrumental music). The calibration report groups by it.
+ */
+export const CALIBRATION_LANGUAGES = ['en', 'es', 'pt', 'fr', 'de', 'it', 'tr', 'ru', 'ar', 'hi', 'id', 'ja', 'ko', 'zh', 'other', 'none'] as const;
+export type CalibrationLanguage = (typeof CALIBRATION_LANGUAGES)[number];
+
+/** Whether a source is mostly music or other video, recorded and grouped like the language. */
+export const CALIBRATION_KINDS = ['music', 'video'] as const;
+export type CalibrationKind = (typeof CALIBRATION_KINDS)[number];
 
 export interface DecisionInput {
 	verdict: Verdict | 'none';

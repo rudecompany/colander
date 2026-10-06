@@ -16,7 +16,7 @@
 	import { page } from '$app/state';
 	import { api, errorText } from '#lib/api.ts';
 	import { siteOrigin } from '#lib/site.ts';
-	import { fmtDateTime, fmtNum, fmtPct, platformItemUrl, platformSourceUrl, sourcePath } from '@colander/shared';
+	import { fmtDateTime, fmtNum, fmtPct, fmtShortDate, platformItemUrl, platformSourceUrl, sourcePath } from '@colander/shared';
 	import { LAYER_KEYS, LAYER_QUESTION, LAYER_WORD } from '@colander/shared';
 	import { LogRow, middleTruncate } from '@colander/shared';
 	import Notice from '../Notice.svelte';
@@ -40,6 +40,8 @@
 	const noun = $derived(SOURCE_NOUN[s.platform]);
 	const isStaff = $derived(role === 'staff');
 
+	let suppressing = $state(false);
+	let suppressReason = $state('');
 	let dismissing = $state<string | null>(null);
 	let dismissReason = $state('');
 	let resolving = $state<string | null>(null);
@@ -55,6 +57,7 @@
 			await api(path, { method: 'POST', body });
 			dismissing = null;
 			resolving = null;
+			suppressing = false;
 			onChanged(message);
 		} catch (e) {
 			actionError = errorText(e);
@@ -62,6 +65,9 @@
 			busy = false;
 		}
 	}
+
+	const seedsPath = $derived(`/v1/review/sources/${s.platform}/${encodeURIComponent(s.id)}/suppress-seeds`);
+	const USE_WORD = { lead: 'lead', seed: 'calibrated lead', frame: 'calibration frame' } as const;
 
 	const APPEAL_STATUS: Record<Appeal['status'], string> = {
 		awaiting_verification: 'Waiting for the code',
@@ -166,6 +172,64 @@
 		{/if}
 	</section>
 
+	{#if data.seed_lists > 0 || data.seeds}
+		<section aria-labelledby="seeds-title" class="sec">
+			<h3 class="sec-title" id="seeds-title">Seed lists <span class="count">{data.seed_lists}</span></h3>
+			{#if data.seed_lists > 0}
+				<p class="cl-body cl-muted">A seed list is a review lead, never evidence. Decide on what the {noun} itself shows.</p>
+			{/if}
+			{#if !data.seeds}
+				<p class="cl-body cl-muted icon-line"><Lock size={16} aria-hidden="true" /> Only staff see which lists name it, in the admin console.</p>
+			{:else}
+				{#if data.seeds.length === 0}
+					<p class="cl-body cl-muted">No seed list names this {noun}.</p>
+				{:else}
+					<ul class="cards">
+						{#each data.seeds as e (`${e.seed}:${e.alias}`)}
+							<li class="item-card">
+								<p class="cl-body"><strong>{e.name}</strong> <span class="meta">{e.license}, {USE_WORD[e.use]}</span></p>
+								<p class="meta">
+									Listed as <span class="cl-figure id">{e.alias}</span> in the file dated {fmtShortDate(e.listed_at)}. Imported
+									{fmtShortDate(e.imported_at)} in batch {e.batch}. Expires {fmtShortDate(e.expires_at)}.
+								</p>
+								{#if e.note}<p class="meta">Where staff saw it: {e.note}</p>{/if}
+							</li>
+						{/each}
+					</ul>
+				{/if}
+				{#if data.seed_suppression}
+					<div class="item-card">
+						<p class="cl-body"><strong>Seed lists suppressed</strong> <span class="meta">since {fmtShortDate(data.seed_suppression.at)}</span></p>
+						<p class="cl-body quote">{data.seed_suppression.reason}</p>
+						{#if suppressing}
+							<div class="inline-form">
+								<label class="field-label" for="lift-reason">Why lift it? Only staff see this.</label>
+								<Textarea id="lift-reason" rows={2} bind:value={suppressReason} />
+								<div class="row">
+									<button type="button" class="uin-btn uin-btn-primary uin-btn-lg" disabled={busy || suppressReason.trim().length < 5} onclick={() => act(seedsPath, { reason: suppressReason.trim(), lift: true }, 'Suppression lifted. The next import may list it again.')}>Lift suppression</button>
+									<button type="button" class="uin-btn uin-btn-ghost uin-btn-lg" onclick={() => (suppressing = false)}>Cancel</button>
+								</div>
+							</div>
+						{:else}
+							<button type="button" class="uin-btn uin-btn-outline uin-btn-lg" onclick={() => ((suppressing = true), (suppressReason = ''))}>Lift suppression</button>
+						{/if}
+					</div>
+				{:else if suppressing}
+					<div class="inline-form">
+						<label class="field-label" for="suppress-reason">Why suppress seed lists here, such as an objection? Only staff see this.</label>
+						<Textarea id="suppress-reason" rows={2} bind:value={suppressReason} />
+						<div class="row">
+							<button type="button" class="uin-btn uin-btn-primary uin-btn-lg" disabled={busy || suppressReason.trim().length < 5} onclick={() => act(seedsPath, { reason: suppressReason.trim() }, 'Seed lists suppressed. No import lists it again.')}>Suppress seed lists</button>
+							<button type="button" class="uin-btn uin-btn-ghost uin-btn-lg" onclick={() => (suppressing = false)}>Cancel</button>
+						</div>
+					</div>
+				{:else}
+					<button type="button" class="uin-btn uin-btn-outline uin-btn-lg start" onclick={() => ((suppressing = true), (suppressReason = ''))}>Suppress seed lists</button>
+				{/if}
+			{/if}
+		</section>
+	{/if}
+
 	{#if data.appeals.length}
 		<section aria-labelledby="appeals-title" class="sec">
 			<h3 class="sec-title" id="appeals-title">Appeals <span class="count">{data.appeals.length}</span></h3>
@@ -244,6 +308,9 @@
 </article>
 
 <style>
+	.start {
+		justify-self: start;
+	}
 	.items {
 		display: grid;
 		list-style: none;

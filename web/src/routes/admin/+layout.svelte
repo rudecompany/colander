@@ -1,7 +1,7 @@
 <!--
 The admin console on the admin host (admin.getcolander.com): Cloudflare Access with the staff
 identity in front, staff and admin authority inside. The tabs lead to the review queue with full
-authority, people and roles, and for admins the audit log.
+authority, the calibration set with third labels, people and roles, and for admins the audit log.
 -->
 <script lang="ts">
 	import { onMount } from 'svelte';
@@ -22,6 +22,7 @@ authority, people and roles, and for admins the audit log.
 
 	const tabs = $derived([
 		{ href: '/admin', label: 'Review' },
+		{ href: '/admin/calibration', label: 'Calibration' },
 		{ href: '/admin/people', label: 'People' },
 		...(may('audit.read') ? [{ href: '/admin/audit', label: 'Audit log' }] : [])
 	]);
@@ -80,8 +81,10 @@ authority, people and roles, and for admins the audit log.
 		gap: 8px 24px;
 		padding-top: 16px;
 	}
+	/* Four tabs wrap rather than scroll sideways on the narrowest phones. */
 	.admin-nav ul {
 		display: flex;
+		flex-wrap: wrap;
 		gap: 4px;
 		margin: 0;
 		padding: 0;

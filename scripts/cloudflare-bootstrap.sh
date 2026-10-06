@@ -5,9 +5,9 @@
 #
 # It reads the R2 bucket bindings of both environments from api/wrangler.jsonc, then for each
 # bucket: creates it with the enam location hint if it is missing, sets its lifecycle rules, and
-# for the backup buckets sets a 7-day bucket lock, and a 400-day one on the audit log's daily
-# copies. Lifecycle and lock rules are replaced as a whole, so running the script again changes
-# nothing that is already right.
+# for the backup buckets sets a 7-day bucket lock on dumps, restore bookmarks, erasure records and
+# seed list suppression records, and a 400-day one on the audit log's daily copies. Lifecycle and lock rules are replaced as a
+# whole, so running the script again changes nothing that is already right.
 # Last, it prints every Worker secret to set, per environment, as exact commands.
 set -euo pipefail
 
@@ -49,24 +49,32 @@ cat >"$tmp/lists-lifecycle.json" <<'JSON'
 {"rules": [{"id": "abort-multipart-1d", "enabled": true, "conditions": {"prefix": ""},
   "abortMultipartUploadsTransition": {"condition": {"type": "Age", "maxAge": 86400}}}]}
 JSON
-# Dumps, restore bookmarks and seed lists expire after 90 days. Erasure records of deleted accounts
-# outlive every dump that could bring an account back, by 30 days. The audit log's daily copies
-# stay 400 days.
+# Dumps, restore bookmarks, seed lists and calibration exports expire after 90 days. Erasure
+# records of deleted accounts and records of seed list suppressions and lifts outlive every dump that
+# could undo them, by 30 days. The audit log's daily copies stay 400 days.
 cat >"$tmp/backups-lifecycle.json" <<'JSON'
 {"rules": [
   {"id": "dumps-90d", "enabled": true, "conditions": {"prefix": "dumps/"}, "deleteObjectsTransition": {"condition": {"type": "Age", "maxAge": 7776000}}},
   {"id": "pitr-90d", "enabled": true, "conditions": {"prefix": "pitr/"}, "deleteObjectsTransition": {"condition": {"type": "Age", "maxAge": 7776000}}},
   {"id": "seeds-90d", "enabled": true, "conditions": {"prefix": "seeds/"}, "deleteObjectsTransition": {"condition": {"type": "Age", "maxAge": 7776000}}},
+  {"id": "calibration-90d", "enabled": true, "conditions": {"prefix": "calibration/"}, "deleteObjectsTransition": {"condition": {"type": "Age", "maxAge": 7776000}}},
   {"id": "erasures-120d", "enabled": true, "conditions": {"prefix": "erasures/"}, "deleteObjectsTransition": {"condition": {"type": "Age", "maxAge": 10368000}}},
+  {"id": "objections-120d", "enabled": true, "conditions": {"prefix": "objections/"}, "deleteObjectsTransition": {"condition": {"type": "Age", "maxAge": 10368000}}},
   {"id": "audit-400d", "enabled": true, "conditions": {"prefix": "audit/"}, "deleteObjectsTransition": {"condition": {"type": "Age", "maxAge": 34560000}}},
   {"id": "abort-multipart-1d", "enabled": true, "conditions": {"prefix": ""}, "abortMultipartUploadsTransition": {"condition": {"type": "Age", "maxAge": 86400}}}
 ]}
 JSON
-# No backup can be deleted or overwritten for 7 days after it is written, not even by this account,
-# and no copy of the audit log for 400 days.
+# No Store dump, restore bookmark, erasure record or suppression record can be deleted or
+# overwritten for 7 days after it is written, not even by this account, and no copy of the audit log
+# for 400 days. A lift is a record of its own, so a suppression record never needs deleting early.
+# Seed list files and calibration exports (seeds/, calibration/) stay unlocked: they name channels,
+# and revoke-seed or an objection must be able to delete them at once.
 cat >"$tmp/backups-lock.json" <<'JSON'
 {"rules": [
-  {"id": "retain-7d", "enabled": true, "condition": {"type": "Age", "maxAgeSeconds": 604800}},
+  {"id": "retain-dumps-7d", "enabled": true, "prefix": "dumps/", "condition": {"type": "Age", "maxAgeSeconds": 604800}},
+  {"id": "retain-pitr-7d", "enabled": true, "prefix": "pitr/", "condition": {"type": "Age", "maxAgeSeconds": 604800}},
+  {"id": "retain-erasures-7d", "enabled": true, "prefix": "erasures/", "condition": {"type": "Age", "maxAgeSeconds": 604800}},
+  {"id": "retain-objections-7d", "enabled": true, "prefix": "objections/", "condition": {"type": "Age", "maxAgeSeconds": 604800}},
   {"id": "audit-400d", "enabled": true, "prefix": "audit/", "condition": {"type": "Age", "maxAgeSeconds": 34560000}}
 ]}
 JSON

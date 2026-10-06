@@ -636,6 +636,8 @@ export function deleteAccount(db: Db, accountId: string, now: number, who: Omit<
 		db.run('UPDATE decisions SET account_id = NULL, actor_name = NULL WHERE account_id = ?', accountId);
 		db.run('UPDATE decision_log SET actor_name = NULL, account_id = NULL WHERE account_id = ?', accountId);
 		db.run('UPDATE appeals SET resolved_by = NULL WHERE resolved_by = ?', accountId);
+		// A calibration label is the labeler's own judgment and note: it goes with the account.
+		db.run('DELETE FROM calibration_labels WHERE account_id = ?', accountId);
 		db.run('DELETE FROM accounts WHERE id = ?', accountId);
 		audit(db, { ...who, action: 'account_deleted', target: accountId }, now);
 		return true;

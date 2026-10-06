@@ -2,6 +2,13 @@
 	import { PUBLIC_TURNSTILE_SITE_KEY } from '$app/env/public';
 	import { PageHeader, PermissionsTable, PRIVACY_INSTALL_ID, PrivacyFacts } from '@colander/shared';
 
+	/**
+	 * Colander's representatives in the EU and the UK under GDPR Article 27. The owner names them
+	 * here before the first seed list import (docs/deploy.md, step 20, D3); until then the
+	 * Creators section says nothing about them.
+	 */
+	const REPRESENTATIVES = null as { eu: string; uk: string } | null;
+
 	const toc = [
 		['facts', 'What leaves your device'],
 		['permissions', 'Permissions'],
@@ -10,6 +17,7 @@
 		['website', 'The website'],
 		['account', 'Your account'],
 		['appeals', 'Appeals'],
+		['creators', 'Creators'],
 		['payments', 'Payments'],
 		['retention', 'How long we keep it'],
 		['contact', 'Your rights and contact']
@@ -136,13 +144,17 @@
 			<h2>Your account</h2>
 			<p>
 				An account holds your email address, an optional display name, your role, your passkeys' public keys and names, your
-				sign-ins (how and when, never your address or device), your plan and, with Plus, your synced settings.
+				sign-ins (how and when, never your address or device), your plan and, with Plus, your synced settings. If you review, it also
+				holds the decisions you made and the labels you gave to measure how accurate outside lists are.
 			</p>
 			<ul class="dots-list">
 				<li>
 					Download it all from your account page as one file, or delete the account there. Deleting ends Plus at once, refunds your
 					last charge when it is still refundable, and asks our payment provider to delete you as a customer; it keeps only what tax law
 					requires.
+				</li>
+				<li>
+					If you review, deleting the account erases your labels. Your decisions stay in the public decision log, without your name.
 				</li>
 				<li>
 					For your safety we ask you to confirm it is you first. Once you have a passkey, an email code alone cannot export, delete or
@@ -169,6 +181,45 @@
 			</p>
 		</section>
 
+		<section id="creators" class="prose">
+			<h2>Creators</h2>
+			<p>
+				For each channel, profile or page Colander knows about, it keeps the platform IDs and handle, a display name viewers gave in
+				reports, its verdict, the evidence behind it and its entries in the decision log.
+			</p>
+			<h3>Where it comes from</h3>
+			<ul class="dots-list">
+				<li>Tags and reports from people who use the extension.</li>
+				<li>Reviews and decisions by Colander's staff and curators.</li>
+				<li>Appeals and statements from creators themselves.</li>
+				<li>
+					Openly licensed lists from other projects, used only to choose which sources staff review first. They never decide a verdict.
+					The ones whose license asks for credit are named on the <a href="/credits">credits page</a>.
+				</li>
+				<li>
+					YouTube API Services, to link a YouTube channel's ID with its handle and to check appeal codes. Google's
+					<a href="https://policies.google.com/privacy" rel="noreferrer">Privacy Policy</a> applies to that use.
+				</li>
+			</ul>
+			<h3>Why, and what you can ask</h3>
+			<p>
+				Colander uses this to give people a fair, explained and reversible way to filter their own feeds. Every verdict needs evidence,
+				can be appealed, and is published in the decision log.
+			</p>
+			<p>
+				The legal basis is legitimate interest under GDPR Article 6(1)(f): Colander's, and that of the people who use it, in
+				filtering AI-made slop out of their feeds. We weighed that against creators' interests. Colander keeps only what it needs to judge a
+				source, outside lists never decide a verdict, every verdict is explained in public, and every creator can appeal.
+			</p>
+			{#if REPRESENTATIVES}
+				<p>Our representative in the EU is {REPRESENTATIVES.eu}, and in the UK {REPRESENTATIVES.uk}.</p>
+			{/if}
+			<p>
+				If you run a channel, profile or page, you can ask which sources name it, and object to that use. Write to us as
+				<a href="#contact">Your rights and contact</a> says. Staff will give you a code to post on it, to show that you control it.
+			</p>
+		</section>
+
 		<section id="payments" class="prose">
 			<h2>Payments</h2>
 			<p>
@@ -186,6 +237,12 @@
 				<li>Sign-in codes and passkey challenges last 10 and 5 minutes. Sessions end after 30 days, and a side panel connection after 7.</li>
 				<li>A pairing code works for 10 minutes. An hour after it ends we delete it, with the browser name and extension version that used it.</li>
 				<li>The record of sign-ins and account changes is kept 400 days, whether or not the account still exists. It names accounts by ID, never by email address.</li>
+				<li>Entries from outside lists expire on a date set for each list, and a source only a list named goes with them.</li>
+				<li>When a creator objects, we keep their channel's ID and handle with a note of the objection while it holds, so no list names it again.</li>
+				<li>
+					Labels that curators and staff give to measure how accurate the lists are stay for 24 months, then go, or sooner when the
+					person who gave them deletes their account.
+				</li>
 				<li>Account data is kept until you delete the account, apart from billing records the law requires us to keep.</li>
 			</ul>
 		</section>
