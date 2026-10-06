@@ -355,6 +355,8 @@ gh api -X PUT repos/rudecompany/colander/actions/permissions/selected-actions --
 JSON
 ```
 
+Dependabot skips `seed-guard.yml`, which only the seed registry's owner may change: after Dependabot moves the other pins, bump its two pins to the same SHAs in a pull request of your own.
+
 **Environments.**
 Create the three environments, each limited to deployments from main.
 The ops channel takes only GitHub OIDC tokens that name the environment of the Worker it calls, from a workflow on main, so these branch policies and the main ruleset above are what guard staging and production data:

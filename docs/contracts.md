@@ -827,6 +827,7 @@ Those live in the private bucket (14.4).
   `scripts/check-seeds.ts` fails any change to a cleared entry, to a clearance, to an entry added or taken out other than as pending, to `SEED_OWNERS`, or to any of those files but the registry, unless the GitHub actors are owners as the base commit listed them.
   The `api` job runs it on every push and pull request; the required `seed-guard` check (`seed-guard.yml`, on `pull_request_target`) runs the base branch's copy of the checker and its rules against the pull request's commit, so a pull request cannot change the check that judges it, and needs both its author and its last pusher to be owners.
 - The same check fails when any file in the repository is a byte-for-byte copy of a registered list.
+- It also fails unless `.github/dependabot.yml` excludes `seed-guard.yml`, so no Dependabot pull request touches an owner-only file; the owner bumps its pins by hand.
 
 ### 14.3 Credits
 

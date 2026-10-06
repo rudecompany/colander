@@ -92,6 +92,14 @@ if (!head) {
 		const missing = SEED_OWNERS.filter((o) => !line?.slice(1).includes(`@${o}`));
 		if (missing.length) problems.push(`.github/CODEOWNERS must give ${path} to ${missing.map((o) => '@' + o).join(' ')}`);
 	}
+
+	// A Dependabot pull request that bumps a pin in an owner-only workflow fails seed-guard, and the
+	// weekly group it shares with every other bump stays stuck with it.
+	const dependabot = readFileSync(new URL('.github/dependabot.yml', root), 'utf8');
+	const excluded = [...dependabot.matchAll(/^\s*exclude-paths:\s*\n((?:\s*-\s*\S+\s*\n)+)/gm)].flatMap((m) => m[1]!.split('\n').map((l) => l.replace(/^\s*-\s*/, '').trim()));
+	for (const path of OWNED.map((p) => p.slice(1)).filter((p) => p.startsWith('.github/workflows/'))) {
+		if (!excluded.includes(path)) problems.push(`.github/dependabot.yml must list ${path} under exclude-paths: only an owner may change it`);
+	}
 }
 
 if (base) {
