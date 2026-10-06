@@ -1,20 +1,22 @@
 <!--
 @component SiteHeader: sticky, 64 tall on paper at 88% with a blur, over a hairline that is always
-there. The mark and wordmark, four quiet links, Account and Add to Chrome. Below 1024 px it is 56
-tall with a Menu button that opens a full-height sheet: native <dialog>, so focus stays inside,
-Escape closes it and focus returns to Menu.
+there. The mark and wordmark, four quiet links, Account and the install button for this browser.
+Below 1024 px it is 56 tall with a Menu button that opens a full-height sheet: native <dialog>, so
+focus stays inside, Escape closes it and focus returns to Menu.
 -->
 <script lang="ts">
 	import { afterNavigate } from '$app/navigation';
 	import { page } from '$app/state';
-	import { PUBLIC_STORE_URL } from '$app/env/public';
 	import MenuIcon from '@lucide/svelte/icons/menu';
 	import X from '@lucide/svelte/icons/x';
 	import { ColanderMark } from '@colander/shared';
 	import Button from '@colander/shared/components/ui/button/button.svelte';
+	import { install } from '#lib/install.svelte.ts';
+	import { siteOrigin } from '#lib/site.ts';
 	import SendToComputer from './SendToComputer.svelte';
 
-	let { app = false }: { app?: boolean } = $props();
+	/** The app title in place of the site navigation: the review or admin console. */
+	let { app = '' }: { app?: string } = $props();
 
 	const links = [
 		{ href: '/definition', label: 'How it decides' },
@@ -23,6 +25,8 @@ Escape closes it and focus returns to Menu.
 		{ href: '/plans', label: 'Plans' }
 	];
 
+	/** On the admin host the site's links lead to the main host. */
+	const site = $derived(siteOrigin(page.url));
 	let sheet = $state<HTMLDialogElement>();
 	const current = (href: string) => page.url.pathname === href || page.url.pathname.startsWith(href + '/');
 	const close = () => sheet?.close();
@@ -31,8 +35,8 @@ Escape closes it and focus returns to Menu.
 
 <header class="site-header" class:app>
 	<div class="cl-container bar">
-		<a class="home" href="/"><ColanderMark size={24} /><span class="word">Colander</span></a>
-		{#if app}<span class="app-title">Review console</span>{/if}
+		<a class="home" href="{site}/"><ColanderMark size={24} /><span class="word">Colander</span></a>
+		{#if app}<span class="app-title">{app}</span>{/if}
 
 		{#if !app}
 			<nav class="main" aria-label="Main">
@@ -45,8 +49,8 @@ Escape closes it and focus returns to Menu.
 		{/if}
 
 		<div class="end">
-			<a class="account" href="/account" aria-current={current('/account') ? 'page' : undefined}>Account</a>
-			{#if !app}<Button variant="primary" size="lg" href={PUBLIC_STORE_URL} class="install">Add to Chrome</Button>{/if}
+			<a class="account" href="{site}/account" aria-current={current('/account') ? 'page' : undefined}>Account</a>
+			{#if !app}<Button variant="primary" size="lg" href={install.store.href} class="install">{install.store.label}</Button>{/if}
 			<button type="button" class="menu-btn" aria-haspopup="dialog" onclick={() => sheet?.showModal()}>
 				<MenuIcon size={16} aria-hidden="true" />Menu
 			</button>
@@ -56,13 +60,13 @@ Escape closes it and focus returns to Menu.
 
 <dialog class="sheet" bind:this={sheet} aria-label="Menu">
 	<div class="cl-container sheet-bar">
-		<a class="home" href="/" onclick={close}><ColanderMark size={24} /><span class="word">Colander</span></a>
+		<a class="home" href="{site}/" onclick={close}><ColanderMark size={24} /><span class="word">Colander</span></a>
 		<button type="button" class="menu-btn" onclick={close}><X size={16} aria-hidden="true" />Close</button>
 	</div>
 	<nav class="cl-container sheet-nav" aria-label="Menu">
 		<ul>
 			{#each [...links, { href: '/account', label: 'Account' }] as l (l.href)}
-				<li><a href={l.href} aria-current={current(l.href) ? 'page' : undefined} onclick={close}>{l.label}</a></li>
+				<li><a href={site + l.href} aria-current={current(l.href) ? 'page' : undefined} onclick={close}>{l.label}</a></li>
 			{/each}
 		</ul>
 	</nav>

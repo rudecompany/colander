@@ -16,7 +16,10 @@ import {
 } from '../scoring/actions';
 import { unix, type Evaluation } from '../scoring/engine';
 import { BehaviorSignals, ProvenanceSignals, slopTypeCode } from '../scoring/rules';
+import { csrfOk, csrfRequired, hostOf, signedIn, TTL } from '../auth';
+import { authority as rolesAuthority, rank, type Role } from '../permissions';
 import type { Account } from '../store/accounts';
+import { staffOf } from '../staff';
 import { AppealPendingManual, AppealUnderReview, appealsBySource, appealsWithStatus, getAppeal, type Appeal } from '../store/appeals';
 import { addLabel, LABELS, nextCalibration, type CalibrationTask, type Label } from '../store/calibration';
 import { ConflictError, NotFoundError } from '../store/db';
@@ -25,7 +28,6 @@ import { ensureItem, ensureSource, findItem, findSource, getSource, namedSeedLis
 import { dismissReport, getReport, openReports, reportsBySource, type Report } from '../store/tags';
 import { log, openEscalations } from '../store/verdicts';
 import { toAppeal } from './appeals';
-import { session } from '../auth';
 import { toReport } from './extension';
 import { canonicalItem, canonicalSource, validPlatform } from './ids';
 import { activeInstalls } from './list';
@@ -33,23 +35,47 @@ import { explain, lookupSource, toLog, toSource } from './public';
 import { decode, fields, goFixed, optString, parseInt64, pathValue, rfc3339, runeCount, signalMask, signalNames, testBits, testNames, trimSpace, verdictCode } from './respond';
 import type { Api, Params } from './server';
 
-/** Authenticates a curator or staff member by bearer token or session cookie, or answers the error. */
-function reviewer(api: Api, request: Request): Account | Response {
-	const { store } = api;
-	const auth = request.headers.get('Authorization') ?? '';
-	let a: Account | Response;
-	if (auth.startsWith('Bearer ')) {
-		a = store.auth.reviewerAccount(trimSpace(auth.slice('Bearer '.length))) ??
-			jsonError(401, 'invalid_token', 'The reviewer token is not valid. Create a new one on the website.');
-	} else {
-		a = session(store.auth, request);
-	}
-	if (a instanceof Response) return a;
-	if (a.role !== 'curator' && a.role !== 'staff') return jsonError(403, 'forbidden', 'Only curators and staff can review.');
-	return a;
+/** A reviewer and the authority this request gives them (src/permissions.ts). */
+interface Reviewer {
+	account: Account;
+	authority: Role;
 }
 
-const staffRequired = (what: string): Response => jsonError(403, 'staff_required', `${what} need staff review.`);
+/**
+ * Authenticates a reviewer (contracts 6.7). On the admin host: the staff member Access let in,
+ * with their full role. On the main host: a reviewer token, or a session that signed in with a
+ * passkey within 12 hours (else 403 passkey_required), and curator authority at most. A reviewer
+ * token works in any browser on any device, so it carries curator authority also for staff.
+ */
+function reviewer(api: Api, request: Request): Reviewer | Response {
+	const { store } = api;
+	if (hostOf(request) === 'admin') {
+		if (!csrfOk(request)) return csrfRequired();
+		const st = staffOf(store, request);
+		return st instanceof Response ? st : { account: st.account, authority: st.actor.authority };
+	}
+	const auth = request.headers.get('Authorization') ?? '';
+	let a: Account;
+	if (auth.startsWith('Bearer ')) {
+		const t = store.auth.reviewerAccount(trimSpace(auth.slice('Bearer '.length)));
+		if (t === 'expired') return jsonError(401, 'token_expired', 'The reviewer token expired after 7 days. Connect the side panel again from your account page.');
+		if (!t) return jsonError(401, 'invalid_token', 'The reviewer token is not valid. Connect the side panel again from your account page.');
+		a = t;
+	} else {
+		const ses = signedIn(store.auth, request);
+		if (ses instanceof Response) return ses;
+		a = ses.account;
+		if (rank(a.role) >= rank('curator') && (!store.auth.passkey(ses) || unix(store.now()) - ses.authenticatedAt > TTL.curatorFresh)) {
+			return jsonError(403, 'passkey_required', 'Review needs a passkey sign-in from the last 12 hours. Confirm it is you with your passkey.');
+		}
+	}
+	const authority = rolesAuthority(a.role, 'main');
+	if (!authority) return jsonError(403, 'forbidden', 'Only curators and staff can review.');
+	return { account: a, authority };
+}
+
+const staffRequired = (what: string): Response =>
+	jsonError(403, 'staff_required', `${what} need staff review. Staff decide them in the admin console.`);
 
 /** Collapses whitespace and cuts s to n characters with an ellipsis. */
 function clip(s: string, n: number): string {
@@ -242,20 +268,23 @@ function toProvenance(l: SeedLead): SeedProvenance {
 	};
 }
 
+/** Whether this request acts with staff authority: only staff and admins on the admin host do. */
+const staffAuthority = (r: Reviewer): boolean => rank(r.authority) >= rank('staff');
+
 /**
  * The review console's view of a source: what the public sees, layers, reports, appeals and
  * items, and its seed leads. Every reviewer sees whether seed lists name it and how many; only
- * staff see which lists, with their license, the batch and the line (contracts 6.7), and each
- * such read is recorded (seed list review 30).
+ * staff authority, which exists on the admin host alone, sees which lists, with their license,
+ * the batch and the line (contracts 6.7), and each such read is recorded (seed list review 30).
  */
-function writeReviewSource(api: Api, ref: number, a: Account): Response {
+function writeReviewSource(api: Api, ref: number, r: Reviewer): Response {
 	const { db } = api.store;
 	const ev = explain(api, ref);
 	const src = ev.data.source;
-	const staff = a.role === 'staff';
+	const staff = staffAuthority(r);
 	const now = unix(api.store.now());
 	const leads = seedLeads(db, api.store.engine.seeds, ref, now);
-	if (staff && leads.length > 0) recordProvenanceRead(db, a.id, src.platform, src.canonicalId, [...new Set(leads.map((l) => l.entry.id))], now);
+	if (staff && leads.length > 0) recordProvenanceRead(db, r.account.id, src.platform, src.canonicalId, [...new Set(leads.map((l) => l.entry.id))], now);
 	const reports = reportsBySource(db, ref);
 	const appeals = appealsBySource(db, ref);
 	const history = log(db, { sourceRef: ref, limit: 100 });
@@ -292,14 +321,14 @@ export function reviewSource(api: Api, request: Request, _url: URL, params: Para
 }
 
 /**
- * POST /v1/review/sources/{platform}/{source_id}/suppress-seeds {"reason", "lift"?}: staff only.
+ * POST /v1/review/sources/{platform}/{source_id}/suppress-seeds {"reason", "lift"?}: staff authority only.
  * Suppresses seed lists on a source (a GDPR Article 21 objection, or a case staff closed): its
  * entries and calibration item go and no import lists it again. "lift": true lifts it.
  */
 export async function reviewSuppressSeeds(api: Api, request: Request, _url: URL, params: Params): Promise<Response> {
 	const a = reviewer(api, request);
 	if (a instanceof Response) return a;
-	if (a.role !== 'staff') return staffRequired('Seed list suppressions');
+	if (!staffAuthority(a)) return staffRequired('Seed list suppressions');
 	const body = await decode(request, 4 << 10, { reason: 'string', lift: 'bool?' } as const);
 	if (body instanceof Response) return body;
 	const reason = trimSpace(body.reason);
@@ -318,12 +347,13 @@ const toTask = (t: CalibrationTask | undefined) => ({ item: t ? { platform: t.pl
 
 /**
  * GET /v1/review/calibration/next: the next source this reviewer has not labeled, blind (seed
- * design section 8). Staff also get items whose two labels disagree, for a third.
+ * design section 8). Staff authority (the admin host) also gets items whose two labels disagree,
+ * for a third.
  */
 export function reviewCalibrationNext(api: Api, request: Request): Response {
 	const a = reviewer(api, request);
 	if (a instanceof Response) return a;
-	return json(200, toTask(nextCalibration(api.store.db, a.id, a.role === 'staff')));
+	return json(200, toTask(nextCalibration(api.store.db, a.account.id, staffAuthority(a))));
 }
 
 const labelSchema = { label: 'string', tests: 'strings', evidence: 'strings', note: 'string?', language: 'string?', kind: 'string?' } as const;
@@ -361,13 +391,13 @@ export async function reviewCalibrationLabel(api: Api, request: Request, _url: U
 	const ref = validPlatform(platform) && id !== undefined ? findSource(db, platform, id) : undefined;
 	if (ref === undefined) return jsonError(404, 'not_in_calibration', 'This source is not in the calibration set.');
 	try {
-		addLabel(db, ref, a.id, a.role === 'staff', { label: body.label as Label, tests, evidence, note, language, kind }, unix(api.store.now()));
+		addLabel(db, ref, a.account.id, staffAuthority(a), { label: body.label as Label, tests, evidence, note, language, kind }, unix(api.store.now()));
 	} catch (err) {
 		if (err instanceof NotFoundError) return jsonError(404, 'not_in_calibration', 'This source is not in the calibration set.');
 		if (err instanceof ConflictError) return jsonError(409, 'already_labeled', 'You labeled this source already, or it has all the labels it needs.');
 		throw err;
 	}
-	return json(200, toTask(nextCalibration(db, a.id, a.role === 'staff')));
+	return json(200, toTask(nextCalibration(db, a.account.id, staffAuthority(a))));
 }
 
 const decisionSchema = {
@@ -396,7 +426,8 @@ function namesSeedList(api: Api, text: string): Response | undefined {
  * Validates a decision body. Only provenance and behavior signals are recorded; the other signals
  * are computed and never set by hand.
  */
-function decisionInput(api: Api, b: DecisionBody, a: Account): Omit<DecisionInput, 'sourceRef'> | Response {
+function decisionInput(api: Api, b: DecisionBody, r: Reviewer): Omit<DecisionInput, 'sourceRef'> | Response {
+	const a = r.account;
 	const reason = trimSpace(b.reason);
 	if (b.verdict !== 'none' && verdictCode(b.verdict) === 0) {
 		return jsonError(400, 'invalid_verdict', 'verdict must be one of the five verdicts or none.');
@@ -423,7 +454,8 @@ function decisionInput(api: Api, b: DecisionBody, a: Account): Omit<DecisionInpu
 		slopType,
 		tests,
 		large: b.large,
-		actor: a.role,
+		// Admins decide as staff in the public log.
+		actor: r.authority === 'curator' ? 'curator' : 'staff',
 		accountId: a.id,
 		actorName: a.displayName
 	};
@@ -521,12 +553,12 @@ export async function reviewDismissReport(api: Api, request: Request, _url: URL,
 
 /** Loads the appeal for a staff-only appeal route, or answers the error. */
 function staffAppeal(api: Api, request: Request, params: Params): [Account, Appeal] | Response {
-	const a = reviewer(api, request);
-	if (a instanceof Response) return a;
-	if (a.role !== 'staff') return staffRequired('Appeals');
+	const r = reviewer(api, request);
+	if (r instanceof Response) return r;
+	if (rank(r.authority) < rank('staff')) return staffRequired('Appeals');
 	const ap = getAppeal(api.store.db, pathValue(params, 'id'));
 	if (!ap) return jsonError(404, 'not_found', 'No appeal has this ID.');
-	return [a, ap];
+	return [r.account, ap];
 }
 
 /** Runs an appeal action and answers with the appeal, or 409 when its state does not allow it. */

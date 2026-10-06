@@ -350,11 +350,14 @@ table.plain tr:last-child > * {
 	background: var(--cl-dot-strong);
 }
 
-/* An icon beside its word. */
+/* An icon beside its word. The icon keeps its size however long the words run. */
 .icon-line {
 	display: inline-flex;
 	align-items: center;
 	gap: var(--cl-s2);
+}
+.icon-line > svg {
+	flex: none;
 }
 
 /* Page headers set a two-tone title's continuation on its own line, as landing sections do. */

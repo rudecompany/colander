@@ -1,4 +1,4 @@
-// First run: Chrome is asked for site access only for the chosen platforms.
+// First run: the browser is asked for site access only for the chosen platforms.
 import { EXT_ID, expect, test } from './harness';
 
 async function recordRequests(page: import('@playwright/test').Page, grant: boolean) {
@@ -18,7 +18,7 @@ test('the welcome tab opens on install', async ({ ext }) => {
 	await expect.poll(() => ext.ctx.pages().map((p) => p.url())).toContain(`chrome-extension://${EXT_ID}/welcome.html`);
 });
 
-test('choose strictness and platforms, then Chrome asks for those sites only', async ({ ext }) => {
+test('choose strictness and platforms, then the browser asks for those sites only', async ({ ext }) => {
 	const page = await ext.ctx.newPage();
 	await page.goto(`chrome-extension://${EXT_ID}/welcome.html`);
 	await expect(page.getByRole('heading', { name: 'Set up Colander in 3 steps.' })).toBeVisible();
@@ -44,6 +44,8 @@ test('choose strictness and platforms, then Chrome asks for those sites only', a
 	expect(requested).toEqual([{ origins: ['*://www.youtube.com/*', '*://m.youtube.com/*', '*://www.tiktok.com/*', '*://m.tiktok.com/*'] }]);
 	await expect(page.getByRole('heading', { name: 'Pin Colander' })).toBeVisible();
 	await expect(page.getByRole('list', { name: 'The toolbar icon' }).getByRole('listitem')).toHaveText(['Active', 'Paused', 'Needs attention']);
+	// The Chrome build also runs in Brave and Opera, so the steps name no browser.
+	await expect(page.locator('.pin-steps li')).toHaveText(["Choose the puzzle piece in your browser's toolbar.", 'Choose the pin beside Colander.']);
 	// YouTube opens in a new tab. Its first navigation can start before routes attach, and nothing
 	// leaves the machine, so check where Chrome sent the tab rather than what loaded in it.
 	const opened = ext.ctx.waitForEvent('page');
@@ -51,6 +53,8 @@ test('choose strictness and platforms, then Chrome asks for those sites only', a
 	await opened;
 	await expect.poll(() => ext.ctl.evaluate(async () => (await chrome.tabs.query({})).map((t) => t.pendingUrl ?? t.url))).toContain('https://www.youtube.com/');
 	await expect(page.getByRole('heading', { name: 'You are set' })).toBeVisible();
+	// Plus bought on the website reaches this browser with a code, from Options.
+	await expect(page.getByRole('link', { name: 'Have Plus? Connect it with a code' })).toHaveAttribute('href', 'options.html#plan');
 	const s = await ext.storage<{ platforms: Record<string, boolean>; strictness: string; onboarded: boolean }>('settings');
 	expect(s.platforms).toEqual({ yt: true, tt: true, ig: false, fb: false });
 	expect(s.strictness).toBe('no_ai');
@@ -78,7 +82,7 @@ test('if site access is refused, nothing is switched on', async ({ ext }) => {
 	await recordRequests(page, false);
 	await page.getByRole('button', { name: 'Continue' }).click();
 	await page.getByRole('button', { name: 'Continue' }).click();
-	await expect(page.getByRole('alert')).toContainText('Chrome did not grant site access');
+	await expect(page.getByRole('alert')).toContainText('Your browser did not grant site access');
 	await expect(page.getByText('Step 2 of 3')).toBeVisible();
 	const scripts = await ext.sw.evaluate(async () => (await chrome.scripting.getRegisteredContentScripts()).length);
 	expect(scripts).toBe(0);

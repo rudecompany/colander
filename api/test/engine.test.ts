@@ -251,7 +251,7 @@ describe('engine', () => {
 			f.clock += HOUR;
 			decide(f.eng, { sourceRef: ref, verdict: 'clear', reason: 'Looks fine to me.', actor: 'curator' });
 			verifyAppeal(f.eng, a);
-			const rae = grantRole(f.db, 'rae@colander.test', 'staff', f.s);
+			const rae = grantRole(f.db, 'rae@colander.test', 'staff', f.s, { host: 'job' });
 			resolveAppeal(f.eng, a, 'denied', 'Twenty generated uploads a day.', rae);
 			expect(f.source('@farm').state.verdict, 'denied appeal restored').toBe('slop');
 		}));
@@ -392,7 +392,7 @@ describe('engine', () => {
 			const a = f.appeal(ref, 'colander-TEST0001');
 			verifyAppeal(f.eng, a);
 			expect(f.source('@farm').state.verdict, 'verified appeal').toBe('disputed');
-			const rae = grantRole(f.db, 'rae@colander.test', 'staff', f.s);
+			const rae = grantRole(f.db, 'rae@colander.test', 'staff', f.s, { host: 'job' });
 			resolveAppeal(f.eng, a, 'denied', 'Twenty generated uploads a day.', rae);
 			expect(f.source('@farm').state.verdict, 'denied appeal').toBe('slop');
 			const entries = log(f.db, { sourceRef: ref, limit: 10 });
@@ -413,7 +413,7 @@ describe('engine', () => {
 			const ref = f.source('@farm').ref;
 			const a = f.appeal(ref, 'colander-TEST0004');
 			verifyAppeal(f.eng, a);
-			const rae = grantRole(f.db, 'rae@colander.test', 'staff', f.s);
+			const rae = grantRole(f.db, 'rae@colander.test', 'staff', f.s, { host: 'job' });
 			resolveAppeal(f.eng, a, 'upheld', 'Original narration on camera.', rae);
 			expect(getAppeal(f.db, a.id)).toMatchObject({ status: 'upheld', outcome: 'upheld', reasoning: 'Original narration on camera.' });
 			const src = f.source('@farm');
@@ -633,7 +633,7 @@ describe('jobs', () => {
 	// for the next full pass.
 	it('rescore touched sources after the debounce', async () => {
 		const ref = await at(T, async (f) => {
-			expect(f.store.jobs.kinds()).toEqual(['dump', 'pass', 'prune', 'publish', 'rescore', 'seeds']);
+			expect(f.store.jobs.kinds()).toEqual(['audit', 'dump', 'pass', 'prune', 'publish', 'requests', 'rescore', 'seeds']);
 			let ref = 0;
 			for (let i = 0; i < 3; i++) {
 				const input = { installHash: `i${i}`, clientId: 'r', platform: 'yt', sourceId: '@reported', sourceName: '', examples: [] };

@@ -13,7 +13,9 @@
 	import X from '@lucide/svelte/icons/x';
 	import ExternalLink from '@lucide/svelte/icons/external-link';
 	import Lock from '@lucide/svelte/icons/lock';
+	import { page } from '$app/state';
 	import { api, errorText } from '#lib/api.ts';
+	import { siteOrigin } from '#lib/site.ts';
 	import { fmtDateTime, fmtNum, fmtPct, fmtShortDate, platformItemUrl, platformSourceUrl, sourcePath } from '@colander/shared';
 	import { LAYER_KEYS, LAYER_QUESTION, LAYER_WORD } from '@colander/shared';
 	import { LogRow, middleTruncate } from '@colander/shared';
@@ -95,7 +97,7 @@
 			<a class="icon-line" href={platformSourceUrl(s.platform, s.id)} rel="noreferrer" target="_blank">
 				Open on {PLATFORM_NAME[s.platform]} <ExternalLink size={14} aria-hidden="true" />
 			</a>
-			<a href={sourcePath(s.platform, s.id)} target="_blank">Public source page</a>
+			<a href="{siteOrigin(page.url)}{sourcePath(s.platform, s.id)}" target="_blank">Public source page</a>
 		</p>
 	</header>
 
@@ -299,7 +301,7 @@
 			<p class="cl-body cl-muted">No decisions logged yet.</p>
 		{:else}
 			<ol class="history">
-				{#each data.history as e (e.id)}<li><LogRow entry={e} /></li>{/each}
+				{#each data.history as e (e.id)}<li><LogRow entry={e} site={siteOrigin(page.url)} /></li>{/each}
 			</ol>
 		{/if}
 	</section>

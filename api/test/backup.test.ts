@@ -3,15 +3,18 @@
 import { env } from 'cloudflare:workers';
 import { evictDurableObject, runDurableObjectAlarm, runInDurableObject } from 'cloudflare:test';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { API_DATA_TABLES, countsAgree, dump, DUMP_PREFIX, dumpKey, dumpLines, dumpTables, loadDump, newestDump, parseInsert, restoreDump, tableCounts } from '../src/backup';
+import { API_DATA_TABLES, countsAgree, dump, DUMP_PREFIX, dumpKey, dumpLines, dumpTables, dumpTime, loadDump, newestDump, parseInsert, restoreDump, tableCounts } from '../src/backup';
 import { nextDump, STATUS } from '../src/jobs';
-import { grantRole, setDisplayName } from '../src/store/accounts';
+import { audit, createSession, grantRole, setDisplayName } from '../src/store/accounts';
 import type { Db } from '../src/store/db';
+import { LEGACY_TOKEN_SECONDS, MIGRATIONS } from '../src/store/migrations';
 import { putSync } from '../src/store/misc';
 import { setYouTube } from '../src/store/sources';
 import { saveTags } from '../src/store/tags';
-import { MIGRATIONS } from '../src/store/migrations';
 import type { Store } from '../src/store/store';
+
+/** The schema version a dump of the current Store names: the newest migration it applied. */
+const SCHEMA = Math.max(...MIGRATIONS.map((m) => m.version));
 
 const T = 1_900_000_000_000;
 let n = 0;
@@ -31,9 +34,9 @@ function contents(db: Db): Record<string, string[]> {
 /** Data in every shape the schema holds: text with quotes and line breaks, blobs, reals, NULLs, big integers. */
 function fill(store: Store): void {
 	const db = store.db;
-	const sam = grantRole(db, 'sam@example.com', 'curator', 1_790_000_000);
+	const sam = grantRole(db, 'sam@example.com', 'curator', 1_790_000_000, { host: 'job' });
 	setDisplayName(db, sam.id, "Sam 'the curator' O'Neil\r\nsecond line\n\nüñí ✓ 😀");
-	grantRole(db, 'rae@example.com', 'staff', 1_790_000_001);
+	grantRole(db, 'rae@example.com', 'staff', 1_790_000_001, { host: 'job' });
 	saveTags(
 		db,
 		'install-a',
@@ -57,6 +60,15 @@ function fill(store: Store): void {
 }
 
 const dumpText = (store: Store, state: DurableObjectState) => [...dumpLines(state.storage.sql, store.db, T)].join('\n') + '\n';
+/** The dump without the _migrations rows of the versions `drop` picks, as if those had not run. */
+const withoutMigrations = (text: string, drop: (version: number) => boolean) =>
+	text
+		.split('\n')
+		.filter((l) => {
+			const v = /^INSERT INTO "_migrations"\("version",[^)]*\) VALUES\((\d+),/.exec(l)?.[1];
+			return v === undefined || !drop(Number(v));
+		})
+		.join('\n');
 
 /** SQL text as the byte stream loadDump reads. */
 const bytes = (text: string) => new Response(text).body!;
@@ -72,6 +84,8 @@ describe('dump and restore', () => {
 			fill(store);
 			const d = await dump(state, store.db, env.BACKUPS, T);
 			expect(d.key).toBe(`dumps/${new Date(T).toISOString()}.sql.gz`);
+			// A restore reads the time back from the name; any other name gives 0, the whole audit log.
+			expect([d.key, 'dumps/latest.sql.gz', `seeds/${new Date(T).toISOString()}.sql.gz`].map(dumpTime)).toEqual([T, 0, 0]);
 			expect(d.bytes).toBe(new TextEncoder().encode(dumpText(store, state)).length);
 			expect(d.size).toBe((await env.BACKUPS.head(d.key))!.size);
 			expect(d.size).toBeLessThan(d.bytes);
@@ -82,7 +96,7 @@ describe('dump and restore', () => {
 
 		await runInDurableObject(fresh(), async (store: Store) => {
 			// Rows the restore replaces.
-			grantRole(store.db, 'someone@example.com', 'member', 1);
+			grantRole(store.db, 'someone@example.com', 'member', 1, { host: 'job' });
 			store.db.run("INSERT INTO youtube_cache (key, body, fetched_at) VALUES ('live', x'01', 1)");
 			const rows = await restoreDump(store.db, env.BACKUPS, key, T);
 			expect(rows).toMatchObject({ accounts: 2, tags: 2, sources: 1, list_entries: 3, jobs: 1, limits: 1 });
@@ -102,12 +116,7 @@ describe('dump and restore', () => {
 			fill(store);
 			state.storage.kv.put('status:pass', { at: 1 });
 			const lines = dumpText(store, state).trimEnd().split('\n');
-			const versions = MIGRATIONS.map((m) => m.version);
-			expect(lines.slice(0, 3)).toEqual([
-				`-- Colander Store dump, schema version ${versions.at(-1)}, migrations ${versions.join(',')}, taken ${new Date(T).toISOString()}`,
-				'PRAGMA foreign_keys=OFF;',
-				'BEGIN TRANSACTION;'
-			]);
+			expect(lines.slice(0, 3)).toEqual([`-- Colander Store dump, schema version ${SCHEMA}, taken ${new Date(T).toISOString()}`, 'PRAGMA foreign_keys=OFF;', 'BEGIN TRANSACTION;']);
 			expect(lines.at(-1)).toBe('COMMIT;');
 			const text = lines.join('\n');
 			for (const t of dumpTables(store.db)) expect(text).toContain(`${t.sql};\n`);
@@ -191,7 +200,7 @@ describe('dump and restore', () => {
 describe('restores across migrations and the quota ledger', () => {
 	// A dump from before migration 0005 holds what 0005 took out of the live rows: seed list names in
 	// public reasons, unchecked imports, YouTube API titles and figures. Its data changes run again.
-	it('run the data changes of the migrations newer than the dump on its rows', async () => {
+	it('run the data changes of the migrations the dump lacks on its rows', async () => {
 		const text = await runInDurableObject(fresh(), (store: Store, state) => {
 			const db = store.db;
 			db.run(`INSERT INTO sources (id, platform, canonical_id, name, import_list, import_source, import_license, imported_at, subscribers, youtube_checked_at, created_at)
@@ -201,17 +210,19 @@ describe('restores across migrations and the quota ledger', () => {
 				(2, 2, 'yt', 'source', 'x', 1, 'x', 'API Title', 'Staff checked AiSList.', 'staff')`);
 			return dumpText(store, state);
 		});
-		// A header from before migration 8 names only the version; versions may also land out of
-		// order, so a dump that lists its migrations gets the data changes of each one it lacks, even
-		// below its own version.
-		const old = text.replace(/schema version \d+, migrations [\d,]+,/, 'schema version 4,');
-		const gap = text.replace(/migrations [\d,]+,/, 'migrations 1,2,3,4,8,');
-		expect(old).not.toBe(text);
-		expect(gap).not.toBe(text);
-		for (const dumped of [old, gap]) {
+		const old = withoutMigrations(text, (v) => v >= 5).replace(`-- Colander Store dump, schema version ${SCHEMA},`, '-- Colander Store dump, schema version 4,');
+		const row5 = /^INSERT INTO "_migrations".*VALUES\(5,/m;
+		expect(text).toMatch(row5);
+		expect(old).not.toMatch(row5);
+		// A migration merged below one that already shipped: the header names the newest version, and
+		// the dump's _migrations rows say 5 is missing. A dump without those rows goes by its header.
+		const gap = withoutMigrations(text, (v) => v === 5);
+		expect(gap).toContain(`-- Colander Store dump, schema version ${SCHEMA},`);
+		expect(gap).not.toMatch(row5);
+		for (const dump of [old, gap, withoutMigrations(old, () => true)]) {
 			await runInDurableObject(fresh(), async (store: Store) => {
 				const db = store.db;
-				await loadDump(db, bytes(dumped), T);
+				await loadDump(db, bytes(dump), T);
 				expect(db.all('SELECT source_name, reason, reason_original FROM decision_log ORDER BY id')).toEqual([
 					{ source_name: null, reason: 'Likely slop. It met a rule Colander no longer uses.', reason_original: 'Likely slop. Listed on the AiSList seed list.' },
 					{ source_name: null, reason: 'Staff checked [withheld].', reason_original: 'Staff checked AiSList.' }
@@ -226,6 +237,36 @@ describe('restores across migrations and the quota ledger', () => {
 			await loadDump(store.db, bytes(text), T);
 			expect(store.db.get('SELECT reason, reason_original FROM decision_log WHERE id = 1')).toEqual({ reason: 'Likely slop. Listed on the AiSList seed list.', reason_original: null });
 		});
+	});
+
+	// A dump from before 0006 has sessions without a sign-in time and reviewer tokens without an
+	// expiry; its sessions are the only ones whose old cookie name still counts. 0006 shipped beside
+	// 0007, so a dump may also lack 6 alone.
+	it('run the sign-in backfills of 0006 on a dump from before it, and keep the audit log append-only', async () => {
+		const text = await runInDurableObject(fresh(), (store: Store, state) => {
+			const db = store.db;
+			const a = grantRole(db, 'sam@example.test', 'curator', 100, { host: 'job' });
+			createSession(db, { tokenHash: 's1', accountId: a.id, method: 'email', now: 100, expires: 10_000 });
+			db.run('UPDATE sessions SET authenticated_at = NULL');
+			db.run('INSERT INTO reviewer_tokens (token_hash, account_id, created_at) VALUES (?, ?, ?)', 'r1', a.id, 100);
+			return dumpText(store, state);
+		});
+		const old = withoutMigrations(text, (v) => v >= 6).replace(`-- Colander Store dump, schema version ${SCHEMA},`, '-- Colander Store dump, schema version 5,');
+		expect(old).toContain('-- Colander Store dump, schema version 5,');
+		for (const dump of [old, withoutMigrations(text, (v) => v === 6)]) {
+			await runInDurableObject(fresh(), async (store: Store) => {
+				const db = store.db;
+				// Written before the restore: it stays, next to the dump's own rows.
+				audit(db, { action: 'kept', host: 'job' }, Math.floor(T / 1000));
+				await loadDump(db, bytes(dump), T);
+				expect(db.get('SELECT authenticated_at, legacy FROM sessions')).toEqual({ authenticated_at: 100, legacy: 1 });
+				expect(db.get('SELECT expires_at FROM reviewer_tokens')).toEqual({ expires_at: T / 1000 + LEGACY_TOKEN_SECONDS });
+				expect(db.all('SELECT action FROM audit_log ORDER BY id').map((r) => r.action)).toEqual(['kept', 'role_changed']);
+				// Restoring the same dump again adds nothing.
+				await loadDump(db, bytes(dump), T);
+				expect(db.get<{ n: number }>('SELECT count(*) AS n FROM audit_log')!.n).toBe(2);
+			});
+		}
 	});
 
 	// Units spent stay spent: restoring a ledger from hours ago must not let the Worker spend them again.

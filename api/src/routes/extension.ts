@@ -272,3 +272,26 @@ export async function postTrial(api: Api, request: Request): Promise<Response> {
 	if (wait > 0) return tooMany(wait / 1000);
 	return json(200, { token: await issuePlanToken(await api.key(), claims) });
 }
+
+/**
+ * DELETE /v1/install (Install): erases what the server holds for this install: its tags, reports,
+ * trial and the trial's synced settings. The sources they touched are scored again without them.
+ */
+export function deleteInstall(api: Api, request: Request): Response {
+	const install = installHash(request);
+	if (install instanceof Response) return install;
+	const { db, jobs } = api.store;
+	const now = api.store.now();
+	db.tx(() => {
+		const refs = db
+			.all<{ source_id: number }>('SELECT source_id FROM tags WHERE install_hash = ?1 UNION SELECT source_id FROM reports WHERE install_hash = ?1', install)
+			.map((r) => r.source_id);
+		db.run('DELETE FROM tags WHERE install_hash = ?', install);
+		db.run('DELETE FROM reports WHERE install_hash = ?', install);
+		db.run('DELETE FROM sync_blobs WHERE sub IN (SELECT sub FROM trials WHERE install_hash = ?)', install);
+		db.run('DELETE FROM trials WHERE install_hash = ?', install);
+		db.run('DELETE FROM installs WHERE hash = ?', install);
+		jobs.touch(refs, now);
+	});
+	return new Response(null, { status: 204 });
+}

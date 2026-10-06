@@ -7,16 +7,20 @@ import { b64decode } from '@colander/shared/bytes';
 import { REGISTRY } from '@colander/shared/seed-registry';
 import { SigningKey } from '@colander/shared/signing';
 import { Auth } from '../auth';
-import { dump } from '../backup';
+import { dump, exportAudit, nextAuditExport } from '../backup';
+import { runHeldRequests } from '../erase';
 import { Billing, billingConfig } from '../billing';
 import { devRoutes, testNow } from '../dev';
 import { jsonError, notFound, ROUTE_HEADER, setCache } from '../http';
 import { Jobs, nextSeeds, prune, seedsJob, STATUS, type DumpStatus, type PassStatus, type PublishStatus } from '../jobs';
+import { available } from '../limits';
 import { Publisher, r2Sequence } from '../list/publisher';
 import { Mailer } from '../mail';
-import { storeOps, type OpsArgs } from '../ops';
+import { storeOps, type OpsArgs, type OpsCaller } from '../ops';
 import { accountRoutes } from '../routes/account';
+import { adminRoutes } from '../routes/admin';
 import { billingRoutes } from '../routes/billing';
+import { pairRoutes } from '../routes/pairing';
 import { routes as apiRoutes } from '../routes/server';
 import { Engine } from '../scoring/engine';
 import { DAILY_UNITS, YouTube } from '../youtube';
@@ -30,6 +34,13 @@ interface Route {
 	pattern: string;
 	match: URLPattern;
 	handler: (request: Request, url: URL, params: Record<string, string | undefined>) => Response | Promise<Response>;
+}
+
+/** Sign-in codes sent in a unix hour and in the hour before it. */
+export interface SignInMail {
+	hour: number;
+	count: number;
+	previous: number;
 }
 
 /** What the watchdog cron reads every 5 minutes (src/scheduled.ts decides what to alert on). */
@@ -52,6 +63,10 @@ export interface WatchdogStatus {
 	alerted: string[];
 	/** when the watchdog first ran here (unix ms): job ages count from it until a job reports */
 	since: number;
+	/** more wrong pairing codes came in than the baseline allows (src/limits.ts pair_claim_fail) */
+	pairGuessing: boolean;
+	/** sign-in codes sent, by hour */
+	signInMail: SignInMail | null;
 }
 
 /** The one Store instance that holds the data and runs the jobs. */
@@ -65,6 +80,8 @@ export class Store extends DurableObject<Env> {
 	readonly publisher: Publisher;
 	readonly engine: Engine;
 	readonly auth: Auth;
+	/** The backup bucket: dumps, erasure records and the audit log's daily copies. */
+	readonly backups: R2Bucket;
 	/** Tests replace the mailer and billing, as Go's tests set Server.Mail and Server.Billing. */
 	mailer: Mailer;
 	billing: Billing;
@@ -85,6 +102,11 @@ export class Store extends DurableObject<Env> {
 		this.jobs.definePublish((now) => this.publisher.publish(now));
 		this.jobs.define('prune', (_, now) => prune(this.db, now), (now) => now);
 		this.jobs.defineDump((now) => dump(ctx, this.db, env.BACKUPS, now));
+		this.backups = env.BACKUPS;
+		// Held account requests (deletions, passkey removals, email changes) run hourly once due; the
+		// audit log goes to R2 daily.
+		this.jobs.define('requests', (_, now) => runHeldRequests(this, now), (now) => now);
+		this.jobs.define('audit', (_, now) => exportAudit(this.db, ctx.storage.kv, env.BACKUPS, now), nextAuditExport);
 		// Scoring (Go's Engine.Run): the full pass every 5 minutes in chunks, and the debounced rescore
 		// of the sources the routes hand to jobs.touch() after reports and appeal changes.
 		this.engine = new Engine(this.db, this.jobs, () => this.now());
@@ -127,7 +149,9 @@ export class Store extends DurableObject<Env> {
 			...[
 				...apiRoutes({ store: this, key: this.signingKey, publicUrl: env.PUBLIC_URL.replace(/\/+$/, '') }),
 				...accountRoutes(this, env),
+				...adminRoutes(this, env),
 				...billingRoutes(this),
+				...pairRoutes(this),
 				...devRoutes(this, ctx, env)
 			].map(([method, pattern, handler]) => route(method, pattern, handler))
 		];
@@ -138,8 +162,18 @@ export class Store extends DurableObject<Env> {
 		return this.db.get<{ version: number }>('SELECT max(version) AS version FROM _migrations')!.version;
 	}
 
-	/** The internal router. HEAD runs the GET route; the edge drops the body. */
+	/**
+	 * The internal router. HEAD runs the GET route; the edge drops the body. A session from before
+	 * code sign-in that still arrives under the old cookie name moves to the new name here, with the
+	 * same token, before any route reads it.
+	 */
 	async fetch(request: Request): Promise<Response> {
+		const moved = this.auth.legacyMove(request);
+		if (moved) {
+			const headers = new Headers(request.headers);
+			headers.set('Cookie', `${headers.get('Cookie')}; ${this.auth.names.session}=${moved.token}`);
+			request = new Request(request, { headers });
+		}
 		const url = new URL(request.url);
 		const method = request.method === 'HEAD' ? 'GET' : request.method;
 		let res: Response | undefined;
@@ -163,7 +197,16 @@ export class Store extends DurableObject<Env> {
 			await this.jobs.arm().catch((err: unknown) => console.error(JSON.stringify({ message: 'arming the alarm failed', error: String(err) })));
 		}
 		res.headers.set(ROUTE_HEADER, name);
+		if (moved) for (const c of moved.cookies) res.headers.append('Set-Cookie', c);
 		return res;
+	}
+
+	/** Counts a sign-in email for the watchdog's send-rate alert, per unix hour. */
+	countSignInMail(now: number): void {
+		const hour = Math.floor(now / 3_600_000);
+		const kv = this.ctx.storage.kv;
+		const c = kv.get<SignInMail>(STATUS.signInMail);
+		kv.put(STATUS.signInMail, { hour, count: c?.hour === hour ? c.count + 1 : 1, previous: c?.hour === hour ? c.previous : c?.hour === hour - 1 ? c.count : 0 });
 	}
 
 	/** Runs the due jobs. Each job catches its own failure, so the alarm itself only fails on storage errors. */
@@ -199,7 +242,9 @@ export class Store extends DurableObject<Env> {
 			r2,
 			dump: kv.get<DumpStatus>(STATUS.dump) ?? null,
 			alerted: kv.get<string[]>(STATUS.alerts) ?? [],
-			since
+			since,
+			pairGuessing: !available(this.db, now, '', 'pair_claim_fail'),
+			signInMail: kv.get<SignInMail>(STATUS.signInMail) ?? null
 		};
 	}
 
@@ -208,9 +253,9 @@ export class Store extends DurableObject<Env> {
 		this.ctx.storage.kv.put(STATUS.alerts, keys);
 	}
 
-	/** The ops channel's commands that run in the Store (src/ops.ts), with JSON arguments and answer. */
-	async ops(command: string, args: string): Promise<{ status: number; json: string }> {
-		const a = await storeOps(this, this.ctx, this.env, command, JSON.parse(args) as OpsArgs);
+	/** The ops channel's commands that run in the Store (src/ops.ts), with JSON arguments, caller and answer. */
+	async ops(command: string, args: string, caller?: string): Promise<{ status: number; json: string }> {
+		const a = await storeOps(this, this.ctx, this.env, command, JSON.parse(args) as OpsArgs, caller ? (JSON.parse(caller) as OpsCaller) : undefined);
 		return { status: a.status, json: JSON.stringify(a.body) };
 	}
 

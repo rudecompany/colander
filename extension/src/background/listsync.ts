@@ -6,6 +6,7 @@ import { applyDelta, ENTRY, verifyList, type ListFile } from '@colander/shared/l
 import type { TrustedKey } from '@colander/shared/signing';
 import { DEFAULT_STATUS, K, type Status, type StoredIndex } from '../lib/settings';
 import { request } from './net';
+import { browser } from 'wxt/browser';
 
 export interface ListState {
 	sequence: number;
@@ -21,13 +22,13 @@ async function fetchBytes(path: string): Promise<{ status: number; bytes: Uint8A
 }
 
 export async function getStatus(): Promise<Status> {
-	const got = await chrome.storage.local.get(K.status);
+	const got = await browser.storage.local.get(K.status);
 	return { ...DEFAULT_STATUS, ...(got[K.status] as Partial<Status>) };
 }
 
 export async function setStatus(patch: Partial<Status>): Promise<Status> {
 	const next = { ...(await getStatus()), ...patch };
-	await chrome.storage.local.set({ [K.status]: next });
+	await browser.storage.local.set({ [K.status]: next });
 	return next;
 }
 
@@ -55,7 +56,7 @@ export function syncErrorText(e: unknown): string {
 async function save(state: ListState) {
 	await db.put('kv', state, 'list');
 	const index: StoredIndex = { sequence: state.sequence, count: state.entries.length / ENTRY, entries: b64encode(state.entries), syncedAt: state.syncedAt };
-	await chrome.storage.local.set({ [K.listIndex]: index });
+	await browser.storage.local.set({ [K.listIndex]: index });
 }
 
 /**
@@ -106,5 +107,5 @@ export async function syncList(keys: TrustedKey[]): Promise<boolean> {
 
 export async function clearList() {
 	await db.del('kv', 'list');
-	await chrome.storage.local.remove(K.listIndex);
+	await browser.storage.local.remove(K.listIndex);
 }

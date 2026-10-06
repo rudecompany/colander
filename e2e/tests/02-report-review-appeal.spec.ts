@@ -1,9 +1,10 @@
-// Journeys 3 and 4: a viewer reports a channel, staff decide it in the console, the verdict
+// Journeys 3 and 4: a viewer reports a channel, staff decide it in the admin console, the verdict
 // reaches the extension; then the creator appeals, the channel is unhidden as Disputed during
-// review, and the upheld appeal clears it.
+// review, and the upheld appeal clears it. Staff work on the admin host, behind dev mode's stand-in
+// for Cloudflare Access.
 import type { Page } from '@playwright/test';
-import { CARD, CHANNEL, REPORTED, SEARCH, card, chip, expect, launch, onboard, signIn, syncNow, test, type Ext } from './harness.ts';
-import { BASE_URL, LOCAL_ONLY, ORIGIN, STAFF, listSequence, logMark, mailsSince, publishedAfter } from './stack.ts';
+import { CARD, CHANNEL, REPORTED, SEARCH, adminSignIn, card, chip, expect, launch, onboard, syncNow, test, type Ext } from './harness.ts';
+import { BASE_URL, LOCAL_ONLY, ORIGIN, STAFF, adminOrigin, listSequence, logMark, mailsSince, publishedAfter } from './stack.ts';
 
 test.skip(!!BASE_URL, LOCAL_ONLY);
 
@@ -27,9 +28,9 @@ test.afterAll(async () => {
 	await ext?.close();
 });
 
-/** Opens the queue item for the reported channel in the console. */
+/** Opens the queue item for the reported channel in the admin console. */
 async function openInConsole(kind: 'All' | 'Appeals') {
-	await site.goto(`${ORIGIN}/console`);
+	await site.goto(`${adminOrigin()}/admin`);
 	if (kind !== 'All') await site.getByRole('tab', { name: new RegExp(`^${kind}`) }).click();
 	await site.getByRole('button', { name: new RegExp(REPORTED.name) }).click();
 	await expect(site.getByRole('heading', { level: 2, name: REPORTED.name })).toBeVisible();
@@ -77,12 +78,12 @@ test('a report goes through review and its verdict reaches the extension and My 
 	await expect(row).toContainText('Under review');
 	await channel.close();
 
-	// Staff sign in on the website and decide the channel in the review console.
+	// Staff sign in on the admin host and decide the channel in the admin console.
 	site = await ext.ctx.newPage();
-	await signIn(site, STAFF, '/account');
-	await site.getByRole('link', { name: 'Open the review console' }).click();
-	// Staff see which seed list names a lead, with its provenance and, for Colander's own lists,
-	// where staff saw it; it is never evidence. Every lead waits under Escalated.
+	await adminSignIn(site, STAFF);
+	await expect(site.getByText('Staff, Rae')).toBeVisible();
+	// Staff on the admin host see which seed list names a lead, with its provenance and, for
+	// Colander's own lists, where staff saw it; it is never evidence. Every lead waits under Escalated.
 	await site.getByRole('tab', { name: /^Escalated/ }).click();
 	await site.getByRole('button', { name: /Seed lead/ }).first().click();
 	const seeds = site.getByRole('region', { name: 'Seed lists' });

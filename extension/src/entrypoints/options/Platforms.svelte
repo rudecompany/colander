@@ -1,4 +1,4 @@
-<!-- @component Platforms: switching one on asks Chrome for site access to that platform only. -->
+<!-- @component Platforms: switching one on asks the browser for site access to that platform only. -->
 <script lang="ts">
 	import { PageHeader, PlusTag, SettingRow } from '@colander/shared';
 	import { PLATFORM_DOMAIN, PLATFORM_SURFACES } from '@colander/shared/copy';
@@ -12,6 +12,7 @@
 	import { isPlus, K, withDefaults, type Entitlement, type Settings } from '../../lib/settings';
 	import { disablePlatform, enablePlatforms, granted } from '../../ui/platforms';
 	import { stored } from '../../ui/store.svelte';
+	import { browser } from 'wxt/browser';
 
 	const settingsStore = stored<Partial<Settings> | undefined>(K.settings, undefined);
 	const settings = $derived(withDefaults(settingsStore.value));
@@ -25,20 +26,20 @@
 		for (const p of PLATFORMS) access[p] = await granted(p);
 	}
 	void refresh();
-	chrome.permissions.onAdded.addListener(refresh);
-	chrome.permissions.onRemoved.addListener(refresh);
+	browser.permissions.onAdded.addListener(refresh);
+	browser.permissions.onRemoved.addListener(refresh);
 
 	async function toggle(p: Platform, on: boolean) {
 		note = '';
 		if (on) {
 			const ok = await enablePlatforms([p]);
-			if (!ok) note = `Chrome did not grant access to ${PLATFORM_DOMAIN[p]}, so ${PLATFORM_NAME[p]} stays off.`;
+			if (!ok) note = `Your browser did not grant access to ${PLATFORM_DOMAIN[p]}, so ${PLATFORM_NAME[p]} stays off.`;
 		} else await disablePlatform(p);
 		await refresh();
 	}
 </script>
 
-<PageHeader variant="app" eyebrow="Options" title="Platforms" lede="Colander asks Chrome for site access only for the platforms you switch on, and runs nowhere else." />
+<PageHeader variant="app" eyebrow="Options" title="Platforms" lede="Colander asks your browser for site access only for the platforms you switch on, and runs nowhere else." />
 
 <div class="cards">
 	<Card>
@@ -48,7 +49,7 @@
 				<SettingRow title={PLATFORM_NAME[p]} description={PLATFORM_SURFACES[p]}>
 					{#if early}<span class="uin-badge uin-badge-md early">Early access</span>{/if}
 					{#if settings.platforms[p] && !access[p]}
-						<span class="warn"><CircleAlert size={16} aria-hidden="true" />Chrome no longer grants site access to {PLATFORM_DOMAIN[p]}. Switch it on again to grant it.</span>
+						<span class="warn"><CircleAlert size={16} aria-hidden="true" />Your browser no longer grants site access to {PLATFORM_DOMAIN[p]}. Switch it on again to grant it.</span>
 					{/if}
 					{#snippet control({ labelledby, describedby })}
 						<Switch checked={settings.platforms[p] && access[p]} aria-labelledby={labelledby} aria-describedby={describedby} onCheckedChange={(v) => toggle(p, v)} />

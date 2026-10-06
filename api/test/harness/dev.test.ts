@@ -25,6 +25,8 @@ const server = createTestHarness({
 				COLANDER_SIGNING_KEY: process.env.COLANDER_SIGNING_KEY!,
 				IP_SALT: 'harness-salt',
 				OPS_TOKEN: 'harness-ops-token',
+				// The dev ops token works only in dev mode on localhost.
+				PUBLIC_URL: 'http://localhost:8787',
 				COLANDER_DEV: '1',
 				COLANDER_TEST_NOW: NOW
 			}

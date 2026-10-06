@@ -1,26 +1,30 @@
 <!--
-@component SiteFooter: the footer CTA (except on /s, /appeal, /console and /account), a
+@component SiteFooter: the footer CTA (except on /s, /appeal, /console, /account and /admin), a
 perforation row, four link columns and a bottom row with the mark, the live list badge and the
 cookie line. Support links never appear on source or appeal pages: no creator is asked for money
 while their case is open.
 -->
 <script lang="ts">
 	import { page } from '$app/state';
-	import { PUBLIC_STORE_URL } from '$app/env/public';
 	import { ColanderMark, LiveBadge, PerforationRow } from '@colander/shared';
+	import { BROWSERS, install } from '#lib/install.svelte.ts';
 	import { live } from '#lib/live.svelte.ts';
 	import ArrowLink from './ArrowLink.svelte';
+	import StoreNote from './StoreNote.svelte';
 	import InstallButton from './InstallButton.svelte';
+	import { siteOrigin } from '#lib/site.ts';
 
 	const path = $derived(page.url.pathname);
 	const creatorPage = $derived(/^\/(s|appeal)(\/|$)/.test(path));
-	const cta = $derived(!creatorPage && !/^\/(console|account)(\/|$)/.test(path));
+	const cta = $derived(!creatorPage && !/^\/(console|account|admin)(\/|$)/.test(path));
+	/** On the admin host the site's links lead to the main host. */
+	const site = $derived(siteOrigin(page.url));
 
 	const columns = $derived([
 		{
 			title: 'Product',
 			links: [
-				{ href: PUBLIC_STORE_URL, label: 'Add to Chrome' },
+				{ href: install.store.href, label: install.store.label },
 				{ href: '/definition', label: 'How it decides' },
 				{ href: '/plans', label: 'Plans' },
 				...(creatorPage ? [] : [{ href: '/support', label: 'Support our work' }])
@@ -59,8 +63,8 @@ while their case is open.
 			<PerforationRow />
 			<div class="cl-container cta-in">
 				<h2 class="cl-display-lg" id="footer-cta">Install once. <span class="cl-tone2">Change nothing.</span></h2>
-				<div class="cta-btn"><InstallButton label="Add to Chrome, free" block={false} /></div>
-				<p class="cl-figure small">Chrome on desktop. Also works in Edge and Brave. No account needed.</p>
+				<div class="cta-btn"><InstallButton free block={false} /></div>
+				<p class="cl-figure small">For {BROWSERS} on desktop. No account needed. <StoreNote /></p>
 			</div>
 		</section>
 	{/if}
@@ -70,7 +74,7 @@ while their case is open.
 			<nav aria-labelledby="foot-{c.title}">
 				<h2 id="foot-{c.title}">{c.title}</h2>
 				<ul>
-					{#each c.links as l (l.label)}<li><a href={l.href}>{l.label}</a></li>{/each}
+					{#each c.links as l (l.label)}<li><a href={l.href.startsWith('/') ? site + l.href : l.href}>{l.label}</a></li>{/each}
 				</ul>
 			</nav>
 		{/each}
@@ -79,8 +83,8 @@ while their case is open.
 		<div class="base">
 			<span class="brand"><ColanderMark size={20} /><span class="word">Colander</span></span>
 			<LiveBadge sequence={live.stats?.list_sequence} updatedAt={live.stats?.list_updated_at} now={live.now ?? undefined} />
-			<span class="note">No cookies, so no banner.</span>
-			<span class="who"><ArrowLink href="/transparency" size="sm">Who runs Colander and how it is funded</ArrowLink></span>
+			<span class="note">No cookies until you sign in, so no banner.</span>
+			<span class="who"><ArrowLink href="{site}/transparency" size="sm">Who runs Colander and how it is funded</ArrowLink></span>
 		</div>
 	</div>
 </footer>

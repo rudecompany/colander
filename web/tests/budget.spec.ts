@@ -52,10 +52,20 @@ test('/ stays within its request, image and transfer budget', async ({ page }) =
 	expect(brotli, 'brotli transfer on /').toBeLessThanOrEqual(300 * KB);
 });
 
+// The common chunk carries what 2 or more pages share; sign-in, account and pairing pieces stay out of it.
+test('/ loads no sign-in, account or pairing code', async ({ page }) => {
+	await mockApi(page);
+	const js = (await load(page, '/')).filter((f) => f.url.pathname.endsWith('.js'));
+	for (const marker of ['Email me a code', 'Add a passkey', 'Show a code', 'Never share this code']) {
+		expect(js.filter((f) => f.body?.includes(marker)).map((f) => f.url.pathname), marker).toEqual([]);
+	}
+});
+
 for (const [path, mocks] of PAGES) {
-	test(`${path} loads at most 110 KB of JavaScript`, async ({ page }) => {
+	test(`${path} loads at most 110 KB of JavaScript`, async ({ page, baseURL }) => {
 		await mockApi(page, mocks);
-		const files = await load(page, path);
+		// The admin console is opened on the admin host, as staff reach it.
+		const files = await load(page, path.startsWith('/admin') ? baseURL!.replace('//localhost', '//admin.localhost') + path : path);
 		const js = files.filter((f) => f.url.pathname.endsWith('.js')).reduce((n, f) => n + gz(f.body), 0);
 		expect(js, `JS gzip on ${path}`).toBeLessThanOrEqual(110 * KB);
 	});

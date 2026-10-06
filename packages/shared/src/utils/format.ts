@@ -53,6 +53,9 @@ export const fmtPct = (share: number) => `${Math.round(share * 100)}%`;
 export const fmtMoney = (cents: number) => `$${(cents % 100 === 0 ? numFmt : centsFmt).format(cents / 100)}`;
 /** "1 source", "2,400 sources" */
 export const plural = (n: number, one: string, many = one + 's') => `${fmtNum(n)} ${n === 1 ? one : many}`;
+const listFmt = new Intl.ListFormat('en-GB', { type: 'conjunction' });
+/** "YouTube and TikTok", "Chrome, Edge, Brave and Opera": no comma before "and". */
+export const fmtList = (items: string[]) => listFmt.format(items);
 /** "v.1791151393", the list version as people see it: the Worker publishes unix-second sequences. */
 export const fmtListVersion = (sequence: number) => `v.${sequence}`;
 

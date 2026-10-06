@@ -1,7 +1,6 @@
 -- Seed lists from the registry (packages/shared/src/seed-registry.json, docs/contracts.md 14),
 -- their expiry, revocation and suppression, and the blind calibration set.
--- Numbered 0008 so 0006 and 0007 stay free for work landing beside it: the runner applies any
--- version it has not applied yet, in order, and dumps name every version they hold.
+-- Numbered after 0006_auth and 0007_pairing, which landed beside it.
 -- Expand-then-contract: the sources.import_* columns of imports from before the registry stay,
 -- unread; only registry entries in seed_entries put a source in the review queue.
 

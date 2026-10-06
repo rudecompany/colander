@@ -4,7 +4,7 @@
 import { chromium, expect, type BrowserContext, type Locator, type Page } from '@playwright/test';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { EXT_DIR, EXT_ID, ORIGIN, REPO, logMark, signInLink } from './stack.ts';
+import { EXT_DIR, EXT_ID, ORIGIN, REPO, adminOrigin, devAccess, logMark, signInCode } from './stack.ts';
 
 export { expect };
 export { test } from '@playwright/test';
@@ -92,7 +92,7 @@ export async function launch(): Promise<Ext> {
 			`--load-extension=${EXT_DIR}`,
 			// Nothing leaves the machine: routes below answer for YouTube, and any request they do not
 			// catch (a tab the extension opens can navigate before routing attaches) fails to resolve.
-			'--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE 127.0.0.1'
+			'--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE 127.0.0.1, EXCLUDE localhost, EXCLUDE *.localhost'
 		]
 	});
 	const seen: Seen[] = [];
@@ -163,15 +163,78 @@ export async function onboard(ext: Ext): Promise<void> {
 	await welcome.close();
 }
 
-/** Signs in on the website through the emailed link the dev server prints. */
-export async function signIn(page: Page, email: string, path: '/account' | '/console'): Promise<void> {
-	await page.goto(`${ORIGIN}${path}`);
+/** Signs in on the website with the emailed code the dev server prints: member rights only. */
+export async function signIn(page: Page, email: string, path: '/account' | '/console' | '/account/invite'): Promise<void> {
+	if (!page.url().startsWith(`${ORIGIN}${path}`)) await page.goto(`${ORIGIN}${path}`);
 	await page.getByLabel('Email').fill(email);
 	const mark = logMark();
-	await page.getByRole('button', { name: 'Email me a sign-in link' }).click();
-	await expect(page.getByText('Check your inbox')).toBeVisible();
-	await page.goto(await signInLink(email, mark));
-	await expect(page).toHaveURL(`${ORIGIN}${path}`);
+	await page.getByRole('button', { name: 'Email me a code' }).click();
+	await page.getByLabel('Code').fill(await signInCode(email, mark));
+	await page.getByRole('button', { name: 'Sign in' }).click();
+	await expect(page.getByLabel('Code')).toHaveCount(0);
+}
+
+/**
+ * A Chromium virtual authenticator on the page (CDP WebAuthn), as a laptop's built-in passkey
+ * provider: resident keys, user verification, answers on its own. Its passkeys live as long as
+ * the browser.
+ */
+export async function passkeyDevice(page: Page): Promise<{ count(): Promise<number> }> {
+	const cdp = await page.context().newCDPSession(page);
+	await cdp.send('WebAuthn.enable');
+	const { authenticatorId } = await cdp.send('WebAuthn.addVirtualAuthenticator', {
+		options: { protocol: 'ctap2', transport: 'internal', hasResidentKey: true, hasUserVerification: true, isUserVerified: true, automaticPresenceSimulation: true }
+	});
+	return { count: async () => (await cdp.send('WebAuthn.getCredentials', { authenticatorId })).credentials.length };
+}
+
+/**
+ * Staff on the admin host: dev mode's Access stub mints the token that stands in for Cloudflare
+ * Access with A3T Identity, as the CF_Authorization cookie Access would set, then the admin
+ * console opens.
+ */
+export async function adminSignIn(page: Page, email: string, path = '/admin'): Promise<void> {
+	const host = new URL(adminOrigin()).hostname;
+	await page.context().addCookies([{ name: 'CF_Authorization', value: await devAccess(email), domain: host, path: '/', httpOnly: true, sameSite: 'Strict' }]);
+	await page.goto(`${adminOrigin()}${path}`);
+}
+
+/**
+ * A reviewer enrolls a passkey on this page through an invite: staff or an admin issue it on the
+ * admin host, the reviewer signs in with a code and adds the passkey, and is then signed in with it.
+ */
+export async function enrollReviewer(page: Page, email: string, issuer: string): Promise<void> {
+	await passkeyDevice(page);
+	const admin = await page.context().newPage();
+	await adminSignIn(admin, issuer, '/admin/people');
+	await admin.getByRole('searchbox', { name: 'Find an account by email' }).fill(email);
+	await admin.getByRole('button', { name: 'Find' }).click();
+	await admin.getByRole('listitem').filter({ hasText: email }).getByRole('button', { name: 'Invite' }).click();
+	const link = (await admin.locator('p.invite').textContent())!.trim();
+	await admin.close();
+	await page.goto(link);
+	// Signed out, the invite asks for an email sign-in first.
+	const name = page.getByLabel('Name for this passkey');
+	await expect(name.or(page.getByLabel('Email'))).toBeVisible();
+	if (!(await name.isVisible())) await signIn(page, email, '/account/invite');
+	await name.fill('Laptop');
+	await page.getByRole('button', { name: 'Add my passkey' }).click();
+	await expect(page.getByRole('heading', { level: 1 })).toHaveText('Your passkey is ready');
+}
+
+/**
+ * Pairs the extension with the signed-in account the way a person does (contract 7): Show a code in
+ * the account page's section, then type it into the extension page, which must show the code box.
+ * Returns the code.
+ */
+export async function pairWith(site: Page, section: Locator, page: Page): Promise<string> {
+	await section.getByRole('button', { name: 'Show a code' }).click();
+	const code = (await section.locator('output.code').textContent())!.trim();
+	expect(code).toMatch(/^[0-9A-HJKMNP-TV-Z]{4}-[0-9A-HJKMNP-TV-Z]{4}$/);
+	await expect(section.getByText('Never share this code.', { exact: false })).toBeVisible();
+	await page.getByLabel('Code from the website').fill(code);
+	await page.getByRole('button', { name: 'Connect' }).click();
+	return code;
 }
 
 /** The options page's Lists section, synced now with its own button. */

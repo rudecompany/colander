@@ -3,6 +3,7 @@
 // Colors come from the shared TOOLBAR palette; the tooltip names the state in words.
 import { TOOLBAR } from '@colander/shared/glyphs';
 import { needsAttention, type Status } from '../lib/settings';
+import { browser } from 'wxt/browser';
 
 type State = 'active' | 'paused';
 export type PauseScope = 'site' | 'tab' | null;
@@ -19,20 +20,20 @@ function attention(status: Status): string | null {
 }
 
 export async function setGlobalIcon(status: Status): Promise<void> {
-	await chrome.action.setIcon({ path: path('active', needsAttention(status)) });
-	await chrome.action.setBadgeBackgroundColor({ color: TOOLBAR.badge });
-	await chrome.action.setBadgeTextColor?.({ color: TOOLBAR.badgeText });
+	await browser.action.setIcon({ path: path('active', needsAttention(status)) });
+	await browser.action.setBadgeBackgroundColor({ color: TOOLBAR.badge });
+	await browser.action.setBadgeTextColor?.({ color: TOOLBAR.badgeText });
 	const why = attention(status);
-	await chrome.action.setTitle({ title: why ? `Colander, ${why}` : 'Colander' });
+	await browser.action.setTitle({ title: why ? `Colander, ${why}` : 'Colander' });
 }
 
 export async function setTabIcon(tabId: number, paused: PauseScope, status: Status, count: number | null): Promise<void> {
 	try {
-		await chrome.action.setIcon({ tabId, path: path(paused ? 'paused' : 'active', needsAttention(status)) });
-		if (count !== null) await chrome.action.setBadgeText({ tabId, text: paused || count === 0 ? '' : count > 999 ? '999+' : String(count) });
+		await browser.action.setIcon({ tabId, path: path(paused ? 'paused' : 'active', needsAttention(status)) });
+		if (count !== null) await browser.action.setBadgeText({ tabId, text: paused || count === 0 ? '' : count > 999 ? '999+' : String(count) });
 		const why = attention(status);
 		const title = paused ? `Colander, paused on this ${paused}` : why ? `Colander, ${why}` : count ? `Colander, ${count} hidden on this page` : 'Colander';
-		await chrome.action.setTitle({ tabId, title });
+		await browser.action.setTitle({ tabId, title });
 	} catch {
 		// The tab closed while we were updating it.
 	}

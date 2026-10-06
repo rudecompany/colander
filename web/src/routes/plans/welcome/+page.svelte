@@ -1,12 +1,11 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import type { Account } from '@colander/shared/api';
-	import { detectExtension, type ExtensionState } from '#lib/extension.ts';
 	import { PLAN_COPY, fmtDate } from '@colander/shared';
 	import { loadAccount, session } from '#lib/session.svelte.ts';
 	import AuthCard from '#lib/components/AuthCard.svelte';
 	import ConnectBrowser from '#lib/components/ConnectBrowser.svelte';
-	import EmailSignIn from '#lib/components/EmailSignIn.svelte';
+	import SignIn from '#lib/components/SignIn.svelte';
 	import Loading from '#lib/components/Loading.svelte';
 	import Notice from '#lib/components/Notice.svelte';
 	import { PageHeader } from '@colander/shared';
@@ -16,42 +15,40 @@
 	const POLL_MS = 2000;
 	const GIVE_UP_MS = 60_000;
 
-	let ext = $state<ExtensionState>({ kind: 'checking' });
 	let phase = $state<'confirming' | 'ready' | 'slow' | 'signed_out'>('confirming');
 
 	const plan = $derived(session.account?.plan && session.account.plan.status !== 'canceled' ? session.account.plan : null);
 	const live = (a: Account | null) => !!a?.plan && a.plan.status !== 'canceled';
 
-	onMount(() => {
-		let stopped = false;
-		detectExtension().then((state) => (ext = state));
-		(async () => {
-			const giveUp = Date.now() + GIVE_UP_MS;
-			while (!stopped) {
-				const account = await loadAccount();
-				if (stopped) return;
-				if (live(account)) {
-					phase = 'ready';
-					return;
-				}
-				if (!account && session.status === 'ready') {
-					phase = 'signed_out';
-					return;
-				}
-				if (Date.now() > giveUp) {
-					phase = 'slow';
-					return;
-				}
-				await new Promise((r) => setTimeout(r, POLL_MS));
+	let stopped = false;
+
+	/** Checks the account until Plus shows up, the person turns out signed out, or a minute passes. */
+	async function watch() {
+		phase = 'confirming';
+		const giveUp = Date.now() + GIVE_UP_MS;
+		while (!stopped) {
+			const account = await loadAccount();
+			if (stopped) return;
+			if (live(account)) {
+				phase = 'ready';
+				return;
 			}
-		})();
+			if (!account && session.status === 'ready') {
+				phase = 'signed_out';
+				return;
+			}
+			if (Date.now() > giveUp) {
+				phase = 'slow';
+				return;
+			}
+			await new Promise((r) => setTimeout(r, POLL_MS));
+		}
+	}
+
+	onMount(() => {
+		watch();
 		return () => (stopped = true);
 	});
-
-	async function checkExtension() {
-		ext = { kind: 'checking' };
-		ext = await detectExtension();
-	}
 </script>
 
 <svelte:head>
@@ -64,9 +61,9 @@
 	<AuthCard
 		eyebrow="Plus"
 		title="Sign in to finish"
-		lede="Your payment went through. Sign in with the email you used at checkout to connect Plus to this browser."
+		lede="Your payment went through. Sign in with the email you used at checkout to connect Plus to your browsers."
 	>
-		<EmailSignIn next="/plans/welcome" block />
+		<SignIn next="/plans/welcome" block onsignedin={watch} />
 	</AuthCard>
 {:else}
 <div class="cl-container page-top">
@@ -82,7 +79,7 @@
 		<Loading label="Confirming your payment" />
 	{:else if phase === 'slow'}
 		<Notice title="Your payment is still being confirmed">
-			<p>This can take a minute. Nothing more is needed from you. Check your <a href="/account">account page</a> shortly to connect this browser.</p>
+			<p>This can take a minute. Nothing more is needed from you. Check your <a href="/account">account page</a> shortly to connect your browsers.</p>
 		</Notice>
 	{:else if plan}
 		<section class="uin-card uin-card-lg uin-card-pad section-card" aria-labelledby="plan-title">
@@ -92,13 +89,13 @@
 		</section>
 
 		<section class="uin-card uin-card-lg uin-card-pad section-card" aria-labelledby="connect-title">
-			<h2 class="cl-title" id="connect-title">Connect this browser</h2>
+			<h2 class="cl-title" id="connect-title">Connect a browser</h2>
 			<p class="cl-body cl-muted">
-				Colander checks your plan on your device with a signed token. Connect each browser you use once, here or from your
-				account page, and Plus features turn on there.
+				Colander checks your plan on your device with a signed token. Connect each browser you use once with a code, here or from
+				your account page, and Plus features turn on there.
 			</p>
-			<ConnectBrowser {ext} canConnect onrecheck={checkExtension} />
-			<p class="cl-caption cl-muted">On another computer, sign in on the account page there and choose Connect this browser.</p>
+			<ConnectBrowser kind="plan" />
+			<p class="cl-caption cl-muted">A code works in any browser, also on another computer: type it there in Colander's Options, under Plan.</p>
 		</section>
 	{/if}
 </div>

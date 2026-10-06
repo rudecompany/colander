@@ -1,13 +1,13 @@
 // The edge (hosting plan sections 2 and 4): the website's SPA rewrites and real 404, the _headers
 // on static pages, the cache policy of every list answer, and a verified appeal reaching installs
 // within a minute. These run against the local Worker and against a deployed origin
-// (COLANDER_E2E_BASE_URL). Only the appeal timing writes: it needs a staff credential, the local
-// staff session or COLANDER_REVIEWER_TOKEN, and against a deployed origin COLANDER_PUBLIC_KEYS.
+// (COLANDER_E2E_BASE_URL). Only the appeal timing writes: it needs staff on the admin host, so it
+// runs on the local stack only.
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { expect, test } from '@playwright/test';
 import { parseList, targetHash, trustedKeys } from '../../scripts/smoke.ts';
-import { BASE_URL, REPO, api, http } from './stack.ts';
+import { BASE_URL, REPO, api, asStaff, http } from './stack.ts';
 
 test.describe.configure({ mode: 'serial' });
 
@@ -105,9 +105,9 @@ test('list answers carry their cache policy: snapshot 200, delta 204 at the head
 });
 
 test('a verified appeal reaches installs as a signed delta within 60 s', async () => {
-	const token = process.env.COLANDER_REVIEWER_TOKEN;
-	test.skip(!LOCAL && !(token && process.env.COLANDER_PUBLIC_KEYS), 'needs COLANDER_REVIEWER_TOKEN and COLANDER_PUBLIC_KEYS against a deployed origin');
-	const staff = LOCAL ? { cookie: process.env.COLANDER_E2E_STAFF_COOKIE } : { auth: `Bearer ${token}` };
+	// Verifying an appeal is staff work, which exists only on the admin host behind Access: CI has no
+	// staff identity there, so this runs on the local stack, through dev mode's Access stand-in.
+	test.skip(!LOCAL, 'needs staff on the admin host, which only the local stack offers');
 	const keys = trustedKeys(process.env.COLANDER_PUBLIC_KEYS ?? readFileSync(resolve(REPO, 'testdata/dev-signing.pub'), 'utf8'));
 	// A fictional channel only this test uses, rated Slop by staff so it can be appealed.
 	const handle = '@colander-e2e-appeal';
@@ -132,10 +132,9 @@ test('a verified appeal reaches installs as a signed delta within 60 s', async (
 
 	// A run before this one left it Slop; otherwise staff rate it and the list takes it.
 	let base = await head();
-	const current = await api<{ source?: { verdict: string } }>(`/v1/review/sources/yt/${handle}`, staff);
+	const current = await asStaff<{ source?: { verdict: string } }>(`/v1/review/sources/yt/${handle}`);
 	if (current.json?.source?.verdict !== 'slop') {
-		const decided = await api(`/v1/review/sources/yt/${handle}/decision`, {
-			...staff,
+		const decided = await asStaff(`/v1/review/sources/yt/${handle}/decision`, {
 			body: { verdict: 'slop', reason: `Full-stack edge test ${nonce}: rated Slop so it can be appealed.`, signals: ['watermark'] }
 		});
 		expect(decided.status, JSON.stringify(decided.json)).toBe(200);
@@ -149,7 +148,7 @@ test('a verified appeal reaches installs as a signed delta within 60 s', async (
 	const id = filed.json.appeal.id;
 
 	const verifiedAt = Date.now();
-	const verified = await api(`/v1/review/appeals/${id}/verify`, { ...staff, method: 'POST' });
+	const verified = await asStaff(`/v1/review/appeals/${id}/verify`, { method: 'POST' });
 	expect(verified.status, JSON.stringify(verified.json)).toBe(200);
 	const reached = await untilListed(base, DISPUTED, verifiedAt + 60_000);
 	const seconds = (Date.now() - verifiedAt) / 1000;
@@ -159,8 +158,7 @@ test('a verified appeal reaches installs as a signed delta within 60 s', async (
 	expectPolicy(reached.res, LIST, 'delta 200');
 
 	// Close the appeal; denial restores Slop, ready for the next run.
-	const resolved = await api(`/v1/review/appeals/${id}/resolve`, {
-		...staff,
+	const resolved = await asStaff(`/v1/review/appeals/${id}/resolve`, {
 		body: { outcome: 'denied', reasoning: `Full-stack edge test ${nonce}: closing the test appeal.` }
 	});
 	expect(resolved.status, JSON.stringify(resolved.json)).toBe(200);

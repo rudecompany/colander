@@ -3,7 +3,11 @@
 view, and the decision with a sticky bar. Keys work while the panel has focus and never in a text
 field: 1 to 5 and 0 pick a verdict, J and K move through the queue, R goes to the reason, Escape
 goes back, Ctrl or Cmd with Enter records, and ? lists them all.
-Uses a reviewer token sent by the website's account page through externally_connectable, or pasted here.
+Connects with a pairing code from the website's account page (contracts 7), which brings the
+reviewer token. The token lasts 7 days and carries curator authority only, also a staff member's,
+so large sources and appeals are left to staff in the admin console. In Firefox the queue loads
+only while "Plus and review" is allowed (lib/consent.ts); once it is turned off, the panel asks
+again instead of sending the token.
 -->
 <script lang="ts">
 	import { ColanderMark, CopyButton, DotMeter, EvidenceCard, LiveBadge, LogRow, PerforatedDisc, PlatformTag, VerdictChip, VerdictGlyph } from '@colander/shared';
@@ -17,10 +21,8 @@ Uses a reviewer token sent by the website's account page through externally_conn
 	import Card from '@colander/shared/components/ui/card/card.svelte';
 	import Checkbox from '@colander/shared/components/ui/checkbox/checkbox.svelte';
 	import Dialog from '@colander/shared/components/ui/dialog/dialog.svelte';
-	import Input from '@colander/shared/components/ui/input/input.svelte';
 	import Kbd from '@colander/shared/components/ui/kbd/kbd.svelte';
 	import SegmentedControl from '@colander/shared/components/ui/segmented-control/segmented-control.svelte';
-	import Switch from '@colander/shared/components/ui/switch/switch.svelte';
 	import Tabs from '@colander/shared/components/ui/tabs/tabs.svelte';
 	import Textarea from '@colander/shared/components/ui/textarea/textarea.svelte';
 	import {
@@ -42,25 +44,37 @@ Uses a reviewer token sent by the website's account page through externally_conn
 	import ChevronRight from '@lucide/svelte/icons/chevron-right';
 	import CircleAlert from '@lucide/svelte/icons/circle-alert';
 	import Keyboard from '@lucide/svelte/icons/keyboard';
+	import Lock from '@lucide/svelte/icons/lock';
 	import LogOut from '@lucide/svelte/icons/log-out';
 	import RefreshCw from '@lucide/svelte/icons/refresh-cw';
+	import { ask } from '../../lib/consent';
 	import { SITE } from '../../lib/env';
 	import { DEFAULT_STATUS, K, type Status } from '../../lib/settings';
 	import { ReviewError, review } from '../../ui/review';
+	import PairCode from '../../ui/PairCode.svelte';
 	import { stored } from '../../ui/store.svelte';
+	import { tick } from 'svelte';
+	import { browser } from 'wxt/browser';
 
 	type Kind = 'all' | 'reports' | 'appeals' | 'escalations';
 	type Choice = Verdict | 'none';
 
 	const token = stored<string | undefined>(K.reviewerToken, undefined);
 	const status = stored<Status>(K.status, DEFAULT_STATUS);
-	let pasted = $state('');
 	let kind = $state<Kind>('all');
 	let items = $state<QueueItem[]>([]);
 	let cursor = $state<string | null>(null);
 	let loading = $state(false);
 	let error = $state('');
 	let unauthorized = $state(false);
+	/** Firefox: "Plus and review" is not allowed, so nothing was sent. */
+	let consent = $state(false);
+	let consentRefused = $state(false);
+	/** A code just connected the panel: say so, and move focus off the form that went away. */
+	let announce = $state('');
+	let paired = $state(false);
+	/** Reviewer tokens last 7 days; an expired one says so instead of "not accepted". */
+	let expired = $state(false);
 	let open = $state<QueueItem | null>(null);
 	let detail = $state<ReviewSourceResponse | null>(null);
 	let keys = $state(false);
@@ -71,7 +85,6 @@ Uses a reviewer token sent by the website's account page through externally_conn
 	let signals = $state<Signal[]>([]);
 	let slopType = $state<SlopType | null>(null);
 	let tests = $state<Test[]>([]);
-	let large = $state(false);
 	let formError = $state('');
 	let saved = $state('');
 	let saving = $state(false);
@@ -117,9 +130,34 @@ Uses a reviewer token sent by the website's account page through externally_conn
 	];
 
 	function fail(e: unknown) {
-		if (e instanceof ReviewError && e.status === 401) unauthorized = true;
+		if (e instanceof ReviewError && e.status === 401) {
+			unauthorized = true;
+			expired = e.code === 'token_expired';
+		}
+		if (e instanceof ReviewError && e.code === 'consent') consent = true;
 		return e instanceof Error ? e.message : String(e);
 	}
+
+	async function allowReview() {
+		// Straight from the click, as Firefox requires.
+		const yes = await ask(['authenticationInfo']);
+		consentRefused = !yes;
+		if (!yes) return;
+		consent = false;
+		await (open ? openItem(open) : loadQueue());
+	}
+
+	// Staff decide these in the admin console: the reviewer token carries curator authority only.
+	const STAFF_APPEAL = ['pending_manual', 'under_review'];
+	const needsStaff = $derived(
+		!detail
+			? null
+			: detail.source.large
+				? `${detail.source.name || detail.source.id} has a large audience, so only staff can decide it, in the admin console.`
+				: detail.source.appeal_open || detail.appeals.some((a) => STAFF_APPEAL.includes(a.status))
+					? 'An appeal is open on this source, so only staff can decide it until the appeal is resolved.'
+					: null
+	);
 
 	async function loadQueue(more = false) {
 		if (!token.value) return;
@@ -140,6 +178,12 @@ Uses a reviewer token sent by the website's account page through externally_conn
 		if (token.ready && token.value) void loadQueue();
 	});
 
+	$effect(() => {
+		if (!paired || !token.value) return;
+		paired = false;
+		void tick().then(() => document.getElementById('panel-title')?.focus());
+	});
+
 	async function openItem(q: QueueItem) {
 		open = q;
 		detail = null;
@@ -154,7 +198,6 @@ Uses a reviewer token sent by the website's account page through externally_conn
 			signals = s.signals.filter((g) => RECORDABLE_SET.has(g));
 			slopType = s.slop_type;
 			tests = [...s.tests];
-			large = s.large;
 			reason = '';
 		} catch (e) {
 			error = fail(e);
@@ -172,7 +215,7 @@ Uses a reviewer token sent by the website's account page through externally_conn
 	}
 
 	async function decide() {
-		if (!open || !detail || saving) return;
+		if (!open || !detail || saving || needsStaff) return;
 		formError = '';
 		if (!reason.trim()) {
 			formError = 'Write the reason. It is published in the decision log.';
@@ -181,9 +224,6 @@ Uses a reviewer token sent by the website's account page through externally_conn
 		}
 		saving = true;
 		const body: DecisionInput = { verdict, reason: reason.trim(), signals, slop_type: verdict === 'slop' || verdict === 'likely_slop' ? slopType : null, tests };
-		// Only staff may change "large", and the server refuses a curator's decision that carries it
-		// at all, so it goes along only when the switch was changed.
-		if (large !== detail.source.large) body.large = large;
 		try {
 			await review.decideSource(token.value!, open.platform, open.source_id, body);
 			saved = 'Decision recorded. It reaches every install with the next list update.';
@@ -204,27 +244,8 @@ Uses a reviewer token sent by the website's account page through externally_conn
 		}
 	}
 
-	async function appeal(id: string, action: 'verify' | 'upheld' | 'denied') {
-		try {
-			if (action === 'verify') await review.verifyAppeal(token.value!, id);
-			else await review.resolveAppeal(token.value!, id, action, reason.trim() || (action === 'upheld' ? 'Appeal upheld after review.' : 'Appeal denied after review.'));
-			if (open) await openItem(open);
-		} catch (e) {
-			formError = fail(e);
-		}
-	}
-
-	async function connect(e: Event) {
-		e.preventDefault();
-		const t = pasted.trim();
-		if (!t) return;
-		await chrome.storage.local.set({ [K.reviewerToken]: t });
-		pasted = '';
-		unauthorized = false;
-	}
-
 	async function signOut() {
-		await chrome.storage.local.remove(K.reviewerToken);
+		await browser.storage.local.remove(K.reviewerToken);
 		items = [];
 		back();
 	}
@@ -269,11 +290,12 @@ Uses a reviewer token sent by the website's account page through externally_conn
 			verdict: d.source.verdict,
 			word: null,
 			title: EVIDENCE_TITLE,
-			rows: LAYER_KEYS.map((k) => ({
+			// Only those: the card would fold the others into "no data yet", and they have data.
+			rows: LAYER_KEYS.filter((k) => d.layers[k].met).map((k) => ({
 				key: k,
 				label: LAYER_SHORT[k],
 				texts: [sentence(d.layers[k].detail), ...d.layers[k].signals.map((g) => sentence(SIGNAL_TEXT[g]))],
-				agreed: d.layers[k].met
+				agreed: true
 			})),
 			list: null,
 			sourceUrl: null,
@@ -287,10 +309,12 @@ Uses a reviewer token sent by the website's account page through externally_conn
      otherwise run first and leave this handler to read the same Escape as Back to the queue. -->
 <svelte:window onkeydowncapture={onKey} />
 
+<p class="cl-sr-only" role="status">{announce}</p>
+
 <div class="panel" class:deciding={!!open && !!detail}>
 	<header class="head">
-		<span class="brand"><ColanderMark size={20} /><h1 class="name">Review queue</h1></span>
-		{#if token.value && !unauthorized && items.length}<Badge>{fmtNum(items.length)}</Badge>{/if}
+		<span class="brand"><ColanderMark size={20} /><h1 class="name" id="panel-title" tabindex="-1">Review queue</h1></span>
+		{#if token.value && !unauthorized && !consent && items.length}<Badge>{fmtNum(items.length)}</Badge>{/if}
 		<span class="live"><LiveBadge sequence={status.value.listSequence || null} updatedAt={status.value.lastSyncAt} /></span>
 	</header>
 
@@ -300,19 +324,31 @@ Uses a reviewer token sent by the website's account page through externally_conn
 		<div class="pad">
 			<Card title="Review for curators" headingLevel={2}>
 				{#if unauthorized}
-					<p class="alert" role="alert"><CircleAlert size={16} aria-hidden="true" />Your reviewer token was not accepted. Connect again from your account page.</p>
+					<p class="alert" role="alert">
+						<CircleAlert size={16} aria-hidden="true" />{expired
+							? 'This connection ended after its 7 days. Connect again with a new code from your account page.'
+							: 'This connection has ended. Connect again with a new code from your account page.'}
+					</p>
 				{:else}
-					<p class="muted">Curators and staff review reports, appeals and escalations here. Open your account on the Colander website and choose Connect side panel, or paste a reviewer token.</p>
+					<p class="muted">Curators and staff review reports, appeals and escalations here. Connect this browser with a code from your account page on the Colander website.</p>
 				{/if}
 				<div class="signin">
-					<Button variant="primary" onclick={() => chrome.tabs.create({ url: `${SITE}/account` })}>Open my account</Button>
-					<form class="paste" onsubmit={connect}>
-						<label for="tok" class="label">Reviewer token</label>
-						<div class="row">
-							<Input id="tok" type="password" class="grow" bind:value={pasted} autocomplete="off" />
-							<Button variant="secondary" type="submit">Connect</Button>
-						</div>
-					</form>
+					<PairCode
+						id="review-code"
+						hint="Open your account, choose Show a code under Review, and type it here. It works once, for 10 minutes."
+						onpaired={(_, done) => ((announce = done), (paired = true))}
+					/>
+					<Button variant="secondary" onclick={() => browser.tabs.create({ url: `${SITE}/account` })}>Open my account</Button>
+				</div>
+			</Card>
+		</div>
+	{:else if consent}
+		<div class="pad">
+			<Card title="Allow review in Firefox" headingLevel={2}>
+				<p class="muted">Firefox asks before Colander sends your reviewer sign-in, which loads the review queue. Nothing was sent while it is off.</p>
+				{#if consentRefused}<p class="alert" role="alert"><CircleAlert size={16} aria-hidden="true" />Firefox did not allow it, so nothing was sent. Choose Allow to be asked again.</p>{/if}
+				<div class="signin">
+					<Button variant="primary" onclick={allowReview}>Allow</Button>
 				</div>
 			</Card>
 		</div>
@@ -334,7 +370,8 @@ Uses a reviewer token sent by the website's account page through externally_conn
 						{#if s.appeal_open}<Badge>Appeal open</Badge>{/if}
 						{#if open.computed_verdict && open.computed_verdict !== s.verdict}<span class="caption">Scoring says {VERDICT_WORD[open.computed_verdict]}</span>{/if}
 					</p>
-					{#if s.attribution}<p class="caption">Listed on {s.attribution}: a review lead, not evidence.</p>{:else if s.imported}<p class="caption">On a seed list: a review lead, not evidence.</p>{/if}
+					<!-- A reviewer token carries curator authority at most, so the panel never learns which list. -->
+					{#if s.imported}<p class="caption">On a seed list: a review lead, not evidence.</p>{/if}
 					<p class="caption">{RESCORE_LINE(s.rescore_at ? fmtShortDate(s.rescore_at) : null)}</p>
 					<a class="cl-link" href="{SITE}{sourcePath(s.platform, s.id)}" target="_blank" rel="noopener">Public page<ArrowRight size={16} aria-hidden="true" /></a>
 				</section>
@@ -363,7 +400,7 @@ Uses a reviewer token sent by the website's account page through externally_conn
 					{#if LAYER_KEYS.some((k) => !detail!.layers[k].met)}
 						<ul class="unmet" aria-label="Layers not met yet">
 							{#each LAYER_KEYS.filter((k) => !detail!.layers[k].met) as k (k)}
-								<li><span class="ring" aria-hidden="true"></span><span><b>{LAYER_WORD[k]}</b> <span class="q">{LAYER_QUESTION[k]}</span><br />{detail.layers[k].detail}</span></li>
+								<li><span class="ring" aria-hidden="true"></span><span><b>{LAYER_WORD[k]}</b> <span class="question">{LAYER_QUESTION[k]}</span><br />{detail.layers[k].detail}</span></li>
 							{/each}
 						</ul>
 					{/if}
@@ -385,17 +422,11 @@ Uses a reviewer token sent by the website's account page through externally_conn
 
 				{#if detail.appeals.length}
 					<Card title="Appeals" headingLevel={3}>
+						<p class="staff lead-note"><Lock size={16} aria-hidden="true" />Staff verify and resolve appeals in the admin console.</p>
 						{#each detail.appeals as a (a.id)}
 							<div class="entry">
 								<p>{a.statement}</p>
 								<p class="caption">{a.status.replace('_', ' ')}, code <span class="cl-figure">{a.code}</span>, {fmtShortDate(a.created_at)}</p>
-								<div class="row">
-									{#if a.status === 'pending_manual'}<Button variant="secondary" onclick={() => appeal(a.id, 'verify')}>Code is on the account</Button>{/if}
-									{#if a.status === 'under_review'}
-										<Button variant="secondary" onclick={() => appeal(a.id, 'upheld')}>Uphold</Button>
-										<Button variant="secondary" onclick={() => appeal(a.id, 'denied')}>Deny</Button>
-									{/if}
-								</div>
 							</div>
 						{/each}
 					</Card>
@@ -425,54 +456,54 @@ Uses a reviewer token sent by the website's account page through externally_conn
 				<form id="decision" class="decide" onsubmit={(e) => (e.preventDefault(), decide())} aria-labelledby="dec-title">
 					<Card>
 						<h3 id="dec-title" class="h">Decision</h3>
-						<div class="tiles" role="radiogroup" aria-label="Verdict">
-							{#each CHOICES as c (c.v)}
-								<button
-									type="button"
-									role="radio"
-									class="tile"
-									aria-checked={verdict === c.v}
-									tabindex={verdict === c.v ? 0 : -1}
-									onclick={() => (verdict = c.v)}
-									onkeydown={(e) => {
-										const i = CHOICES.findIndex((x) => x.v === c.v);
-										const n = e.key === 'ArrowDown' || e.key === 'ArrowRight' ? 1 : e.key === 'ArrowUp' || e.key === 'ArrowLeft' ? -1 : 0;
-										if (!n) return;
-										e.preventDefault();
-										verdict = CHOICES[(i + n + CHOICES.length) % CHOICES.length]!.v;
-										(e.currentTarget.parentElement?.querySelector('[aria-checked="true"]') as HTMLElement | null)?.focus();
-									}}
-								>
-									<VerdictChip verdict={c.v === 'none' ? null : c.v} />
-									<Kbd>{c.key}</Kbd>
-								</button>
+						{#if needsStaff}
+							<p class="staff"><Lock size={16} aria-hidden="true" />{needsStaff}</p>
+						{:else}
+							<div class="tiles" role="radiogroup" aria-label="Verdict">
+								{#each CHOICES as c (c.v)}
+									<button
+										type="button"
+										role="radio"
+										class="tile"
+										aria-checked={verdict === c.v}
+										tabindex={verdict === c.v ? 0 : -1}
+										onclick={() => (verdict = c.v)}
+										onkeydown={(e) => {
+											const i = CHOICES.findIndex((x) => x.v === c.v);
+											const n = e.key === 'ArrowDown' || e.key === 'ArrowRight' ? 1 : e.key === 'ArrowUp' || e.key === 'ArrowLeft' ? -1 : 0;
+											if (!n) return;
+											e.preventDefault();
+											verdict = CHOICES[(i + n + CHOICES.length) % CHOICES.length]!.v;
+											(e.currentTarget.parentElement?.querySelector('[aria-checked="true"]') as HTMLElement | null)?.focus();
+										}}
+									>
+										<VerdictChip verdict={c.v === 'none' ? null : c.v} />
+										<Kbd>{c.key}</Kbd>
+									</button>
+								{/each}
+							</div>
+							{#if verdict === 'slop' || verdict === 'likely_slop'}
+								<fieldset>
+									<legend class="label">Type</legend>
+									<SegmentedControl options={SLOP_TYPES.map((t) => ({ value: t, label: SLOP_TYPE_WORD[t] }))} value={slopType as SlopType} onChange={(v: SlopType) => (slopType = v)} ariaLabel="Type" />
+								</fieldset>
+							{/if}
+							<fieldset>
+								<legend class="label">Tests</legend>
+								<div class="row">{#each TESTS as t (t)}<Checkbox label={TEST_WORD[t]} checked={tests.includes(t)} onchange={() => (tests = toggle(tests, t))} />{/each}</div>
+							</fieldset>
+							{#each RECORDABLE as group (group.name)}
+								<fieldset>
+									<legend class="label">{group.name} you checked</legend>
+									<div class="checks">
+										{#each group.signals as g (g)}<Checkbox label={SIGNAL_TEXT[g]} checked={signals.includes(g)} onchange={() => (signals = toggle(signals, g))} />{/each}
+									</div>
+								</fieldset>
 							{/each}
-						</div>
-						{#if verdict === 'slop' || verdict === 'likely_slop'}
-							<fieldset>
-								<legend class="label">Type</legend>
-								<SegmentedControl options={SLOP_TYPES.map((t) => ({ value: t, label: SLOP_TYPE_WORD[t] }))} value={slopType as SlopType} onChange={(v: SlopType) => (slopType = v)} ariaLabel="Type" />
-							</fieldset>
+							<p class="caption">Rubric, consensus, staff review and appeal signals are computed from tags and decisions.</p>
+							<label for="reason" class="label">Reason, published in the decision log</label>
+							<Textarea id="reason" bind:value={reason} rows={3} maxlength={500} aria-required="true" aria-describedby={formError ? 'form-error' : undefined} />
 						{/if}
-						<fieldset>
-							<legend class="label">Tests</legend>
-							<div class="row">{#each TESTS as t (t)}<Checkbox label={TEST_WORD[t]} checked={tests.includes(t)} onchange={() => (tests = toggle(tests, t))} />{/each}</div>
-						</fieldset>
-						{#each RECORDABLE as group (group.name)}
-							<fieldset>
-								<legend class="label">{group.name} you checked</legend>
-								<div class="checks">
-									{#each group.signals as g (g)}<Checkbox label={SIGNAL_TEXT[g]} checked={signals.includes(g)} onchange={() => (signals = toggle(signals, g))} />{/each}
-								</div>
-							</fieldset>
-						{/each}
-						<p class="caption">Rubric, consensus, staff review and appeal signals are computed from tags and decisions.</p>
-						<label for="reason" class="label">Reason, published in the decision log</label>
-						<Textarea id="reason" bind:value={reason} rows={3} maxlength={500} aria-required="true" aria-describedby={formError ? 'form-error' : undefined} />
-						<label class="large">
-							<span id="large-l" class="label">Large source, staff only</span>
-							<Switch checked={large} aria-labelledby="large-l" onCheckedChange={(v) => (large = v)} />
-						</label>
 						{#if formError}<p class="alert" id="form-error" role="alert"><CircleAlert size={16} aria-hidden="true" />{formError}</p>{/if}
 						{#if saved}<p class="saved" role="status">{saved}</p>{/if}
 					</Card>
@@ -480,7 +511,7 @@ Uses a reviewer token sent by the website's account page through externally_conn
 				<!-- Sticky at the bottom of the panel for the whole detail view, not only beside the form. -->
 				<div class="bar">
 					<span class="now">
-						<VerdictChip verdict={verdict === 'none' ? null : verdict} size="sm" />
+						{#if !needsStaff}<VerdictChip verdict={verdict === 'none' ? null : verdict} size="sm" />{/if}
 						{#if index >= 0}<span class="cl-figure pos">{index + 1} of {shown.length}</span>{/if}
 					</span>
 					<!-- Narrow panels keep every key hint: Previous and Next drop their word (below 560 px), and
@@ -491,7 +522,7 @@ Uses a reviewer token sent by the website's account page through externally_conn
 					<Button variant="secondary" class="step" onclick={() => step(1)} disabled={index < 0 || index >= shown.length - 1} aria-label="Next" aria-keyshortcuts="J"
 						><span class="word">Next</span><ChevronRight size={16} aria-hidden="true" /><Kbd>J</Kbd></Button
 					>
-					<Button variant="primary" type="submit" form="decision" loading={saving} aria-label="Record decision" aria-keyshortcuts={mac ? 'Meta+Enter' : 'Control+Enter'}
+					<Button variant="primary" type="submit" form="decision" loading={saving} disabled={!!needsStaff} aria-label="Record decision" aria-keyshortcuts={mac ? 'Meta+Enter' : 'Control+Enter'}
 						><span>Record<span class="rest">{' '}decision</span></span><span class="key" aria-hidden="true"><Kbd>{mac ? '⌘↵' : 'Ctrl ↵'}</Kbd></span></Button
 					>
 				</div>
@@ -618,22 +649,11 @@ Uses a reviewer token sent by the website's account page through externally_conn
 		gap: 16px;
 		margin-top: 16px;
 	}
-	.paste {
-		display: grid;
-		gap: 4px;
-		width: 100%;
-	}
 	.row {
 		display: flex;
 		flex-wrap: wrap;
 		align-items: center;
 		gap: 8px;
-	}
-	.paste .row {
-		flex-wrap: nowrap;
-	}
-	.row :global(.grow) {
-		flex: 1;
 	}
 
 	/* Queue */
@@ -797,7 +817,7 @@ Uses a reviewer token sent by the website's account page through externally_conn
 	.unmet b {
 		font: var(--cl-body-strong);
 	}
-	.unmet .q {
+	.unmet .question {
 		color: var(--cl-text-muted);
 	}
 	.ring {
@@ -896,13 +916,21 @@ Uses a reviewer token sent by the website's account page through externally_conn
 		display: grid;
 		gap: 4px;
 	}
-	.large {
+	.staff {
 		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		gap: 12px;
-		min-height: 40px;
-		cursor: pointer;
+		align-items: flex-start;
+		gap: 6px;
+		color: var(--cl-text-muted);
+		/* No word alone on the last line, such as "console." */
+		text-wrap: pretty;
+	}
+	.staff :global(svg) {
+		flex: none;
+		margin-top: 2px;
+	}
+	/* Above a list whose entries start with a rule: the same air on both sides of it. */
+	.lead-note {
+		margin-bottom: 12px;
 	}
 	.saved {
 		font: var(--cl-body-strong);

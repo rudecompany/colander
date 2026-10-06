@@ -32,15 +32,19 @@ jobs:
       # The deployment is recorded below for the commit CI tested; an automatic one would carry
       # the default branch head instead, which can be a newer commit.
       deployment: false
+    # No id-token here: this job runs third-party npm code (install and build), so it never gets to
+    # ask for an ops channel token. The smoke job below does, and runs nothing but Node itself.
     permissions:
       contents: read
       deployments: write
+    outputs:
+      deployment: ${{ steps.deployment.outputs.id }}
     env:
       SHA: ${{ github.event.workflow_run.head_sha }}
       GH_TOKEN: ${{ github.token }}
       RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: ${{ github.event.workflow_run.head_sha }}
       - name: Record a GitHub deployment for the tested commit
@@ -51,39 +55,75 @@ jobs:
             | gh api "repos/$GITHUB_REPOSITORY/deployments" --input - --jq .id)
           gh api "repos/$GITHUB_REPOSITORY/deployments/$id/statuses" -f state=in_progress -f log_url="$RUN_URL" >/dev/null
           echo "id=$id" >>"$GITHUB_OUTPUT"
-      - uses: pnpm/action-setup@v6
-      - uses: actions/setup-node@v7
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           node-version: 24
           package-manager-cache: false
       - run: pnpm install --frozen-lockfile
+      # No COLANDER_BUILD_API: staging sits behind Cloudflare Access, so the build could not read its
+      # numbers. Staging pages fill them in once the browser fetches them. Testers pair a development
+      # build of the extension with staging through pairing codes, like any other browser.
       - name: Build the website
         run: pnpm -C web build
         env:
-          # The development build of the extension (stable ID) is the one testers point at staging.
-          PUBLIC_EXTENSION_ID: nninnogmbhfebflkcgghlmjmplmpodlc
-          # No COLANDER_BUILD_API: staging sits behind Cloudflare Access, so the build could not read its
-          # numbers. Staging pages fill them in once the browser fetches them.
+          # Turnstile on the sign-in code form; empty until the owner adds a widget (docs/deploy.md).
+          PUBLIC_TURNSTILE_SITE_KEY: ${{ vars.TURNSTILE_SITE_KEY }}
       - name: Deploy
-        uses: cloudflare/wrangler-action@v4
+        uses: cloudflare/wrangler-action@953926a2e2182532811c01a25e53647d93bf07c0 # v4
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
           workingDirectory: api
           packageManager: pnpm
           command: deploy --env staging --message "staging ${{ github.event.workflow_run.head_sha }}"
+      - name: Mark the deployment failed
+        if: failure() && steps.deployment.outputs.id != ''
+        env:
+          ID: ${{ steps.deployment.outputs.id }}
+        run: |
+          gh api "repos/$GITHUB_REPOSITORY/deployments/$ID/statuses" -f state=failure \
+            -f environment_url=https://staging.getcolander.com -f log_url="$RUN_URL" >/dev/null
+          echo "Staging deployment $ID of $SHA: failure"
+
+  smoke:
+    name: smoke-staging
+    needs: deploy
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment:
+      name: staging
+      deployment: false
+    permissions:
+      contents: read
+      deployments: write
+      # The mutating smoke test decides on a check channel through the ops channel, which takes
+      # GitHub Actions OIDC tokens from this repository's main and lets this workflow run only
+      # check-decision. This job installs nothing: smoke.ts uses Node's own modules.
+      id-token: write
+    env:
+      SHA: ${{ github.event.workflow_run.head_sha }}
+      GH_TOKEN: ${{ github.token }}
+      RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 24
+          package-manager-cache: false
       - name: Smoke test staging (mutating)
         run: node scripts/smoke.ts --mutating --expect-cache
         env:
           COLANDER_BASE_URL: https://staging.getcolander.com
           COLANDER_PUBLIC_KEYS: ${{ vars.STAGING_PUBLIC_KEYS }}
-          COLANDER_REVIEWER_TOKEN: ${{ secrets.STAGING_REVIEWER_TOKEN }}
           CF_ACCESS_CLIENT_ID: ${{ secrets.CF_ACCESS_CLIENT_ID }}
           CF_ACCESS_CLIENT_SECRET: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}
       - name: Mark the deployment
-        if: always() && steps.deployment.outputs.id != ''
+        if: always()
         env:
-          ID: ${{ steps.deployment.outputs.id }}
+          ID: ${{ needs.deploy.outputs.deployment }}
           JOB_STATUS: ${{ job.status }}
         run: |
           state=failure

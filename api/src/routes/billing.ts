@@ -1,7 +1,7 @@
 // Billing and entitlements (contracts 6.8, Go's internal/api/billing.go): checkout, donations,
 // cancel and refund, the Stripe webhook, plan tokens and the supporters page.
 import { importKeys, issuePlanToken, verifyPlanToken } from '@colander/shared/signing';
-import { session } from '../auth';
+import { session, signedIn } from '../auth';
 import {
 	AlreadySubscribedError,
 	BadPriceError,
@@ -83,8 +83,9 @@ async function billingDonate(s: Store, request: Request): Promise<Response> {
 }
 
 async function billingCancel(s: Store, request: Request): Promise<Response> {
-	const a = session(s.auth, request);
-	if (a instanceof Response) return a;
+	const ses = signedIn(s.auth, request);
+	if (ses instanceof Response) return ses;
+	const a = ses.account;
 	const body = await decode(request, 1 << 10, { refund: 'bool' });
 	if (body instanceof Response) return body;
 	let periodEnd: number;
@@ -108,7 +109,7 @@ async function billingCancel(s: Store, request: Request): Promise<Response> {
 	} catch (err) {
 		console.error(JSON.stringify({ message: 'billing email not sent', error: String(err) }));
 	}
-	return writeAccount(s, a);
+	return writeAccount(s, a, ses);
 }
 
 async function billingWebhook(s: Store, request: Request): Promise<Response> {

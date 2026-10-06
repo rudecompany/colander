@@ -6,6 +6,7 @@ import { JSDOM } from 'jsdom';
 import { describe, expect, it } from 'vitest';
 import type { Platform } from '@colander/shared/verdicts';
 import defaults from '../../src/adapters/default-config.json';
+import { readBridge } from '../../src/adapters/bridge-read';
 import { validateConfig, type AdapterConfig } from '../../src/adapters/schema';
 import { activeSurfaces, extractCard, pageSource, platformForHost } from '../../src/adapters/extract';
 import { offered } from '../../src/lib/platforms';
@@ -114,6 +115,20 @@ describe('config validation', () => {
 		const bad = structuredClone(defaults) as AdapterConfig;
 		bad.platforms.yt!.surfaces[0]!.path = '(';
 		expect(() => validateConfig(bad)).toThrow('bad regular expression');
+	});
+
+	it('lets a bridge call only the getters bundled with the release, never one a remote config names', () => {
+		const remote = structuredClone(defaults) as AdapterConfig;
+		remote.platforms.yt!.bridges![0]!.props = ['componentProps.constructor()'];
+		expect(() => validateConfig(remote)).toThrow('constructor(), which is not an allowed getter');
+		remote.platforms.yt!.bridges![0]!.props = ['componentProps.data()', 'rawProps.data'];
+		expect(() => validateConfig(remote)).not.toThrow();
+		// The reader skips any other getter on its own, too.
+		let called = false;
+		const card = Object.assign(document.createElement('div'), { evil: () => ((called = true), { videoId: 'x' }), data: () => ({ videoId: 'dQw4w9WgXcQ' }) });
+		const bridge = { card: 'div', props: ['evil()', 'data()'], item: [{ key: 'videoId' }] };
+		expect(readBridge(card, bridge)).toEqual({ i: 'dQw4w9WgXcQ' });
+		expect(called).toBe(false);
 	});
 
 	it('early access is a boolean, off in the bundled config, and needs Plus to be offered', () => {

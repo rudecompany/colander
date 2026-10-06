@@ -1,9 +1,10 @@
 <script lang="ts">
+	import { PUBLIC_TURNSTILE_SITE_KEY } from '$app/env/public';
 	import { PageHeader, PermissionsTable, PRIVACY_INSTALL_ID, PrivacyFacts } from '@colander/shared';
 
 	/**
 	 * Colander's representatives in the EU and the UK under GDPR Article 27. The owner names them
-	 * here before the first seed list import (docs/deploy.md, step 18, D3); until then the
+	 * here before the first seed list import (docs/deploy.md, step 20, D3); until then the
 	 * Creators section says nothing about them.
 	 */
 	const REPRESENTATIVES = null as { eu: string; uk: string } | null;
@@ -14,6 +15,7 @@
 		['requests', 'Every request it makes'],
 		['install-id', 'Install IDs'],
 		['website', 'The website'],
+		['account', 'Your account'],
 		['appeals', 'Appeals'],
 		['creators', 'Creators'],
 		['payments', 'Payments'],
@@ -33,6 +35,7 @@
 		['Reports', 'POST /v1/reports', 'The source, up to three example items, your reason, and your install ID.', 'On each report'],
 		['Report status', 'GET /v1/reports', 'Your install ID, to list your own reports.', 'On opening My reports'],
 		['Trial', 'POST /v1/trial', 'Your install ID, so a trial is given once per install.', 'On starting a trial'],
+		['Pairing code', 'POST /v1/pair/claim', 'The code you typed, the extension version and the browser name. Not your install ID.', 'When you connect Plus or the side panel'],
 		['Plan refresh and settings sync', 'POST /v1/entitlement/refresh, /v1/sync', 'Your signed plan token and your settings.', 'Plus only'],
 		['Review queue', '/v1/review/*', 'Your reviewer token.', 'Curators and staff only']
 	];
@@ -76,7 +79,11 @@
 
 		<section id="permissions" class="prose">
 			<h2>Permissions</h2>
-			<p>Chrome asks you before Colander gets any of these. Site access is asked one platform at a time, for the platforms you choose.</p>
+			<p>Your browser asks you before Colander gets any of these. Site access is asked one platform at a time, for the platforms you choose.</p>
+			<p>
+				Firefox also asks before Colander sends anything. Tags and reports wait on your device until you allow them, and Plus and the
+				side panel ask before they use a sign-in token. You can change either in Options under Sharing, or in Firefox's add-ons manager.
+			</p>
 			<PermissionsTable />
 		</section>
 
@@ -116,18 +123,57 @@
 		<section id="website" class="prose">
 			<h2>The website</h2>
 			<ul class="dots-list">
-				<li>Pages load no third-party scripts, fonts or images. There are no analytics and no trackers.</li>
-				<li>This site sets no cookies until you sign in, so there is no banner. The sign-in cookie lasts 30 days.</li>
-				<li>Sign-in uses an emailed link that expires after 20 minutes and works once. We do not use passwords.</li>
+				<li>
+					Pages load no third-party scripts, fonts or images. There are no analytics and no trackers.
+					{#if PUBLIC_TURNSTILE_SITE_KEY}The one exception: once you start signing in, the form loads Cloudflare Turnstile, a check that
+						a person is asking for the code.{/if}
+				</li>
+				<li>
+					This site sets no cookies until you start signing in, so there is no banner. Then a short cookie holds your place: 10 minutes
+					while you enter an emailed code, or 5 minutes for a passkey check. The session cookie lasts 30 days.
+				</li>
+				<li>
+					You sign in with a 6-digit code we email you, which works once for 10 minutes, or with a passkey. We do not use passwords. If
+					you turn on a passkey, your device keeps the private key; we keep only its public key.
+				</li>
 				<li>Your display name appears in the decision log if you review, and on the supporters page only if you ask for credit.</li>
+			</ul>
+		</section>
+
+		<section id="account" class="prose">
+			<h2>Your account</h2>
+			<p>
+				An account holds your email address, an optional display name, your role, your passkeys' public keys and names, your
+				sign-ins (how and when, never your address or device), your plan and, with Plus, your synced settings.
+			</p>
+			<ul class="dots-list">
+				<li>
+					Download it all from your account page as one file, or delete the account there. Deleting ends Plus at once, refunds your
+					last charge when it is still refundable, and asks our payment provider to delete you as a customer; it keeps only what tax law
+					requires.
+				</li>
+				<li>
+					For your safety we ask you to confirm it is you first. Once you have a passkey, an email code alone cannot export, delete or
+					remove a passkey right away: the request waits 72 hours, and we email you a link to cancel it.
+				</li>
+				<li>
+					We email you whenever someone adds or takes off a passkey, so you notice a change you did not make. Choose Sign out everywhere to
+					end every session.
+				</li>
+				<li>
+					We keep a record of sign-ins, passkey and role changes, and staff actions for 400 days, to investigate misuse. It holds what
+					happened, when, and to which account ID, never codes, passkeys, your email address or the pages you visit. Deleting your
+					account leaves these entries, still under the ID only.
+				</li>
 			</ul>
 		</section>
 
 		<section id="appeals" class="prose">
 			<h2>Appeals</h2>
 			<p>
-				An appeal asks for an email address and your statement. We use the address only to send the appeal link and its outcome. The
-				decision and its reasoning are published in the decision log. Your email address never is.
+				An appeal asks for an email address and your statement. We use the address only to send the appeal link and its outcome, and
+				we erase it 30 days after the appeal closes. The decision and its reasoning are published in the decision log. Your email
+				address never is.
 			</p>
 		</section>
 
@@ -183,19 +229,22 @@
 			<ul class="dots-list">
 				<li>Tags and reports are kept while they count toward a verdict. Verdicts are re-scored every 90 days.</li>
 				<li>Server logs never record request paths that contain item or source IDs together with an install hash.</li>
-				<li>Unverified appeals expire after 14 days.</li>
+				<li>Unverified appeals expire after 14 days. An appeal's email address is erased 30 days after the appeal closes.</li>
+				<li>Sign-in codes and passkey challenges last 10 and 5 minutes. Sessions end after 30 days, and a side panel connection after 7.</li>
+				<li>A pairing code works for 10 minutes. An hour after it ends we delete it, with the browser name and extension version that used it.</li>
+				<li>The record of sign-ins and account changes is kept 400 days, whether or not the account still exists. It names accounts by ID, never by email address.</li>
 				<li>Entries from outside lists expire on a date set for each list, and a source only a list named goes with them.</li>
 				<li>Staff labels that measure how accurate the lists are stay for 24 months, then go.</li>
-				<li>Account data is kept until you ask us to delete it, apart from billing records the law requires us to keep.</li>
+				<li>Account data is kept until you delete the account, apart from billing records the law requires us to keep.</li>
 			</ul>
 		</section>
 
 		<section id="contact" class="prose">
 			<h2>Your rights and contact</h2>
 			<p>
-				You can ask to see, correct, export or delete the data tied to your account or your install ID. Your extension's options page
-				can export everything it stores locally. Write to the contact address on our Chrome Web Store listing, and we will answer
-				within 30 days.
+				You can export or delete your account yourself on your account page. You can also ask to see, correct, export or delete the
+				data tied to your account or your install ID. Your extension's options page can export everything it stores locally. Write to
+				the contact address on our store listings, and we will answer within 30 days.
 			</p>
 		</section>
 	</article>

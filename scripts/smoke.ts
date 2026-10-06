@@ -4,9 +4,11 @@
 //   COLANDER_BASE_URL=https://getcolander.com COLANDER_PUBLIC_KEYS=<base64,...> node scripts/smoke.ts
 //
 // Flags:
-//   --mutating       staging only: adds a tag round trip with a throwaway install ID and a staff
-//                    decision that must reach the edge as a signed delta within 60 seconds
-//                    (needs COLANDER_REVIEWER_TOKEN, the reviewer token of a staff account)
+//   --mutating       staging only: adds a tag round trip with a throwaway install ID and a
+//                    decision on a check channel, made through the ops channel, that must reach
+//                    the edge as a signed delta within 60 seconds (in a GitHub workflow with
+//                    id-token: write it gets an OIDC token itself; elsewhere it needs OPS_TOKEN,
+//                    the dev token of a local stack)
 //   --expect-cache   requires `cf-cache-status: HIT` on a repeated snapshot and delta request
 //   --since <seq>    a sequence clients held before a deploy; its delta must still be served
 //
@@ -33,6 +35,33 @@ export async function http(path: string, init: RequestInit = {}): Promise<Respon
 		headers.set('CF-Access-Client-Secret', secret);
 	}
 	return fetch(baseURL() + path, { ...init, headers, redirect: 'manual', signal: AbortSignal.timeout(20_000) });
+}
+
+/**
+ * A token for the ops channel (docs/deploy.md): in a GitHub workflow with `id-token: write`, a
+ * fresh GitHub Actions OIDC token for this origin, since each lives 5 minutes; elsewhere OPS_TOKEN,
+ * which only a local dev stack takes.
+ */
+export async function opsToken(): Promise<string> {
+	const url = process.env.ACTIONS_ID_TOKEN_REQUEST_URL;
+	const bearer = process.env.ACTIONS_ID_TOKEN_REQUEST_TOKEN;
+	if (!url || !bearer) return env('OPS_TOKEN');
+	const res = await fetch(`${url}&audience=${encodeURIComponent(new URL(baseURL()).origin)}`, { headers: { Authorization: `bearer ${bearer}` } });
+	const body = (await res.json()) as { value?: string };
+	if (!res.ok || !body.value) throw new Error(`GitHub did not issue an OIDC token: ${res.status}`);
+	return body.value;
+}
+
+/** One ops command; fails unless it answers 2xx. */
+export async function ops<T = any>(command: string, body: object = {}): Promise<T> {
+	const res = await http(`/ops/${command}`, {
+		method: 'POST',
+		headers: { Authorization: `Bearer ${await opsToken()}`, 'Content-Type': 'application/json' },
+		body: JSON.stringify(body)
+	});
+	const out = await json(res);
+	expect(res.ok, `/ops/${command} answered ${res.status} ${JSON.stringify(out)}`);
+	return out as T;
 }
 
 export async function json(res: Response): Promise<any> {
@@ -165,7 +194,6 @@ async function main(): Promise<void> {
 		}
 	});
 	const keys = trustedKeys(env('COLANDER_PUBLIC_KEYS'));
-	const reviewerToken = opts.mutating ? env('COLANDER_REVIEWER_TOKEN') : '';
 	const nonce = randomBytes(6).toString('hex');
 	console.log(`Smoke test of ${baseURL()} (${opts.mutating ? 'mutating' : 'read-only'})`);
 
@@ -293,23 +321,11 @@ async function main(): Promise<void> {
 			expect(res.status === 200 && Array.isArray(body.reports) && body.reports.length === 0,
 				`GET /v1/reports for the new install answered ${res.status} ${JSON.stringify(body)}`);
 		});
-		await check('a staff decision reaches the edge as a signed delta within 60 s', async () => {
+		await check('a decision reaches the edge as a signed delta within 60 s', async () => {
 			const before = atHead();
-			const auth = { Authorization: `Bearer ${reviewerToken}`, 'Content-Type': 'application/json' };
-			const path = '/v1/review/sources/yt/@colander-smoke';
-			const current = await http(path, { headers: auth });
-			const state = await json(current);
-			expect(current.status === 200 || current.status === 404, `GET ${path} answered ${current.status} ${JSON.stringify(state)}`);
-			// Toggle between Clear and not rated, so every run changes the list.
-			const verdict = state?.source?.verdict === 'clear' ? 'none' : 'clear';
 			const started = Date.now();
-			const res = await http(`${path}/decision`, {
-				method: 'POST',
-				headers: auth,
-				body: JSON.stringify({ verdict, reason: `Smoke test ${nonce}: set to ${verdict}.`, signals: [], tests: [] })
-			});
-			const decided = await json(res);
-			expect(res.status === 200, `decision answered ${res.status} ${JSON.stringify(decided)}`);
+			// Toggles the check channel between Clear and not rated, so every run changes the list.
+			const { verdict } = await ops<{ verdict: string }>('check-decision', { source: '@colander-smoke', reason: `Smoke test ${nonce}.` });
 			const hash = targetHash('yt:s:@colander-smoke');
 			const want = verdict === 'clear' ? 5 : 0;
 			for (;;) {

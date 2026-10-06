@@ -1,27 +1,37 @@
 // The ops channel (hosting plan section 2, flow 13; the contract is "The ops channel" in
-// docs/deploy.md). GitHub workflows POST /ops/<command> with OPS_TOKEN; the edge has already
-// checked the token. Commands that change data run in the Store through its ops() RPC; the edge
+// docs/deploy.md). GitHub workflows POST /ops/<command> with a GitHub Actions OIDC token: only a
+// workflow of this repository, running on main in this environment's GitHub environment, gets in
+// (opsCaller), and every command but status is audited with the run and the actor GitHub vouches
+// for. Commands that change data run in the Store through its ops() RPC; the edge
 // orchestrates the restores (restart the Store, publish above R2, purge the edge cache) and the
 // restore drill, which loads the newest dump into the scratch Store "drill".
 //
-// They replace the Go binary's operator commands: grant-role and sign-config behave as
-// `colander <command>` did, with JSON arguments instead of flags. The seed list commands
-// (import-seed, revoke-seed, calibration-sample, calibration-export) are in src/seeds.ts: the
-// workflow's run log is public, so they read lists from private objects in the backup bucket and
-// answer with counts only.
+// They replace the Go binary's operator commands: grant-role behaves as `colander grant-role` did,
+// with JSON arguments instead of flags, and sign-config signs as it did but reads the adapter
+// configuration itself from the repository at the run's commit on main. Each workflow runs only the
+// commands its jobs need (mayRun); the seed list commands (import-seed, revoke-seed,
+// calibration-sample, calibration-export) run from the Ops workflow only, and are in src/seeds.ts.
+// The workflow's run log is public, so arguments and answers never name a seed list: they read
+// lists from private objects in the backup bucket and answer with counts only.
 import { utf8 } from '@colander/shared/bytes';
 import { CONFIG_CONTEXT, signEnvelope } from '@colander/shared/signing';
+import { devLocal } from './access';
 import { normalizeEmail } from './auth';
-import { countsAgree, newestDump, restoreDump, tableCounts } from './backup';
+import { countsAgree, dumpTime, exportAudit, newestDump, reapplyAudit, restoreDump, tableCounts } from './backup';
+import { reapplyErasures } from './erase';
 import { json, jsonError } from './http';
+import { verifyJwt } from './jwt';
 import { STATUS, type DumpStatus, type PassStatus, type PublishStatus } from './jobs';
 import { r2Sequence } from './list/publisher';
-import { rfc3339 } from './routes/respond';
+import { rfc3339, trimSpace } from './routes/respond';
 import { unix } from './scoring/engine';
-import { grantRole, type Account } from './store/accounts';
+import { audit, accountByEmail, grantRole, hasAdmin, reapplyRevocations, type Account } from './store/accounts';
+import { rank } from './permissions';
 import { calibrationExport, calibrationSample, importSeed, revokeSeedOps } from './seeds';
 import { latestSequence, RETENTION_SECONDS, SNAPSHOT_KEY } from './store/list';
 import { saveAdapterConfig } from './store/misc';
+import { ensureSource, getSource } from './store/sources';
+import { decide } from './scoring/actions';
 import { primary, type Store } from './store/store';
 
 /** A JSON object argument as the workflow sends it. */
@@ -33,9 +43,92 @@ export interface OpsAnswer {
 	body: Record<string, unknown>;
 }
 
+/** Who called the ops channel, as GitHub's OIDC token says: for the audit log. */
+export interface OpsCaller {
+	/** the GitHub login that started the run, or "dev" */
+	actor: string;
+	runId: string;
+	/** the workflow file, such as .github/workflows/ops.yml, or "dev" */
+	workflow: string;
+	/** the commit on main the run started from, or "" in dev */
+	sha: string;
+}
+
+const GITHUB_ISSUER = 'https://token.actions.githubusercontent.com';
+export const GITHUB_JWKS = `${GITHUB_ISSUER}/.well-known/jwks`;
+
+/** The parts of Env the ops check reads. */
+export type OpsEnv = Pick<Env, 'COLANDER_DEV' | 'PUBLIC_URL' | 'OPS_GITHUB_REPOSITORY' | 'OPS_GITHUB_REPOSITORY_ID' | 'OPS_GITHUB_ENVIRONMENT'> & { OPS_TOKEN?: string };
+
+const unauthorized = () => jsonError(401, 'unauthorized', 'A GitHub Actions OIDC token from a workflow on main is required.', { 'WWW-Authenticate': 'Bearer' });
+
+/**
+ * Checks the ops channel's caller: `Authorization: Bearer <GitHub Actions OIDC token>` for the
+ * audience PUBLIC_URL, from the repository OPS_GITHUB_REPOSITORY (and its ID), on refs/heads/main,
+ * from a workflow file on main, in the GitHub environment OPS_GITHUB_ENVIRONMENT. Dev mode on
+ * localhost also takes the OPS_TOKEN bearer of api/.dev.vars, which no deployed environment has.
+ */
+export async function opsCaller(request: Request, env: OpsEnv): Promise<OpsCaller | Response> {
+	const auth = request.headers.get('Authorization') ?? '';
+	if (!auth.startsWith('Bearer ')) return unauthorized();
+	const token = auth.slice('Bearer '.length).trim();
+	if (devLocal(env) && env.OPS_TOKEN && (await sameSecret(token, env.OPS_TOKEN))) return { actor: 'dev', runId: '', workflow: 'dev', sha: '' };
+	const repo = (env.OPS_GITHUB_REPOSITORY ?? '').trim();
+	const environment = (env.OPS_GITHUB_ENVIRONMENT ?? '').trim();
+	if (!repo || !environment) return jsonError(503, 'ops_unavailable', 'The ops channel is not configured.');
+	const claims = await verifyJwt(token, { jwksUrl: GITHUB_JWKS, issuer: GITHUB_ISSUER, audience: new URL(env.PUBLIC_URL).origin });
+	if (!claims) return unauthorized();
+	const repoId = (env.OPS_GITHUB_REPOSITORY_ID ?? '').trim();
+	const workflowRef = typeof claims.workflow_ref === 'string' ? claims.workflow_ref : '';
+	const ok =
+		claims.repository === repo &&
+		(repoId === '' || claims.repository_id === repoId) &&
+		claims.ref === 'refs/heads/main' &&
+		workflowRef.startsWith(`${repo}/.github/workflows/`) &&
+		workflowRef.endsWith('@refs/heads/main') &&
+		claims.environment === environment;
+	if (!ok) return unauthorized();
+	return {
+		actor: typeof claims.actor === 'string' ? claims.actor : '',
+		runId: typeof claims.run_id === 'string' ? claims.run_id : '',
+		workflow: workflowRef.slice(`${repo}/`.length, -'@refs/heads/main'.length),
+		sha: typeof claims.sha === 'string' && /^[0-9a-f]{40}$/.test(claims.sha) ? claims.sha : ''
+	};
+}
+
+/**
+ * The commands each workflow may run, so a job holds no more than its own steps need: a token
+ * minted inside a job that runs third-party code (deploy-staging installs and builds) cannot run
+ * grant-role, sign-config, a seed list command or a restore. The Ops workflow runs every command;
+ * dev mode too.
+ */
+export function mayRun(caller: OpsCaller, environment: string, command: string): boolean {
+	switch (caller.workflow) {
+		case 'dev':
+		case '.github/workflows/ops.yml':
+			return true;
+		case '.github/workflows/probes.yml':
+			return command === 'status';
+		case '.github/workflows/drills.yml':
+			// The weekly dump drill runs on production, the monthly point-in-time drill on staging.
+			return environment === 'production' ? command === 'drill' : ['status', 'check-decision', 'pitr-restore'].includes(command);
+		case '.github/workflows/deploy-staging.yml':
+			return command === 'check-decision';
+		default:
+			return false;
+	}
+}
+
+/** Constant-time comparison: both sides are hashed first so their lengths match. */
+async function sameSecret(given: string, expected: string): Promise<boolean> {
+	const digest = (s: string) => crypto.subtle.digest('SHA-256', new TextEncoder().encode(s));
+	const [a, b] = await Promise.all([digest(given), digest(expected)]);
+	return crypto.subtle.timingSafeEqual(a, b);
+}
+
 /** Calls a Store's ops() RPC, which carries arguments and answers as JSON text. */
-async function call(stub: DurableObjectStub<Store>, command: string, args: OpsArgs = {}): Promise<OpsAnswer> {
-	const r = await stub.ops(command, JSON.stringify(args));
+async function call(stub: DurableObjectStub<Store>, command: string, args: OpsArgs = {}, caller?: OpsCaller): Promise<OpsAnswer> {
+	const r = await stub.ops(command, JSON.stringify(args), caller && JSON.stringify(caller));
 	return { status: r.status, body: JSON.parse(r.json) as Record<string, unknown> };
 }
 
@@ -43,6 +136,7 @@ async function call(stub: DurableObjectStub<Store>, command: string, args: OpsAr
 const COMMANDS = new Set([
 	'status',
 	'grant-role',
+	'pin-subject',
 	'import-seed',
 	'revoke-seed',
 	'calibration-sample',
@@ -51,8 +145,12 @@ const COMMANDS = new Set([
 	'drill',
 	'purge-cache',
 	'restore-dump',
-	'pitr-restore'
+	'pitr-restore',
+	'check-decision'
 ]);
+
+/** The two fictional channels the staging smoke test and the restore drill decide on. */
+export const CHECK_SOURCES = ['@colander-smoke', '@colander-drill'];
 
 /** The drill fails when the newest dump is this old: one 6-hourly dump went missing (hosting plan section 3). */
 export const DUMP_MAX_AGE_S = 7 * 3600;
@@ -65,8 +163,8 @@ const fail = (status: number, code: string, message: string, extra: Record<strin
 const send = (a: OpsAnswer): Response => json(a.status, a.body);
 const text = (v: unknown): string => (typeof v === 'string' ? v : '');
 
-/** The edge half: one command, after the edge checked OPS_TOKEN. */
-export async function ops(request: Request, env: Env, cache: CacheContext | undefined): Promise<Response> {
+/** The edge half: one command, after opsCaller let the caller in. */
+export async function ops(request: Request, env: Env, cache: CacheContext | undefined, caller: OpsCaller): Promise<Response> {
 	const command = new URL(request.url).pathname.slice('/ops/'.length);
 	if (!COMMANDS.has(command)) return jsonError(404, 'unknown_command', 'There is no ops command at this path.');
 	if (request.method !== 'POST') return jsonError(405, 'method_not_allowed', 'Ops commands are POST requests.', { Allow: 'POST' });
@@ -75,26 +173,31 @@ export async function ops(request: Request, env: Env, cache: CacheContext | unde
 		return jsonError(400, 'invalid_body', 'The body must be a JSON object.');
 	}
 	const a = args as OpsArgs;
+	if (!mayRun(caller, env.OPS_GITHUB_ENVIRONMENT ?? '', command)) {
+		return jsonError(403, 'not_this_workflow', `${caller.workflow} may not run ${command}: run it from the Ops workflow.`);
+	}
 	switch (command) {
+		case 'sign-config':
+			return send(await signRepositoryConfig(env, caller, a));
 		case 'purge-cache': {
 			if (a.confirm !== 'purge-cache') return send(unconfirmed('the word purge-cache'));
 			const p = await purgeEverything(cache);
 			return p.errors ? send(fail(502, 'purge_failed', 'The edge cache refused the purge.', p)) : json(200, p);
 		}
 		case 'pitr-restore':
-			return send(await pitrRestore(env, cache, a));
+			return send(await pitrRestore(env, cache, a, caller));
 		case 'restore-dump': {
 			const key = text(a.key);
 			if (key === '' || a.confirm !== key) return send(unconfirmed('the dump key'));
-			const res = await call(primary(env), 'restore-dump', { key });
+			const res = await call(primary(env), 'restore-dump', { key }, caller);
 			if (res.status !== 200) return send(res);
 			await restart(env);
-			return send(await afterRestore(env, cache, res.body));
+			return send(await afterRestore(env, cache, res.body, dumpTime(key)));
 		}
 		case 'drill':
 			return send(await drill(env));
 		default:
-			return send(await call(primary(env), command, a));
+			return send(await call(primary(env), command, a, caller));
 	}
 }
 
@@ -120,7 +223,7 @@ export const PITR_PREFIX = 'pitr/';
  * restore never waits for a later restart; the bookmarks outlive that instance in the backup
  * bucket, and the answer carries them, the undo bookmark included.
  */
-async function pitrRestore(env: Env, cache: CacheContext | undefined, a: OpsArgs): Promise<OpsAnswer> {
+async function pitrRestore(env: Env, cache: CacheContext | undefined, a: OpsArgs, caller: OpsCaller): Promise<OpsAnswer> {
 	const at = text(a.at);
 	if (at === '' || a.confirm !== at) return unconfirmed('the time in at');
 	const t = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/.test(at) ? Date.parse(at) : NaN;
@@ -130,12 +233,12 @@ async function pitrRestore(env: Env, cache: CacheContext | undefined, a: OpsArgs
 		return fail(400, 'invalid_time', 'at must be in the past 30 days: point-in-time recovery keeps no older history.');
 	}
 	const record = `${PITR_PREFIX}${new Date(now).toISOString()}.json`;
-	await resetting(call(primary(env), 'pitr-restore', { at: t, record }));
+	await resetting(call(primary(env), 'pitr-restore', { at: t, record }, caller));
 	const saved = await env.BACKUPS.get(record);
 	if (!saved) {
 		return fail(500, 'restore_unrecorded', `The Store restarted without recording ${record}: check the Worker logs for its bookmarks before anything else.`);
 	}
-	return afterRestore(env, cache, { at, ...(await saved.json<Record<string, unknown>>()) });
+	return afterRestore(env, cache, { at, ...(await saved.json<Record<string, unknown>>()) }, t, true);
 }
 
 /** Waits for a call that ends by resetting the Store; any other failure is thrown. */
@@ -151,15 +254,30 @@ async function resetting(p: Promise<unknown>): Promise<void> {
 const restart = (env: Env) => resetting(call(primary(env), 'restart'));
 
 /**
- * After a restore and its restart: have the new instance publish (above R2's sequence, so no
- * install ever sees an older list) and purge the edge cache.
+ * After a restore to since (unix ms) and its restart: have the new instance publish (above R2's
+ * sequence, so no install ever sees an older list) and purge the edge cache. A point-in-time
+ * restore (pitr) took the audit log back too, so the rows written since come back from their
+ * copies in R2 first.
  */
-async function afterRestore(env: Env, cache: CacheContext | undefined, restored: Record<string, unknown>): Promise<OpsAnswer> {
+async function afterRestore(env: Env, cache: CacheContext | undefined, restored: Record<string, unknown>, since: number, pitr = false): Promise<OpsAnswer> {
 	// A reset object breaks its stubs: primary() makes a new one, which starts a new instance.
+	const audited = pitr ? await call(primary(env), 'reapply-audit', { since }) : { body: {} };
+	// Accounts deleted after the restore point are deleted again before anything else.
+	const erased = await call(primary(env), 'reapply-erasures');
+	// Then no credential, role or held request the audit log says ended since comes back.
+	const revoked = await call(primary(env), 'reapply-revocations', { since });
 	const published = await call(primary(env), 'publish');
 	const purge = await purgeEverything(cache);
 	console.log(JSON.stringify({ message: 'restored', ...published.body, cachePurged: purge.purged }));
-	return ok({ ...restored, ...published.body, cache_purged: purge.purged, ...(purge.errors ? { cache_errors: purge.errors } : {}) });
+	return ok({
+		...restored,
+		...audited.body,
+		...erased.body,
+		...revoked.body,
+		...published.body,
+		cache_purged: purge.purged,
+		...(purge.errors ? { cache_errors: purge.errors } : {})
+	});
 }
 
 /**
@@ -195,14 +313,37 @@ async function drill(env: Env): Promise<OpsAnswer> {
 	return problems.length === 0 ? ok(body) : fail(500, 'drill_failed', problems.join(' '), body);
 }
 
+/** Commands that change nothing and are not audited: the probes call status every hour. */
+const UNAUDITED = new Set(['status', 'counts', 'publish', 'restart', 'drill-check', 'reapply-erasures', 'reapply-audit', 'reapply-revocations']);
+
 /** The Store half: runs one command in this Store (Store.ops). */
-export async function storeOps(store: Store, ctx: DurableObjectState, env: Env, command: string, a: OpsArgs): Promise<OpsAnswer> {
+export async function storeOps(store: Store, ctx: DurableObjectState, env: Env, command: string, a: OpsArgs, caller?: OpsCaller): Promise<OpsAnswer> {
 	const db = store.db;
+	if (caller && !UNAUDITED.has(command)) {
+		audit(
+			db,
+			{ action: `ops:${command}`, host: 'ops', actorSub: `github:${caller.actor}`, requestId: caller.runId, reason: caller.workflow },
+			unix(store.now())
+		);
+	}
 	switch (command) {
 		case 'status':
 			return ok(await status(store, ctx, env));
 		case 'grant-role':
-			return grant(store, a);
+			return grant(store, ctx.storage.kv, a, caller);
+		case 'pin-subject':
+			return pinSubject(store, a, caller);
+		case 'reapply-audit':
+			return ok({ audit_restored: await reapplyAudit(db, env.BACKUPS, a.since as number) });
+		case 'reapply-erasures':
+			return ok({ erased: await reapplyErasures(store, env) });
+		case 'reapply-revocations':
+			return ok({ revocations_reapplied: reapplyRevocations(db, Math.floor((a.since as number) / 1000)) });
+		case 'check-decision': {
+			const answer = checkDecision(store, env, a);
+			if (store.jobs.dirty) await store.jobs.arm();
+			return answer;
+		}
 		case 'import-seed':
 		case 'revoke-seed': {
 			const answer = command === 'import-seed' ? await importSeed(store, env, a) : await revokeSeedOps(store, env, a);
@@ -216,6 +357,10 @@ export async function storeOps(store: Store, ctx: DurableObjectState, env: Env, 
 		case 'sign-config':
 			return signConfig(store, a);
 		case 'pitr-restore': {
+			// The restore takes the audit log back to `at` too: every row so far, this command's own
+			// included, goes to the locked copies first, and afterRestore brings the newer ones back.
+			// Without that copy nothing is armed.
+			await exportAudit(db, ctx.storage.kv, env.BACKUPS, store.now());
 			const bookmark = await ctx.storage.getBookmarkForTime(a.at as number);
 			const undo = await ctx.storage.onNextSessionRestoreBookmark(bookmark);
 			const saved = { bookmark, undo_bookmark: undo };
@@ -300,16 +445,94 @@ async function status(store: Store, ctx: DurableObjectState, env: Env): Promise<
 
 const accountJSON = (a: Account) => ({ id: a.id, email: a.email, display_name: a.displayName || null, role: a.role, created_at: rfc3339(a.createdAt) });
 
-/** `colander grant-role <email> <role>`. */
-function grant(store: Store, a: OpsArgs): OpsAnswer {
+/**
+ * Set in the Store's KV storage when grant-role first grants admin. The bootstrap stays closed
+ * from then on, even with no admin left: deleting or losing the last admin never reopens it.
+ */
+export const ADMIN_BOOTSTRAPPED = 'status:admin_bootstrapped';
+
+/**
+ * `colander grant-role <email> <role>`. The bootstrap path to staff and admin: until it first
+ * grants admin, it grants any role, so the owner can make themselves admin once. After that it only
+ * moves member and curator accounts between member and curator; every other role change happens on
+ * the admin host, behind Access and its MFA, with an audited actor.
+ */
+function grant(store: Store, kv: SyncKvStorage, a: OpsArgs, caller?: OpsCaller): OpsAnswer {
 	const email = normalizeEmail(text(a.email));
 	if (!email) return fail(400, 'invalid_email', `${JSON.stringify(text(a.email))} is not an email address.`);
 	const role = text(a.role);
-	if (role !== 'member' && role !== 'curator' && role !== 'staff') {
-		return fail(400, 'invalid_role', `role must be member, curator or staff, not ${JSON.stringify(role)}.`);
+	if (!['member', 'curator', 'staff', 'admin'].includes(role)) {
+		return fail(400, 'invalid_role', `role must be member, curator, staff or admin, not ${JSON.stringify(role)}.`);
 	}
-	const acct = grantRole(store.db, email, role, unix(store.now()));
-	return ok({ account: accountJSON(acct), message: `${acct.email} (${acct.id}) is now ${acct.role}.` });
+	const db = store.db;
+	if (kv.get<boolean>(ADMIN_BOOTSTRAPPED) === true || hasAdmin(db)) {
+		const current = accountByEmail(db, email)?.role ?? 'member';
+		if (rank(role) > rank('curator') || rank(current) > rank('curator')) {
+			return fail(
+				403,
+				'admin_exists',
+				'The first admin was made already, so the ops channel only moves accounts between member and curator. Change staff and admin roles on the admin host.'
+			);
+		}
+	}
+	const acct = grantRole(db, email, role, unix(store.now()), { host: 'ops', actorSub: caller ? `github:${caller.actor}` : undefined, requestId: caller?.runId });
+	if (acct.role === 'admin') kv.put(ADMIN_BOOTSTRAPPED, true);
+	return ok({ account: accountJSON(acct), message: `${acct.email} (${acct.id}) is now ${acct.role}.${REVIEW_NEXT[acct.role] ?? ''}` });
+}
+
+/** What a new reviewer does next, after the grant-role answer. */
+const REVIEW_NEXT: Record<string, string> = {
+	curator: ' It needs a passkey invite from the admin host before it can review.',
+	staff: ' It reviews on the admin host through Access; a passkey for getcolander.com needs an invite from an admin.',
+	admin: ' It reviews on the admin host through Access; a passkey for getcolander.com needs an invite from another admin.'
+};
+
+/**
+ * pin-subject {"email", "subject"}: binds a staff or admin account to the A3T subject the owner
+ * checked in A3T Identity, before that person's first A3T sign-in, so the admin host never trusts
+ * whichever subject arrives first. It replaces an earlier pin (a new A3T identity after a lost one)
+ * and refuses a subject another account holds.
+ */
+function pinSubject(store: Store, a: OpsArgs, caller?: OpsCaller): OpsAnswer {
+	const email = normalizeEmail(text(a.email));
+	if (!email) return fail(400, 'invalid_email', `${JSON.stringify(text(a.email))} is not an email address.`);
+	const sub = trimSpace(text(a.subject));
+	if (sub === '' || [...sub].length > 255 || /\p{Cc}/u.test(sub)) return fail(400, 'invalid_subject', 'subject must be the A3T subject: one line of at most 255 characters.');
+	const subject = `a3t:${sub}`;
+	const db = store.db;
+	const account = accountByEmail(db, email);
+	if (!account || rank(account.role) < rank('staff')) return fail(400, 'not_staff', `${email} is not a staff or admin account.`);
+	if (db.get('SELECT 1 FROM accounts WHERE access_subject = ? AND id != ?', subject, account.id)) {
+		return fail(409, 'subject_taken', 'Another account is already bound to this A3T subject.');
+	}
+	db.tx(() => {
+		db.run('UPDATE accounts SET access_subject = ? WHERE id = ?', subject, account.id);
+		audit(
+			db,
+			{ host: 'ops', actorSub: caller ? `github:${caller.actor}` : undefined, requestId: caller?.runId, action: 'access_pinned', target: account.id, before: account.accessSubject || undefined, after: subject },
+			unix(store.now())
+		);
+	});
+	return ok({ account: { ...accountJSON(account), access_pinned: true }, message: `${email} (${account.id}) now signs in to the admin host only as ${subject}.` });
+}
+
+/**
+ * check-decision {"source", "reason"}: the staging smoke test's and the restore drill's write. It
+ * toggles one of the two fictional check channels between Clear and not rated, as a curator
+ * decision would, so every run changes the list. It replaces the long-lived reviewer token those
+ * checks used, and production refuses it: its public log is not for checks.
+ */
+function checkDecision(store: Store, env: Env, a: OpsArgs): OpsAnswer {
+	if (env.OPS_GITHUB_ENVIRONMENT === 'production') return fail(403, 'not_here', 'check-decision runs on staging and in dev only.');
+	const source = text(a.source);
+	const reason = trimSpace(text(a.reason));
+	if (!CHECK_SOURCES.includes(source)) return fail(400, 'invalid_source', `source must be ${CHECK_SOURCES.join(' or ')}.`);
+	if (reason === '' || [...reason].length > 500) return fail(400, 'invalid_reason', 'reason must be 1 to 500 characters.');
+	const db = store.db;
+	const ref = ensureSource(db, 'yt', source, '', unix(store.now()));
+	const verdict = getSource(db, ref)?.state.verdict === 'clear' ? 'none' : 'clear';
+	decide(store.engine, { sourceRef: ref, verdict, reason, actor: 'curator' });
+	return ok({ source, verdict });
 }
 
 /**
@@ -363,6 +586,38 @@ function configVersion(file: string): number | undefined | 'not_object' {
 	if (v?.literal === undefined || !/^-?(?:0|[1-9]\d*)$/.test(v.literal)) return undefined;
 	const n = Number(v.literal);
 	return Number.isSafeInteger(n) ? n : undefined;
+}
+
+/** The adapter configuration sign-config signs, as committed in the repository. */
+export const ADAPTER_CONFIG_PATH = 'extension/src/adapters/default-config.json';
+
+/** sign-config reads at most this much. */
+const CONFIG_MAX_BYTES = 256 << 10;
+
+/**
+ * The edge half of sign-config: the Worker reads the adapter configuration itself, from the
+ * repository at the commit on main the run started from (the token's `sha`), so only a reviewed,
+ * merged file is ever signed, whatever the run sends. A body with `file` is refused. Dev mode, which
+ * has no commit, signs the `file` it is given.
+ */
+async function signRepositoryConfig(env: Env, caller: OpsCaller, a: OpsArgs): Promise<OpsAnswer> {
+	if (caller.workflow === 'dev') return call(primary(env), 'sign-config', a, caller);
+	if (Object.keys(a).length > 0) {
+		return fail(400, 'invalid_args', `sign-config takes no arguments: it signs ${ADAPTER_CONFIG_PATH} as committed on main.`);
+	}
+	if (!caller.sha) return fail(400, 'no_commit', 'The token names no commit, so there is no committed file to sign.');
+	const url = `https://raw.githubusercontent.com/${env.OPS_GITHUB_REPOSITORY.trim()}/${caller.sha}/${ADAPTER_CONFIG_PATH}`;
+	let file: string;
+	try {
+		const res = await fetch(url, { signal: AbortSignal.timeout(10_000) });
+		if (!res.ok) return fail(502, 'repository_unavailable', `GitHub answered ${res.status} for ${ADAPTER_CONFIG_PATH} at ${caller.sha}.`);
+		file = await res.text();
+	} catch (err) {
+		return fail(502, 'repository_unavailable', `GitHub did not serve ${ADAPTER_CONFIG_PATH} at ${caller.sha}: ${String(err)}`);
+	}
+	if (utf8(file).length > CONFIG_MAX_BYTES) return fail(400, 'invalid_config', `${ADAPTER_CONFIG_PATH} is over ${CONFIG_MAX_BYTES} bytes.`);
+	const answer = await call(primary(env), 'sign-config', { file }, caller);
+	return answer.status === 200 ? { ...answer, body: { ...answer.body, commit: caller.sha } } : answer;
 }
 
 /**

@@ -387,7 +387,7 @@ These targets are hypotheses to test in beta, not benchmarks from comparable pro
 - Bridging-based consensus once tag volume supports it.
 - An optional on-device model that adds weight to the AI-made question only.
 - More platforms: X, Reddit, LinkedIn, Pinterest and Threads.
-- Firefox and Edge builds.
+- Firefox and Edge builds: built and tested from the one codebase, with pairing codes as the website-to-extension handoff in every browser; Edge Add-ons ships first and addons.mozilla.org second (`docs/deploy.md` steps 18 and 19). Brave and Opera install the Chrome package. Safari waits for a payments decision.
 
 ### Later (P2)
 
@@ -474,7 +474,7 @@ The closest competitor, AI Content Shield, charges $6.00 a month or $4.95 a mont
 1. Install and use it free, with no account.
 2. After the first week, the popup shows one dismissible card with the user's own numbers and two choices: Get Plus or Support our work. It appears at most once every 30 days.
 3. Opening a paid feature shows what it does and offers a 14-day trial with no card.
-4. Checkout runs on the website through a hosted checkout. An emailed sign-in link creates the account.
+4. Checkout runs on the website through a hosted checkout. An emailed 6-digit code creates the account.
 5. The extension receives a signed plan token. Cancelling takes one click on the account page, and refunds are given within 30 days.
 
 ### Support our work
@@ -714,7 +714,7 @@ Bands are equal in width and not to scale. The dates are targets, and a gate tha
 | 1. Private beta | YouTube only, for 500 testers. Core list built from reviewed leads, including licensed seed lists. Tagging and reporting. | Wrong calls at or under 1 in 100 on audit. |
 | 2. Public beta | TikTok and Instagram added. Appeals and the decision log go live. Donations open. | Median appeal within 7 days. A staged brigading attempt is caught. |
 | 3. Version 1.0 | Facebook added. Plus plan. Chrome Web Store launch. | The goals in Requirements are met on the monthly audit. |
-| 4. Version 1.1 | Articles and search results. Family plan. Firefox and Edge. | Set at the 1.0 review. |
+| 4. Version 1.1 | Articles and search results. Family plan. Edge, then Firefox, from the same codebase, connected to the website with pairing codes. | Set at the 1.0 review. |
 
 ### Metrics
 

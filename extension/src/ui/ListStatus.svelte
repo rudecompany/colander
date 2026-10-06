@@ -17,7 +17,8 @@ says the same.
 	let syncing = $state(false);
 
 	const plan = $derived(
-		!isPlus(e) ? 'Free' : e!.trial ? `Plus trial, ends ${fmtShortDate(e!.exp * 1000)}` : `Plus, renews ${fmtShortDate(e!.exp * 1000)}`
+		// A paid token's end is the paid period plus grace, not the renewal date the website shows.
+		!isPlus(e) ? 'Free' : e!.trial ? `Plus trial, ends ${fmtShortDate(e!.exp * 1000)}` : 'Plus'
 	);
 
 	async function syncNow() {

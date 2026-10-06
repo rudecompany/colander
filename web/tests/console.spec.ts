@@ -1,19 +1,25 @@
 import { test, expect } from './fixtures.ts';
-import { APPEAL, CURATOR, SEED_ENTRY, STAFF, mockApi, queueReply, reviewSource } from './mocks.ts';
+import { APPEAL, CURATOR, ME, SEED_ENTRY, STAFF, mockApi, queueReply, reviewSource } from './mocks.ts';
+
+/** Staff review in the admin console on the admin host, curators in /console on the main host. */
+const consolePath = (account: typeof STAFF) => (account.role === 'staff' ? '/admin' : '/console');
+const STAFF_ME = { ...ME, account: { ...ME.account, id: 'acc_sam', email: 'sam@example.com', display_name: 'Sam', role: 'staff' }, authority: 'staff' };
 
 const review = (account: typeof STAFF, extra: Parameters<typeof mockApi>[1] = {}) => ({
 	'GET /v1/account': { json: { account } },
+	'GET /v1/admin/me': { json: STAFF_ME },
 	'GET /v1/review/queue': queueReply,
+	// Seed provenance comes only with staff authority, which only the admin host gives.
 	'GET /v1/review/sources/*': (c: { path: string }) => {
 		const [, , , , p, id] = c.path.split('/');
-		return { json: reviewSource(`${p}:${decodeURIComponent(id)}`) };
+		return { json: reviewSource(`${p}:${decodeURIComponent(id)}`, account.role === 'staff') };
 	},
 	...extra
 });
 
 test('staff move through the queue by keyboard, read the evidence and write a decision', async ({ page }) => {
 	const calls = await mockApi(page, review(STAFF, { 'POST /v1/review/sources/*/decision': { json: {} } }));
-	await page.goto('/console');
+	await page.goto(consolePath(STAFF));
 	await expect(page.getByRole('button', { name: /Ancient Facts Daily/ })).toBeVisible();
 
 	await page.locator('body').click({ position: { x: 5, y: 300 } });
@@ -115,7 +121,7 @@ test('Slop and Likely slop wait for AI evidence, and the server answer is shown'
 			}
 		})
 	);
-	await page.goto('/console');
+	await page.goto(consolePath(STAFF));
 	await page.getByRole('button', { name: /History Bites/ }).click();
 
 	const slop = page.getByRole('radio', { name: 'Slop', exact: true });
@@ -134,11 +140,11 @@ test('Slop and Likely slop wait for AI evidence, and the server answer is shown'
 	await expect(page.getByRole('alert').filter({ hasText: 'AI evidence needed' })).toContainText('need AI evidence on this source');
 });
 
-// A seed lead is never evidence. Staff see which lists name the source, with provenance, and can
-// suppress seed lists on it; curators see only that lists name it (contracts 6.7).
+// A seed lead is never evidence. Staff on the admin host see which lists name the source, with
+// provenance, and can suppress seed lists on it; curators see only that lists name it (contracts 6.7).
 test('staff see the provenance of a seed lead and can suppress it; curators see only a count', async ({ page }) => {
 	const calls = await mockApi(page, review(STAFF, { 'POST /v1/review/sources/*/suppress-seeds': { json: reviewSource('yt:@everydaytrivia') } }));
-	await page.goto('/console');
+	await page.goto(consolePath(STAFF));
 	// A lead nothing backs waits under Escalated, after the other escalations, so it never buries the reports under All.
 	await expect(page.getByRole('button', { name: /Ancient Facts Daily/ })).toBeVisible();
 	await expect(page.getByRole('button', { name: /Everyday Trivia/ })).toHaveCount(0);
@@ -183,7 +189,7 @@ test('curators see that seed lists name a lead, never which', async ({ page }) =
 test("staff see where staff saw a source on Colander's own list", async ({ page }) => {
 	const own = { ...SEED_ENTRY, seed: 'staff-research', name: 'Colander staff research', license: 'LicenseRef-Colander-internal', note: 'Named in a published report on AI music' };
 	await mockApi(page, review(STAFF, { 'GET /v1/review/sources/*': { json: { ...reviewSource('yt:@everydaytrivia'), seeds: [own] } } }));
-	await page.goto('/console');
+	await page.goto(consolePath(STAFF));
 	await page.getByRole('tab', { name: /^Escalated/ }).click();
 	await page.getByRole('button', { name: /Everyday Trivia/ }).click();
 	await expect(page.getByRole('region', { name: 'Seed lists' })).toContainText('Where staff saw it: Named in a published report on AI music');
@@ -200,7 +206,7 @@ for (const width of [800, 1024, 1199]) {
 	test(`the queue tabs fit their column at ${width} px`, async ({ page }) => {
 		await page.setViewportSize({ width, height: 900 });
 		await mockApi(page, review(STAFF));
-		await page.goto('/console');
+		await page.goto(consolePath(STAFF));
 		const tabs = page.getByRole('tablist', { name: 'Queue kind' });
 		await expect(tabs.getByRole('tab', { name: /Escalated/ })).toBeVisible();
 		const { scroll, client } = await tabs.evaluate((el) => ({ scroll: el.scrollWidth, client: el.clientWidth }));

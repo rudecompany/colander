@@ -10,7 +10,8 @@
   "scripts": {
     "dev": "vite dev",
     "build": "node ../packages/shared/scripts/gen-inpage-tokens.ts --check && vite build",
-    "postbuild": "node -e \"require('node:fs').copyFileSync('build/200.html', 'build/404.html')\"",
+    "postbuild": "node -e \"const o = process.env.WEB_OUT || 'build'; require('node:fs').copyFileSync(o + '/200.html', o + '/404.html')\"",
+    "build:turnstile": "WEB_OUT=build-turnstile PUBLIC_TURNSTILE_SITE_KEY=1x00000000000000000000AA pnpm build",
     "preview": "vite preview",
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json && node scripts/lint-tokens.ts",
     "test": "playwright test",

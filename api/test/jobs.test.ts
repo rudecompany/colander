@@ -4,6 +4,7 @@ import { env } from 'cloudflare:workers';
 import { evictDurableObject, runDurableObjectAlarm, runInDurableObject } from 'cloudflare:test';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { DEBOUNCE, dumpBackoff, nextDump, nextSeeds, PASS_CHUNK, PASS_INTERVAL, PRUNE_INTERVAL, PUBLISH_FLOOR, STATUS, type DumpResult, type PassScorer } from '../src/jobs';
+import { nextAuditExport } from '../src/backup';
 import { allow } from '../src/limits';
 import { SNAPSHOT_KEY } from '../src/store/list';
 import type { Store } from '../src/store/store';
@@ -119,9 +120,11 @@ describe('jobs', () => {
 		await at(T, async (store, state) => {
 			expect(state.storage.kv.get(STATUS.passProgress)).toMatchObject({ cursor: 1000, startedAt: T, sources: 1000, changes: 10 });
 			expect(jobRows(store)).toEqual([
+				{ name: 'audit', due_at: nextAuditExport(T) },
 				{ name: 'dump', due_at: nextDump(T) },
 				{ name: 'pass', due_at: T },
 				{ name: 'prune', due_at: T + PRUNE_INTERVAL },
+				{ name: 'requests', due_at: T + 3_600_000 },
 				{ name: 'seeds', due_at: nextSeeds(T) }
 			]);
 			// Between turns the Store answers requests, and writes land.
@@ -151,10 +154,12 @@ describe('jobs', () => {
 			expect(state.storage.kv.get(STATUS.passProgress)).toBeUndefined();
 			// The next pass is 5 minutes after this one started, and a publication was requested.
 			expect(jobRows(store)).toEqual([
+				{ name: 'audit', due_at: nextAuditExport(T) },
 				{ name: 'dump', due_at: nextDump(T) },
 				{ name: 'pass', due_at: T + PASS_INTERVAL },
 				{ name: 'prune', due_at: T + PRUNE_INTERVAL },
 				{ name: 'publish', due_at: T + 2000 },
+				{ name: 'requests', due_at: T + 3_600_000 },
 				{ name: 'seeds', due_at: nextSeeds(T) }
 			]);
 		});

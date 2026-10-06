@@ -7,6 +7,8 @@ import billing from './migrations/0002_billing.sql';
 import scoringState from './migrations/0003_scoring_state.sql';
 import store from './migrations/0004_store.sql';
 import compliance from './migrations/0005_compliance.sql';
+import auth from './migrations/0006_auth.sql';
+import pairing from './migrations/0007_pairing.sql';
 import seeds from './migrations/0008_seeds.sql';
 import { complianceData } from './compliance';
 import type { Db } from './db';
@@ -17,7 +19,7 @@ export interface Migration {
 	sql: string;
 	/**
 	 * Data changes in code, run after sql in the same transaction, and again on the rows of a dump
-	 * taken before this migration when one is restored (restoredData). now is unix seconds.
+	 * taken without this migration when one is restored (restoredData). now is unix seconds.
 	 */
 	data?: (db: Db, now: number) => void;
 }
@@ -28,9 +30,33 @@ export const MIGRATIONS: Migration[] = [
 	{ version: 3, name: '0003_scoring_state.sql', sql: scoringState },
 	{ version: 4, name: '0004_store.sql', sql: store },
 	{ version: 5, name: '0005_compliance.sql', sql: compliance, data: complianceData },
-	// 6 and 7 are kept for work landing beside this; list migrations in version order.
+	{ version: 6, name: '0006_auth.sql', sql: auth, data: authData },
+	{ version: 7, name: '0007_pairing.sql', sql: pairing },
 	{ version: 8, name: '0008_seeds.sql', sql: seeds }
 ];
+
+/** Reviewer tokens from before 0006 keep working this long, while curators enroll a passkey (contracts 6.6). */
+export const LEGACY_TOKEN_SECONDS = 7 * 86_400;
+
+/**
+ * 0006's backfills: sessions from before it signed in by email link at their creation, and only
+ * they may still arrive under the old cookie name; reviewer tokens from before it expire in 7
+ * days; log entries learn which account decided them, from the decision or the appeal they
+ * record. Each only touches rows that lack the value, so it also runs on a restored older dump.
+ */
+export function authData(db: Db, now: number): void {
+	db.run('UPDATE sessions SET authenticated_at = created_at, legacy = 1 WHERE authenticated_at IS NULL');
+	db.run('UPDATE reviewer_tokens SET expires_at = ? WHERE expires_at IS NULL', now + LEGACY_TOKEN_SECONDS);
+	db.run(`UPDATE decision_log SET account_id = (
+		SELECT d.account_id FROM decisions d
+		WHERE d.source_id = decision_log.source_id AND d.created_at = decision_log.at AND d.actor = decision_log.actor AND d.account_id IS NOT NULL
+		ORDER BY d.id DESC LIMIT 1
+	) WHERE actor_name IS NOT NULL AND account_id IS NULL`);
+	db.run(`UPDATE decision_log SET account_id = (
+		SELECT a.resolved_by FROM appeals a WHERE a.source_id = decision_log.source_id AND a.resolved_at = decision_log.at
+		ORDER BY a.id LIMIT 1
+	) WHERE actor = 'appeal' AND actor_name IS NOT NULL AND account_id IS NULL`);
+}
 
 /** Applies pending migrations, each in its own transaction, and returns the schema version. */
 export function migrate(db: Db, nowMs: number): number {
@@ -55,6 +81,6 @@ export function migrate(db: Db, nowMs: number): number {
  * Runs the data changes of every migration a restored dump had not applied on its rows, which the
  * Store's schema took in but no migration changed. now is unix seconds.
  */
-export function restoredData(db: Db, applied: (version: number) => boolean, now: number): void {
-	for (const m of MIGRATIONS) if (!applied(m.version)) m.data?.(db, now);
+export function restoredData(db: Db, applied: ReadonlySet<number>, now: number): void {
+	for (const m of MIGRATIONS) if (!applied.has(m.version)) m.data?.(db, now);
 }

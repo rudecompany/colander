@@ -7,10 +7,10 @@
 // value exactly, and line breaks inside text become ||char(10)||. A restore into a Store keeps the
 // Store's own schema (its migrations) and replaces the rows of every table with the dump's, so a
 // dump from older code loads into newer code (expand-then-contract keeps new columns defaulted),
-// and the data changes of the migrations newer than the dump run on its rows.
+// and the data changes of the migrations the dump had not applied run on its rows.
 import type { DumpResult } from './jobs';
 import type { Db } from './store/db';
-import { migrate, restoredData } from './store/migrations';
+import { migrate, MIGRATIONS, restoredData } from './store/migrations';
 
 /** Dumps live under this prefix, named by their time, so the newest sorts last. */
 export const DUMP_PREFIX = 'dumps/';
@@ -42,11 +42,13 @@ export const API_DATA_TABLES = new Set(['youtube_cache', 'youtube_channels']);
 const LEDGER = 'youtube_quota';
 
 /**
- * The first line of a dump names the schema version of the Store it came from and, since migration
- * 8, every migration it had applied (dumpLines): versions may land out of order, so a dump at
- * version 8 need not hold 6 and 7.
+ * The audit log only grows across a restore too: rows written after the dump stay, and the dump's
+ * rows go back in beside them. Its triggers refuse deleting any row younger than 400 days.
  */
-const HEADER = /^-- Colander Store dump, schema version (\d+),(?: migrations ([\d,]+),)?/;
+const AUDIT = 'audit_log';
+
+/** The first line of a dump names the schema version of the Store it came from (dumpLines). */
+const HEADER = /^-- Colander Store dump, schema version (\d+),/;
 
 /** The tables a dump holds, in creation order, with their CREATE statements. */
 export function dumpTables(db: Db): { name: string; sql: string }[] {
@@ -57,12 +59,21 @@ export function dumpTables(db: Db): { name: string; sql: string }[] {
 export const dumpKey = (now: number): string => `${DUMP_PREFIX}${new Date(now).toISOString()}.sql.gz`;
 
 /**
+ * When the dump under key was taken (unix ms), read back from the name dumpKey gave it; 0 for any
+ * other name, so a restore of it then repeats every revocation the audit log holds.
+ */
+export function dumpTime(key: string): number {
+	const t = key.startsWith(DUMP_PREFIX) && key.endsWith('.sql.gz') ? Date.parse(key.slice(DUMP_PREFIX.length, -'.sql.gz'.length)) : NaN;
+	return Number.isNaN(t) ? 0 : t;
+}
+
+/**
  * The dump as SQL lines. It reads the tables lazily, so the caller must keep writes out until it
  * is done: the backup runs it inside blockConcurrencyWhile.
  */
 export function* dumpLines(sql: SqlStorage, db: Db, now: number): Generator<string> {
-	const versions = db.all<{ v: number }>('SELECT version AS v FROM _migrations ORDER BY version').map((r) => r.v);
-	yield `-- Colander Store dump, schema version ${versions.at(-1) ?? 0}, migrations ${versions.join(',')}, taken ${new Date(now).toISOString()}`;
+	const version = db.get<{ v: number }>('SELECT max(version) AS v FROM _migrations')?.v ?? 0;
+	yield `-- Colander Store dump, schema version ${version}, taken ${new Date(now).toISOString()}`;
 	yield 'PRAGMA foreign_keys=OFF;';
 	yield 'BEGIN TRANSACTION;';
 	const tables = dumpTables(db);
@@ -179,6 +190,8 @@ export interface Insert {
 	columns: string[];
 	/** the statement, for the table it names */
 	sql: string;
+	/** per column, a number or NULL as written, or ? for a text or blob in params */
+	values: string[];
 	params: SqlStorageValue[];
 	/** the same statement for another table */
 	into(table: string): string;
@@ -251,7 +264,7 @@ export function parseInsert(line: string): Insert {
 	if (i !== line.length) fail('trailing text');
 	if (values.length !== columns.length) fail(`${values.length} values for ${columns.length} columns`);
 	const into = (t: string) => `INSERT INTO ${ident(t)}(${columns.map(ident).join(',')}) VALUES(${values.join(',')})`;
-	return { table, columns, sql: into(table), params, into };
+	return { table, columns, sql: into(table), values, params, into };
 }
 
 /** The text lines of a byte stream, without their line breaks, one at a time. */
@@ -275,8 +288,9 @@ const BATCH_CHARS = 1 << 20;
  * COMMIT. API_DATA_TABLES end up empty and are left out of the counts, and the quota ledger keeps
  * the larger count of each day (LEDGER). The rows stream into staging tables in bounded batches,
  * so a dump never sits in memory whole; one transaction then swaps them in and runs the data
- * changes of the migrations the dump had not applied (its header names them; one without a
- * header counts as older than all), so the live tables change all at once or not at all.
+ * changes of the migrations the dump had not applied (its own _migrations rows; a dump without
+ * them had applied those up to the version its header names, and one without a header none), so
+ * the live tables change all at once or not at all.
  * Requests keep being served from the live tables meanwhile, and what they write is replaced.
  */
 export async function loadDump(db: Db, body: ReadableStream<Uint8Array>, now: number): Promise<Record<string, number>> {
@@ -299,20 +313,23 @@ export async function loadDump(db: Db, body: ReadableStream<Uint8Array>, now: nu
 			chars = 0;
 		};
 		let last = '';
-		let applied: ((version: number) => boolean) | undefined;
+		let version = 0;
+		// Versions need not be consecutive: a migration numbered below one already shipped (two
+		// branches in parallel) is applied later, so the header's newest version does not say it.
+		const applied = new Set<number>();
 		for await (const line of textLines(body)) {
 			last = line;
 			if (!line.startsWith('INSERT INTO ')) {
-				const h = applied ? null : HEADER.exec(line);
-				if (h) {
-					const listed = h[2] === undefined ? undefined : new Set(h[2].split(',').map(Number));
-					applied = listed ? (v) => listed.has(v) : (v) => v <= Number(h[1]);
-				}
+				version ||= Number(HEADER.exec(line)?.[1] ?? 0);
 				continue;
 			}
 			const s = parseInsert(line);
+			if (s.table === '_migrations') {
+				applied.add(Number(s.values[s.columns.indexOf('version')]));
+				continue;
+			}
 			// Dumps from before API_DATA_TABLES held their rows: those stay out.
-			if (s.table === '_migrations' || API_DATA_TABLES.has(s.table)) continue;
+			if (API_DATA_TABLES.has(s.table)) continue;
 			if (!(s.table in counts)) throw new Error(`the dump has a table this Store does not know: ${s.table}`);
 			const known = columns.get(s.table);
 			if (!known) columns.set(s.table, s.columns);
@@ -328,13 +345,26 @@ export async function loadDump(db: Db, body: ReadableStream<Uint8Array>, now: nu
 			// The rows go in table by table; foreign keys are checked once, at commit. Columns the dump
 			// lacks (it predates them) take their defaults.
 			db.run('PRAGMA defer_foreign_keys = ON');
-			for (const t of tables) if (t !== LEDGER) db.run(`DELETE FROM ${ident(t)}`);
+			for (const t of tables) if (t !== LEDGER && t !== AUDIT) db.run(`DELETE FROM ${ident(t)}`);
 			for (const [t, cols] of columns) {
 				const list = cols.map(ident).join(',');
+				if (t === AUDIT) {
+					// Rows the live log already holds (the same time, action, target, actor and value) stay
+					// as they are; the others go in after them with new IDs.
+					const body = cols.filter((c) => c !== 'id').map(ident).join(',');
+					db.run(
+						`INSERT INTO ${ident(t)}(${body}) SELECT ${body} FROM ${ident(STAGE + t)} s
+						WHERE NOT EXISTS (SELECT 1 FROM ${ident(t)} a WHERE a.at = s.at AND a.action = s.action AND a.target IS s.target
+							AND a.actor_id IS s.actor_id AND a.actor_sub IS s.actor_sub AND a.after IS s.after)
+						ORDER BY s.id`
+					);
+					continue;
+				}
 				const keep = t === LEDGER ? ' WHERE true ON CONFLICT (day) DO UPDATE SET units = max(units, excluded.units)' : '';
 				db.run(`INSERT INTO ${ident(t)}(${list}) SELECT ${list} FROM ${ident(STAGE + t)}${keep}`);
 			}
-			restoredData(db, applied ?? (() => false), Math.floor(now / 1000));
+			if (applied.size === 0) for (const m of MIGRATIONS) if (m.version <= version) applied.add(m.version);
+			restoredData(db, applied, Math.floor(now / 1000));
 		});
 		for (const t of API_DATA_TABLES) delete counts[t];
 		return counts;
@@ -379,4 +409,84 @@ export async function newestDump(bucket: R2Bucket): Promise<R2Object | undefined
  */
 export function countsAgree(dumped: number, primary: number): boolean {
 	return Math.abs(dumped - primary) <= 100 + 0.25 * Math.max(dumped, primary);
+}
+
+/** Daily copies of the audit log live under this prefix of the backup bucket, under a 400-day bucket lock. */
+export const AUDIT_PREFIX = 'audit/';
+/** The highest audit row ID copied to R2, in the Store's synchronous KV storage. */
+export const AUDIT_EXPORTED = 'status:audit_exported';
+
+/**
+ * Copies the audit rows written since the last copy to R2 as one NDJSON object, so a restore or a
+ * lost Store never loses them; the bucket lock keeps them 400 days. Returns when to run next: the
+ * next 04:31 UTC.
+ */
+export async function exportAudit(db: Db, kv: SyncKvStorage, bucket: R2Bucket, now: number): Promise<number> {
+	const after = kv.get<number>(AUDIT_EXPORTED) ?? 0;
+	const rows = db.all<Record<string, string | number | null>>('SELECT * FROM audit_log WHERE id > ? ORDER BY id', after);
+	if (rows.length > 0) {
+		const last = rows.at(-1)!.id as number;
+		const key = `${AUDIT_PREFIX}${new Date(now).toISOString().slice(0, 10)}-${String(rows[0]!.id).padStart(12, '0')}.ndjson`;
+		await bucket.put(key, rows.map((r) => JSON.stringify(r)).join('\n') + '\n', { httpMetadata: { contentType: 'application/x-ndjson' } });
+		kv.put(AUDIT_EXPORTED, last);
+	}
+	return nextAuditExport(now);
+}
+
+/** 04:31 UTC on the day after now. */
+export const nextAuditExport = (now: number): number => {
+	const day = 86_400_000;
+	const at = Math.floor(now / day) * day + (4 * 60 + 31) * 60_000;
+	return at > now ? at : at + day;
+};
+
+/** The columns of an audit row, besides its ID. */
+const AUDIT_COLUMNS = ['at', 'actor_id', 'actor_sub', 'actor_email', 'host', 'action', 'target', 'before', 'after', 'reason', 'request_id'] as const;
+
+/**
+ * After a point-in-time restore to since (unix ms), which took the audit log back with everything
+ * else: puts back, in their order, the rows of the audit/ copies written at or after that second
+ * that the log lacks (the same match loadDump uses). Returns how many it added. The export mark is
+ * left alone, so the next copy may repeat rows the archive already holds; it never misses one.
+ */
+export async function reapplyAudit(db: Db, bucket: R2Bucket, since: number): Promise<number> {
+	const from = Math.floor(since / 1000);
+	// A copy holds rows up to the day it was made, which its key starts with.
+	const day = new Date(since).toISOString().slice(0, 10);
+	const rows: Record<string, string | number | null>[] = [];
+	let cursor: string | undefined;
+	do {
+		const page = await bucket.list({ prefix: AUDIT_PREFIX, cursor });
+		for (const o of page.objects) {
+			if (o.key.slice(AUDIT_PREFIX.length, AUDIT_PREFIX.length + 10) < day) continue;
+			const body = await bucket.get(o.key);
+			for (const line of (await body?.text())?.split('\n') ?? []) {
+				if (line === '') continue;
+				const row = JSON.parse(line) as Record<string, string | number | null>;
+				if ((row.at as number) >= from) rows.push(row);
+			}
+		}
+		cursor = page.truncated ? page.cursor : undefined;
+	} while (cursor);
+	rows.sort((a, b) => (a.id as number) - (b.id as number));
+	const cols = AUDIT_COLUMNS.map(ident).join(',');
+	const count = () => db.get<{ n: number }>(`SELECT count(*) AS n FROM ${ident(AUDIT)}`)!.n;
+	return db.tx(() => {
+		const before = count();
+		for (const r of rows) {
+			const v = AUDIT_COLUMNS.map((c) => r[c] ?? null);
+			db.run(
+				`INSERT INTO ${ident(AUDIT)}(${cols}) SELECT ${AUDIT_COLUMNS.map(() => '?').join(',')}
+				WHERE NOT EXISTS (SELECT 1 FROM ${ident(AUDIT)} a WHERE a.at = ? AND a.action = ? AND a.target IS ? AND a.actor_id IS ? AND a.actor_sub IS ? AND a.after IS ?)`,
+				...v,
+				r.at ?? null,
+				r.action ?? null,
+				r.target ?? null,
+				r.actor_id ?? null,
+				r.actor_sub ?? null,
+				r.after ?? null
+			);
+		}
+		return count() - before;
+	});
 }

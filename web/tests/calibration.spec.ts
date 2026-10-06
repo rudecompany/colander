@@ -1,7 +1,7 @@
 // The calibration set is labeled blind: the page shows only the platform and ID of the next source,
 // with a link to it, and posts the label (seed design section 8).
 import { test, expect } from './fixtures.ts';
-import { CALIBRATION_ITEM, CURATOR, STAFF, mockApi } from './mocks.ts';
+import { CALIBRATION_ITEM, CURATOR, ME, STAFF, mockApi, queueReply } from './mocks.ts';
 
 test('a curator labels the next source blind, and the page moves on', async ({ page }) => {
 	const next = { platform: 'tt', source_id: '@quietloops', labels: 0 };
@@ -72,4 +72,31 @@ test('an empty set says so, and the console links to it', async ({ page }) => {
 	await page.goto('/console');
 	await page.getByRole('link', { name: 'Calibration set' }).click();
 	await expect(page.getByText('Nothing to label right now.')).toBeVisible();
+});
+
+// Staff settle labels that disagree with a third, which needs staff authority: the admin host.
+test('staff label on the admin host, from its Calibration tab', async ({ page, baseURL }) => {
+	await mockApi(page, {
+		'GET /v1/admin/me': { json: ME },
+		'GET /v1/review/queue': queueReply,
+		'GET /v1/review/calibration/next': { json: { item: CALIBRATION_ITEM } }
+	});
+	await page.goto('/admin');
+	const nav = page.getByRole('navigation', { name: 'Admin console' });
+	await nav.getByRole('link', { name: 'Calibration' }).click();
+	await expect(page.getByRole('heading', { level: 1, name: 'Calibration' })).toBeVisible();
+	await expect(page.getByText('Admin, Rae')).toBeVisible();
+	await expect(nav.getByRole('link', { name: 'Calibration' })).toHaveAttribute('aria-current', 'page');
+	await expect(page.locator('main').getByRole('heading', { level: 2 })).toContainText(CALIBRATION_ITEM.source_id);
+	// The admin host serves only the console: the definition lives on the main host.
+	await expect(page.getByRole('link', { name: 'definition' })).toHaveAttribute('href', `${baseURL}/definition`);
+});
+
+// Four admin tabs wrap at 320 px (WCAG 2.2 reflow) instead of scrolling the page sideways.
+test('the admin tabs fit a 320 px screen', async ({ page }) => {
+	await page.setViewportSize({ width: 320, height: 700 });
+	await mockApi(page, { 'GET /v1/admin/me': { json: ME }, 'GET /v1/review/calibration/next': { json: { item: CALIBRATION_ITEM } } });
+	await page.goto('/admin/calibration');
+	await expect(page.getByRole('navigation', { name: 'Admin console' }).getByRole('link')).toHaveText(['Review', 'Calibration', 'People', 'Audit log']);
+	expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(0);
 });

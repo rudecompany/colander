@@ -74,7 +74,7 @@ export interface Source {
 	audience_known: boolean;
 	/** Always false in public responses; for reviewers, whether seed lists name the source as a review lead. */
 	imported: boolean;
-	/** Always null in public responses, which never name a data source; for staff, the lists that name it. */
+	/** Always null in public responses, which never name a data source; with staff authority (the admin host), the lists that name it. */
 	attribution: string | null;
 	appeal_open: boolean;
 	updated_at: ISODate | null;
@@ -143,7 +143,7 @@ export interface Appeal {
 	resolved_at: ISODate | null;
 }
 
-export type Role = 'member' | 'curator' | 'staff';
+export type Role = 'member' | 'curator' | 'staff' | 'admin';
 
 export interface Plan {
 	plan: 'plus';
@@ -154,6 +154,17 @@ export interface Plan {
 	refundable: boolean;
 }
 
+/** An action held for days because it was confirmed with an email code only (contracts 6.6). */
+export interface HeldRequest {
+	id: string;
+	kind: 'delete' | 'export' | 'remove_passkey' | 'email_change';
+	created_at: ISODate;
+	due_at: ISODate;
+	/** set once it ran: a held export can then be downloaded for 7 days */
+	done_at: ISODate | null;
+	passkey_id?: string;
+}
+
 export interface Account {
 	id: string;
 	email: string;
@@ -161,6 +172,47 @@ export interface Account {
 	role: Role;
 	plan: Plan | null;
 	created_at: ISODate;
+	/** how this session signed in; null outside GET /v1/account and sign-in answers */
+	session?: { method: 'email' | 'passkey'; authenticated_at: ISODate } | null;
+	passkey_count?: number;
+	reviewer_token?: { expires_at: ISODate; last_used_at: ISODate | null } | null;
+	requests?: HeldRequest[];
+}
+
+export interface Passkey {
+	id: string;
+	name: string | null;
+	created_at: ISODate;
+	last_used_at: ISODate | null;
+	/** synced by a password manager or platform (backed up) */
+	synced: boolean;
+}
+
+/** An account as the admin host lists it. */
+export interface Person {
+	id: string;
+	email: string;
+	display_name: string | null;
+	role: Role;
+	created_at: ISODate;
+	passkey_count: number;
+	access_pinned: boolean;
+}
+
+/** One row of the audit log on the admin host. */
+export interface AuditEntry {
+	id: number;
+	at: ISODate;
+	actor_id: string | null;
+	actor_sub: string | null;
+	actor_email: string | null;
+	host: 'main' | 'admin' | 'ops' | 'job';
+	action: string;
+	target: string | null;
+	before: string | null;
+	after: string | null;
+	reason: string | null;
+	request_id: string | null;
 }
 
 export interface QueueItem {
@@ -209,7 +261,7 @@ export interface ItemSummary {
 	platform_label_reports: number;
 }
 
-/** One seed list entry behind a lead, with its full provenance. Staff only. */
+/** One seed list entry behind a lead, with its full provenance. Staff authority (the admin host) only. */
 export interface SeedProvenance {
 	/** the registry ID */
 	seed: string;
@@ -232,9 +284,9 @@ export interface ReviewSourceResponse {
 	source: Source;
 	/** how many seed lists name the source as a review lead */
 	seed_lists: number;
-	/** staff only: each entry with its provenance */
+	/** staff authority (the admin host) only: each entry with its provenance */
 	seeds?: SeedProvenance[];
-	/** staff only: set while staff suppress seed lists on the source */
+	/** staff authority (the admin host) only: set while staff suppress seed lists on the source */
 	seed_suppression?: { at: ISODate; reason: string } | null;
 	layers: Layers;
 	reports: ReportDetail[];
@@ -283,7 +335,48 @@ export interface PlanTokenPayload {
 	exp: number;
 }
 
-export type ExternalMessage =
-	| { type: 'colander:ping' }
-	| { type: 'colander:plan-token'; token: string }
-	| { type: 'colander:reviewer-token'; token: string };
+/** Pairing codes, the one website-to-extension handoff (contracts 7). */
+export type PairKind = 'plan' | 'reviewer';
+export const PAIR_BROWSERS = ['chrome', 'edge', 'brave', 'opera', 'firefox', 'safari', 'chromium'] as const;
+export type PairBrowser = (typeof PAIR_BROWSERS)[number];
+export const BROWSER_NAME: Record<PairBrowser, string> = {
+	chrome: 'Chrome',
+	edge: 'Edge',
+	brave: 'Brave',
+	opera: 'Opera',
+	firefox: 'Firefox',
+	safari: 'Safari',
+	chromium: 'a Chromium browser'
+};
+
+/** POST /v1/pair */
+export interface PairCreated {
+	id: string;
+	/** 8 Crockford base32 characters, shown as two groups of 4, for example KXQ4-JP7M. */
+	code: string;
+	expires_at: string;
+}
+
+/** GET /v1/pair/{id} */
+export interface PairStatus {
+	status: 'pending' | 'claimed' | 'expired';
+	ext_version: string | null;
+	browser: PairBrowser | null;
+}
+
+/** POST /v1/pair/claim */
+export interface PairClaimed {
+	kind: PairKind;
+	token: string;
+	/** The account the code came from, as a masked email such as p***@example.com: the person sees whose account they connected. */
+	account: string;
+}
+
+/**
+ * Reads a typed code as Crockford base32 does: case, spaces and dashes do not matter, I and L
+ * read as 1 and O as 0. Returns the 8 characters, or null when it cannot be a code.
+ */
+export function normalizePairCode(input: string): string | null {
+	const s = input.toUpperCase().replace(/[\s-]/g, '').replace(/[IL]/g, '1').replace(/O/g, '0');
+	return /^[0-9A-HJKMNP-TV-Z]{8}$/.test(s) ? s : null;
+}

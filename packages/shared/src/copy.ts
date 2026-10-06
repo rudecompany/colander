@@ -33,6 +33,7 @@ export const PRIVACY_LEAVES: { title: string; detail: string }[] = [
 		detail: 'The source, up to three example items, your reason, optional type and tests, and the install ID.'
 	},
 	{ title: 'Plus, if you use it', detail: 'Your plan token to start a trial, renew, and sync settings across browsers.' },
+	{ title: 'Pairing codes you type', detail: 'The code from your account page, the extension version and the browser name, to connect Plus or the side panel.' },
 	{ title: 'Review, for curators', detail: 'Decisions you make in the side panel, with your reviewer token.' }
 ];
 
@@ -46,7 +47,6 @@ export const PRIVACY_NEVER: string[] = [
 export const PRIVACY_INSTALL_ID =
 	'The install ID is 16 random bytes made on this device. The server stores only a hash of it. Delete local data to replace it.';
 
-/** Draft rows: check against extension/wxt.config.ts before each release. */
 /*
  * Outside data. Seed lists are review leads only, and no surface names one: /credits names the
  * datasets whose license asks for credit, and the extension's about text points there.
@@ -57,6 +57,7 @@ export const ABOUT_DATA = {
 	credits: 'Lists whose license asks for credit are named on the credits page.'
 } as const;
 
+/** Draft rows: check against extension/wxt.config.ts before each release. */
 export const PERMISSIONS: { permission: string; why: string; never: string }[] = [
 	{
 		permission: 'Site access to youtube.com, tiktok.com, instagram.com, facebook.com (asked per platform you choose)',
@@ -84,7 +85,7 @@ export const PLAN_COPY = {
 		line: 'Blocking, forever. No account needed.',
 		summary: '$0. Blocking, forever. No account needed.',
 		features: ['Blocking on all 4 platforms', 'All 3 strictness levels', 'Tagging, reports and appeals', 'Your own block and allow lists'],
-		cta: 'Add to Chrome'
+		cta: 'Add to your browser'
 	},
 	plus: {
 		name: 'Plus',

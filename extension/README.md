@@ -1,18 +1,34 @@
-# Colander for Chrome
+# The Colander browser extension
 
 Colander hides AI slop on YouTube, TikTok, Instagram and Facebook the way an ad blocker hides ads, from shared signed lists, and lets anyone tag and report slop.
-This package is the Manifest V3 extension: WXT, Svelte 5 and TypeScript.
+This package is the Manifest V3 extension for Chrome, Edge, Brave, Opera and Firefox: WXT, Svelte 5 and TypeScript, one codebase.
 The product spec is `docs/product-requirements.md` and the interfaces are `docs/contracts.md`.
 
-## Development extension ID
+## Browsers and store packages
 
-```
-nninnogmbhfebflkcgghlmjmplmpodlc
-```
+| Target | Build | Manifest differences | Store |
+| --- | --- | --- | --- |
+| Chrome, Brave, Opera | `wxt build` | `side_panel`, `minimum_chrome_version`; a `key` in unpacked builds only | Chrome Web Store, which Brave and Opera install from |
+| Edge | `wxt build -b edge` | Same as Chrome, never a `key` | Edge Add-ons |
+| Firefox 140+ | `wxt build -b firefox` | An event page, `sidebar_action` closed at install, `gecko.id` `colander@getcolander.com`, optional data collection consent | addons.mozilla.org |
 
-The manifest carries a fixed public `key`, so an unpacked build has this ID on every machine.
-Set the website's `PUBLIC_EXTENSION_ID` to it for local work.
-Only the public half of the RSA key is in the repository; the Chrome Web Store signs release builds with its own key, and the store ID replaces this one in production.
+Every target uses `browser` from `wxt/browser`, never `chrome.*`, so the same calls work in each.
+The website reaches the extension through pairing codes (contract 7), so nothing depends on an extension ID.
+
+`scripts/build-store.sh chrome|edge|firefox` builds a store package from `release.env`, the same way in the release job and for AMO's reviewers, who rebuild the Firefox package from its sources zip byte for byte (`AMO_REVIEW.md`).
+Store packages carry no manifest key.
+
+Unpacked Chrome builds carry a fixed public `key`, so their ID is `nninnogmbhfebflkcgghlmjmplmpodlc` on every machine, which the end-to-end tests open pages by.
+Only the public half of the RSA key is in the repository; each store assigns its own ID.
+
+### Firefox
+
+Firefox asks before an add-on sends anything, so the manifest declares two optional data collection kinds and Firefox grants neither at install (`src/lib/consent.ts`):
+- `websiteContent` for tags and reports. A tag still applies on the device at once and waits in the queue; once one is due, Options opens at Sharing, where one click allows it, and `permissions.onAdded` sends what waited. A report asks the same way and keeps its text.
+- `authenticationInfo` for the plan and reviewer tokens. Connect with a code and Start 14 days free ask for it from their click, before anything is sent.
+
+The side panel is Firefox's sidebar, which stays closed at install; the popup's Review button opens it for curators.
+Private windows stay off unless the person allows Colander there in Firefox's add-ons manager.
 
 ## Build, load and test
 
@@ -24,6 +40,8 @@ Only the public half of the RSA key is in the repository; the Chrome Web Store s
 | `pnpm -C extension check` | `svelte-check` over every TypeScript and Svelte file, warnings fail. |
 | `pnpm -C extension test` | Vitest unit tests. |
 | `pnpm -C extension test:e2e` | Builds the end-to-end variant and runs the Playwright suite. |
+| `pnpm -C extension test:firefox` | Builds the Firefox end-to-end variant against a local API on port 9206 (`COLANDER_FF_API_PORT`) and runs the Firefox smoke test in Playwright's Firefox (`tests/firefox`). |
+| `pnpm -C extension lint:firefox` | Builds the Firefox package and runs Mozilla's `web-ext lint` on it, as AMO does. |
 | `pnpm -C extension test:live` | Builds the end-to-end variant and checks the adapters against the real sites. |
 | `pnpm -C extension screenshots` | Builds the end-to-end variant and rewrites `screenshots/`, light and dark. A normal `test:e2e` run never touches them. |
 | `pnpm -C extension icons` | Renders `public/icons/*.png` from the brand geometry and checks them against six toolbar colors (`screenshots/toolbar-icons.png`). |
@@ -31,19 +49,20 @@ Only the public half of the RSA key is in the repository; the Chrome Web Store s
 | `node extension/scripts/capture-fixtures.ts` | Captures sanitized YouTube and TikTok fixtures from the live sites. |
 
 To load it, open `chrome://extensions`, switch on Developer mode, choose Load unpacked and pick `extension/dist/chrome-mv3`.
+In Firefox, build with `-b firefox`, open `about:debugging#/runtime/this-firefox`, choose Load Temporary Add-on and pick `extension/dist/firefox-mv3/manifest.json`.
 The welcome tab opens; choose platforms there, or later in Options under Platforms.
-Chrome 137 or later is required, for Ed25519 in WebCrypto.
+Chromium 137 or later is required, for Ed25519 in WebCrypto, and Firefox 140 or later, for its data collection consent.
 
 Build configuration (contract section 11) comes from the environment at build time:
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
 | `WXT_COLANDER_API` | `http://localhost:8787` | Server origin for every API call. |
-| `WXT_COLANDER_SITE` | the API origin | Website origin for links and `externally_connectable`. |
+| `WXT_COLANDER_SITE` | the API origin | Website origin for links. |
 | `WXT_COLANDER_PUBLIC_KEYS` | the key in `testdata/dev-signing.pub` | Trusted Ed25519 public keys, comma-separated base64. |
 
-`pnpm build:e2e` (`wxt build --mode e2e`) differs from the release build in one way only: it lists the platform hosts in `host_permissions`, so Chrome grants them at install.
-Automation cannot click Chrome's site access prompt, and asking for a permission that is already granted answers at once, so the welcome and Platforms flows run unchanged in tests.
+`pnpm build:e2e` (`wxt build --mode e2e`) differs from the release build in one way only: it lists the platform hosts in `host_permissions`, so the browser grants them at install.
+Automation cannot click the browser's site access prompt, and asking for a permission that is already granted answers at once, so the welcome and Platforms flows run unchanged in tests.
 The release build asks for site access per platform through `optional_host_permissions`.
 
 `popup.html?tab=<id>` opens the popup for a given tab in a normal tab, which is how the tests drive it.
@@ -53,26 +72,26 @@ The release build asks for site access per platform through `optional_host_permi
 ```
  platform page (www.youtube.com ...)                     extension origin
  ┌───────────────────────────────────────────┐          ┌──────────────────────────────────────┐
- │ bridge.js   main world: reads card data,  │          │ background.js  service worker         │
+ │ bridge.js   main world: reads card data,  │          │ background.js  worker or event page   │
  │             writes data-colander-bridge   │          │  list sync, verify, IndexedDB         │
  │ content.js  isolated world:               │◀──storage│  adapter config, tag queue, reports   │
  │   MutationObserver ▸ extract ▸ decide     │   .local │  plan token, Plus sync, badge, icons  │
  │   ▸ hide / reflow / label / Tag / Why     │──msgs───▶│  content script registration          │
- │ content.css host rules (hide, skip)       │          │  externally_connectable               │
+ │ content.css host rules (hide, skip)       │          │  pairing codes                        │
  └───────────────────────────────────────────┘          │ popup · options · welcome · side panel│
                                                          └──────────────────────────────────────┘
 ```
 
-**Service worker** (`src/background`).
+**Background** (`src/background`), a service worker in Chromium and an event page in Firefox; all state lives in storage and IndexedDB.
 On install it makes the install ID (16 random bytes, base64url, contract 2.4), opens the welcome tab, and syncs.
 It syncs on install, on browser start and on an hourly alarm: the list (delta when it can, snapshot otherwise), the signed adapter config, report statuses (only while one of your reports is under review, so an install that never reported sends no ID on a schedule), the plan token's daily check (a paid token is swapped for a fresh one once a day, so a cancel or refund turns Plus off within a day; `404 no_plan` turns it off), Plus settings, and any due tags.
 Every list file is verified (magic, version, length, sort order, Ed25519 signature) before it is used; a failure keeps the last good copy, a delta is applied only on top of its own base, and a snapshot older than the local list is refused.
-It registers content scripts with `chrome.scripting.registerContentScripts` (`runAt: document_start`) only for platforms that are switched on and granted, and keeps that in step with permission changes.
+It registers content scripts with `browser.scripting.registerContentScripts` (`runAt: document_start`) only for platforms that are switched on and granted, and keeps that in step with permission changes.
 It owns the toolbar: a per-tab count badge, the paused icon for paused tabs and sites, and the attention dot when a report gets a verdict or the list has not refreshed for 6 hours after a failure (a dismissed report only gets a calm note in the popup).
 
 **Content scripts** (`src/content`, `src/entrypoints/content`, `src/entrypoints/bridge.content.ts`).
 `content.js` runs in the isolated world at `document_start`.
-It loads settings, own tags, the list index and the adapter config from `chrome.storage.local`, then a MutationObserver classifies each card as it is inserted, inside the microtask before the browser paints, with synchronous lookups.
+It loads settings, own tags, the list index and the adapter config from `browser.storage.local`, then a MutationObserver classifies each card as it is inserted, inside the microtask before the browser paints, with synchronous lookups.
 It re-applies within the same task when settings, tags or the list change (`storage.onChanged`), and starts over on in-page navigation (Navigation API, `popstate`, YouTube's `yt-navigate-finish`).
 `bridge.js` runs in the page's main world for one job: YouTube's newer cards carry their channel only in component data, which the isolated world cannot read.
 It reads the property paths named in the adapter config and writes `{"i": item, "s": [sources]}` to a `data-colander-bridge` attribute on the card.
@@ -83,8 +102,10 @@ All UI comes from the shared in-page builders in `@colander/shared/inpage` (the 
 **Pages** (`src/entrypoints/*`, Svelte 5, the shared components from `@colander/shared`).
 Every page sits on paper with surface cards and follows the system's light or dark setting.
 The popup is the shared PopupView, the same component the website draws in its hero: status and Pause, strictness, counts, this page's items with Show and a menu (Show, Always allow this source, Not slop, Why, Source page), and one slot for a sync failure, a report verdict or the weekly card.
-Options (Lists, Platforms, Strictness, Plus, Appearance, Plan, My reports, Data, Privacy) has a nav, one section per view and from 1200 px a rail with the list status.
-The welcome page sets up Colander in 3 steps (strictness on the recreated feed, platforms, pinning), and the side panel is the curator review queue with keyboard shortcuts (? lists them).
+Options (Lists, Platforms, Strictness, Plus, Appearance, Plan, My reports, Data, Privacy, and Sharing in Firefox) has a nav, one section per view and from 1200 px a rail with the list status.
+Plan connects Plus with a pairing code from the website (`src/ui/PairCode.svelte`).
+The welcome page sets up Colander in 3 steps (strictness on the recreated feed, platforms, pinning, told the way each browser pins), and the side panel is the curator review queue with keyboard shortcuts (? lists them), connected with a reviewer code.
+The popup offers Review to connected curators, which opens the side panel in Chromium and the sidebar in Firefox.
 `storeart.html` exists only in the end-to-end build, for `pnpm store-art`.
 
 ### Matching
@@ -133,7 +154,7 @@ The tag menu adds a shortcut to the platform's own reporting for scams and deepf
 
 ## Storage layout
 
-Content scripts cannot open the extension origin's IndexedDB, so everything they need is mirrored into `chrome.storage.local`.
+Content scripts cannot open the extension origin's IndexedDB, so everything they need is mirrored into `browser.storage.local`.
 
 | Where | Key or store | Contents |
 | --- | --- | --- |
@@ -159,7 +180,7 @@ It is plain data: CSS selectors, attribute names, regular expressions and proper
 
 ### Delivery
 
-- The server serves it from `GET /v1/config/adapters` as a signed envelope with context `colander:config:v1` (contract section 4); the Ops command `sign-config` with the file signs and stores it (docs/deploy.md), and every install picks it up within an hour.
+- The server serves it from `GET /v1/config/adapters` as a signed envelope with context `colander:config:v1` (contract section 4); the Ops command `sign-config` signs and stores the file as committed on main (docs/deploy.md), and every install picks it up within an hour.
 - The extension applies a remote payload only when the signature verifies against a trusted key, the payload passes validation, and its `version` is higher than both the bundled and the cached one.
 - An unsigned, malformed or older payload is ignored and the current copy stays.
 - Content scripts pick it up at once from `storage.onChanged`; open pages start over with the new rules, without a reload.
@@ -246,7 +267,7 @@ Canonicalization is code, not configuration, and follows contract 2.2 exactly (`
 | --- | --- | --- |
 | `card` | selector | Cards to annotate. |
 | `el` | selector? | Element inside the card that holds the data. Default: the card. |
-| `props` | string[] | Property paths to the data object, tried in order. A segment ending in `()` calls a getter function, for example `componentProps.data()`. |
+| `props` | string[] | Property paths to the data object, tried in order. A segment ending in `()` calls a getter function, for example `componentProps.data()`, and only a getter named in `BRIDGE_GETTERS` (`src/adapters/bridge-read.ts`, today `data`): a remote config that names another is refused, so remote data never chooses code to run. |
 | `item` | key[]? | Searched depth-first; the first value found for the first key wins. |
 | `source` | key[]? | Every key found adds an alias. |
 
@@ -256,26 +277,30 @@ Values containing `/` are parsed as links, so `canonicalBaseUrl` values like `/@
 ### Fixing a broken selector
 
 1. Run `pnpm -C extension test:live` (or read the daily workflow's failure) to see which surface lost its cards.
-2. Open the page, find the new structure, and edit a copy of `default-config.json` with a higher `version`.
+2. Open the page, find the new structure, and edit `src/adapters/default-config.json` with a higher `version`.
 3. Check it against a fresh fixture: `node scripts/capture-fixtures.ts <name>` and `pnpm test`.
-4. Run the Ops command `sign-config` with the file (docs/deploy.md).
+4. Merge it, then run the Ops command `sign-config` with args `{}`: the Worker reads the file from main itself and signs it as committed (docs/deploy.md).
    Every install picks it up within an hour.
-5. Fold the change into the bundled copy in the next release.
+5. The next extension release bundles the same file.
 
 ## Network and privacy
 
-The extension makes exactly the requests in contract section 8: list snapshot and deltas (no identifier at all), the adapter config, tags and reports (`Authorization: Install`), report status, the trial, the entitlement refresh, Plus settings sync (`Authorization: Plan`), and the review API from the side panel (`Authorization: Bearer`).
+The extension makes exactly the requests in contract section 8: list snapshot and deltas (no identifier at all), the adapter config, tags and reports (`Authorization: Install`), report status, the trial, the entitlement refresh, pairing claims (the code, the extension version and the browser name only), Plus settings sync (`Authorization: Plan`), and the review API from the side panel (`Authorization: Bearer`).
+In Firefox each one that sends data waits for its data collection consent (see Firefox above).
 No request carries a page URL, a platform account name or history; the end-to-end tests assert the tag and report bodies hold only the contract's fields.
-Permissions are `storage`, `alarms`, `sidePanel` and `scripting`, plus optional host access per platform.
+Permissions are `storage`, `alarms`, `scripting` and, in Chromium, `sidePanel`, plus optional host access per platform.
 There is no remote code, no `eval` and no inline script.
 
 ## Tests
 
-- `tests/unit`: the list decoder and verifier against `testdata/contract` (snapshot, delta, tampering, length, sort order, unknown keys, delta on the wrong base), the config envelope and plan token, the synchronous SHA-256 against Node's, canonical IDs per platform from real-looking URLs, matching precedence and the strictness table, the rewrite of a stored Strict level as Standard after an update (marked to sync), the tag queue's offline retry planning, and adapter extraction against a saved fixture of every surface.
+- `tests/unit`: the list decoder and verifier against `testdata/contract` (snapshot, delta, tampering, length, sort order, unknown keys, delta on the wrong base), the config envelope and plan token, the synchronous SHA-256 against Node's, canonical IDs per platform from real-looking URLs, matching precedence and the strictness table, the rewrite of a stored Strict level as Standard after an update (marked to sync), the tag queue's offline retry planning, adapter extraction against a saved fixture of every surface, and the bridge getter allowlist.
 - `tests/e2e`: the built extension in Chromium with fixtures served on the real hostnames and the API mocked by route handlers serving the contract fixtures.
-  It covers hiding without a trace and labeling per strictness, the YouTube Home and Subscriptions grids reflowing so every row before the Shorts shelf stays full, a hidden item taking its grid cell with it on Instagram Explore, TikTok profiles and the Shorts shelf, re-applying within 1 second without a reload (P0-3), pause by site and tab, the badge, delta sync, a tampered list, a signed config fixing a renamed selector, no layout jump during infinite scroll, Tag in two clicks, a Tag button that adds nothing to a card's height, and the exact tag body (one POST per tag menu, item tags without a source on the Instagram Explore grid), the offline queue, keyboard-only use of the tag menu and its toast, focus back on Report source when its sheet closes, Why (every signal that fired, Appeal only for list verdicts), Show, Always allow, Not slop and Why for hidden items from the popup, silent swipe skips (again, the way the person is going, when they swipe back) and the optional skip notice with Undo, on the player, the welcome flow's permission request, Report source, website messaging, the trial and Plus sync, Plus early access, the weekly summary, the paid plan's renewal line and the daily plan check, no install ID on a fresh install's sync, a dismissed report closed calmly, the side panel, and the performance budgets.
+  It covers hiding without a trace and labeling per strictness, the YouTube Home and Subscriptions grids reflowing so every row before the Shorts shelf stays full, a hidden item taking its grid cell with it on Instagram Explore, TikTok profiles and the Shorts shelf, re-applying within 1 second without a reload (P0-3), pause by site and tab, the badge, delta sync, a tampered list, a signed config fixing a renamed selector, no layout jump during infinite scroll, Tag in two clicks, a Tag button that adds nothing to a card's height, and the exact tag body (one POST per tag menu, item tags without a source on the Instagram Explore grid), the offline queue, keyboard-only use of the tag menu and its toast, focus back on Report source when its sheet closes, Why (every signal that fired, Appeal only for list verdicts), Show, Always allow, Not slop and Why for hidden items from the popup, silent swipe skips (again, the way the person is going, when they swipe back) and the optional skip notice with Undo, on the player, the welcome flow's permission request, Report source, pairing codes for Plus and the side panel (wrong, used, limited and unverifiable codes included), the trial and Plus sync, Plus early access, the weekly summary, the paid plan's renewal line and the daily plan check, no install ID on a fresh install's sync, a dismissed report closed calmly, the side panel, and the performance budgets.
 - Performance on a 200-card page: slop cards are hidden within about 6 ms of insertion at the 95th percentile (budget 150 ms), and the content script adds about 40 ms in total (budget 50 ms), including the one batched layout read per frame that reflows grids with a hidden card.
   On live YouTube pages it adds 7 to 23 ms per page.
+- `tests/firefox`: the Firefox build in Playwright's Firefox, installed as a temporary add-on over Firefox's remote debugging protocol (`tests/firefox/rdp.ts`), against a local API: the manifest and its consent kinds, list sync and verification, content script registration, hiding on a YouTube page, and a tag that waits on the device until data collection is allowed, then is sent.
+  Playwright cannot open or script add-on pages in Firefox, so those checks run in the add-on's own pages over the same protocol.
+  Pairing codes and the Options pages are covered in Chromium; their code is the same in both.
 - `tests/live`: the real YouTube and TikTok pages, no login.
   Signed-in surfaces run only with a Playwright storage state in `COLANDER_LIVE_STATE_YT`, `_TT`, `_IG` or `_FB`.
   `.github/workflows/adapters-daily.yml` runs it every day.

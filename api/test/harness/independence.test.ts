@@ -1,8 +1,9 @@
 // The independence rule (Go's billing/independence_test.go): paying or donating never changes tag
 // weight, review order or a verdict, because scoring and the tag, report and review handlers
 // cannot reach billing state. It walks the runtime imports of scoring and of every route module
-// except the account, billing and settings sync routes (which show, sell and check plans), and
-// fails on any module that imports billing or mentions its tables or the Store's billing service.
+// except the account, billing, settings sync and pairing routes (which show, sell, check and hand
+// over plans), and fails on any module that imports billing or mentions its tables or the Store's
+// billing service.
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { dirname, join, relative } from 'node:path';
 import ts from 'typescript';
@@ -13,8 +14,12 @@ const SRC = new URL('../../src/', import.meta.url).pathname;
 const BILLING = ['billing.ts', 'store/billing.ts'];
 /** Billing tables in SQL, and the Store's billing service. */
 const BILLING_STATE = /\b(subscriptions|donations|billing_events)\b|\.billing\b/;
-/** Route modules that may read plans: the account page shows one, billing sells it, sync checks it. */
-const PLAN_ROUTES = ['routes/account.ts', 'routes/billing.ts', 'routes/sync.ts'];
+/**
+ * Route modules that may read plans: the account page shows one (and deleting an account ends it),
+ * billing sells it, sync checks it, pairing hands its token to the extension, and the admin API
+ * checks Stripe receipts for support and clears supporter credit. None of them decides a verdict.
+ */
+const PLAN_ROUTES = ['routes/account.ts', 'routes/admin.ts', 'routes/billing.ts', 'routes/sync.ts', 'routes/pairing.ts'];
 
 /** The src-relative paths a module imports at runtime. `import type` and `export type` are erased. */
 function runtimeImports(file: string): string[] {
@@ -76,7 +81,9 @@ describe('independence of verdicts from billing', () => {
 	});
 
 	it('catches a module that reaches billing', () => {
-		expect(violations(['routes/account.ts'])).toEqual(['routes/account.ts -> billing.ts imports billing', expect.stringContaining('routes/account.ts -> store/billing.ts')]);
+		expect(violations(['routes/account.ts'])).toEqual(
+			expect.arrayContaining(['routes/account.ts -> billing.ts imports billing', expect.stringContaining('routes/account.ts -> store/billing.ts')])
+		);
 		expect(violations(['store/store.ts']).length).toBeGreaterThan(0);
 	});
 });

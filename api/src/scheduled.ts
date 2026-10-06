@@ -3,6 +3,7 @@
 //   and alerts go out once each through the ALERTS binding while they last;
 // - hourly, the list request counts from the GraphQL Analytics API into list_requests, because
 //   cache hits never run code (contracts 9.6).
+import { LIMITERS } from './limits';
 import { primary, type WatchdogStatus } from './store/store';
 
 /** The hourly trigger. Every other trigger is the watchdog. */
@@ -29,7 +30,9 @@ export const THRESHOLDS = {
 	/** the gzip of the dump sits in memory while it blocks, in an isolate of 128 MB */
 	dumpSize: 32 << 20,
 	/** ship the incremental scoring planner when a pass reads this many rows */
-	rowsPerPass: 2_000_000
+	rowsPerPass: 2_000_000,
+	/** sign-in codes sent in one hour: above this someone is likely abusing the sign-in form */
+	signInMailPerHour: 500
 };
 
 /** The analytics token is optional: without it the hourly pull is skipped. */
@@ -68,6 +71,15 @@ export function alerts(s: WatchdogStatus): Alert[] {
 			});
 		}
 	}
+	const hour = Math.floor(s.now / HOUR);
+	const mail = s.signInMail;
+	const sent = mail ? Math.max(mail.hour === hour ? mail.count : 0, mail.hour === hour ? mail.previous : mail.hour === hour - 1 ? mail.count : 0) : 0;
+	if (sent > THRESHOLDS.signInMailPerHour) {
+		out.push({
+			key: 'sign_in_mail',
+			text: `Colander sent ${sent} sign-in codes in one hour, above the ${THRESHOLDS.signInMailPerHour} that normal use explains. Check the audit log and consider Turnstile (docs/deploy.md).`
+		});
+	}
 	if (s.head.seq === 0 && s.r2 && s.r2.seq > 0) {
 		out.push({
 			key: 'store_empty',
@@ -78,6 +90,12 @@ export function alerts(s: WatchdogStatus): Alert[] {
 		out.push({
 			key: 'r2_behind',
 			text: `R2 holds list sequence ${s.r2?.seq ?? 'none'} while the Store's head is ${s.head.seq}. Snapshot misses serve an old list.`
+		});
+	}
+	if (s.pairGuessing) {
+		out.push({
+			key: 'pair_guessing',
+			text: `${LIMITERS.pair_claim_fail.n} or more wrong pairing codes were tried within an hour, from all addresses together. Someone may be guessing codes. Each address is still limited; look for POST /v1/pair/claim in the edge logs, and consider longer codes (src/routes/pairing.ts).`
 		});
 	}
 	if (s.jobs.includes('dump')) {

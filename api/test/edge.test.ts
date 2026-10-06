@@ -9,6 +9,7 @@ import { importKeys } from '@colander/shared/signing';
 import { ipKey } from '../src/http';
 import worker from '../src/index';
 import { Store } from '../src/store/store';
+import { githubToken, opsAuth } from './tokens';
 
 const files = inject('contract');
 const snapshotBytes = b64decode(files.snapshot);
@@ -208,7 +209,7 @@ describe('CORS', () => {
 			const res = await get(path, { method: 'OPTIONS', headers: { Origin: 'chrome-extension://abc', 'Access-Control-Request-Method': 'POST' } });
 			expect(res.status, path).toBe(204);
 			expect(res.headers.get('Access-Control-Allow-Origin')).toBe('*');
-			expect(res.headers.get('Access-Control-Allow-Methods')).toBe('GET, POST, PUT, OPTIONS');
+			expect(res.headers.get('Access-Control-Allow-Methods')).toBe('GET, POST, PUT, DELETE, OPTIONS');
 			expect(res.headers.get('Access-Control-Allow-Headers')).toBe('Authorization, Content-Type');
 			expect(res.headers.get('Access-Control-Max-Age')).toBe('7200');
 			expect(res.headers.get('Access-Control-Allow-Credentials')).toBeNull();
@@ -250,7 +251,7 @@ describe('forwarding to the Store', () => {
 
 	it('hashes an IPv6 client by its /64 and an IPv4-mapped one as its IPv4 address', async () => {
 		expect(
-			['203.0.113.7', '2001:db8:1:2::1', '2001:0DB8:0001:0002:ffff:0:0:9', '2001:db8:1:3::1', '::1', '::ffff:203.0.113.7', '::ffff:cb00:7107', '2001:db8::1.2.3.4', 'fe80::1%eth0', 'junk'].map(ipKey)
+			['203.0.113.7', '2001:db8:1:2::1', '2001:0DB8:0001:0002:ffff:0:0:9', '2001:db8:1:3::1', '::1', '::ffff:203.0.113.7', '::ffff:cb00:7107', '2001:db8::1.2.3.4', 'fe80::1%eth0', 'junk'].map((ip) => ipKey(ip))
 		).toEqual(['203.0.113.7', '2001:db8:1:2::/64', '2001:db8:1:2::/64', '2001:db8:1:3::/64', '0:0:0:0::/64', '203.0.113.7', '203.0.113.7', '2001:db8:0:0::/64', 'fe80::1%eth0', 'junk']);
 		const store = vi.spyOn(Store.prototype, 'fetch');
 		for (const ip of ['2001:db8:1:2::1', '2001:db8:1:2:aaaa:bbbb:cccc:dddd', '2001:db8:1:3::1', '::ffff:203.0.113.7', '203.0.113.7']) {
@@ -262,15 +263,36 @@ describe('forwarding to the Store', () => {
 		expect(hashes[3]).toBe(hashes[4]);
 	});
 
+	// A free tunnel hands out a whole /48: 65,536 /64s would each get their own guesses.
+	it('hashes a pairing claim from IPv6 by its /48', async () => {
+		expect(['2001:db8:1:2::1', '2001:db8:1:ffff::9', '203.0.113.7', '::ffff:203.0.113.7'].map((ip) => ipKey(ip, 48))).toEqual([
+			'2001:db8:1::/48',
+			'2001:db8:1::/48',
+			'203.0.113.7',
+			'203.0.113.7'
+		]);
+		const store = vi.spyOn(Store.prototype, 'fetch');
+		const claim = (ip: string) =>
+			get('/v1/pair/claim', { method: 'POST', headers: { 'CF-Connecting-IP': ip, 'Content-Type': 'application/json' }, body: JSON.stringify({ code: 'AAAA-AAAA', ext_version: '1.0.0', browser: 'chrome' }) });
+		for (const ip of ['2001:db8:1:2::1', '2001:db8:1:3::1', '2001:db8:2:2::1']) await claim(ip);
+		await get('/v1/reports', { headers: { 'CF-Connecting-IP': '2001:db8:1:2::1', Authorization: 'Install abc' } });
+		const hashes = store.mock.calls.map((c) => (c[0] as Request).headers.get('x-colander-ip-hash'));
+		expect(hashes[0]).toBe(hashes[1]);
+		expect(hashes[2]).not.toBe(hashes[0]);
+		// Every other route still counts the /64.
+		expect(hashes[3]).not.toBe(hashes[0]);
+	});
+
 	it('logs the route pattern, status and duration only', async () => {
 		const logs = vi.spyOn(console, 'log');
 		await get('/v1/sources/yt/@private-channel-name?ref=secret', { headers: { 'CF-Connecting-IP': '198.51.100.9' } });
 		await get('/v1/list/delta?since=1700000123');
 		const lines = logs.mock.calls.map((c) => String(c[0]));
 		expect(lines.map((l) => Object.keys(JSON.parse(l)).sort())).toEqual([
-			['ms', 'route', 'status'],
-			['ms', 'route', 'status']
+			['host', 'ms', 'route', 'status'],
+			['host', 'ms', 'route', 'status']
 		]);
+		expect(lines.map((l) => JSON.parse(l).host)).toEqual(['main', 'main']);
 		expect(lines.map((l) => JSON.parse(l).route)).toEqual(['GET /v1/sources/:platform/:source_id', 'GET /v1/list/delta']);
 		for (const secret of ['private-channel-name', 'secret', '198.51.100.9', '1700000123']) expect(lines.join('\n')).not.toContain(secret);
 	});
@@ -348,19 +370,92 @@ describe('list request counts', () => {
 });
 
 describe('/ops/*', () => {
-	it('needs the ops bearer token', async () => {
+	const status = (headers: Record<string, string>, overrides: Record<string, string> = {}) =>
+		getWith(overrides as Partial<Env>, '/ops/status', { method: 'POST', headers, body: '{}' });
+
+	it('takes a GitHub Actions OIDC token from a workflow of this repository on main, in this environment', async () => {
 		const none = await get('/ops/status');
 		expect(none.status).toBe(401);
 		expect(none.headers.get('WWW-Authenticate')).toBe('Bearer');
 		expect((await get('/ops/status', { headers: { Authorization: 'Bearer wrong' } })).status).toBe(401);
-		expect((await get('/ops/status', { headers: { Authorization: 'test-ops-token' } })).status).toBe(401);
-		const ok = await get('/ops/status', { method: 'POST', headers: { Authorization: 'Bearer test-ops-token' }, body: '{}' });
+		const ok = await status(await opsAuth());
 		expect(ok.status).toBe(200);
 		expect(await ok.json()).toHaveProperty('head_seq');
 	});
 
-	it('is closed when no token is configured', async () => {
-		expect((await getWith({ OPS_TOKEN: '' }, '/ops/status', { headers: { Authorization: 'Bearer ' } })).status).toBe(503);
+	it('refuses every other token: another repository, branch, workflow ref, environment, audience, issuer, key or an expired one', async () => {
+		const refused: Record<string, unknown>[] = [
+			{ repository: 'someone/colander' },
+			{ repository_id: '1' },
+			{ ref: 'refs/heads/feature' },
+			{ ref: 'refs/pull/7/merge' },
+			{ workflow_ref: 'rudecompany/colander/.github/workflows/ops.yml@refs/heads/feature' },
+			{ workflow_ref: 'someone/else/.github/workflows/ops.yml@refs/heads/main' },
+			{ environment: 'staging' },
+			{ environment: undefined },
+			{ aud: 'https://staging.getcolander.com' },
+			{ iss: 'https://token.actions.example.com' },
+			{ exp: now() - 1 }
+		];
+		for (const claims of refused) expect((await status(await opsAuth(claims))).status, JSON.stringify(claims)).toBe(401);
+		// A key the JWKS does not hold.
+		expect((await status({ Authorization: 'Bearer ' + (await githubToken({}, 'unknown-kid')) })).status).toBe(401);
+		// The dev bearer is not taken outside dev mode on localhost.
+		expect((await status({ Authorization: 'Bearer dev-ops-token' }, { OPS_TOKEN: 'dev-ops-token' })).status).toBe(401);
+		expect((await status({ Authorization: 'Bearer dev-ops-token' }, { OPS_TOKEN: 'dev-ops-token', COLANDER_DEV: '', PUBLIC_URL: 'http://localhost:8787' })).status).toBe(401);
+	});
+
+	it('lets each workflow run only the commands its jobs need, so a token minted next to npm code cannot change roles or sign', async () => {
+		const as = async (workflow: string, command: string, environment = 'production') => {
+			const staging = environment === 'staging';
+			const headers = await opsAuth({
+				workflow_ref: `rudecompany/colander/.github/workflows/${workflow}@refs/heads/main`,
+				environment,
+				...(staging ? { aud: 'https://staging.getcolander.com' } : {})
+			});
+			const overrides = staging ? { OPS_GITHUB_ENVIRONMENT: 'staging', PUBLIC_URL: 'https://staging.getcolander.com' } : {};
+			const res = await getWith(overrides, `/ops/${command}`, { method: 'POST', headers, body: '{}' });
+			return [res.status, ((await res.json()) as { error?: { code: string } }).error?.code ?? 'ok'];
+		};
+		const refused = [403, 'not_this_workflow'];
+		expect(await as('probes.yml', 'status')).toEqual([200, 'ok']);
+		expect(await as('probes.yml', 'grant-role')).toEqual(refused);
+		// deploy-staging installs and builds npm code: its token decides the check channel and nothing else.
+		const seedCommands = ['import-seed', 'revoke-seed', 'calibration-sample', 'calibration-export'];
+		for (const command of ['status', 'grant-role', 'pin-subject', 'sign-config', ...seedCommands, 'restore-dump', 'pitr-restore', 'purge-cache']) {
+			expect(await as('deploy-staging.yml', command, 'staging'), command).toEqual(refused);
+		}
+		// Past the workflow check: the Store here runs with production's settings, which refuse check-decision.
+		expect(await as('deploy-staging.yml', 'check-decision', 'staging')).toEqual([403, 'not_here']);
+		// The drills: the dump drill on production, the point-in-time drill on staging.
+		expect(await as('drills.yml', 'status')).toEqual(refused);
+		expect(await as('drills.yml', 'pitr-restore')).toEqual(refused);
+		expect(await as('drills.yml', 'status', 'staging')).toEqual([200, 'ok']);
+		expect(await as('drills.yml', 'pitr-restore', 'staging')).toEqual([400, 'confirmation_required']);
+		expect(await as('drills.yml', 'grant-role', 'staging')).toEqual(refused);
+		// The seed list commands run from the Ops workflow alone, on either environment.
+		for (const command of seedCommands) {
+			for (const environment of ['production', 'staging']) {
+				expect(await as('drills.yml', command, environment), `${command} on ${environment}`).toEqual(refused);
+				expect(await as('probes.yml', command, environment), `${command} on ${environment}`).toEqual(refused);
+			}
+		}
+		// Any other workflow of the repository runs nothing; the Ops workflow runs everything.
+		expect(await as('release.yml', 'status')).toEqual(refused);
+		expect(await as('ci.yml', 'status')).toEqual(refused);
+		expect(await as('ops.yml', 'grant-role')).toEqual([400, 'invalid_email']);
+		expect(await as('ops.yml', 'import-seed')).toEqual([400, 'invalid_args']);
+	});
+
+	it('is closed when no repository or environment is configured', async () => {
+		expect((await status(await opsAuth(), { OPS_GITHUB_ENVIRONMENT: '' })).status).toBe(503);
+		expect((await status(await opsAuth(), { OPS_GITHUB_REPOSITORY: '' })).status).toBe(503);
+	});
+
+	it('takes the dev bearer of api/.dev.vars only in dev mode on localhost', async () => {
+		const dev = { OPS_TOKEN: 'dev-ops-token', PUBLIC_URL: 'http://localhost:8787' };
+		expect((await status({ Authorization: 'Bearer dev-ops-token' }, dev)).status).toBe(200);
+		expect((await status({ Authorization: 'Bearer wrong' }, dev)).status).toBe(401);
 	});
 });
 

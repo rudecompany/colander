@@ -6,7 +6,7 @@
 import type { SigningKey } from '@colander/shared/signing';
 import type { Store } from '../store/store';
 import { getAppeal, postAppeal, verifyAppeal } from './appeals';
-import { getReports, postReport, postTags, postTrial } from './extension';
+import { deleteInstall, getReports, postReport, postTags, postTrial } from './extension';
 import { adapterConfig } from './list';
 import { getLog, getSource, getStats } from './public';
 import {
@@ -43,6 +43,7 @@ const ROUTES: [method: string, pattern: string, handler: Handler][] = [
 	['POST', '/v1/reports', postReport],
 	['GET', '/v1/reports', getReports],
 	['POST', '/v1/trial', postTrial],
+	['DELETE', '/v1/install', deleteInstall],
 	['GET', '/v1/sync', getSync],
 	['PUT', '/v1/sync', putSync],
 

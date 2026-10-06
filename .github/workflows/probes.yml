@@ -1,15 +1,19 @@
 # Hourly outside check of production, next to the in-Cloudflare watchdog cron (the primary alarm).
-# GitHub may delay or skip scheduled runs, so this is the second line, not the first.
+# GitHub may delay or skip scheduled runs, so this is the second line, not the first. Weekly, it
+# also checks that the Edge Add-ons API key still works, since those keys expire after 72 days.
 name: Probes
 
 on:
   schedule:
     - cron: '41 * * * *'
+    - cron: '23 7 * * 1'
   workflow_dispatch:
 
 permissions:
   contents: read
   issues: write
+  # /ops/status takes a GitHub Actions OIDC token from this repository's main.
+  id-token: write
 
 concurrency:
   group: probes
@@ -19,15 +23,15 @@ jobs:
   production:
     name: probe-production
     # Skips until the Cloudflare account is set up (docs/deploy.md step 15).
-    if: vars.CLOUDFLARE_ACCOUNT_ID != ''
+    if: vars.CLOUDFLARE_ACCOUNT_ID != '' && github.event.schedule != '23 7 * * 1'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     environment:
       name: production
       deployment: false
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           node-version: 24
           package-manager-cache: false
@@ -38,11 +42,12 @@ jobs:
           COLANDER_BASE_URL: https://getcolander.com
           COLANDER_PUBLIC_KEYS: ${{ vars.COLANDER_PUBLIC_KEYS }}
       - name: Store health from /ops/status
-        env:
-          OPS_TOKEN: ${{ secrets.OPS_TOKEN }}
         run: |
+          token=$(curl -sS --fail -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=https://getcolander.com" | jq -r .value)
+          echo "::add-mask::$token"
           status=$(curl -sS --fail-with-body -X POST https://getcolander.com/ops/status \
-            -H "Authorization: Bearer $OPS_TOKEN" -H 'Content-Type: application/json' -d '{}')
+            -H "Authorization: Bearer $token" -H 'Content-Type: application/json' -d '{}')
           echo "$status" | jq .
           # Scoring pass under 15 minutes old, newest dump under 7 hours, no verdict change waiting
           # longer than the 6-hour list update bound (spec P0-8).
@@ -59,3 +64,33 @@ jobs:
         uses: ./.github/actions/report-failure
         with:
           title: Production probe failing
+
+  edge-key:
+    name: probe-edge-key
+    # Weekly, once Edge publishing is set up (docs/deploy.md, Microsoft Edge Add-ons).
+    if: vars.EDGE_PRODUCT_ID != '' && github.event.schedule != '41 * * * *'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    environment:
+      name: edge-add-ons
+      deployment: false
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      # An operation that does not exist: 404 with a working key, 401 or 403 with an expired one.
+      - name: The Edge API key still works
+        env:
+          EDGE_PRODUCT_ID: ${{ vars.EDGE_PRODUCT_ID }}
+          EDGE_CLIENT_ID: ${{ secrets.EDGE_CLIENT_ID }}
+          EDGE_API_KEY: ${{ secrets.EDGE_API_KEY }}
+        run: |
+          status=$(curl -sS -o /dev/null -w '%{http_code}' -H "Authorization: ApiKey $EDGE_API_KEY" -H "X-ClientID: $EDGE_CLIENT_ID" \
+            "https://api.addons.microsoftedge.microsoft.com/v1/products/$EDGE_PRODUCT_ID/submissions/operations/00000000-0000-0000-0000-000000000000")
+          if [ "$status" = 401 ] || [ "$status" = 403 ]; then
+            echo "::error::The Edge Add-ons API key was refused (HTTP $status). Make a new one in Partner Center and update EDGE_API_KEY (docs/deploy.md)."
+            exit 1
+          fi
+          echo "The Edge Add-ons API key works (an unknown operation answered HTTP $status)."
+      - if: failure()
+        uses: ./.github/actions/report-failure
+        with:
+          title: Edge Add-ons API key refused

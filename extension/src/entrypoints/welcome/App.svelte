@@ -1,18 +1,22 @@
 <!--
-@component First run, in 3 steps: strictness on the recreated feed, the platforms (Chrome asks for
-site access to those only, straight from the Continue click), and pinning the toolbar icon. A
-sticky bar holds Back and Continue; Done opens the first platform.
+@component First run, in 3 steps: strictness on the recreated feed, the platforms (the browser asks
+for site access to those only, straight from the Continue click), and pinning the toolbar icon,
+told the way this browser does it. A sticky bar holds Back and Continue; Done opens the first
+platform, and the last card links to connecting Plus with a code.
 -->
 <script lang="ts">
 	import { ColanderMark, DotField, FeedDemo, Lifecycle, StrictnessControl, type LifecycleStep } from '@colander/shared';
 	import { DEFINITION_PUBLIC, DEMO_THUMBS_NOTE, PLATFORM_SURFACES, TAGLINE } from '@colander/shared/copy';
+	import { fmtList } from '@colander/shared/format';
 	import { TOOLBAR } from '@colander/shared/glyphs';
 	import Button from '@colander/shared/components/ui/button/button.svelte';
 	import { PLATFORMS, PLATFORM_NAME, type Platform, type Strictness } from '@colander/shared/verdicts';
 	import ArrowRight from '@lucide/svelte/icons/arrow-right';
 	import Check from '@lucide/svelte/icons/check';
 	import CircleAlert from '@lucide/svelte/icons/circle-alert';
+	import Eye from '@lucide/svelte/icons/eye';
 	import Pin from '@lucide/svelte/icons/pin';
+	import Settings from '@lucide/svelte/icons/settings';
 	import Puzzle from '@lucide/svelte/icons/puzzle';
 	import { MediaQuery } from 'svelte/reactivity';
 	import { fade } from 'svelte/transition';
@@ -21,6 +25,7 @@ sticky bar holds Back and Continue; Done opens the first platform.
 	import { isPlus, K, type Entitlement } from '../../lib/settings';
 	import { enablePlatforms } from '../../ui/platforms';
 	import { send, stored } from '../../ui/store.svelte';
+	import { browser } from 'wxt/browser';
 
 	const config = stored<AdapterConfig | undefined>(K.adapterConfig, undefined);
 	const entitlement = stored<Entitlement | undefined>(K.entitlement, undefined);
@@ -28,6 +33,12 @@ sticky bar holds Back and Continue; Done opens the first platform.
 	const available = $derived(PLATFORMS.filter((p) => offered(p, config.value, isPlus(entitlement.value))));
 
 	const STEPS = ['Strictness', 'Platforms', 'Pin Colander'];
+	// Pinning, as each build's browser shows it. The Chrome build also runs in Brave and Opera, which pin the same way.
+	const PIN = import.meta.env.FIREFOX
+		? { icon: Settings, where: "Firefox's toolbar", step: 'Choose the gear beside Colander, then Pin to Toolbar.', keeps: 'the gear menu pins Colander to the toolbar' }
+		: import.meta.env.EDGE
+			? { icon: Eye, where: "Edge's toolbar", step: 'Choose the eye beside Colander to show it in the toolbar.', keeps: 'the eye shows Colander in the toolbar' }
+			: { icon: Pin, where: "your browser's toolbar", step: 'Choose the pin beside Colander.', keeps: 'the pin keeps Colander in the toolbar' };
 	let step = $state(0);
 	let strictness = $state<Strictness>('standard');
 	let chosen = $state<Platform[]>(['yt']);
@@ -60,7 +71,7 @@ sticky bar holds Back and Continue; Done opens the first platform.
 			const ok = await enablePlatforms(chosen);
 			busy = false;
 			if (!ok) {
-				error = 'Chrome did not grant site access, so Colander cannot run there yet. Choose Continue again to allow it.';
+				error = 'Your browser did not grant site access, so Colander cannot run there yet. Choose Continue again to allow it.';
 				return;
 			}
 			step = 2;
@@ -69,7 +80,7 @@ sticky bar holds Back and Continue; Done opens the first platform.
 			await send({ type: 'settings', patch: { strictness, onboarded: true } });
 			busy = false;
 			done = true;
-			await chrome.tabs.create({ url: HOME[chosen[0] ?? 'yt'] });
+			await browser.tabs.create({ url: HOME[chosen[0] ?? 'yt'] });
 		}
 		scrollTo({ top: 0 });
 	}
@@ -95,10 +106,11 @@ sticky bar holds Back and Continue; Done opens the first platform.
 				{#if done}
 					<section class="card" aria-labelledby="done-title">
 						<h2 id="done-title" class="cl-title">You are set</h2>
-						<p class="muted">Colander now runs on {chosen.map((p) => PLATFORM_NAME[p]).join(', ')}. The toolbar icon counts what it hides on each page, and every hidden item can be shown again.</p>
+						<p class="muted">Colander now runs on {fmtList(chosen.map((p) => PLATFORM_NAME[p]))}. The toolbar icon counts what it hides on each page, and every hidden item can be shown again.</p>
 						<p class="links">
 							<a class="cl-link" href="options.html#platforms">Change platforms<ArrowRight size={16} aria-hidden="true" /></a>
 							<a class="cl-link" href="options.html#strictness">Change strictness<ArrowRight size={16} aria-hidden="true" /></a>
+							<a class="cl-link" href="options.html#plan">Have Plus? Connect it with a code<ArrowRight size={16} aria-hidden="true" /></a>
 						</p>
 					</section>
 				{:else if step === 0}
@@ -131,21 +143,21 @@ sticky bar holds Back and Continue; Done opens the first platform.
 								</button>
 							{/each}
 						</div>
-						<p class="note">Chrome will ask for access to the sites you choose. Colander reads feed cards there and matches them on this device.</p>
+						<p class="note">Your browser will ask for access to the sites you choose. Colander reads feed cards there and matches them on this device.</p>
 					</section>
 				{:else}
 					<section aria-labelledby="s3">
 						<h2 id="s3" class="cl-title">Pin Colander</h2>
 						<p class="muted lede">Pin Colander so you can see counts and pause.</p>
-						<div class="toolbar" role="img" aria-label="Chrome's toolbar: the puzzle piece opens Extensions, the pin keeps Colander in the toolbar">
+						<div class="toolbar" role="img" aria-label="The browser toolbar: the puzzle piece opens Extensions, {PIN.keeps}">
 							<span class="address"></span>
 							<span class="tb"><Puzzle size={16} aria-hidden="true" /></span>
-							<span class="tb"><Pin size={16} aria-hidden="true" /></span>
+							<span class="tb"><PIN.icon size={16} aria-hidden="true" /></span>
 							<span class="tb" style:color={TOOLBAR.mark}><ColanderMark size={16} /></span>
 						</div>
 						<ol class="pin-steps">
-							<li><Puzzle size={16} aria-hidden="true" />Choose the puzzle piece in Chrome's toolbar.</li>
-							<li><Pin size={16} aria-hidden="true" />Choose the pin beside Colander.</li>
+							<li><Puzzle size={16} aria-hidden="true" />Choose the puzzle piece in {PIN.where}.</li>
+							<li><PIN.icon size={16} aria-hidden="true" />{PIN.step}</li>
 						</ol>
 						<ul class="states" aria-label="The toolbar icon" style:--cl-paper={TOOLBAR.dot} style:--cl-ink={TOOLBAR.ring}>
 							<li><span class="ic" style:color={TOOLBAR.mark}><ColanderMark size={32} /></span>Active</li>

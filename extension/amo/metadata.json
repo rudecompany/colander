@@ -1,0 +1,12 @@
+{
+  "summary": {
+    "en-US": "Hides AI slop on YouTube, TikTok, Instagram and Facebook from shared, signed lists. Every action is explained and reversible."
+  },
+  "categories": ["privacy-security"],
+  "homepage": {
+    "en-US": "https://getcolander.com"
+  },
+  "version": {
+    "license": "all-rights-reserved"
+  }
+}

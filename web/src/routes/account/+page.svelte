@@ -1,40 +1,39 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onMount, tick } from 'svelte';
+	import { page } from '$app/state';
 	import type { Account, Plan } from '@colander/shared/api';
 	import Input from '@colander/shared/components/ui/input/input.svelte';
 	import LogOut from '@lucide/svelte/icons/log-out';
-	import Plug from '@lucide/svelte/icons/plug';
 	import ListChecks from '@lucide/svelte/icons/list-checks';
+	import ShieldCheck from '@lucide/svelte/icons/shield-check';
 	import { api, ApiError, errorText } from '#lib/api.ts';
-	import { detectExtension, ExtensionRefused, sendToExtension, type ExtensionState } from '#lib/extension.ts';
 	import { fmtDate } from '@colander/shared';
-	import { loadAccount, session } from '#lib/session.svelte.ts';
+	import { loadAccount, refreshAccount, session } from '#lib/session.svelte.ts';
+	import AccountData from '#lib/components/AccountData.svelte';
+	import AccountSecurity from '#lib/components/AccountSecurity.svelte';
 	import ConnectBrowser from '#lib/components/ConnectBrowser.svelte';
-	import EmailSignIn from '#lib/components/EmailSignIn.svelte';
+	import SignIn from '#lib/components/SignIn.svelte';
 	import Loading from '#lib/components/Loading.svelte';
 	import Notice from '#lib/components/Notice.svelte';
 	import { PageHeader, PLAN_COPY, PriceCard } from '@colander/shared';
 	import Button from '@colander/shared/components/ui/button/button.svelte';
 	import AuthCard from '#lib/components/AuthCard.svelte';
+	import { adminOrigin } from '#lib/site.ts';
 
-	let ext = $state<ExtensionState>({ kind: 'checking' });
 	let displayName = $state('');
 	let nameStatus = $state<{ kind: 'idle' | 'saving' | 'saved' } | { kind: 'error'; message: string }>({ kind: 'idle' });
 	let billing = $state<{ kind: 'idle' | 'working' } | { kind: 'error'; message: string } | { kind: 'done'; message: string }>({ kind: 'idle' });
-	let reviewer = $state<{ kind: 'idle' | 'working' } | { kind: 'done' | 'error'; message: string }>({ kind: 'idle' });
+	let reviewer = $state<{ kind: 'idle' } | { kind: 'done' | 'error'; message: string }>({ kind: 'idle' });
+	/** Counts disconnects: each one starts the side panel's code box over, so it never still says Connected. */
+	let disconnects = $state(0);
+	let disconnectedNote = $state<HTMLElement>();
 
 	const account = $derived(session.account);
 
 	onMount(async () => {
 		const a = await loadAccount();
 		displayName = a?.display_name ?? '';
-		ext = await detectExtension();
 	});
-
-	async function checkExtension() {
-		ext = { kind: 'checking' };
-		ext = await detectExtension();
-	}
 
 	async function saveName(event: SubmitEvent) {
 		event.preventDefault();
@@ -74,23 +73,24 @@
 		}
 	}
 
-	async function connectReviewer() {
-		reviewer = { kind: 'working' };
+	async function disconnectReviewer() {
 		try {
-			const { token } = await api<{ token: string }>('/v1/account/reviewer-token', { method: 'POST' });
-			await sendToExtension({ type: 'colander:reviewer-token', token });
-			reviewer = { kind: 'done', message: 'Connected. The side panel can now open the review queue. Any earlier token stopped working.' };
+			await api('/v1/account/reviewer-token', { method: 'DELETE' });
+			disconnects++;
+			reviewer = { kind: 'done', message: 'Disconnected. The side panel can no longer review until you connect it again.' };
+			await refreshAccount();
+			// Disconnect went away with the connection: focus moves to what replaced it.
+			await tick();
+			disconnectedNote?.focus();
 		} catch (e) {
-			reviewer = {
-				kind: 'error',
-				message:
-					e instanceof ApiError
-						? e.message
-						: e instanceof ExtensionRefused
-							? 'Colander could not accept the reviewer token. Update Colander, then try again.'
-							: 'Colander did not answer. Make sure it is installed in this browser, then try again.'
-			};
+			reviewer = { kind: 'error', message: errorText(e) };
 		}
+	}
+
+	/** A new connection replaces what Disconnect said. */
+	function reviewerConnected() {
+		reviewer = { kind: 'idle' };
+		void refreshAccount();
 	}
 
 	const PLAN_STATUS: Record<Plan['status'], string> = {
@@ -100,7 +100,8 @@
 		canceled: 'Ended'
 	};
 
-	const ROLE_WORD = { member: 'Member', curator: 'Curator', staff: 'Staff' } as const;
+	const ROLE_WORD = { member: 'Member', curator: 'Curator', staff: 'Staff', admin: 'Admin' } as const;
+	const staff = $derived(account?.role === 'staff' || account?.role === 'admin');
 	const livePlan = $derived(account?.plan && account.plan.status !== 'canceled' ? account.plan : null);
 </script>
 
@@ -119,7 +120,7 @@
 		{#if session.status === 'error'}
 			<Notice tone="error" title="We could not check your session"><p>Colander may be busy. Try again in a moment.</p></Notice>
 		{/if}
-		<EmailSignIn next="/account" block />
+		<SignIn next="/account" block />
 	</AuthCard>
 {:else}
 	<div class="cl-container page-top">
@@ -180,35 +181,50 @@
 		</section>
 
 		<section class="uin-card uin-card-lg uin-card-pad section-card" aria-labelledby="connect-title">
-			<h2 class="cl-title" id="connect-title">Connect this browser</h2>
-			<p class="cl-body cl-muted">Sends a signed plan token to the extension, so Plus works here. Nothing else about your account is shared with it.</p>
-			<ConnectBrowser {ext} canConnect={!!livePlan} onrecheck={checkExtension} />
+			<h2 class="cl-title" id="connect-title">Connect a browser</h2>
+			{#if livePlan}
+				<p class="cl-body cl-muted">
+					Colander checks your plan on each device with a signed token. A code connects one browser, in any browser and on any
+					computer, and nothing else about your account goes with it.
+				</p>
+				<ConnectBrowser kind="plan" />
+			{:else}
+				<p class="cl-body cl-muted">Once you have Plus, connect each browser you use here with a code.</p>
+			{/if}
 		</section>
 
 		{#if account.role !== 'member'}
 			<section class="uin-card uin-card-lg uin-card-pad section-card" aria-labelledby="review-title">
 				<h2 class="cl-title" id="review-title">Review</h2>
 				<p class="cl-body cl-muted">
-					You are a {account.role === 'staff' ? 'staff member' : 'curator'}.
-					{account.role === 'staff'
-						? 'You can decide any source and resolve appeals.'
-						: 'You can decide items and sources that are not large. Large sources and appeals need staff.'}
+					You are {account.role === 'curator' ? 'a curator' : account.role === 'admin' ? 'an admin' : 'a staff member'}. In the review console,
+					with a passkey sign-in from the last 12 hours, and in the side panel, you decide items and sources that are not large.
+					{staff ? 'Large sources, appeals and people are in the admin console.' : 'Large sources and appeals need staff.'}
 				</p>
 				<div class="row">
 					<Button variant="primary" size="xl" href="/console"><ListChecks size={16} aria-hidden="true" />Open the review console</Button>
-					{#if ext.kind === 'installed'}
-						<Button variant="secondary" size="xl" onclick={connectReviewer} disabled={reviewer.kind === 'working'}>
-							<Plug size={16} aria-hidden="true" />Connect side panel
-						</Button>
+					{#if staff}
+						<Button variant="secondary" size="xl" href="{adminOrigin(page.url)}/admin"><ShieldCheck size={16} aria-hidden="true" />Open the admin console</Button>
 					{/if}
 				</div>
-				{#if ext.kind !== 'installed' && ext.kind !== 'checking'}
-					<p class="cl-caption cl-muted">To use the side panel, open this page in Chrome with Colander installed.</p>
+				<h3 class="sub">Review in the extension</h3>
+				<p class="cl-body cl-muted">
+					Connect Colander's side panel with a code, and review from the platforms as you browse. A code needs a passkey sign-in from
+					the last 10 minutes, and the connection lasts 7 days.
+				</p>
+				{#key disconnects}<ConnectBrowser kind="reviewer" onconnected={reviewerConnected} />{/key}
+				{#if account.reviewer_token}
+					<div class="row connection">
+						<p class="cl-caption cl-muted">The side panel is connected until {fmtDate(account.reviewer_token.expires_at)}.</p>
+						<Button variant="quiet" size="md" onclick={disconnectReviewer}>Disconnect</Button>
+					</div>
 				{/if}
-				{#if reviewer.kind === 'done'}<Notice tone="success" title={reviewer.message} />{/if}
-				{#if reviewer.kind === 'error'}<Notice tone="error" title="Not connected"><p>{reviewer.message}</p></Notice>{/if}
+				{#if reviewer.kind === 'done'}<div class="note" tabindex="-1" bind:this={disconnectedNote}><Notice tone="success" title={reviewer.message} /></div>{/if}
+				{#if reviewer.kind === 'error'}<Notice tone="error" title="Still connected"><p>{reviewer.message}</p></Notice>{/if}
 			</section>
 		{/if}
+
+		<AccountSecurity {account} />
 
 		<section class="uin-card uin-card-lg uin-card-pad section-card" aria-labelledby="profile-title">
 			<h2 class="cl-title" id="profile-title">Profile</h2>
@@ -231,6 +247,8 @@
 				<dt>Member since</dt><dd>{fmtDate(account.created_at)}</dd>
 			</dl>
 		</section>
+
+		<AccountData {account} />
 	</div>
 {/if}
 
@@ -255,6 +273,16 @@
 	.whoami {
 		margin-top: 16px;
 	}
+	/* On a phone, Sign out takes its own line; its text lines up with the line above, not its padding. */
+	@media (max-width: 639px) {
+		.whoami {
+			flex-direction: column;
+			align-items: flex-start;
+		}
+		.whoami :global(.uin-btn-ghost) {
+			margin-left: calc(-1 * var(--cl-s4));
+		}
+	}
 	.section-card {
 		display: grid;
 		gap: var(--cl-s3);
@@ -269,6 +297,26 @@
 		flex-wrap: wrap;
 		align-items: center;
 		gap: var(--cl-s2);
+	}
+	/* On a phone, Disconnect takes its own line; its text lines up with the caption, not its padding. */
+	@media (max-width: 639px) {
+		.connection {
+			flex-direction: column;
+			align-items: flex-start;
+			gap: 0;
+		}
+		.connection :global(.uin-btn-ghost) {
+			margin-left: -12px;
+		}
+	}
+	/* Focus lands here only from script, after Disconnect went away. */
+	.note:focus {
+		outline: none;
+	}
+	.sub {
+		margin-top: var(--cl-s2);
+		font: var(--cl-body-lg);
+		font-weight: 600;
 	}
 	.name-form {
 		display: grid;

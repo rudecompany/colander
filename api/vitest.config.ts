@@ -28,9 +28,10 @@ function migrationSchema() {
 // does not warn about missing secrets when there is no .dev.vars.
 const secrets = {
 	COLANDER_SIGNING_KEY: readFileSync(new URL('testdata/dev-signing.key', repo), 'utf8').trim(),
-	IP_SALT: 'test-ip-salt',
-	OPS_TOKEN: 'test-ops-token'
+	IP_SALT: 'test-ip-salt'
 };
+// The admin host's Access application in tests: test/tokens.ts signs tokens for it.
+const access = { CF_ACCESS_TEAM_DOMAIN: 'colander-test.cloudflareaccess.com', CF_ACCESS_AUD: 'test-access-aud' };
 Object.assign(process.env, secrets);
 
 export default defineConfig({
@@ -41,7 +42,7 @@ export default defineConfig({
 				plugins: [
 					cloudflareTest({
 						wrangler: { configPath: './wrangler.jsonc' },
-						miniflare: { bindings: { ...unstable_readConfig({ config: './wrangler.jsonc' }).vars, ...secrets, COLANDER_DEV: '1' } }
+						miniflare: { bindings: { ...unstable_readConfig({ config: './wrangler.jsonc' }).vars, ...secrets, ...access, COLANDER_DEV: '1' } }
 					})
 				],
 				test: {
