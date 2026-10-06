@@ -103,4 +103,10 @@ test('a reviewer code in the side panel connects it to the review queue', async 
 	await side.reload();
 	await expect(side.getByRole('alert')).toHaveText('This connection has ended. Connect again with a new code from your account page.');
 	await expect(side.getByLabel('Code from the website')).toBeVisible();
+
+	// One that ran its 7 days says so.
+	ext.api.review.unauthorized = false;
+	ext.api.review.expired = true;
+	await side.reload();
+	await expect(side.getByRole('alert')).toHaveText('This connection ended after its 7 days. Connect again with a new code from your account page.');
 });

@@ -29,13 +29,13 @@ test('queue, evidence and a decision', async ({ ext }) => {
 	await expect(side.getByText('Decision recorded.')).toBeVisible();
 	const d = ext.api.posted('/v1/review/sources/yt/%40catrescuetales/decision')[0]!;
 	expect(d.body).toMatchObject({ verdict: 'slop', reason: 'Staff review confirmed AI narration over generated footage, posted hourly.', signals: ['mostly_ai'], slop_type: 'deceptive', tests: ['mass_produced', 'hollow'] });
-	// The panel never marks a source large: that is staff's, in the review console.
+	// The panel never marks a source large: that is staff's, in the admin console.
 	expect(d.body).not.toHaveProperty('large');
 	await expect(side.getByText('Large source, staff only')).toHaveCount(0);
 });
 
 // The reviewer token carries curator authority only, also a staff member's.
-test('large sources and appeals are left to staff in the review console', async ({ ext }) => {
+test('large sources and appeals are left to staff in the admin console', async ({ ext }) => {
 	ext.api.review.queue = REVIEW_QUEUE();
 	const appeal = { id: 'apl_1', platform: 'yt', source_id: '@catrescuetales', status: 'under_review', code: 'CLN-7Q4K', statement: 'We film every rescue ourselves.', created_at: '2026-10-02T10:00:00Z' };
 	ext.api.review.source = { ...REVIEW_SOURCE, source: { ...REVIEW_SOURCE.source, large: true }, appeals: [appeal] };
@@ -44,10 +44,10 @@ test('large sources and appeals are left to staff in the review console', async 
 	await side.setViewportSize({ width: 400, height: 900 });
 	await side.goto(`chrome-extension://${EXT_ID}/sidepanel.html`);
 	await side.getByRole('button', { name: /Cat Rescue Tales/ }).click();
-	await expect(side.getByText('Cat Rescue Tales has a large audience, so only staff can decide it, in the review console on the website.')).toBeVisible();
+	await expect(side.getByText('Cat Rescue Tales has a large audience, so only staff can decide it, in the admin console.')).toBeVisible();
 	await expect(side.getByRole('radiogroup', { name: 'Verdict' })).toHaveCount(0);
 	await expect(side.getByRole('button', { name: 'Record decision' })).toBeDisabled();
-	await expect(side.getByText('Staff verify and resolve appeals in the review console on the website.')).toBeVisible();
+	await expect(side.getByText('Staff verify and resolve appeals in the admin console.')).toBeVisible();
 	await expect(side.getByText('We film every rescue ourselves.')).toBeVisible();
 	for (const name of ['Uphold', 'Deny', 'Code is on the account']) await expect(side.getByRole('button', { name })).toHaveCount(0);
 	await side.keyboard.press('Control+Enter');

@@ -52,7 +52,8 @@ fixtures:
 	node testdata/contract/generate.mjs
 
 # The Worker under wrangler dev on http://localhost:8787, with local Durable Objects and R2, the
-# development key and the built website. Sign-in links print here. Then run `make seed` once.
+# development key and the built website; the admin console is on http://admin.localhost:8787. Sign-in
+# codes print here. Then run `make seed` once.
 dev: web api/.dev.vars
 	pnpm -C api dev
 

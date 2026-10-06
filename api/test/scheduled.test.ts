@@ -5,6 +5,7 @@ import { createScheduledController, runInDurableObject } from 'cloudflare:test';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import worker from '../src/index';
 import { nextDump, STATUS } from '../src/jobs';
+import { nextAuditExport } from '../src/backup';
 import { alerts, ANALYTICS_CRON, PULL_HOURS, THRESHOLDS, UNREACHABLE_KEY } from '../src/scheduled';
 import { SNAPSHOT_KEY } from '../src/store/list';
 import type { Store, WatchdogStatus } from '../src/store/store';
@@ -58,10 +59,12 @@ describe('watchdog', () => {
 		await cron(WATCHDOG, { ALERTS: mail.binding });
 		await inStore(async (store, state) => {
 			expect(store.db.all('SELECT name, due_at FROM jobs ORDER BY name')).toEqual([
+				{ name: 'audit', due_at: nextAuditExport(T) },
 				{ name: 'dump', due_at: nextDump(T) },
 				{ name: 'pass', due_at: T },
 				{ name: 'prune', due_at: T },
-				{ name: 'publish', due_at: T }
+				{ name: 'publish', due_at: T },
+				{ name: 'requests', due_at: T }
 			]);
 			expect(await state.storage.getAlarm()).toBe(T);
 		});
@@ -74,9 +77,15 @@ describe('watchdog', () => {
 		await env.LISTS.put(SNAPSHOT_KEY, new Uint8Array([1]), { customMetadata: { seq: String(S - 50), created: String(S - 50) } });
 		await inStore((store) => store.db.run('INSERT INTO list_sequences (seq, created_at) VALUES (?, ?)', S - 50, S - 50));
 		const status = await inStore((store) => store.watchdog());
-		expect(status).toMatchObject({ now: T, jobs: ['dump', 'pass', 'prune', 'publish', 'rescore'], alarmLost: false, head: { seq: S - 50, createdAt: S - 50 }, r2: { seq: S - 50, created: S - 50 }, alerted: [], since: T, pairGuessing: false });
+		expect(status).toMatchObject({ now: T, jobs: ['audit', 'dump', 'pass', 'prune', 'publish', 'requests', 'rescore'], alarmLost: false, head: { seq: S - 50, createdAt: S - 50 }, r2: { seq: S - 50, created: S - 50 }, alerted: [], since: T, pairGuessing: false });
 		// R2 holds the head, so no publication was asked for.
-		expect(await inStore((store) => store.db.all('SELECT name FROM jobs ORDER BY name'))).toEqual([{ name: 'dump' }, { name: 'pass' }, { name: 'prune' }]);
+		expect(await inStore((store) => store.db.all('SELECT name FROM jobs ORDER BY name'))).toEqual([
+			{ name: 'audit' },
+			{ name: 'dump' },
+			{ name: 'pass' },
+			{ name: 'prune' },
+			{ name: 'requests' }
+		]);
 	});
 
 	it('mails an alert once while it lasts, and again when it comes back', async () => {
@@ -153,7 +162,8 @@ describe('alerts', () => {
 		dump: null,
 		alerted: [],
 		since: T - 60 * MINUTE,
-		pairGuessing: false
+		pairGuessing: false,
+		signInMail: null
 	};
 	const keys = (s: Partial<WatchdogStatus>) => alerts({ ...base, ...s }).map((a) => a.key);
 
@@ -192,6 +202,16 @@ describe('alerts', () => {
 	it('alert when wrong pairing codes run above the baseline', () => {
 		expect(keys({ pairGuessing: true })).toEqual(['pair_guessing']);
 		expect(alerts({ ...base, pairGuessing: true })[0]!.text).toContain('Someone may be guessing codes.');
+	});
+
+	it('alert when sign-in codes go out faster than normal use explains, this hour or the last', () => {
+		const hour = Math.floor(T / (60 * MINUTE));
+		const over = THRESHOLDS.signInMailPerHour + 1;
+		expect(keys({ signInMail: { hour, count: THRESHOLDS.signInMailPerHour, previous: 0 } })).toEqual([]);
+		expect(keys({ signInMail: { hour, count: over, previous: 0 } })).toEqual(['sign_in_mail']);
+		expect(keys({ signInMail: { hour, count: 3, previous: over } })).toEqual(['sign_in_mail']);
+		expect(keys({ signInMail: { hour: hour - 1, count: over, previous: 0 } })).toEqual(['sign_in_mail']);
+		expect(keys({ signInMail: { hour: hour - 2, count: over, previous: 0 } })).toEqual([]);
 	});
 });
 

@@ -69,7 +69,7 @@ test("pairing after a trial takes the account's settings, however far the trial 
 		const set = async (strictness: string) => {
 			const before = await version();
 			await options.evaluate(async (strictness) => {
-				const { settings } = await chrome.storage.local.get('settings');
+				const { settings } = (await chrome.storage.local.get('settings')) as { settings: Record<string, unknown> };
 				await chrome.storage.local.set({ settings: { ...settings, strictness } });
 			}, strictness);
 			await expect.poll(version).toBeGreaterThan(before);

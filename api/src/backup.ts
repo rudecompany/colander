@@ -41,6 +41,12 @@ export const API_DATA_TABLES = new Set(['youtube_cache', 'youtube_channels']);
  */
 const LEDGER = 'youtube_quota';
 
+/**
+ * The audit log only grows across a restore too: rows written after the dump stay, and the dump's
+ * rows go back in beside them. Its triggers refuse deleting any row younger than 400 days.
+ */
+const AUDIT = 'audit_log';
+
 /** The first line of a dump names the schema version of the Store it came from (dumpLines). */
 const HEADER = /^-- Colander Store dump, schema version (\d+),/;
 
@@ -330,9 +336,21 @@ export async function loadDump(db: Db, body: ReadableStream<Uint8Array>, now: nu
 			// The rows go in table by table; foreign keys are checked once, at commit. Columns the dump
 			// lacks (it predates them) take their defaults.
 			db.run('PRAGMA defer_foreign_keys = ON');
-			for (const t of tables) if (t !== LEDGER) db.run(`DELETE FROM ${ident(t)}`);
+			for (const t of tables) if (t !== LEDGER && t !== AUDIT) db.run(`DELETE FROM ${ident(t)}`);
 			for (const [t, cols] of columns) {
 				const list = cols.map(ident).join(',');
+				if (t === AUDIT) {
+					// Rows the live log already holds (the same time, action, target, actor and value) stay
+					// as they are; the others go in after them with new IDs.
+					const body = cols.filter((c) => c !== 'id').map(ident).join(',');
+					db.run(
+						`INSERT INTO ${ident(t)}(${body}) SELECT ${body} FROM ${ident(STAGE + t)} s
+						WHERE NOT EXISTS (SELECT 1 FROM ${ident(t)} a WHERE a.at = s.at AND a.action = s.action AND a.target IS s.target
+							AND a.actor_id IS s.actor_id AND a.actor_sub IS s.actor_sub AND a.after IS s.after)
+						ORDER BY s.id`
+					);
+					continue;
+				}
 				const keep = t === LEDGER ? ' WHERE true ON CONFLICT (day) DO UPDATE SET units = max(units, excluded.units)' : '';
 				db.run(`INSERT INTO ${ident(t)}(${list}) SELECT ${list} FROM ${ident(STAGE + t)}${keep}`);
 			}
@@ -382,4 +400,84 @@ export async function newestDump(bucket: R2Bucket): Promise<R2Object | undefined
  */
 export function countsAgree(dumped: number, primary: number): boolean {
 	return Math.abs(dumped - primary) <= 100 + 0.25 * Math.max(dumped, primary);
+}
+
+/** Daily copies of the audit log live under this prefix of the backup bucket, under a 400-day bucket lock. */
+export const AUDIT_PREFIX = 'audit/';
+/** The highest audit row ID copied to R2, in the Store's synchronous KV storage. */
+export const AUDIT_EXPORTED = 'status:audit_exported';
+
+/**
+ * Copies the audit rows written since the last copy to R2 as one NDJSON object, so a restore or a
+ * lost Store never loses them; the bucket lock keeps them 400 days. Returns when to run next: the
+ * next 04:31 UTC.
+ */
+export async function exportAudit(db: Db, kv: SyncKvStorage, bucket: R2Bucket, now: number): Promise<number> {
+	const after = kv.get<number>(AUDIT_EXPORTED) ?? 0;
+	const rows = db.all<Record<string, string | number | null>>('SELECT * FROM audit_log WHERE id > ? ORDER BY id', after);
+	if (rows.length > 0) {
+		const last = rows.at(-1)!.id as number;
+		const key = `${AUDIT_PREFIX}${new Date(now).toISOString().slice(0, 10)}-${String(rows[0]!.id).padStart(12, '0')}.ndjson`;
+		await bucket.put(key, rows.map((r) => JSON.stringify(r)).join('\n') + '\n', { httpMetadata: { contentType: 'application/x-ndjson' } });
+		kv.put(AUDIT_EXPORTED, last);
+	}
+	return nextAuditExport(now);
+}
+
+/** 04:31 UTC on the day after now. */
+export const nextAuditExport = (now: number): number => {
+	const day = 86_400_000;
+	const at = Math.floor(now / day) * day + (4 * 60 + 31) * 60_000;
+	return at > now ? at : at + day;
+};
+
+/** The columns of an audit row, besides its ID. */
+const AUDIT_COLUMNS = ['at', 'actor_id', 'actor_sub', 'actor_email', 'host', 'action', 'target', 'before', 'after', 'reason', 'request_id'] as const;
+
+/**
+ * After a point-in-time restore to since (unix ms), which took the audit log back with everything
+ * else: puts back, in their order, the rows of the audit/ copies written at or after that second
+ * that the log lacks (the same match loadDump uses). Returns how many it added. The export mark is
+ * left alone, so the next copy may repeat rows the archive already holds; it never misses one.
+ */
+export async function reapplyAudit(db: Db, bucket: R2Bucket, since: number): Promise<number> {
+	const from = Math.floor(since / 1000);
+	// A copy holds rows up to the day it was made, which its key starts with.
+	const day = new Date(since).toISOString().slice(0, 10);
+	const rows: Record<string, string | number | null>[] = [];
+	let cursor: string | undefined;
+	do {
+		const page = await bucket.list({ prefix: AUDIT_PREFIX, cursor });
+		for (const o of page.objects) {
+			if (o.key.slice(AUDIT_PREFIX.length, AUDIT_PREFIX.length + 10) < day) continue;
+			const body = await bucket.get(o.key);
+			for (const line of (await body?.text())?.split('\n') ?? []) {
+				if (line === '') continue;
+				const row = JSON.parse(line) as Record<string, string | number | null>;
+				if ((row.at as number) >= from) rows.push(row);
+			}
+		}
+		cursor = page.truncated ? page.cursor : undefined;
+	} while (cursor);
+	rows.sort((a, b) => (a.id as number) - (b.id as number));
+	const cols = AUDIT_COLUMNS.map(ident).join(',');
+	const count = () => db.get<{ n: number }>(`SELECT count(*) AS n FROM ${ident(AUDIT)}`)!.n;
+	return db.tx(() => {
+		const before = count();
+		for (const r of rows) {
+			const v = AUDIT_COLUMNS.map((c) => r[c] ?? null);
+			db.run(
+				`INSERT INTO ${ident(AUDIT)}(${cols}) SELECT ${AUDIT_COLUMNS.map(() => '?').join(',')}
+				WHERE NOT EXISTS (SELECT 1 FROM ${ident(AUDIT)} a WHERE a.at = ? AND a.action = ? AND a.target IS ? AND a.actor_id IS ? AND a.actor_sub IS ? AND a.after IS ?)`,
+				...v,
+				r.at ?? null,
+				r.action ?? null,
+				r.target ?? null,
+				r.actor_id ?? null,
+				r.actor_sub ?? null,
+				r.after ?? null
+			);
+		}
+		return count() - before;
+	});
 }

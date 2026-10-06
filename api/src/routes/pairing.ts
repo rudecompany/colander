@@ -1,20 +1,23 @@
 // Pairing codes (contracts 7): the one handoff from the website to the extension in every browser.
 // A signed-in account asks for a short code, the person types it into their extension, and the
-// extension's claim gets a plan token or a reviewer token. Codes last 10 minutes, work once and are
-// stored only as SHA-256; claims are limited per address (an IPv6 address by its /48, src/index.ts),
-// because the code is all a claim carries, and wrong codes from all addresses together are counted
-// for the watchdog (src/scheduled.ts).
+// extension's claim gets a plan token or a reviewer token. Reviewer tokens come only from here: a
+// reviewer code needs a curator, staff member or admin after a passkey sign-in of the last 10
+// minutes, and its token gives curator authority for 7 days. Codes last 10 minutes, work once and
+// are stored only as SHA-256; claims are limited per address (an IPv6 address by its /48,
+// src/index.ts), because the code is all a claim carries, and wrong codes from all addresses
+// together are counted for the watchdog (src/scheduled.ts).
 import { normalizePairCode, PAIR_BROWSERS, type PairBrowser, type PlanTokenPayload } from '@colander/shared/api';
 import { issuePlanToken } from '@colander/shared/signing';
-import { hashToken, session } from '../auth';
+import { hashToken, signedIn } from '../auth';
 import { NoPlanError } from '../billing';
 import { IP_HASH_HEADER, json, jsonError, tooMany } from '../http';
 import { allow } from '../limits';
+import { authority } from '../permissions';
 import { unix } from '../scoring/engine';
-import { getAccount } from '../store/accounts';
+import { audit, getAccount, type Account } from '../store/accounts';
 import { claimPairing, createPairing, getPairing } from '../store/pairings';
 import type { Store } from '../store/store';
-import { mayReview, type RouteSpec } from './account';
+import { main, type RouteSpec } from './account';
 import { decode, rfc3339 } from './respond';
 
 /** 10 minutes (contracts 7). */
@@ -40,16 +43,24 @@ function newCode(): string {
 }
 
 const codeHash = (code: string) => hashToken(`colander-pair:${code}`);
+/** Whether the account may hold a reviewer token: it reviews on the main host (src/permissions.ts). */
+const mayReview = (a: Account): boolean => authority(a.role, 'main') !== null;
 const noPlan = () => jsonError(404, 'no_plan', 'There is no active Plus plan on this account to connect.');
 
 async function createCode(s: Store, request: Request): Promise<Response> {
-	const a = session(s.auth, request);
-	if (a instanceof Response) return a;
+	const ses = signedIn(s.auth, request);
+	if (ses instanceof Response) return ses;
+	const a = ses.account;
 	const body = await decode(request, 1 << 10, { kind: 'string' });
 	if (body instanceof Response) return body;
 	if (body.kind !== 'plan' && body.kind !== 'reviewer') return jsonError(400, 'invalid_kind', 'kind must be plan or reviewer.');
 	const now = unix(s.now());
-	if (body.kind === 'reviewer' && !mayReview(a)) return jsonError(403, 'forbidden', 'Only curators and staff can connect the review side panel.');
+	if (body.kind === 'reviewer') {
+		if (!mayReview(a)) return jsonError(403, 'forbidden', 'Only curators and staff can connect the review side panel.');
+		// A reviewer token is 7 days of review authority in any browser: the code needs a fresh passkey sign-in.
+		const refused = s.auth.stepUp(ses, { passkey: true });
+		if (refused) return refused;
+	}
 	if (body.kind === 'plan') {
 		try {
 			s.billing.planClaims(a.id, now);
@@ -66,10 +77,10 @@ async function createCode(s: Store, request: Request): Promise<Response> {
 }
 
 function status(s: Store, request: Request): Response {
-	const a = session(s.auth, request);
-	if (a instanceof Response) return a;
+	const ses = signedIn(s.auth, request);
+	if (ses instanceof Response) return ses;
 	const id = new URL(request.url).pathname.slice('/v1/pair/'.length);
-	const p = getPairing(s.db, a.id, id);
+	const p = getPairing(s.db, ses.account.id, id);
 	if (!p) return jsonError(404, 'not_found', 'There is no such code on this account.');
 	const state = p.claimedAt ? 'claimed' : p.expiresAt > unix(s.now()) ? 'pending' : 'expired';
 	return json(200, { status: state, ext_version: p.extVersion || null, browser: p.browser || null });
@@ -104,7 +115,9 @@ async function claim(s: Store, request: Request): Promise<Response> {
 			const label = maskEmail(account.email);
 			if (p.kind === 'reviewer') {
 				if (!mayReview(account)) throw new Refused(jsonError(403, 'forbidden', 'This account can no longer review.'));
-				return { account: label, reviewer: s.auth.issueReviewerToken(p.accountId) };
+				const t = s.auth.issueReviewerToken(p.accountId);
+				audit(s.db, { ...main(request, p.accountId), action: 'token_issued', target: p.accountId, reason: 'pairing code' }, now);
+				return { account: label, reviewer: t.token };
 			}
 			try {
 				return { account: label, claims: s.billing.planClaims(p.accountId, now) };

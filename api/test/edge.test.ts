@@ -9,6 +9,7 @@ import { importKeys } from '@colander/shared/signing';
 import { ipKey } from '../src/http';
 import worker from '../src/index';
 import { Store } from '../src/store/store';
+import { githubToken, opsAuth } from './tokens';
 
 const files = inject('contract');
 const snapshotBytes = b64decode(files.snapshot);
@@ -208,7 +209,7 @@ describe('CORS', () => {
 			const res = await get(path, { method: 'OPTIONS', headers: { Origin: 'chrome-extension://abc', 'Access-Control-Request-Method': 'POST' } });
 			expect(res.status, path).toBe(204);
 			expect(res.headers.get('Access-Control-Allow-Origin')).toBe('*');
-			expect(res.headers.get('Access-Control-Allow-Methods')).toBe('GET, POST, PUT, OPTIONS');
+			expect(res.headers.get('Access-Control-Allow-Methods')).toBe('GET, POST, PUT, DELETE, OPTIONS');
 			expect(res.headers.get('Access-Control-Allow-Headers')).toBe('Authorization, Content-Type');
 			expect(res.headers.get('Access-Control-Max-Age')).toBe('7200');
 			expect(res.headers.get('Access-Control-Allow-Credentials')).toBeNull();
@@ -288,9 +289,10 @@ describe('forwarding to the Store', () => {
 		await get('/v1/list/delta?since=1700000123');
 		const lines = logs.mock.calls.map((c) => String(c[0]));
 		expect(lines.map((l) => Object.keys(JSON.parse(l)).sort())).toEqual([
-			['ms', 'route', 'status'],
-			['ms', 'route', 'status']
+			['host', 'ms', 'route', 'status'],
+			['host', 'ms', 'route', 'status']
 		]);
+		expect(lines.map((l) => JSON.parse(l).host)).toEqual(['main', 'main']);
 		expect(lines.map((l) => JSON.parse(l).route)).toEqual(['GET /v1/sources/:platform/:source_id', 'GET /v1/list/delta']);
 		for (const secret of ['private-channel-name', 'secret', '198.51.100.9', '1700000123']) expect(lines.join('\n')).not.toContain(secret);
 	});
@@ -368,19 +370,83 @@ describe('list request counts', () => {
 });
 
 describe('/ops/*', () => {
-	it('needs the ops bearer token', async () => {
+	const status = (headers: Record<string, string>, overrides: Record<string, string> = {}) =>
+		getWith(overrides as Partial<Env>, '/ops/status', { method: 'POST', headers, body: '{}' });
+
+	it('takes a GitHub Actions OIDC token from a workflow of this repository on main, in this environment', async () => {
 		const none = await get('/ops/status');
 		expect(none.status).toBe(401);
 		expect(none.headers.get('WWW-Authenticate')).toBe('Bearer');
 		expect((await get('/ops/status', { headers: { Authorization: 'Bearer wrong' } })).status).toBe(401);
-		expect((await get('/ops/status', { headers: { Authorization: 'test-ops-token' } })).status).toBe(401);
-		const ok = await get('/ops/status', { method: 'POST', headers: { Authorization: 'Bearer test-ops-token' }, body: '{}' });
+		const ok = await status(await opsAuth());
 		expect(ok.status).toBe(200);
 		expect(await ok.json()).toHaveProperty('head_seq');
 	});
 
-	it('is closed when no token is configured', async () => {
-		expect((await getWith({ OPS_TOKEN: '' }, '/ops/status', { headers: { Authorization: 'Bearer ' } })).status).toBe(503);
+	it('refuses every other token: another repository, branch, workflow ref, environment, audience, issuer, key or an expired one', async () => {
+		const refused: Record<string, unknown>[] = [
+			{ repository: 'someone/colander' },
+			{ repository_id: '1' },
+			{ ref: 'refs/heads/feature' },
+			{ ref: 'refs/pull/7/merge' },
+			{ workflow_ref: 'rudecompany/colander/.github/workflows/ops.yml@refs/heads/feature' },
+			{ workflow_ref: 'someone/else/.github/workflows/ops.yml@refs/heads/main' },
+			{ environment: 'staging' },
+			{ environment: undefined },
+			{ aud: 'https://staging.getcolander.com' },
+			{ iss: 'https://token.actions.example.com' },
+			{ exp: now() - 1 }
+		];
+		for (const claims of refused) expect((await status(await opsAuth(claims))).status, JSON.stringify(claims)).toBe(401);
+		// A key the JWKS does not hold.
+		expect((await status({ Authorization: 'Bearer ' + (await githubToken({}, 'unknown-kid')) })).status).toBe(401);
+		// The dev bearer is not taken outside dev mode on localhost.
+		expect((await status({ Authorization: 'Bearer dev-ops-token' }, { OPS_TOKEN: 'dev-ops-token' })).status).toBe(401);
+		expect((await status({ Authorization: 'Bearer dev-ops-token' }, { OPS_TOKEN: 'dev-ops-token', COLANDER_DEV: '', PUBLIC_URL: 'http://localhost:8787' })).status).toBe(401);
+	});
+
+	it('lets each workflow run only the commands its jobs need, so a token minted next to npm code cannot change roles or sign', async () => {
+		const as = async (workflow: string, command: string, environment = 'production') => {
+			const staging = environment === 'staging';
+			const headers = await opsAuth({
+				workflow_ref: `rudecompany/colander/.github/workflows/${workflow}@refs/heads/main`,
+				environment,
+				...(staging ? { aud: 'https://staging.getcolander.com' } : {})
+			});
+			const overrides = staging ? { OPS_GITHUB_ENVIRONMENT: 'staging', PUBLIC_URL: 'https://staging.getcolander.com' } : {};
+			const res = await getWith(overrides, `/ops/${command}`, { method: 'POST', headers, body: '{}' });
+			return [res.status, ((await res.json()) as { error?: { code: string } }).error?.code ?? 'ok'];
+		};
+		const refused = [403, 'not_this_workflow'];
+		expect(await as('probes.yml', 'status')).toEqual([200, 'ok']);
+		expect(await as('probes.yml', 'grant-role')).toEqual(refused);
+		// deploy-staging installs and builds npm code: its token decides the check channel and nothing else.
+		for (const command of ['status', 'grant-role', 'pin-subject', 'sign-config', 'import-seed', 'restore-dump', 'pitr-restore', 'purge-cache']) {
+			expect(await as('deploy-staging.yml', command, 'staging'), command).toEqual(refused);
+		}
+		// Past the workflow check: the Store here runs with production's settings, which refuse check-decision.
+		expect(await as('deploy-staging.yml', 'check-decision', 'staging')).toEqual([403, 'not_here']);
+		// The drills: the dump drill on production, the point-in-time drill on staging.
+		expect(await as('drills.yml', 'status')).toEqual(refused);
+		expect(await as('drills.yml', 'pitr-restore')).toEqual(refused);
+		expect(await as('drills.yml', 'status', 'staging')).toEqual([200, 'ok']);
+		expect(await as('drills.yml', 'pitr-restore', 'staging')).toEqual([400, 'confirmation_required']);
+		expect(await as('drills.yml', 'grant-role', 'staging')).toEqual(refused);
+		// Any other workflow of the repository runs nothing; the Ops workflow runs everything.
+		expect(await as('release.yml', 'status')).toEqual(refused);
+		expect(await as('ci.yml', 'status')).toEqual(refused);
+		expect(await as('ops.yml', 'grant-role')).toEqual([400, 'invalid_email']);
+	});
+
+	it('is closed when no repository or environment is configured', async () => {
+		expect((await status(await opsAuth(), { OPS_GITHUB_ENVIRONMENT: '' })).status).toBe(503);
+		expect((await status(await opsAuth(), { OPS_GITHUB_REPOSITORY: '' })).status).toBe(503);
+	});
+
+	it('takes the dev bearer of api/.dev.vars only in dev mode on localhost', async () => {
+		const dev = { OPS_TOKEN: 'dev-ops-token', PUBLIC_URL: 'http://localhost:8787' };
+		expect((await status({ Authorization: 'Bearer dev-ops-token' }, dev)).status).toBe(200);
+		expect((await status({ Authorization: 'Bearer wrong' }, dev)).status).toBe(401);
 	});
 });
 

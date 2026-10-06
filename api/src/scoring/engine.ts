@@ -38,6 +38,8 @@ export interface Cause {
 	itemRef?: number;
 	actor: string;
 	actorName?: string;
+	/** the reviewer's account, kept internally so deleting the account can remove the name */
+	accountId?: string;
 	reason: string;
 	/** log the target even when its verdict does not change */
 	always?: boolean;
@@ -398,10 +400,11 @@ export class Engine implements PassScorer {
 						reason: '',
 						signals: st.signals,
 						actor: 'community',
-						actorName: ''
+						actorName: '',
+						accountId: ''
 					};
-					if (caused) [log.actor, log.actorName, log.reason] = [cause.actor, cause.actorName ?? '', cause.reason];
-					else if (r.rule === 2 && dec) [log.actor, log.actorName, log.reason] = [dec.actor, dec.actorName, dec.reason];
+					if (caused) [log.actor, log.actorName, log.accountId, log.reason] = [cause.actor, cause.actorName ?? '', cause.accountId ?? '', cause.reason];
+					else if (r.rule === 2 && dec) [log.actor, log.actorName, log.accountId, log.reason] = [dec.actor, dec.actorName, dec.accountId, dec.reason];
 					else if (r.rule === 1) [log.actor, log.reason] = ['appeal', communityReason(r)];
 					else log.reason = communityReason(r);
 					u.log = log;

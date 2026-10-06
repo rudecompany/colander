@@ -16,14 +16,16 @@ import {
 } from '../scoring/actions';
 import { unix, type Evaluation } from '../scoring/engine';
 import { BehaviorSignals, ProvenanceSignals, slopTypeCode } from '../scoring/rules';
+import { csrfOk, csrfRequired, hostOf, signedIn, TTL } from '../auth';
+import { authority as rolesAuthority, rank, type Role } from '../permissions';
 import type { Account } from '../store/accounts';
+import { staffOf } from '../staff';
 import { AppealPendingManual, AppealUnderReview, appealsBySource, appealsWithStatus, getAppeal, type Appeal } from '../store/appeals';
 import { ConflictError, NotFoundError } from '../store/db';
 import { ensureItem, ensureSource, findItem, getSource, namedSeedList, type Source } from '../store/sources';
 import { dismissReport, getReport, openReports, reportsBySource, type Report } from '../store/tags';
 import { log, openEscalations } from '../store/verdicts';
 import { toAppeal } from './appeals';
-import { session } from '../auth';
 import { toReport } from './extension';
 import { canonicalItem, canonicalSource, validPlatform } from './ids';
 import { activeInstalls } from './list';
@@ -31,31 +33,47 @@ import { explain, lookupSource, toLog, toSource } from './public';
 import { decode, fields, goFixed, optString, parseInt64, pathValue, rfc3339, runeCount, signalMask, signalNames, testBits, testNames, trimSpace, verdictCode } from './respond';
 import type { Api, Params } from './server';
 
-/**
- * Authenticates a curator or staff member by bearer token or session cookie, or answers the error.
- * A reviewer token carries curator authority only, also a staff member's: a token works in any
- * browser on any device, so staff-only actions need the staff session.
- */
-function reviewer(api: Api, request: Request): Account | Response {
-	const { store } = api;
-	const auth = request.headers.get('Authorization') ?? '';
-	let a: Account | Response;
-	if (auth.startsWith('Bearer ')) {
-		const r = store.auth.reviewerAccount(trimSpace(auth.slice('Bearer '.length)));
-		a = !r
-			? jsonError(401, 'invalid_token', 'The reviewer token is not valid. Create a new one on the website.')
-			: r.role === 'staff'
-				? { ...r, role: 'curator' }
-				: r;
-	} else {
-		a = session(store.auth, request);
-	}
-	if (a instanceof Response) return a;
-	if (a.role !== 'curator' && a.role !== 'staff') return jsonError(403, 'forbidden', 'Only curators and staff can review.');
-	return a;
+/** A reviewer and the authority this request gives them (src/permissions.ts). */
+interface Reviewer {
+	account: Account;
+	authority: Role;
 }
 
-const staffRequired = (what: string): Response => jsonError(403, 'staff_required', `${what} need staff review.`);
+/**
+ * Authenticates a reviewer (contracts 6.7). On the admin host: the staff member Access let in,
+ * with their full role. On the main host: a reviewer token, or a session that signed in with a
+ * passkey within 12 hours (else 403 passkey_required), and curator authority at most. A reviewer
+ * token works in any browser on any device, so it carries curator authority also for staff.
+ */
+function reviewer(api: Api, request: Request): Reviewer | Response {
+	const { store } = api;
+	if (hostOf(request) === 'admin') {
+		if (!csrfOk(request)) return csrfRequired();
+		const st = staffOf(store, request);
+		return st instanceof Response ? st : { account: st.account, authority: st.actor.authority };
+	}
+	const auth = request.headers.get('Authorization') ?? '';
+	let a: Account;
+	if (auth.startsWith('Bearer ')) {
+		const t = store.auth.reviewerAccount(trimSpace(auth.slice('Bearer '.length)));
+		if (t === 'expired') return jsonError(401, 'token_expired', 'The reviewer token expired after 7 days. Connect the side panel again from your account page.');
+		if (!t) return jsonError(401, 'invalid_token', 'The reviewer token is not valid. Connect the side panel again from your account page.');
+		a = t;
+	} else {
+		const ses = signedIn(store.auth, request);
+		if (ses instanceof Response) return ses;
+		a = ses.account;
+		if (rank(a.role) >= rank('curator') && (!store.auth.passkey(ses) || unix(store.now()) - ses.authenticatedAt > TTL.curatorFresh)) {
+			return jsonError(403, 'passkey_required', 'Review needs a passkey sign-in from the last 12 hours. Confirm it is you with your passkey.');
+		}
+	}
+	const authority = rolesAuthority(a.role, 'main');
+	if (!authority) return jsonError(403, 'forbidden', 'Only curators and staff can review.');
+	return { account: a, authority };
+}
+
+const staffRequired = (what: string): Response =>
+	jsonError(403, 'staff_required', `${what} need staff review. Staff decide them in the admin console.`);
 
 /** Collapses whitespace and cuts s to n characters with an ellipsis. */
 function clip(s: string, n: number): string {
@@ -263,7 +281,8 @@ function namesSeedList(api: Api, text: string): Response | undefined {
  * Validates a decision body. Only provenance and behavior signals are recorded; the other signals
  * are computed and never set by hand.
  */
-function decisionInput(api: Api, b: DecisionBody, a: Account): Omit<DecisionInput, 'sourceRef'> | Response {
+function decisionInput(api: Api, b: DecisionBody, r: Reviewer): Omit<DecisionInput, 'sourceRef'> | Response {
+	const a = r.account;
 	const reason = trimSpace(b.reason);
 	if (b.verdict !== 'none' && verdictCode(b.verdict) === 0) {
 		return jsonError(400, 'invalid_verdict', 'verdict must be one of the five verdicts or none.');
@@ -290,7 +309,8 @@ function decisionInput(api: Api, b: DecisionBody, a: Account): Omit<DecisionInpu
 		slopType,
 		tests,
 		large: b.large,
-		actor: a.role,
+		// Admins decide as staff in the public log.
+		actor: r.authority === 'curator' ? 'curator' : 'staff',
 		accountId: a.id,
 		actorName: a.displayName
 	};
@@ -388,12 +408,12 @@ export async function reviewDismissReport(api: Api, request: Request, _url: URL,
 
 /** Loads the appeal for a staff-only appeal route, or answers the error. */
 function staffAppeal(api: Api, request: Request, params: Params): [Account, Appeal] | Response {
-	const a = reviewer(api, request);
-	if (a instanceof Response) return a;
-	if (a.role !== 'staff') return staffRequired('Appeals');
+	const r = reviewer(api, request);
+	if (r instanceof Response) return r;
+	if (rank(r.authority) < rank('staff')) return staffRequired('Appeals');
 	const ap = getAppeal(api.store.db, pathValue(params, 'id'));
 	if (!ap) return jsonError(404, 'not_found', 'No appeal has this ID.');
-	return [a, ap];
+	return [r.account, ap];
 }
 
 /** Runs an appeal action and answers with the appeal, or 409 when its state does not allow it. */

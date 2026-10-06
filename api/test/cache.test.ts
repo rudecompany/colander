@@ -10,13 +10,14 @@ import { afterAll, beforeAll, describe, expect, inject, it, vi } from 'vitest';
 import { b64url } from '@colander/shared/bytes';
 import type { Appeal, Report } from '@colander/shared/api';
 import { isCorsPath } from '../src/http';
-import { CookieName, newToken } from '../src/auth';
+import { hashToken, newToken } from '../src/auth';
 import { decide } from '../src/scoring/actions';
-import { createSession, grantRole, setReviewerToken } from '../src/store/accounts';
+import { getAccount, grantRole, putFlow, setReviewerToken } from '../src/store/accounts';
 import { ensureSource } from '../src/store/sources';
 import { saveAdapterConfig } from '../src/store/misc';
 import { latestSequence } from '../src/store/list';
 import { Store } from '../src/store/store';
+import { accessHeaders, ADMIN_ORIGIN } from './tokens';
 
 const ORIGIN = 'https://getcolander.com';
 const files = inject('contract');
@@ -44,12 +45,13 @@ async function check(
 	path: string,
 	status: number,
 	policy: keyof typeof POLICY,
-	init: { headers?: Record<string, string>; body?: unknown } = {}
+	init: { headers?: Record<string, string>; body?: unknown; origin?: string } = {}
 ): Promise<Response> {
 	const logs = vi.spyOn(console, 'log').mockImplementation(() => {});
 	const headers = { 'CF-Connecting-IP': `198.18.0.${++client}`, Origin: 'chrome-extension://abc', ...init.headers };
 	const body = init.body === undefined ? undefined : typeof init.body === 'string' ? init.body : JSON.stringify(init.body);
-	const res = await exports.default.fetch(new Request(ORIGIN + path, { method, headers, body }));
+	const origin = init.origin ?? ORIGIN;
+	const res = await exports.default.fetch(new Request(origin + path, { method, headers, body }));
 	const logged = logs.mock.calls
 		.map((c) => {
 			try {
@@ -65,7 +67,8 @@ async function check(
 	expect(res.status, `${what}: ${res.status === status ? '' : await res.clone().text()}`).toBe(status);
 	expect(logged?.route, what).toBe(route);
 	expect([res.headers.get('Cache-Control'), res.headers.get('Cloudflare-CDN-Cache-Control')], what).toEqual(POLICY[policy]);
-	expect(res.headers.get('Access-Control-Allow-Origin'), what).toBe(isCorsPath(path.split('?')[0]!) ? '*' : null);
+	// The admin host never answers CORS.
+	expect(res.headers.get('Access-Control-Allow-Origin'), what).toBe(isCorsPath(path.split('?')[0]!) && origin === ORIGIN ? '*' : null);
 	expect(res.headers.get('Access-Control-Allow-Credentials'), what).toBeNull();
 	covered.add(route);
 	return res;
@@ -73,20 +76,14 @@ async function check(
 
 const install = { Authorization: 'Install ' + b64url(new Uint8Array(16).fill(7)) };
 let bearer: Record<string, string>;
-/** Staff's session: a reviewer token carries curator authority only, and appeals need staff. */
-let staff: Record<string, string>;
 
 beforeAll(async () => {
 	const { raw, hash } = newToken();
-	const session = newToken();
 	bearer = { Authorization: 'Bearer ' + raw };
-	staff = { Cookie: `${CookieName}=${session.raw}`, 'X-Colander-CSRF': '1' };
 	await runInDurableObject(primary(), async (store: Store) => {
-		const now = Math.floor(Date.now() / 1000);
-		const rae = grantRole(store.db, 'rae@colander.test', 'staff', now);
-		setReviewerToken(store.db, rae.id, hash, now);
-		createSession(store.db, session.hash, rae.id, now, now + 86400);
-		const ref = ensureSource(store.db, 'yt', '@chan', 'Chan', now);
+		const staff = grantRole(store.db, 'rae@colander.test', 'staff', Math.floor(Date.now() / 1000), { host: 'job' });
+		setReviewerToken(store.db, staff.id, hash, Math.floor(Date.now() / 1000), Math.floor(Date.now() / 1000) + 7 * 86_400);
+		const ref = ensureSource(store.db, 'yt', '@chan', 'Chan', Math.floor(Date.now() / 1000));
 		decide(store.engine, { sourceRef: ref, verdict: 'slop', reason: 'Generated.', signals: 1 << 3, actor: 'staff' });
 		await store.publisher.publish(store.now());
 	});
@@ -142,43 +139,87 @@ describe('Cache-Control on every route', () => {
 		await check('GET /v1/appeals/:id', 'GET', `/v1/appeals/${appeal.id}?secret=${secret}`, 200, 'none');
 		await check('POST /v1/appeals/:id/verify', 'POST', `/v1/appeals/${appeal.id}/verify`, 200, 'none', { body: { secret } });
 
-		// Review, by bearer token.
+		// Review: the side panel's bearer token on the main host, staff through Access on the admin host.
+		const staff = { origin: ADMIN_ORIGIN, headers: await accessHeaders('rae@colander.test') };
 		await check('GET /v1/review/queue', 'GET', '/v1/review/queue', 200, 'none', { headers: bearer });
 		await check('GET /v1/review/sources/:platform/:source_id', 'GET', '/v1/review/sources/yt/@chan', 200, 'none', { headers: bearer });
-		// The appeal is under review, so deciding the source needs staff.
+		// The appeal is under review, so deciding the source needs staff: a reviewer token carries curator authority only.
 		await check('POST /v1/review/sources/:platform/:source_id/decision', 'POST', '/v1/review/sources/yt/@chan/decision', 403, 'none', {
 			headers: bearer,
 			body: { verdict: 'slop', reason: 'Still generated.', signals: ['watermark'] }
 		});
 		await check('POST /v1/review/sources/:platform/:source_id/decision', 'POST', '/v1/review/sources/yt/@chan/decision', 200, 'none', {
-			headers: staff,
+			...staff,
 			body: { verdict: 'slop', reason: 'Still generated.', signals: ['watermark'] }
 		});
 		await check('POST /v1/review/items/:platform/:item_id/decision', 'POST', '/v1/review/items/yt/abcdefghijk/decision', 200, 'none', {
-			headers: bearer,
+			...staff,
 			body: { verdict: 'clear', reason: 'Original.', source_id: '@chan' }
 		});
 		await check('POST /v1/review/reports/:id/dismiss', 'POST', `/v1/review/reports/${report.id}/dismiss`, 409, 'none', {
-			headers: bearer,
+			...staff,
 			body: { reason: 'Decided already.' }
 		});
-		await check('POST /v1/review/appeals/:id/verify', 'POST', `/v1/review/appeals/${appeal.id}/verify`, 200, 'none', { headers: staff });
+		await check('POST /v1/review/appeals/:id/verify', 'POST', `/v1/review/appeals/${appeal.id}/verify`, 403, 'none', { headers: bearer });
+		await check('POST /v1/review/appeals/:id/verify', 'POST', `/v1/review/appeals/${appeal.id}/verify`, 200, 'none', staff);
 		await check('POST /v1/review/appeals/:id/resolve', 'POST', `/v1/review/appeals/${appeal.id}/resolve`, 200, 'none', {
-			headers: staff,
+			...staff,
 			body: { outcome: 'denied', reasoning: 'The footage is generated.' }
 		});
+		await check('GET (access required)', 'GET', '/v1/review/queue', 403, 'none', { origin: ADMIN_ORIGIN });
 
-		// Accounts (contract 6.6): sign-in, the account and its reviewer token, sign-out last.
-		await check('POST /v1/auth/email', 'POST', '/v1/auth/email', 202, 'none', { body: { email: 'cache@example.test', next: '/account' } });
-		const link = await runInDurableObject(primary(), (s: Store) => s.auth.startSignIn('cache@example.test', '/account'));
-		const verified = await check('POST /v1/auth/verify', 'POST', '/v1/auth/verify', 200, 'none', { headers: { 'X-Colander-CSRF': '1' }, body: { token: link } });
-		const signedIn = { Cookie: /^[^;]*/.exec(verified.headers.get('Set-Cookie') ?? '')![0], 'X-Colander-CSRF': '1' };
+		// Accounts (contract 6.6): a code sign-in, the account, its passkeys, data and reviewer token.
+		const CSRF = { 'X-Colander-CSRF': '1', 'Sec-Fetch-Site': 'same-origin' };
+		await check('POST /v1/auth/code', 'POST', '/v1/auth/code', 202, 'none', { headers: CSRF, body: { email: 'cache@example.test', next: '/account' } });
+		const flow = newToken();
+		await runInDurableObject(primary(), (s: Store) => {
+			const now = Math.floor(s.now() / 1000);
+			putFlow(s.db, { tokenHash: flow.hash, kind: 'email_code', email: 'cache@example.test', secretHash: hashToken(flow.raw + '123456'), createdAt: now, expiresAt: now + 600 });
+		});
+		const verified = await check('POST /v1/auth/code/verify', 'POST', '/v1/auth/code/verify', 200, 'none', {
+			headers: { ...CSRF, Cookie: `colander_flow=${flow.raw}` },
+			body: { code: '123456' }
+		});
+		const signedIn = { Cookie: verified.headers.getSetCookie()[0]!.split(';')[0]!, ...CSRF };
 		await check('GET /v1/account', 'GET', '/v1/account', 200, 'none', { headers: signedIn });
 		await check('PATCH /v1/account', 'PATCH', '/v1/account', 200, 'none', { headers: signedIn, body: { display_name: 'Cache' } });
-		await check('POST /v1/account/reviewer-token', 'POST', '/v1/account/reviewer-token', 403, 'none', { headers: signedIn });
+		await check('GET /v1/account/passkeys', 'GET', '/v1/account/passkeys', 200, 'none', { headers: signedIn });
+		await check('POST /v1/account/passkeys/options', 'POST', '/v1/account/passkeys/options', 200, 'none', { headers: signedIn });
+		await check('POST /v1/account/passkeys', 'POST', '/v1/account/passkeys', 400, 'none', { headers: signedIn, body: { credential: {} } });
+		await check('DELETE /v1/account/passkeys/:id', 'DELETE', '/v1/account/passkeys/pk_none', 403, 'none', { headers: signedIn });
+		await check('POST /v1/auth/passkey/options', 'POST', '/v1/auth/passkey/options', 200, 'none', { headers: CSRF });
+		await check('POST /v1/auth/passkey/verify', 'POST', '/v1/auth/passkey/verify', 400, 'none', { headers: CSRF, body: { credential: {} } });
+		await check('POST /v1/auth/invite/options', 'POST', '/v1/auth/invite/options', 400, 'none', { headers: signedIn, body: { invite: 'inv_x' } });
+		await check('POST /v1/auth/invite/verify', 'POST', '/v1/auth/invite/verify', 400, 'none', { headers: signedIn, body: { invite: 'inv_x', credential: {} } });
+		await check('POST /v1/auth/verify', 'POST', '/v1/auth/verify', 400, 'none', { headers: CSRF, body: { token: 'old-link' } });
+		await check('POST /v1/account/requests', 'POST', '/v1/account/requests', 409, 'none', { headers: signedIn, body: { kind: 'delete' } });
+		await check('DELETE /v1/account/requests/:id', 'DELETE', '/v1/account/requests/req_none', 404, 'none', { headers: signedIn });
+		await check('POST /v1/auth/cancel', 'POST', '/v1/auth/cancel', 404, 'none', { headers: CSRF, body: { secret: 'nothing' } });
+		await check('GET /v1/account/export', 'GET', '/v1/account/export', 200, 'none', { headers: signedIn });
+		await check('DELETE /v1/account/reviewer-token', 'DELETE', '/v1/account/reviewer-token', 204, 'none', { headers: signedIn });
 
-		// Pairing (contract 7): a member without a plan gets no code; the claim answers any origin.
+		// The admin API, only on the admin host and only through Access.
+		await check('GET /v1/admin/me', 'GET', '/v1/admin/me', 200, 'none', staff);
+		await check('GET /v1/admin/people', 'GET', '/v1/admin/people?q=cache', 200, 'none', staff);
+		const granted = await check('PUT /v1/admin/people/role', 'PUT', '/v1/admin/people/role', 200, 'none', {
+			...staff,
+			body: { email: 'new.curator@example.test', role: 'curator' }
+		});
+		const curatorId = ((await granted.json()) as { person: { id: string } }).person.id;
+		await check('POST /v1/admin/people/:id/invite', 'POST', `/v1/admin/people/${curatorId}/invite`, 201, 'none', staff);
+		await check('POST /v1/admin/people/:id/revoke', 'POST', `/v1/admin/people/${curatorId}/revoke`, 403, 'none', staff);
+		await check('PUT /v1/admin/people/:id/email', 'PUT', `/v1/admin/people/${curatorId}/email`, 403, 'none', {
+			...staff,
+			body: { email: 'x@example.test', checkout_session: 'cs_x', amount_cents: 300, date: '2026-10-01' }
+		});
+		await check('POST /v1/admin/donations/:id/credit', 'POST', '/v1/admin/donations/cs_x/credit', 403, 'none', { ...staff, body: { credit_name: '' } });
+		await check('GET /v1/admin/audit', 'GET', '/v1/admin/audit', 403, 'none', staff);
+		await check('GET (unmatched)', 'GET', '/v1/admin/me', 404, 'none');
+		expect(await runInDurableObject(primary(), (s: Store) => getAccount(s.db, curatorId)?.role)).toBe('curator');
+
+		// Pairing (contract 7): a member without a plan gets no code and no reviewer code; the claim answers any origin.
 		await check('POST /v1/pair', 'POST', '/v1/pair', 404, 'none', { headers: signedIn, body: { kind: 'plan' } });
+		await check('POST /v1/pair', 'POST', '/v1/pair', 403, 'none', { headers: signedIn, body: { kind: 'reviewer' } });
 		await check('GET /v1/pair/:id', 'GET', '/v1/pair/pair_none', 404, 'none', { headers: signedIn });
 		await check('POST /v1/pair/claim', 'POST', '/v1/pair/claim', 404, 'none', { body: { code: 'KXQ4-JP7M', ext_version: '1.0.0', browser: 'chrome' } });
 
@@ -191,7 +232,11 @@ describe('Cache-Control on every route', () => {
 		await check('POST /v1/entitlement', 'POST', '/v1/entitlement', 404, 'none', { headers: signedIn });
 		await check('POST /v1/entitlement/refresh', 'POST', '/v1/entitlement/refresh', 400, 'none', { body: { token: 'x' } });
 		await check('GET /v1/supporters', 'GET', '/v1/supporters', 200, 'public');
+		await check('DELETE /v1/account', 'DELETE', '/v1/account', 204, 'none', { headers: signedIn });
 		await check('POST /v1/auth/logout', 'POST', '/v1/auth/logout', 204, 'none', { headers: signedIn });
+
+		// An install erasing its server data.
+		await check('DELETE /v1/install', 'DELETE', '/v1/install', 204, 'none', { headers: { Authorization: 'Install ' + b64url(new Uint8Array(16).fill(9)) } });
 
 		// Dev-only routes, which exist only with COLANDER_DEV=1.
 		await check('POST /__dev/seed', 'POST', '/__dev/seed', 409, 'none');

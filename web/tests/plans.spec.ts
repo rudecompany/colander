@@ -20,7 +20,7 @@ test('yearly is preselected and checkout handles billing being unavailable', asy
 });
 
 test('signed out, Get Plus asks for a sign-in that returns to checkout', async ({ page }) => {
-	const calls = await mockApi(page, { 'POST /v1/auth/email': { status: 202 } });
+	const calls = await mockApi(page, { 'POST /v1/auth/code': { status: 202 } });
 	await page.goto('/plans');
 	await page.getByRole('button', { name: 'Get Plus, $30 a year' }).click();
 	await page.getByLabel('Email').fill('maya@example.com');
@@ -32,10 +32,10 @@ test('signed out, Get Plus asks for a sign-in that returns to checkout', async (
 		const [free, plus] = await page.locator('.prices article.price').evaluateAll((els) => els.map((e) => e.getBoundingClientRect().height));
 		expect(free, `Free card height at ${width}px`).toBe(plus);
 	}
-	await page.getByRole('button', { name: 'Email me a link' }).click();
-	await expect(page.getByText('Check your inbox')).toBeVisible();
+	await page.getByRole('button', { name: 'Email me a code' }).click();
+	await expect(page.getByLabel('Code')).toBeFocused();
 	expect(await layoutSpills(page), 'layout spills after sending').toEqual([]);
-	expect(calls.find((c) => c.path === '/v1/auth/email')!.body).toEqual({ email: 'maya@example.com', next: '/plans?checkout=plus_yearly' });
+	expect(calls.find((c) => c.path === '/v1/auth/code')!.body).toEqual({ email: 'maya@example.com', next: '/plans?checkout=plus_yearly' });
 });
 
 test('checkout redirects to the hosted page', async ({ page, baseURL }) => {
@@ -99,7 +99,7 @@ test('the welcome page asks a signed-out buyer to sign in', async ({ page }) => 
 	await page.goto('/plans/welcome');
 	await expect(page.getByText('Sign in to finish')).toBeVisible();
 	// Full width in its card, as on /account and /console.
-	const button = page.getByRole('button', { name: 'Email me a sign-in link' });
+	const button = page.getByRole('button', { name: 'Email me a code' });
 	await expect(button).toBeVisible();
 	const width = await page.locator('form.signin').evaluate((f) => f.getBoundingClientRect().width);
 	expect((await button.boundingBox())!.width).toBe(width);

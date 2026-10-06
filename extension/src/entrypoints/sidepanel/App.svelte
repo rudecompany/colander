@@ -3,10 +3,11 @@
 view, and the decision with a sticky bar. Keys work while the panel has focus and never in a text
 field: 1 to 5 and 0 pick a verdict, J and K move through the queue, R goes to the reason, Escape
 goes back, Ctrl or Cmd with Enter records, and ? lists them all.
-Connects with a pairing code from the website's account page (contracts 7), which brings the reviewer token.
-The token carries curator authority only, also a staff member's, so large sources and appeals are
-left to the review console on the website. In Firefox the queue loads only while "Plus and review"
-is allowed (lib/consent.ts); once it is turned off, the panel asks again instead of sending the token.
+Connects with a pairing code from the website's account page (contracts 7), which brings the
+reviewer token. The token lasts 7 days and carries curator authority only, also a staff member's,
+so large sources and appeals are left to staff in the admin console. In Firefox the queue loads
+only while "Plus and review" is allowed (lib/consent.ts); once it is turned off, the panel asks
+again instead of sending the token.
 -->
 <script lang="ts">
 	import { ColanderMark, CopyButton, DotMeter, EvidenceCard, LiveBadge, LogRow, PerforatedDisc, PlatformTag, VerdictChip, VerdictGlyph } from '@colander/shared';
@@ -72,6 +73,8 @@ is allowed (lib/consent.ts); once it is turned off, the panel asks again instead
 	/** A code just connected the panel: say so, and move focus off the form that went away. */
 	let announce = $state('');
 	let paired = $state(false);
+	/** Reviewer tokens last 7 days; an expired one says so instead of "not accepted". */
+	let expired = $state(false);
 	let open = $state<QueueItem | null>(null);
 	let detail = $state<ReviewSourceResponse | null>(null);
 	let keys = $state(false);
@@ -127,7 +130,10 @@ is allowed (lib/consent.ts); once it is turned off, the panel asks again instead
 	];
 
 	function fail(e: unknown) {
-		if (e instanceof ReviewError && e.status === 401) unauthorized = true;
+		if (e instanceof ReviewError && e.status === 401) {
+			unauthorized = true;
+			expired = e.code === 'token_expired';
+		}
 		if (e instanceof ReviewError && e.code === 'consent') consent = true;
 		return e instanceof Error ? e.message : String(e);
 	}
@@ -141,13 +147,13 @@ is allowed (lib/consent.ts); once it is turned off, the panel asks again instead
 		await (open ? openItem(open) : loadQueue());
 	}
 
-	// Staff decide these in the review console: the reviewer token carries curator authority only.
+	// Staff decide these in the admin console: the reviewer token carries curator authority only.
 	const STAFF_APPEAL = ['pending_manual', 'under_review'];
 	const needsStaff = $derived(
 		!detail
 			? null
 			: detail.source.large
-				? `${detail.source.name || detail.source.id} has a large audience, so only staff can decide it, in the review console on the website.`
+				? `${detail.source.name || detail.source.id} has a large audience, so only staff can decide it, in the admin console.`
 				: detail.source.appeal_open || detail.appeals.some((a) => STAFF_APPEAL.includes(a.status))
 					? 'An appeal is open on this source, so only staff can decide it until the appeal is resolved.'
 					: null
@@ -317,7 +323,11 @@ is allowed (lib/consent.ts); once it is turned off, the panel asks again instead
 		<div class="pad">
 			<Card title="Review for curators" headingLevel={2}>
 				{#if unauthorized}
-					<p class="alert" role="alert"><CircleAlert size={16} aria-hidden="true" />This connection has ended. Connect again with a new code from your account page.</p>
+					<p class="alert" role="alert">
+						<CircleAlert size={16} aria-hidden="true" />{expired
+							? 'This connection ended after its 7 days. Connect again with a new code from your account page.'
+							: 'This connection has ended. Connect again with a new code from your account page.'}
+					</p>
 				{:else}
 					<p class="muted">Curators and staff review reports, appeals and escalations here. Connect this browser with a code from your account page on the Colander website.</p>
 				{/if}
@@ -410,7 +420,7 @@ is allowed (lib/consent.ts); once it is turned off, the panel asks again instead
 
 				{#if detail.appeals.length}
 					<Card title="Appeals" headingLevel={3}>
-						<p class="staff lead-note"><Lock size={16} aria-hidden="true" />Staff verify and resolve appeals in the review console on the website.</p>
+						<p class="staff lead-note"><Lock size={16} aria-hidden="true" />Staff verify and resolve appeals in the admin console.</p>
 						{#each detail.appeals as a (a.id)}
 							<div class="entry">
 								<p>{a.statement}</p>
@@ -909,6 +919,8 @@ is allowed (lib/consent.ts); once it is turned off, the panel asks again instead
 		align-items: flex-start;
 		gap: 6px;
 		color: var(--cl-text-muted);
+		/* No word alone on the last line, such as "console." */
+		text-wrap: pretty;
 	}
 	.staff :global(svg) {
 		flex: none;

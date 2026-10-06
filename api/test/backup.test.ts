@@ -5,16 +5,16 @@ import { evictDurableObject, runDurableObjectAlarm, runInDurableObject } from 'c
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { API_DATA_TABLES, countsAgree, dump, DUMP_PREFIX, dumpKey, dumpLines, dumpTables, loadDump, newestDump, parseInsert, restoreDump, tableCounts } from '../src/backup';
 import { nextDump, STATUS } from '../src/jobs';
-import { grantRole, setDisplayName } from '../src/store/accounts';
+import { audit, createSession, grantRole, setDisplayName } from '../src/store/accounts';
 import type { Db } from '../src/store/db';
-import { MIGRATIONS } from '../src/store/migrations';
+import { LEGACY_TOKEN_SECONDS, MIGRATIONS } from '../src/store/migrations';
 import { putSync } from '../src/store/misc';
 import { setYouTube } from '../src/store/sources';
 import { saveTags } from '../src/store/tags';
+import type { Store } from '../src/store/store';
 
 /** The schema version a dump of the current Store names: the newest migration it applied. */
 const SCHEMA = Math.max(...MIGRATIONS.map((m) => m.version));
-import type { Store } from '../src/store/store';
 
 const T = 1_900_000_000_000;
 let n = 0;
@@ -34,9 +34,9 @@ function contents(db: Db): Record<string, string[]> {
 /** Data in every shape the schema holds: text with quotes and line breaks, blobs, reals, NULLs, big integers. */
 function fill(store: Store): void {
 	const db = store.db;
-	const sam = grantRole(db, 'sam@example.com', 'curator', 1_790_000_000);
+	const sam = grantRole(db, 'sam@example.com', 'curator', 1_790_000_000, { host: 'job' });
 	setDisplayName(db, sam.id, "Sam 'the curator' O'Neil\r\nsecond line\n\nüñí ✓ 😀");
-	grantRole(db, 'rae@example.com', 'staff', 1_790_000_001);
+	grantRole(db, 'rae@example.com', 'staff', 1_790_000_001, { host: 'job' });
 	saveTags(
 		db,
 		'install-a',
@@ -94,7 +94,7 @@ describe('dump and restore', () => {
 
 		await runInDurableObject(fresh(), async (store: Store) => {
 			// Rows the restore replaces.
-			grantRole(store.db, 'someone@example.com', 'member', 1);
+			grantRole(store.db, 'someone@example.com', 'member', 1, { host: 'job' });
 			store.db.run("INSERT INTO youtube_cache (key, body, fetched_at) VALUES ('live', x'01', 1)");
 			const rows = await restoreDump(store.db, env.BACKUPS, key, T);
 			expect(rows).toMatchObject({ accounts: 2, tags: 2, sources: 1, list_entries: 3, jobs: 1, limits: 1 });
@@ -235,6 +235,36 @@ describe('restores across migrations and the quota ledger', () => {
 			await loadDump(store.db, bytes(text), T);
 			expect(store.db.get('SELECT reason, reason_original FROM decision_log WHERE id = 1')).toEqual({ reason: 'Likely slop. Listed on the AiSList seed list.', reason_original: null });
 		});
+	});
+
+	// A dump from before 0006 has sessions without a sign-in time and reviewer tokens without an
+	// expiry; its sessions are the only ones whose old cookie name still counts. 0006 shipped beside
+	// 0007, so a dump may also lack 6 alone.
+	it('run the sign-in backfills of 0006 on a dump from before it, and keep the audit log append-only', async () => {
+		const text = await runInDurableObject(fresh(), (store: Store, state) => {
+			const db = store.db;
+			const a = grantRole(db, 'sam@example.test', 'curator', 100, { host: 'job' });
+			createSession(db, { tokenHash: 's1', accountId: a.id, method: 'email', now: 100, expires: 10_000 });
+			db.run('UPDATE sessions SET authenticated_at = NULL');
+			db.run('INSERT INTO reviewer_tokens (token_hash, account_id, created_at) VALUES (?, ?, ?)', 'r1', a.id, 100);
+			return dumpText(store, state);
+		});
+		const old = withoutMigrations(text, (v) => v >= 6).replace(`-- Colander Store dump, schema version ${SCHEMA},`, '-- Colander Store dump, schema version 5,');
+		expect(old).toContain('-- Colander Store dump, schema version 5,');
+		for (const dump of [old, withoutMigrations(text, (v) => v === 6)]) {
+			await runInDurableObject(fresh(), async (store: Store) => {
+				const db = store.db;
+				// Written before the restore: it stays, next to the dump's own rows.
+				audit(db, { action: 'kept', host: 'job' }, Math.floor(T / 1000));
+				await loadDump(db, bytes(dump), T);
+				expect(db.get('SELECT authenticated_at, legacy FROM sessions')).toEqual({ authenticated_at: 100, legacy: 1 });
+				expect(db.get('SELECT expires_at FROM reviewer_tokens')).toEqual({ expires_at: T / 1000 + LEGACY_TOKEN_SECONDS });
+				expect(db.all('SELECT action FROM audit_log ORDER BY id').map((r) => r.action)).toEqual(['kept', 'role_changed']);
+				// Restoring the same dump again adds nothing.
+				await loadDump(db, bytes(dump), T);
+				expect(db.get<{ n: number }>('SELECT count(*) AS n FROM audit_log')!.n).toBe(2);
+			});
+		}
 	});
 
 	// Units spent stay spent: restoring a ledger from hours ago must not let the Worker spend them again.

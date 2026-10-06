@@ -463,7 +463,7 @@
 			<div class="privacy-facts">
 				<PrivacyFacts compact />
 				<p class="foot-line">
-					This site sets no cookies, so there is no banner.
+					This site sets no cookies until you sign in, so there is no banner.
 					<ArrowLink href="/privacy#permissions">Every permission, and why Colander asks</ArrowLink>
 					<ArrowLink href="/privacy">Read the privacy policy</ArrowLink>
 				</p>

@@ -1,7 +1,7 @@
 // Full-page screenshots of every page, desktop 1440 and mobile 390, light and dark.
 // Run with `pnpm screenshots` (writes to screenshots/). Skipped in the normal test run.
 import { test } from '@playwright/test';
-import { mockApi, PLUS_ACCOUNT, STAFF, APPEAL, QUEUE, reviewSource } from './mocks.ts';
+import { mockApi, PLUS_ACCOUNT, STAFF, CURATOR, CURATOR_NEW, PASSKEYS, ME, PEOPLE, AUDIT, APPEAL, QUEUE, reviewSource } from './mocks.ts';
 
 test.skip(!process.env.SCREENSHOTS, 'Set SCREENSHOTS=1 to capture screenshots.');
 
@@ -44,18 +44,44 @@ const shots: Shot[] = [
 	{ name: 'supporters', path: '/supporters' },
 	{ name: 'transparency', path: '/transparency' },
 	{ name: 'account-signed-out', path: '/account' },
-	{ name: 'account-plus', path: '/account', setup: { 'GET /v1/account': { json: { account: PLUS_ACCOUNT } } } },
+	{
+		name: 'account-code',
+		path: '/account',
+		setup: { 'POST /v1/auth/code': { status: 204 } },
+		after: async (page) => {
+			await page.getByLabel('Email', { exact: true }).fill('maya@example.com');
+			await page.getByRole('button', { name: 'Email me a code' }).click();
+			await page.getByLabel('Code', { exact: true }).waitFor();
+		}
+	},
+	{
+		name: 'account-plus',
+		path: '/account',
+		setup: {
+			'GET /v1/account': { json: { account: { ...PLUS_ACCOUNT, passkey_count: 2 } } },
+			// This session signed in with an email code, so no passkey is this sign-in's.
+			'GET /v1/account/passkeys': { json: { passkeys: PASSKEYS, current: null } }
+		}
+	},
 	{
 		name: 'account-staff',
 		path: '/account',
-		setup: { 'GET /v1/account': { json: { account: { ...STAFF, plan: PLUS_ACCOUNT.plan } } } }
+		setup: {
+			'GET /v1/account': { json: { account: { ...STAFF, plan: PLUS_ACCOUNT.plan } } },
+			'GET /v1/account/passkeys': { json: { passkeys: PASSKEYS.slice(0, 1), current: 'pk_laptop' } }
+		}
 	},
+	{ name: 'account-invite', path: '/account/invite#invite=inv_test', setup: { 'GET /v1/account': { json: { account: CURATOR_NEW } } } },
+	{ name: 'account-cancel', path: '/account/cancel#cancel-secret' },
+	{ name: 'console-passkey-needed', path: '/console', setup: { 'GET /v1/account': { json: { account: CURATOR_NEW } } } },
 	{
 		// A pairing code on screen, waiting for the extension, then a reviewer code already taken.
 		name: 'account-codes',
 		path: '/account',
 		setup: {
-			'GET /v1/account': { json: { account: { ...STAFF, plan: PLUS_ACCOUNT.plan } } },
+			// The side panel's connection that the reviewer code just made.
+			'GET /v1/account': { json: { account: { ...STAFF, plan: PLUS_ACCOUNT.plan, reviewer_token: { expires_at: new Date(Date.now() + 7 * 86_400_000).toISOString(), last_used_at: null } } } },
+			'GET /v1/account/passkeys': { json: { passkeys: PASSKEYS.slice(0, 1), current: 'pk_laptop' } },
 			'POST /v1/pair': (c) => ({
 				status: 201,
 				json: { id: `pair_${c.body.kind}`, code: c.body.kind === 'plan' ? 'KXQ4-JP7M' : 'RVW4-2K9P', expires_at: new Date(Date.now() + 600_000).toISOString() }
@@ -77,7 +103,7 @@ const shots: Shot[] = [
 		name: 'console',
 		path: '/console',
 		setup: {
-			'GET /v1/account': { json: { account: STAFF } },
+			'GET /v1/account': { json: { account: CURATOR } },
 			'GET /v1/review/queue': { json: { items: QUEUE, next_cursor: null } },
 			'GET /v1/review/sources/*': (c) => {
 				const [, , , , p, id] = c.path.split('/');
@@ -88,6 +114,29 @@ const shots: Shot[] = [
 			await page.getByRole('button', { name: /History Bites/ }).click();
 			await page.getByRole('heading', { name: 'History Bites 24/7', level: 2 }).waitFor();
 		}
+	},
+	{
+		name: 'admin',
+		path: '/admin',
+		setup: {
+			'GET /v1/admin/me': { json: ME },
+			'GET /v1/review/queue': { json: { items: QUEUE, next_cursor: null } },
+			'GET /v1/review/sources/*': (c) => {
+				const [, , , , p, id] = c.path.split('/');
+				return { json: reviewSource(`${p}:${decodeURIComponent(id)}`) };
+			}
+		},
+		after: async (page) => {
+			await page.getByRole('button', { name: /Ancient Facts Daily/ }).click();
+			await page.getByRole('heading', { name: 'Ancient Facts Daily', level: 2 }).waitFor();
+		}
+	},
+	{ name: 'admin-people', path: '/admin/people', setup: { 'GET /v1/admin/me': { json: ME }, 'GET /v1/admin/people': { json: { people: PEOPLE } } } },
+	{ name: 'admin-audit', path: '/admin/audit', setup: { 'GET /v1/admin/me': { json: ME }, 'GET /v1/admin/audit': { json: { entries: AUDIT, next_cursor: null } } } },
+	{
+		name: 'admin-not-staff',
+		path: '/admin',
+		setup: { 'GET /v1/admin/me': { status: 403, json: { error: { code: 'not_staff', message: 'This Access identity is not a Colander staff account.' } } } }
 	},
 	{ name: 'privacy', path: '/privacy' },
 	{ name: 'terms', path: '/terms' },

@@ -1,12 +1,15 @@
 // Pairing codes (src/routes/pairing.ts, contract 7): a code for an active plan or a reviewer, used
-// once within 10 minutes from any origin, stored only as a hash, and claims limited per IP.
+// once within 10 minutes from any origin, stored only as a hash, and claims limited per IP. A
+// reviewer code is the only way to a reviewer token, and needs a fresh passkey sign-in.
 import { exports } from 'cloudflare:workers';
 import { beforeAll, describe, expect, inject, it } from 'vitest';
 import { normalizePairCode, type PairClaimed, type PairCreated, type PairStatus } from '@colander/shared/api';
 import { importKeys, verifyPlanToken, type TrustedKey } from '@colander/shared/signing';
+import { newToken } from '../src/auth';
+import { ACCESS_EMAIL_HEADER, HOST_HEADER } from '../src/http';
 import { prune } from '../src/jobs';
 import { maskEmail } from '../src/routes/pairing';
-import { grantRole } from '../src/store/accounts';
+import { addPasskey, createSession, grantRole } from '../src/store/accounts';
 import { saveSubscription } from '../src/store/billing';
 import { errorCode, expectStatus, Harness } from './api';
 
@@ -28,6 +31,20 @@ async function plusMember(h: Harness, email = 'maya@example.test'): Promise<{ co
 		return a.id;
 	});
 	return { cookie, id };
+}
+
+/**
+ * A reviewer of role signed in with a passkey just now, as an invite leaves them: the cookie. Review
+ * accounts get their passkey only through an invite (test/passkeys.test.ts covers that path).
+ */
+async function reviewer(h: Harness, email: string, role: 'curator' | 'staff' | 'admin'): Promise<string> {
+	return h.run((store) => {
+		const a = grantRole(store.db, email, role, h.s, { host: 'job' });
+		const { raw, hash } = newToken();
+		const passkeyId = addPasskey(store.db, { accountId: a.id, credentialId: `cred-${a.id}`, publicKey: new Uint8Array([1]), signCount: 0, transports: [], backedUp: false, name: '' }, h.s);
+		createSession(store.db, { tokenHash: hash, accountId: a.id, method: 'passkey', passkeyId, now: h.s, expires: h.s + 30 * 86400 });
+		return `colander_session=${raw}`;
+	});
 }
 
 async function makeCode(h: Harness, cookie: string, kind: 'plan' | 'reviewer'): Promise<PairCreated> {
@@ -106,10 +123,14 @@ describe('pairing codes', () => {
 		await expectStatus(await h.do('GET', `/v1/pair/${made.id}`, undefined, 'Cookie', member), 404);
 	});
 
-	it('gives a reviewer code a reviewer token that replaces the earlier one', async () => {
+	it('gives a reviewer code, after a fresh passkey sign-in, a 7-day reviewer token that replaces the earlier one', async () => {
 		const h = await Harness.create();
-		await h.run((store) => grantRole(store.db, 'sam@colander.test', 'curator', h.s));
-		const sam = await h.signIn('sam@colander.test');
+		const sam = await reviewer(h, 'sam@colander.test', 'curator');
+		// An email code alone gives member rights: no reviewer code.
+		const code = await h.signIn('sam@colander.test');
+		const refused = await h.do('POST', '/v1/pair', { kind: 'reviewer' }, ...csrf(code));
+		await expectStatus(refused, 403);
+		expect(await errorCode(refused)).toBe('passkey_required');
 		const tokens: string[] = [];
 		for (let i = 0; i < 2; i++) {
 			const made = await makeCode(h, sam, 'reviewer');
@@ -119,30 +140,52 @@ describe('pairing codes', () => {
 			expect(got.kind).toBe('reviewer');
 			tokens.push(got.token);
 		}
-		expect(await h.run((store) => [store.auth.reviewerAccount(tokens[0]!), store.auth.reviewerAccount(tokens[1]!)?.email])).toEqual([undefined, 'sam@colander.test']);
+		expect(tokens[1]).toMatch(/^colander_rt_/);
+		expect(await h.run((store) => [store.auth.reviewerAccount(tokens[0]!), store.auth.reviewerAccount(tokens[1]!)])).toEqual([undefined, expect.objectContaining({ email: 'sam@colander.test' })]);
 		const queue = await h.do('GET', '/v1/review/queue', undefined, 'Authorization', `Bearer ${tokens[1]}`);
 		await expectStatus(queue, 200);
+		// Each issue is in the audit log, and the account page shows when the connection ends.
+		expect(await h.run((store) => store.db.all("SELECT action, reason FROM audit_log WHERE action = 'token_issued'"))).toEqual([
+			{ action: 'token_issued', reason: 'pairing code' },
+			{ action: 'token_issued', reason: 'pairing code' }
+		]);
+		const me = (await (await h.do('GET', '/v1/account', undefined, 'Cookie', sam)).json()) as { account: { reviewer_token: { expires_at: string } } };
+		expect(me.account.reviewer_token.expires_at).toBe('2026-10-08T12:00:00Z');
+		h.clock += 7 * 86_400_000;
+		expect(await errorCode(await h.do('GET', '/v1/review/queue', undefined, 'Authorization', `Bearer ${tokens[1]}`))).toBe('token_expired');
+		// The passkey sign-in is a week old now: a new code needs it again.
+		expect(await errorCode(await h.do('POST', '/v1/pair', { kind: 'reviewer' }, ...csrf(sam)))).toBe('recent_auth_required');
+		h.clock -= 7 * 86_400_000;
 
 		// A role taken away before the claim: refused, and the code stays unused.
 		const made = await makeCode(h, sam, 'reviewer');
-		await h.run((store) => grantRole(store.db, 'sam@colander.test', 'member', h.s));
+		await h.run((store) => grantRole(store.db, 'sam@colander.test', 'member', h.s, { host: 'job' }));
 		const res = await claim(h, made.code);
 		await expectStatus(res, 403);
 		expect(await pairStatus(h, sam, made.id)).toMatchObject({ status: 'pending' });
 	});
 
-	// A token works in any browser on any device, so staff authority stays with the staff session.
-	it('gives staff a reviewer token with curator authority only', async () => {
+	it('ends unused codes when every session ends', async () => {
 		const h = await Harness.create();
-		await h.run((store) => grantRole(store.db, 'rae@colander.test', 'staff', h.s));
-		const rae = await h.signIn('rae@colander.test');
+		const sam = await reviewer(h, 'sam@colander.test', 'curator');
+		const made = await makeCode(h, sam, 'reviewer');
+		await expectStatus(await h.do('POST', '/v1/auth/logout', { everywhere: true }, ...csrf(sam)), 204);
+		expect(await errorCode(await claim(h, made.code))).toBe('invalid_code');
+		expect(await h.run((store) => store.db.all('SELECT 1 FROM reviewer_tokens'))).toEqual([]);
+	});
+
+	// A token works in any browser on any device, so staff authority stays on the admin host.
+	it('gives staff and admins a reviewer token with curator authority only', async () => {
+		const h = await Harness.create();
+		const rae = await reviewer(h, 'rae@colander.test', 'staff');
 		const res = await claim(h, (await makeCode(h, rae, 'reviewer')).code);
 		await expectStatus(res, 200);
 		const got = (await res.json()) as PairClaimed;
 		expect(got).toMatchObject({ kind: 'reviewer', account: 'r***@colander.test' });
 		const bearer = ['Authorization', `Bearer ${got.token}`];
 		const decision = { verdict: 'likely_slop', reason: 'Generated narration over stock footage.', signals: ['watermark'] };
-		await expectStatus(await h.do('POST', '/v1/review/sources/yt/@bignarration/decision', { ...decision, large: true }, ...csrf(rae)), 200);
+		const admin = [HOST_HEADER, 'admin', ACCESS_EMAIL_HEADER, 'rae@colander.test', 'X-Colander-CSRF', '1'];
+		await expectStatus(await h.do('POST', '/v1/review/sources/yt/@bignarration/decision', { ...decision, large: true }, ...admin), 200);
 		const refused = await h.do('POST', '/v1/review/sources/yt/@bignarration/decision', decision, ...bearer);
 		await expectStatus(refused, 403);
 		expect(await errorCode(refused)).toBe('staff_required');
@@ -150,6 +193,11 @@ describe('pairing codes', () => {
 		await expectStatus(await h.do('POST', '/v1/review/sources/yt/@smallnarration/decision', decision, ...bearer), 200);
 		const small = await h.do('GET', '/v1/review/sources/yt/@smallnarration', undefined, ...bearer);
 		expect(((await small.json()) as { history: { actor: string }[] }).history.map((e) => e.actor)).toEqual(['curator']);
+		// An admin's code works the same way.
+		const ada = await reviewer(h, 'ada@colander.test', 'admin');
+		const adas = (await (await claim(h, (await makeCode(h, ada, 'reviewer')).code, 'ip-hash-203.0.113.5')).json()) as PairClaimed;
+		const big = await h.do('POST', '/v1/review/sources/yt/@bignarration/decision', decision, 'Authorization', `Bearer ${adas.token}`);
+		expect(await errorCode(big)).toBe('staff_required');
 	});
 
 	it('expires after 10 minutes, and a new code ends the one before', async () => {

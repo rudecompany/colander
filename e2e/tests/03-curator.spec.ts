@@ -1,8 +1,9 @@
-// Journey 5: a curator reviews within their limits. The console says up front that large sources
-// and appeals need staff, the server refuses them when forced, and the side panel lets a curator
-// decide a source they are allowed to decide.
-import { BASE_URL, CURATOR, LOCAL_ONLY, ORIGIN } from './stack.ts';
-import { expect, launch, onboard, pairWith, signIn, test, type Ext } from './harness.ts';
+// Journey 5: a curator reviews within their limits. Staff invite the curator to a passkey, which
+// review needs; the console says up front that large sources and appeals need staff, the server
+// refuses them when forced, and the side panel, connected with a reviewer code from the account
+// page, lets a curator decide a source they are allowed to decide.
+import { BASE_URL, CURATOR, LOCAL_ONLY, ORIGIN, STAFF } from './stack.ts';
+import { enrollReviewer, expect, launch, onboard, pairWith, test, type Ext } from './harness.ts';
 
 test.skip(!!BASE_URL, LOCAL_ONLY);
 
@@ -17,7 +18,8 @@ test.afterAll(async () => {
 
 test('curators see staff-only limits, the server enforces them, and the side panel decides what curators may', async () => {
 	const site = await ext.ctx.newPage();
-	await signIn(site, CURATOR, '/console');
+	await enrollReviewer(site, CURATOR, STAFF);
+	await site.getByRole('link', { name: 'Open the review console' }).click();
 	await expect(site.getByText('Curator, Sam')).toBeVisible();
 
 	// A large channel: the form says why and stays disabled.

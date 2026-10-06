@@ -59,7 +59,7 @@ The list hash is the first 8 bytes of SHA-256 over the UTF-8 target key.
 ### 2.4 Install ID
 
 Each install generates 16 random bytes on first run, encoded as unpadded base64url (22 chars).
-It is sent as `Authorization: Install <id>` on tag, report and trial requests, and nowhere else.
+It is sent as `Authorization: Install <id>` on tag, report and trial requests and on `DELETE /v1/install`, and nowhere else.
 The server never stores it raw: it stores `hex(SHA-256("colander-install:" + id))`.
 
 ## 3. The shared list (binary)
@@ -156,7 +156,7 @@ The extension ships the trusted public keys at build time (`WXT_COLANDER_PUBLIC_
 `GET /v1/config/adapters` returns the envelope above, or `404` when the server has none (the extension then keeps its bundled copy).
 The payload schema is owned by the extension and documented in `extension/README.md`.
 It must contain a top-level integer `version`; the extension applies a remote config only when it is signed and its version is higher than the bundled or cached one.
-The server treats the payload as opaque bytes: the ops command `sign-config` (`POST /ops/sign-config`, see `docs/deploy.md`) signs it with the Worker's key and stores it.
+The server treats the payload as opaque bytes: the ops command `sign-config` (`POST /ops/sign-config`, see `docs/deploy.md`) reads `extension/src/adapters/default-config.json` from the repository at the run's commit on main, signs it with the Worker's key and stores it.
 The payload is declarative data only: selectors, attribute names and regular expressions. Never code.
 
 ## 5. Plan tokens
@@ -180,17 +180,26 @@ Rate-limited requests get `429` with `Retry-After` in seconds.
 Limits per IP count an IPv6 client by its /64.
 GETs that the edge caches by their full URL take only their canonical query and answer `400` to any other: `/v1/list/delta` exactly `?since=N` (section 3.2), `/v1/log` the parameters of 6.4 each at most once, non-empty and in the order `limit` (1 to 200), `platform`, `verdict`, `cursor` (as `next_cursor` gives it), and `/v1/list/snapshot`, `/v1/config/adapters`, `/v1/sources/*`, `/v1/stats` and `/v1/supporters` none (`invalid_query`).
 
-CORS: `/v1/list/*`, `/v1/config/*`, `/v1/tags`, `/v1/reports`, `/v1/trial`, `/v1/entitlement/refresh`, `/v1/pair/claim`, `/v1/sync`, `/v1/review/*` (bearer only) and `/v1/sources/*` answer any origin (`Access-Control-Allow-Origin: *`, no credentials), so the extension needs no host permission for the API.
-Cookie-authenticated routes are same-origin only and require the header `X-Colander-CSRF: 1` on every non-GET request.
+CORS: `/v1/list/*`, `/v1/config/*`, `/v1/tags`, `/v1/reports`, `/v1/trial`, `/v1/install`, `/v1/entitlement/refresh`, `/v1/pair/claim`, `/v1/sync`, `/v1/review/*` (bearer only) and `/v1/sources/*` answer any origin (`Access-Control-Allow-Origin: *`, no credentials) on getcolander.com, so the extension needs no host permission for the API.
+The admin host (6.9) answers no CORS at all.
+Cookie- and Access-authenticated routes are same-origin only: every non-GET request needs the header `X-Colander-CSRF: 1` and `Sec-Fetch-Site: same-origin` (`403 csrf_required`).
+getcolander.com, staging.getcolander.com and the admin hosts are one site to a browser, so SameSite cookies alone would not keep a sibling host out; the CORS allowlist never permits the CSRF header.
+
+Identity reaches the Store only in headers the edge sets: it drops every `x-colander-` header a client sends (except `x-colander-csrf`) before it sets its own (`x-colander-host`, the Access identity and the IP hash).
+A request the edge did not mark counts as the main host, with curator authority at most.
 
 ### 6.1 Auth schemes
 
 | Scheme | Header | Used by |
 | --- | --- | --- |
-| Install | `Authorization: Install <install id>` | Extension: tags, reports, trial |
-| Session | Cookie `colander_session` (HttpOnly, SameSite=Lax, Secure outside dev) | Website: account, billing, review console |
-| Reviewer | `Authorization: Bearer <reviewer token>` | Extension side panel: review API, with curator authority only (6.7) |
+| Install | `Authorization: Install <install id>` | Extension: tags, reports, trial, erasing its server data |
+| Session | Cookie `__Host-colander_session` (HttpOnly, Secure, SameSite=Strict, Path=/; in dev `colander_session` without Secure). It records how it signed in (`email` or `passkey`) and when. | Website on the main host: account, billing, pairing codes, review console |
+| Reviewer | `Authorization: Bearer colander_rt_...`, valid 7 days, curator authority only, issued only through a pairing code (section 7) | Extension side panel: review API on the main host |
 | Plan | `Authorization: Plan <plan token>` | Extension: settings sync |
+| Access | `Cf-Access-Jwt-Assertion`, the Cloudflare Access application token, verified at the edge | Staff and admins on the admin host only (6.9) |
+| Ops | `Authorization: Bearer <GitHub Actions OIDC token>` | The ops channel (`docs/deploy.md`) |
+
+The admin host ignores the product cookie and every Bearer, Install and Plan token: the edge drops them there.
 
 ### 6.2 Tags
 
@@ -368,32 +377,69 @@ When a list is imported, its name is withheld the same way wherever the log alre
 ```
 
 `status`: `awaiting_verification`, `pending_manual`, `under_review`, `upheld`, `denied`, `expired` (unverified after 14 days).
+An appeal's email address is blanked 30 days after the appeal closes (upheld, denied or expired).
 Once verified (`under_review`), the source verdict becomes Disputed at once and the next list publication carries it.
 Appeal pages never show a support or donation link.
 
 ### 6.6 Accounts and sessions
 
+Members and curators sign in through the Worker with a 6-digit code emailed to them, or with a passkey.
+There are no passwords and no emailed sign-in links.
+
 | Request | Effect |
 | --- | --- |
-| `POST /v1/auth/email` `{"email", "next"}` | Sends a sign-in link to `{public_url}/auth/callback?token=...&next=...`. Always `202`. 5 per email per hour. Links expire after 20 minutes and work once. |
-| `POST /v1/auth/verify` `{"token"}` | Sets the session cookie (30 days). `200` `{"account": Account}`. Creates the account on first sign-in. Needs `X-Colander-CSRF: 1` like the cookie routes (`403 csrf_required`), so a cross-site form cannot sign a visitor into another account. |
-| `POST /v1/auth/logout` | Clears the session |
-| `GET /v1/account` | `200` `{"account": Account}` or `401` |
+| `POST /v1/auth/code` `{"email", "next", "turnstile"?}` | Emails a 6-digit code and sets the flow cookie `__Host-colander_flow` (HttpOnly, Secure, SameSite=Strict, Max-Age 600; `colander_flow` in dev). Always `202` for a valid address, so the answer never tells whether an account exists. 5 codes an hour and 10 a day per address, 30 an hour per IP (`429`). `turnstile` is required, and checked with Turnstile, only when `TURNSTILE_SECRET_KEY` is set (`400 turnstile_failed`). |
+| `POST /v1/auth/code/verify` `{"code"}` | Needs the flow cookie of the same browser. A code works once, for 10 minutes; 5 wrong codes end it (`400 code_expired`), a wrong code is `400 code_invalid`, 30 tries an hour per IP. 10 wrong codes in a day for one address pause code sign-in for that address for 24 hours (`400 code_paused`; codes requested meanwhile are not sent, the answer is still `202`) and send one notice; passkeys keep working. `200` `{"account": Account}` with a new session; the first sign-in creates the account. |
+| `POST /v1/auth/passkey/options` | A WebAuthn challenge, tied for 5 minutes to the passkey cookie `__Host-colander_pk` (HttpOnly, Secure, SameSite=Strict; `colander_pk` in dev), which is separate from the code's flow cookie, so a passkey prompt in another tab never ends a code that is waiting. With a session it is a step-up and allows only that account's passkeys (`409 no_passkey` when it has none). Without one, 60 an hour per IP. `200` `{"options"}` (PublicKeyCredentialRequestOptionsJSON). |
+| `POST /v1/auth/passkey/verify` `{"credential"}` | Needs the passkey cookie. Signs in, or steps up, with a passkey: `200` `{"account"}` with a new passkey session, or `400 passkey_invalid`. The challenge is used up in the same transaction that records the signature counter and starts the session, so only one request can use it. A passkey sign-in cancels every request the account has waiting. |
+| `POST /v1/auth/invite/options` `{"invite"}`, `POST /v1/auth/invite/verify` `{"invite", "credential", "name"}` | Enrolls a reviewer's passkey with an invite (6.9). Both need a session of the same account (an email code is enough), so an invite works only together with control of that mailbox. The invite works once, within 24 hours, and only while the account holds the role it was issued for (`400 invite_invalid`). Verify signs the session in with the new passkey and emails a notice. |
+| `POST /v1/auth/verify` `{"token"}` | Finishes a sign-in link mailed before codes, for one release; links die 20 minutes after they were sent. `400 link_invalid` otherwise. |
+| `POST /v1/auth/logout` `{"everywhere"?}` | Ends the session. `everywhere` ends every session of the account, its reviewer token and its unused pairing codes, and from a passkey sign-in of the last 10 minutes also removes every other passkey (with an email notice). |
+| `POST /v1/auth/cancel` `{"secret"}` | The cancel link from a held-request email (below): `200` `{"cancelled": kind}` or `404`. |
+| `GET /v1/account` | `200` `{"account": Account}` or `401 signed_out` |
 | `PATCH /v1/account` `{"display_name"}` | Updates the public name used in the decision log and supporters page |
-| `POST /v1/account/reviewer-token` | Curators and staff only. `200` `{"token": "..."}`. Replaces any earlier token. The extension gets its reviewer token through a pairing code (section 7); this route is for scripts such as the staging smoke test. |
+| `GET /v1/account/passkeys` | `{"passkeys": [{"id", "name", "created_at", "last_used_at", "synced"}], "current"}`, `current` the passkey this session signed in with |
+| `POST /v1/account/passkeys/options`, `POST /v1/account/passkeys` `{"credential", "name"}` | Adds a passkey (`201` `{"passkey"}`), at most 10 per account (`409 too_many_passkeys`), with an email notice. A member needs a sign-in from the last 10 minutes, with a passkey once the account holds one; a curator, staff member or admin only from a passkey sign-in of that account (`403 passkey_required` with only a code; their first passkey comes from an invite, `403 invite_required`). Registration challenges use the passkey cookie too. |
+| `DELETE /v1/account/passkeys/{id}` | Removes a passkey after a passkey sign-in of the last 10 minutes, with an email notice. Sessions that signed in with it count as email sign-ins from then on. |
+| `GET /v1/account/export` | Everything kept about the account as a JSON attachment: the account, passkeys (name, dates, whether synced), session dates, the reviewer token's dates, the subscription summary, the synced settings, the decisions it authored, waiting requests, its recent pairing codes (kind, times, browser and version, never the code) and its audit events. |
+| `DELETE /v1/account` | Ends Plus and deletes the account (6.8). `204`, and the session cookie is cleared. Staff and admin accounts are never deleted (`403 staff_account`): an admin lowers the role on the admin host first. |
+| `POST /v1/account/requests` `{"kind", "passkey_id"?}`, `DELETE /v1/account/requests/{id}` | Held requests, below |
+| `DELETE /v1/account/reviewer-token` | Disconnects the side panel. A reviewer token comes only from a reviewer pairing code (section 7). |
 
 ```json
-{ "id": "acc_...", "email": "...", "display_name": "Sam", "role": "member", "plan": Plan | null, "created_at": "..." }
+{
+  "id": "acc_...", "email": "...", "display_name": "Sam", "role": "member", "plan": Plan | null, "created_at": "...",
+  "session": { "method": "email" | "passkey", "authenticated_at": "..." } | null,
+  "passkey_count": 0,
+  "reviewer_token": { "expires_at": "...", "last_used_at": "..." | null } | null,
+  "requests": [{ "id": "req_...", "kind": "delete" | "export" | "remove_passkey" | "email_change", "created_at": "...", "due_at": "...", "done_at": null }]
+}
 ```
 
-`role` is `member`, `curator` or `staff`.
-Roles are granted with the ops command `grant-role` (`POST /ops/grant-role`).
-In dev mode (`COLANDER_DEV=1`) sign-in links are printed in the `wrangler dev` output instead of emailed.
+`role` is `member`, `curator`, `staff` or `admin` (6.9).
+`session` describes the request's own session; answers that do not come from one leave it `null`.
+
+Sessions are the SHA-256 of 32 random bytes, last 30 days, record `last_seen_at` at most hourly, and are new on every sign-in and every step-up: the old token ends.
+A session from before code sign-in that still arrives under the old cookie name `colander_session` moves to `__Host-colander_session` with the same token, once, and only when no `__Host-` cookie came with it; sessions created since are never read under the old name.
+
+Step-up: export, deletion, removing a passkey, adding one to an account that already holds one, and reviewer pairing codes need a sign-in from the last 10 minutes (`403 recent_auth_required`), and with a passkey whenever the account holds one (`403 passkey_required`).
+The website then asks the person to confirm with their passkey, or with an emailed code when the account has none, and repeats the request.
+
+Held requests: an account that holds a passkey but was confirmed with an email code only may still ask for deletion, an export or removing a passkey it lost.
+The request waits 72 hours; the email it sends has a cancel link to `{public_url}/account/cancel#<secret>`, and any passkey sign-in cancels it.
+A staff or admin account cannot ask for deletion (`403 staff_account`), and a deletion that comes due after the account became staff is cancelled instead.
+Then deletions and passkey removals run on their own, and a held export may be downloaded after a code sign-in of the last 10 minutes for 7 days.
+
+Every sign-in, credential change, role change, staff action and read of personal data writes the audit log (6.9).
+In dev mode (`COLANDER_DEV=1`) codes and other mail are printed in the `wrangler dev` output instead of emailed.
 
 ### 6.7 Review (curators and staff)
 
-Session cookie or Reviewer bearer token. Curators may decide sources that are not large and items; large sources and appeals need staff (`403 staff_required`).
-A reviewer token carries curator authority only, also a staff member's, because it works in any browser on any device: staff decide large sources and appeals with their session in the review console.
+Authority depends on the host (6.9).
+On getcolander.com a reviewer acts with curator authority at most: with a session that signed in with a passkey in the last 12 hours (`403 passkey_required` otherwise; an email code alone gives member rights) or with a reviewer token (`401 invalid_token`, or `401 token_expired` after its 7 days).
+A reviewer token carries curator authority only, also a staff member's, because it works in any browser on any device.
+On the admin host staff and admins act with their full role, through Cloudflare Access, and decide as `staff` in the public log.
+Curators may decide sources that are not large and items; large sources and appeals need staff authority (`403 staff_required`, "Staff decide them in the admin console").
 
 | Request | Returns |
 | --- | --- |
@@ -453,18 +499,77 @@ Donations return to `{public_url}/support/thanks` and `{public_url}/support?canc
 
 Supporters are donors who gave a `credit_name`, newest first by their first donation; a repeated name appears once.
 Refunded donations drop off the list, and amounts and emails are never shown.
+A donor's credit is changed or cleared on request by an admin, by the Checkout Session ID on the receipt (6.9).
+
+Deleting an account (`DELETE /v1/account`) settles billing first: a running Plus ends at once, its latest charge is refunded when it is still refundable, and every Stripe customer of the account is deleted (Stripe keeps what tax law requires).
+Without Stripe keys an account that ever subscribed cannot be deleted (`503 billing_unavailable`), so nothing is deleted half way.
+Then, in one transaction, the account goes with its sessions, passkeys, flows, reviewer token, pairing codes, held requests and subscriptions; its synced settings go; its decisions and log entries keep no name, so the log shows a former reviewer; and an `account_deleted` audit row remains.
+An erasure record in the backup bucket makes a later restore of a dump or of an earlier point in time delete the account again before anything else.
+Later Stripe webhooks for the account are ignored as belonging to an unknown account.
+`DELETE /v1/install` (Install) erases what the server holds for one install: its tags, reports, trial and the trial's synced settings; the sources they touched are scored again.
+
+### 6.9 Roles, the admin host and the admin API
+
+There are four roles in one column, with a fixed permission table in code (`api/src/permissions.ts`); the Store refuses any other value.
+
+| Permission | member | curator | staff | admin | Where |
+| --- | --- | --- | --- | --- | --- |
+| Own account: name, passkeys, sign out everywhere, export | yes | yes | yes | yes | Main host, session |
+| Delete own account | yes | yes | - | - | Main host, session; an admin lowers a staff or admin role first |
+| Checkout, cancel, refund, plan tokens | yes | yes | yes | yes | Main host, session |
+| Review queue and source detail; decide items and sources that are not large; dismiss reports | - | yes | yes | yes | Main host with a fresh passkey session or a reviewer token; the admin host |
+| Decide large sources, set the large flag, verify and resolve appeals | - | - | yes | yes | Admin host only |
+| People list; grant or revoke curator; issue curator passkey invites | - | - | yes | yes | Admin host only |
+| Grant or revoke staff; invite staff and admins; end every credential of an account; change a member's email | - | - | - | yes | Admin host only |
+| Change supporter credit, read the audit log | - | - | - | yes | Admin host only |
+
+Roles change only on accounts strictly below the actor's role and only to roles strictly below it, never on the actor's own account, and never to admin.
+Admin is granted only through the ops channel's bootstrap (`grant-role` grants staff and admin only until it first grants admin, and never again, even if no admin is left).
+Raising an account to curator or above ends its sessions and deletes its passkeys and reviewer token in the same transaction, so a passkey added while it was a member never carries review authority; lowering it below curator deletes the reviewer token.
+Nobody issues an invite for their own account.
+
+The admin hosts are `admin.getcolander.com`, `staging-admin.getcolander.com` and, in dev, `admin.localhost` on the dev port (`ADMIN_HOST`, 10).
+Cloudflare Access protects them, with A3T Identity as the identity provider and independent MFA by security key or platform biometric; One-time PIN with pre-enrolled keys is the fallback.
+The edge verifies the Access application token on every admin-host request that reaches the Worker (RS256 against `https://<CF_ACCESS_TEAM_DOMAIN>/cdn-cgi/access/certs`, `iss`, `aud` equal to `CF_ACCESS_AUD`, `exp`, `nbf`, type `app`, an email) and answers `403 access_required` to anything else, including an environment without both values.
+The Store finds the account by the Access email and requires role `staff` or `admin` (`403 not_staff`).
+A3T Identity passes its subject as the custom OIDC claim `sub`: the first sign-in pins it on the account (`a3t:<sub>`), and a token with another subject is refused after that; a token without one comes from One-time PIN.
+The admin host serves only `/v1/admin/*` and `/v1/review/*` of the API (anything else is `404`), with no CORS; `/` sends to `/admin`.
+On getcolander.com `/admin` and `/admin/*` redirect to the admin host, and `/v1/admin/*` is `404`.
+In dev mode on `http://localhost` only, `POST /__dev/access` `{"email", "subject"?}` on `admin.localhost` stands in for Access: it answers a token and sets the `CF_Authorization` cookie, signed by a key that exists only in that process and trusted nowhere else.
+
+| Request | Permission | Effect |
+| --- | --- | --- |
+| `GET /v1/admin/me` | staff | `{"account": Person, "authority", "permissions"}` |
+| `GET /v1/admin/people?q=` | staff | Up to 50 accounts whose email contains `q` (audited with the IDs found, never `q`), or every reviewer. |
+| `PUT /v1/admin/people/role` `{"email", "role"}` | staff | Sets the role (creates a member account for a new address). `{"person": Person}` |
+| `POST /v1/admin/people/{id}/invite` | staff | `201` `{"invite", "url", "expires_at"}`: a single-use invite for a review account, valid 24 hours, bound to the account and its role, shown only to the issuer; the account gets an email notice. `url` is `{public_url}/account/invite#invite=<invite>`. |
+| `POST /v1/admin/people/{id}/revoke` | admin | Ends every session and deletes every passkey, the reviewer token and the unused pairing codes |
+| `PUT /v1/admin/people/{id}/email` `{"email", "checkout_session", "amount_cents", "date"}` | admin | Members only. Checks the Checkout Session with Stripe (this account's checkout, the amount and the UTC date `YYYY-MM-DD`; `400 receipt_mismatch`), then holds the move 7 days with a cancel link to the old address. When it runs, every session, passkey and token ends and both addresses hear; an account raised to a review role meanwhile is not moved, and the change is cancelled. `{"due_at"}` |
+| `POST /v1/admin/donations/{id}/credit` `{"credit_name"}` | admin | Replaces or clears (`""`) a donor's supporter credit by Checkout Session ID |
+| `GET /v1/admin/audit?target=&before=` | admin | The newest 100 audit rows, `{"entries", "next_cursor"}`. Audited. |
+
+```json
+{ "id": "acc_...", "email": "...", "display_name": "Sam", "role": "curator", "created_at": "...", "passkey_count": 1, "access_pinned": false }
+```
+
+The audit log is one insert-only table: `at`, `actor_id`, `actor_sub` (`a3t:`, `otp:` or `github:`), `actor_email`, `host` (`main`, `admin`, `ops` or `job`), `action`, `target`, `before`, `after`, `reason` and `request_id` (the cf-ray or the GitHub run).
+Triggers refuse any update and any delete of a row younger than 400 days; a restore keeps the rows written since the dump.
+Every day its new rows are copied to `audit/` in the backup bucket, under a 400-day bucket lock.
+A point-in-time restore copies the rows first, its own `ops:pitr-restore` row included, and after the restart puts back from `audit/` every row written after the restore point.
+It names members by account ID, never by address: a people search records the IDs it found, and an email change a short hash of each address (`sha256:` and 16 hex digits of SHA-256 over `audit:` and the address), so no member's address outlives their account in it.
 
 ## 7. Website and extension handoff
 
 The website hands a plan token or a reviewer token to the extension with a pairing code, the same way in every browser.
+A reviewer token is never issued any other way.
 The website never talks to the extension directly, so nothing depends on an extension ID, a host permission or the browser.
 A code also works when the website is open in another browser or on another device.
 
 | Request | Auth | Effect |
 | --- | --- | --- |
-| `POST /v1/pair` `{"kind": "plan" \| "reviewer"}` | Session | `201` `{"id", "code": "KXQ4-JP7M", "expires_at"}`. `plan` needs an active plan (`404 no_plan`); `reviewer` needs the curator or staff role (`403 forbidden`); any other kind is `400 invalid_kind`. A new code ends the account's earlier unused code of the same kind. 20 codes per account an hour. |
+| `POST /v1/pair` `{"kind": "plan" \| "reviewer"}` | Session | `201` `{"id", "code": "KXQ4-JP7M", "expires_at"}`. `plan` needs an active plan (`404 no_plan`); `reviewer` needs the curator, staff or admin role (`403 forbidden`) and a passkey sign-in of the last 10 minutes (`403 passkey_required`, `403 recent_auth_required`); any other kind is `400 invalid_kind`. A new code ends the account's earlier unused code of the same kind. 20 codes per account an hour. |
 | `GET /v1/pair/{id}` | Session | `200` `{"status": "pending" \| "claimed" \| "expired", "ext_version", "browser"}` for the account's own code, `404 not_found` for any other. The website checks every 2 seconds while the code is on screen. |
-| `POST /v1/pair/claim` `{"code", "ext_version", "browser"}` | none, any origin | `200` `{"kind", "token", "account"}`: a plan token (section 5) minted now for the account, or a reviewer token that replaces the account's earlier one; `account` is the account's email masked as `p***@example.com`, so the person sees whose account they connected. `404 invalid_code` for a wrong, used or expired code; `404 no_plan` when the plan ended since the code was made; `403 forbidden` when the role went; these leave the code unused. 10 claims per address per 10 minutes, an IPv6 address counted by its /48, wrong codes included (`429`). |
+| `POST /v1/pair/claim` `{"code", "ext_version", "browser"}` | none, any origin | `200` `{"kind", "token", "account"}`: a plan token (section 5) minted now for the account, or a reviewer token (6.6: 7 days, curator authority only, audited as `token_issued`) that replaces the account's earlier one; `account` is the account's email masked as `p***@example.com`, so the person sees whose account they connected. `404 invalid_code` for a wrong, used or expired code; `404 no_plan` when the plan ended since the code was made; `403 forbidden` when the role went; these leave the code unused. 10 claims per address per 10 minutes, an IPv6 address counted by its /48, wrong codes included (`429`). |
 
 A code is 8 Crockford base32 characters (40 bits), shown as two groups of 4.
 The server reads a typed code without regard to case, spaces or dashes, and reads I and L as 1 and O as 0.
@@ -584,9 +689,15 @@ The client address always comes from `CF-Connecting-IP`.
 | --- | --- | --- | --- |
 | `COLANDER_SIGNING_KEY` | secret, required | - | Base64 of the 32-byte Ed25519 seed (section 12) |
 | `IP_SALT` | secret, required | - | Salt of the HMAC that hashes client addresses before any rate limit or storage |
-| `OPS_TOKEN` | secret, required | - | Bearer token of the `/ops/*` channel (`docs/deploy.md`) |
-| `PUBLIC_URL` | var | `https://getcolander.com` | Origin used in emails and redirects |
-| `COLANDER_DEV` | var | empty | `1` is dev mode: mail printed instead of sent, cookies not Secure, no miss rate limiter, list requests counted by the Worker, and the `/__dev/*` routes |
+| `PUBLIC_URL` | var | `https://getcolander.com` | Origin used in emails and redirects; its host is the passkey relying party ID and its origin the only accepted passkey origin |
+| `COLANDER_DEV` | var | empty | `1` is dev mode: mail printed instead of sent, plain cookie names without Secure, no miss rate limiter, list requests counted by the Worker, and the `/__dev/*` routes. With a `PUBLIC_URL` on `http://localhost` it also makes the admin host `admin.localhost`, with the dev Access stub, and lets the ops channel take `OPS_TOKEN`. |
+| `ADMIN_HOST` | var | `admin.getcolander.com`; staging `staging-admin.getcolander.com` | The admin host (6.9); empty means none |
+| `CF_ACCESS_TEAM_DOMAIN` | var | empty | The Access team domain, `<team>.cloudflareaccess.com`; until it and `CF_ACCESS_AUD` are set the admin host answers `403` |
+| `CF_ACCESS_AUD` | var | empty | The AUD tag of the environment's Access application for the admin host |
+| `OPS_GITHUB_REPOSITORY`, `OPS_GITHUB_REPOSITORY_ID` | var | `rudecompany/colander`, its numeric ID | The only repository whose GitHub Actions OIDC tokens the ops channel takes |
+| `OPS_GITHUB_ENVIRONMENT` | var | `production`; staging `staging` | The GitHub environment those tokens must name |
+| `OPS_TOKEN` | dev only | unset | The ops bearer of `api/.dev.vars`, taken only in dev mode on `http://localhost` |
+| `TURNSTILE_SECRET_KEY` | secret, optional | unset | Turnstile on `POST /v1/auth/code`; set it together with the website's `PUBLIC_TURNSTILE_SITE_KEY` |
 | `COLANDER_TEST_NOW` | var, dev only | unset | An RFC 3339 time that freezes the clock when `COLANDER_DEV=1`; then no job runs on its own |
 | `COLANDER_MAIL_FROM` | var | `Colander <hello@getcolander.com>` | Sender of sign-in, appeal and billing mail |
 | `RESEND_API_KEY` | secret, optional | unset | Resend, the fallback when the Email Sending binding fails |

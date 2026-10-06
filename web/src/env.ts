@@ -15,6 +15,12 @@ export const variables = defineEnvVars({
 		description: 'Edge Add-ons listing, empty until it is live.',
 		schema: (value) => value ?? ''
 	},
+	PUBLIC_TURNSTILE_SITE_KEY: {
+		public: true,
+		static: true,
+		description: 'Cloudflare Turnstile site key for the sign-in code form. Empty: no challenge, and the Worker needs none.',
+		schema: (value) => value ?? ''
+	},
 	PUBLIC_STORE_FIREFOX: {
 		public: true,
 		static: true,

@@ -16,7 +16,8 @@ focus (Show a code goes away when the code shows), so focus moves to the step's 
 	import { api, ApiError, errorText } from '#lib/api.ts';
 	import Notice from './Notice.svelte';
 
-	let { kind }: { kind: PairKind } = $props();
+	/** onconnected runs once the extension took the code, so the page can show the new connection. */
+	let { kind, onconnected }: { kind: PairKind; onconnected?: () => void } = $props();
 
 	const WHERE: Record<PairKind, string> = {
 		plan: "In the browser you want to connect, open Colander's Options, choose Plan and type this code.",
@@ -24,7 +25,7 @@ focus (Show a code goes away when the code shows), so focus moves to the step's 
 	};
 	const DONE: Record<PairKind, string> = {
 		plan: 'Plus is on there.',
-		reviewer: 'The side panel can now open the review queue there. Any earlier side panel connection stopped working.'
+		reviewer: 'The side panel can now open the review queue there for 7 days. Any earlier side panel connection stopped working.'
 	};
 
 	type State =
@@ -84,6 +85,7 @@ focus (Show a code goes away when the code shows), so focus moves to the step's 
 					if (s.status === 'claimed') {
 						stop();
 						pair = { step: 'connected', version: s.ext_version, browser: s.browser ? BROWSER_NAME[s.browser] : null };
+						onconnected?.();
 					} else if (s.status === 'expired') {
 						stop();
 						pair = { step: 'expired' };

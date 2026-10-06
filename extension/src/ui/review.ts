@@ -38,7 +38,7 @@ async function call<T>(token: string, path: string, body?: unknown): Promise<T> 
 	} catch {
 		// keep the generic message
 	}
-	if (res.status === 403 && code === 'staff_required') message = 'Large sources and appeals need staff, in the review console on the website.';
+	if (res.status === 403 && code === 'staff_required') message = 'This needs staff review: staff decide large sources and appeals in the admin console.';
 	throw new ReviewError(res.status, code, message);
 }
 

@@ -180,7 +180,7 @@ It is plain data: CSS selectors, attribute names, regular expressions and proper
 
 ### Delivery
 
-- The server serves it from `GET /v1/config/adapters` as a signed envelope with context `colander:config:v1` (contract section 4); the Ops command `sign-config` with the file signs and stores it (docs/deploy.md), and every install picks it up within an hour.
+- The server serves it from `GET /v1/config/adapters` as a signed envelope with context `colander:config:v1` (contract section 4); the Ops command `sign-config` signs and stores the file as committed on main (docs/deploy.md), and every install picks it up within an hour.
 - The extension applies a remote payload only when the signature verifies against a trusted key, the payload passes validation, and its `version` is higher than both the bundled and the cached one.
 - An unsigned, malformed or older payload is ignored and the current copy stays.
 - Content scripts pick it up at once from `storage.onChanged`; open pages start over with the new rules, without a reload.
@@ -277,11 +277,11 @@ Values containing `/` are parsed as links, so `canonicalBaseUrl` values like `/@
 ### Fixing a broken selector
 
 1. Run `pnpm -C extension test:live` (or read the daily workflow's failure) to see which surface lost its cards.
-2. Open the page, find the new structure, and edit a copy of `default-config.json` with a higher `version`.
+2. Open the page, find the new structure, and edit `src/adapters/default-config.json` with a higher `version`.
 3. Check it against a fresh fixture: `node scripts/capture-fixtures.ts <name>` and `pnpm test`.
-4. Run the Ops command `sign-config` with the file (docs/deploy.md).
+4. Merge it, then run the Ops command `sign-config` with args `{}`: the Worker reads the file from main itself and signs it as committed (docs/deploy.md).
    Every install picks it up within an hour.
-5. Fold the change into the bundled copy in the next release.
+5. The next extension release bundles the same file.
 
 ## Network and privacy
 

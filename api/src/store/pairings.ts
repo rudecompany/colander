@@ -39,6 +39,11 @@ export function getPairing(db: Db, accountId: string, id: string): Pairing | und
 	return scan(db.get<PairingRow>(`SELECT ${cols} FROM pairings WHERE id = ? AND account_id = ?`, id, accountId));
 }
 
+/** Ends the account's codes that were not used yet, when its credentials end (sign out everywhere, revoke). */
+export function endPairings(db: Db, accountId: string): void {
+	db.run('DELETE FROM pairings WHERE account_id = ? AND claimed_at IS NULL', accountId);
+}
+
 /** Uses an unexpired, unclaimed code once. Undefined for a wrong, used or expired code. */
 export function claimPairing(db: Db, codeHash: string, extVersion: string, browser: string, now: number): Pairing | undefined {
 	return scan(

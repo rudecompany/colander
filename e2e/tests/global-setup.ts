@@ -6,7 +6,7 @@ import { execFileSync, spawn } from 'node:child_process';
 import { cpSync, mkdirSync, openSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:net';
 import { resolve } from 'node:path';
-import { BASE_URL, LOG, REPO, RUN, STAFF, STORES, apiSignIn } from './stack.ts';
+import { ADMIN, BASE_URL, LOG, REPO, RUN, STAFF, STORES, devAccess } from './stack.ts';
 
 const free = (port: number) =>
 	new Promise<boolean>((done) => {
@@ -30,7 +30,9 @@ export default async function globalSetup() {
 	if (fixedInspector && !(await free(fixedInspector))) throw new Error(`COLANDER_E2E_INSPECTOR_PORT ${fixedInspector} is taken`);
 	const inspector = (p: number) => fixedInspector || p + 100;
 	while (!(await free(port)) || !(await free(inspector(port)))) port++;
-	const origin = `http://127.0.0.1:${port}`;
+	// localhost, not 127.0.0.1: passkeys need a domain as their relying party, and the admin host
+	// is admin.localhost on the same port.
+	const origin = `http://localhost:${port}`;
 
 	rmSync(RUN, { recursive: true, force: true });
 	mkdirSync(RUN, { recursive: true });
@@ -44,6 +46,9 @@ export default async function globalSetup() {
 		WXT_COLANDER_SITE: origin,
 		COLANDER_EXT_OUT_DIR: resolve(RUN, 'extension')
 	});
+
+	// The local config without routes, so the Worker sees admin.localhost (scripts/dev-config.ts).
+	run('node', ['scripts/dev-config.ts'], REPO);
 
 	// The dev signing key and dev mode, and no Stripe, YouTube or Resend keys: billing answers 503,
 	// appeals fall back to manual checks and mail is printed. An --env-file keeps a developer's
@@ -63,6 +68,7 @@ export default async function globalSetup() {
 		[
 			resolve(REPO, 'api/node_modules/wrangler/bin/wrangler.js'),
 			'dev',
+			`--config=${resolve(REPO, 'api/wrangler.dev.json')}`,
 			'--ip=127.0.0.1',
 			`--port=${port}`,
 			`--inspector-port=${inspector(port)}`,
@@ -111,9 +117,19 @@ export default async function globalSetup() {
 	await step('the seed', '/__dev/seed');
 	await step('settling', '/__dev/settle');
 	await step('the watchdog cron', `/cdn-cgi/local/scheduled?cron=${encodeURIComponent('*/5 * * * *')}`, 'GET');
+	// The owner's one bootstrap through the ops channel: an admin, who can invite staff to passkeys.
+	const admin = await fetch(`${origin}/ops/grant-role`, {
+		method: 'POST',
+		headers: { Authorization: `Bearer ${vars.OPS_TOKEN}`, 'Content-Type': 'application/json' },
+		body: JSON.stringify({ email: ADMIN, role: 'admin' })
+	});
+	if (!admin.ok) {
+		kill('SIGKILL');
+		throw new Error(`granting admin answered ${admin.status}: ${await admin.text()}`);
+	}
 
 	process.env.COLANDER_E2E_ORIGIN = origin;
-	process.env.COLANDER_E2E_STAFF_COOKIE = await apiSignIn(STAFF);
+	process.env.COLANDER_E2E_STAFF_ACCESS = await devAccess(STAFF);
 
 	return async () => {
 		kill('SIGTERM');

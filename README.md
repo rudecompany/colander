@@ -16,7 +16,7 @@ Every interface between the parts is defined in [docs/contracts.md](docs/contrac
 | --- | --- | --- |
 | [extension/](extension/README.md) | The Manifest V3 extension, one codebase for every browser: platform adapters, matching, seamless hiding with grid reflow, in-page chips, Tag and Why, popup, options, welcome page, the curator side panel, and the store packages for Chrome, Edge and Firefox | WXT, Svelte 5, TypeScript |
 | [api/](api/README.md) | The whole backend in one Cloudflare Worker: edge routing and caching, the `Store` Durable Object on SQLite (tags and reports, scoring, review, appeals, accounts, billing, settings sync), signed list snapshots and deltas through R2, and the website through Workers Static Assets | TypeScript, Cloudflare Workers |
-| [web/](web/README.md) | The public website: landing page, definition, source pages, appeals, decision log, plans, support, transparency, account and the review console | SvelteKit (static), Svelte 5 |
+| [web/](web/README.md) | The public website: landing page, definition, source pages, appeals, decision log, plans, support, transparency, sign-in, the account page and the review console, and the admin console served on the admin host | SvelteKit (static), Svelte 5 |
 | [packages/shared](packages/shared/README.md) | Verdict vocabulary, signal names, verdict glyphs and the brand mark, the Colander theme on top of Mittsu components, the in-page UI and the components the website and extension share, API types, and the list format, Ed25519 signing and canonical IDs used by the extension and the Worker | TypeScript, Svelte 5, Mittsu |
 | [e2e/](e2e/README.md) | Full-stack tests: the Worker under `wrangler dev`, the website and the extension together in Chromium, pairing codes included | Playwright |
 | [testdata/](testdata) | The signed contract fixtures, which the TypeScript encoder must reproduce byte for byte, and the published development signing key | Node |
@@ -38,9 +38,12 @@ For Firefox, build it with `pnpm -C extension build -b firefox` and load `extens
 The welcome tab asks which platforms to switch on, and the browser asks for site access for those only.
 To connect Plus or the review side panel, sign in on `/account`, choose Show a code, and type the code in the extension's Options under Plan or in the side panel.
 
-`make dev` runs the Worker in dev mode with the development signing key, so sign-in links print to its output instead of being emailed.
+`make dev` runs the Worker in dev mode with the development signing key, so sign-in codes print to its output instead of being emailed.
 Its local Durable Object and R2 state live in `api/.wrangler`; delete that folder to start over.
-The demo data includes a staff reviewer, `rae@colander.test`, a curator, `sam@colander.test`, and a member with Plus, `pat@colander.test`; sign in as a reviewer on `/account` and open `/console`, or as Pat to pair Plus with the extension.
+The demo data includes a staff member, `rae@colander.test`, a curator, `sam@colander.test`, and a member with Plus, `pat@colander.test`; sign in as Pat on `/account` to pair Plus with the extension.
+Staff work in the admin console on http://admin.localhost:8787, where dev mode stands in for Cloudflare Access: in the browser console on any admin.localhost page run `await fetch('/__dev/access', {method: 'POST', body: JSON.stringify({email: 'rae@colander.test'})})`, then open `/admin`.
+Curators review on http://localhost:8787/console with a passkey, which comes from an invite issued on the admin host's People page, and connect the side panel with a reviewer code from `/account`.
+To make yourself admin, run `curl -X POST localhost:8787/ops/grant-role -H "Authorization: Bearer $(sed -n 's/^OPS_TOKEN=//p' api/.dev.vars)" -d '{"email": "you@example.com", "role": "admin"}'` once; the dev ops token comes from `api/.dev.vars`.
 
 ## How it fits together
 
@@ -68,6 +71,7 @@ Staging runs the same Worker on staging.getcolander.com behind Cloudflare Access
 GitHub Actions is the whole pipeline:
 
 - Every pull request runs CI; the required checks are `secrets`, `workflows`, `api`, `contract`, `web-and-extension` and `full-stack`.
+- Staff and admin work happens on admin.getcolander.com behind Cloudflare Access with A3T Identity and hardware-key MFA; the ops channel takes only GitHub OIDC tokens from workflows on a protected main.
 - Every green commit on main deploys to staging and passes a smoke test there.
 - Merging the release PR that release-please keeps open deploys that commit to production, smoke-tests it and rolls it back on failure.
 - Extension releases are built for Chrome, Edge and Firefox with provenance, attached to their GitHub release and submitted to the Chrome Web Store as a staged publish, and to Edge Add-ons and addons.mozilla.org once those listings exist.

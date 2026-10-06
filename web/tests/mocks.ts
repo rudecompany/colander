@@ -3,7 +3,10 @@ import type { Page, Request } from '@playwright/test';
 import type {
 	Account,
 	Appeal,
+	AuditEntry,
 	LogEntry,
+	Passkey,
+	Person,
 	QueueItem,
 	ReviewSourceResponse,
 	Source,
@@ -124,13 +127,20 @@ export const STATS: Stats = {
 	list_updated_at: '2026-10-03T08:42:10Z'
 };
 
+/** When the mocked session signed in: now, so a reviewer's passkey sign-in counts as fresh. */
+const NOW = new Date().toISOString();
+
 export const ACCOUNT: Account = {
 	id: 'acc_7f3k2m',
 	email: 'maya@example.com',
 	display_name: 'Maya',
 	role: 'member',
 	plan: null,
-	created_at: '2026-09-12T10:00:00Z'
+	created_at: '2026-09-12T10:00:00Z',
+	session: { method: 'email', authenticated_at: NOW },
+	passkey_count: 0,
+	reviewer_token: null,
+	requests: []
 };
 
 export const PLUS_ACCOUNT: Account = {
@@ -138,8 +148,55 @@ export const PLUS_ACCOUNT: Account = {
 	plan: { plan: 'plus', interval: 'year', status: 'active', current_period_end: '2027-09-12T10:00:00Z', cancel_at_period_end: false, refundable: true }
 };
 
-export const STAFF: Account = { ...ACCOUNT, id: 'acc_sam', email: 'sam@example.com', display_name: 'Sam', role: 'staff' };
-export const CURATOR: Account = { ...ACCOUNT, id: 'acc_priya', email: 'priya@example.com', display_name: 'Priya', role: 'curator' };
+/** Reviewers on the main host, signed in with a passkey just now. */
+const PASSKEY = { session: { method: 'passkey' as const, authenticated_at: NOW }, passkey_count: 1 };
+export const STAFF: Account = { ...ACCOUNT, ...PASSKEY, id: 'acc_sam', email: 'sam@example.com', display_name: 'Sam', role: 'staff' };
+export const CURATOR: Account = { ...ACCOUNT, ...PASSKEY, id: 'acc_priya', email: 'priya@example.com', display_name: 'Priya', role: 'curator' };
+
+/** A new curator who signed in with a code and has no passkey yet. */
+export const CURATOR_NEW: Account = { ...ACCOUNT, id: 'acc_lee', email: 'lee@example.com', display_name: null, role: 'curator' };
+
+export const PASSKEYS: Passkey[] = [
+	{ id: 'pk_laptop', name: 'Work laptop', created_at: '2026-09-12T10:05:00Z', last_used_at: '2026-10-03T08:00:00Z', synced: true },
+	{ id: 'pk_key', name: 'Security key', created_at: '2026-09-20T18:30:00Z', last_used_at: null, synced: false }
+];
+
+/** WebAuthn options as the Worker sends them, for the web origin http://localhost (rpId localhost). */
+export const REQUEST_OPTIONS = { challenge: 'dGVzdC1jaGFsbGVuZ2UtMDEyMzQ1Njc4OQ', rpId: 'localhost', allowCredentials: [], userVerification: 'required', timeout: 300000 };
+export const CREATION_OPTIONS = {
+	challenge: 'dGVzdC1jaGFsbGVuZ2UtYWJjZGVmZ2hpams',
+	rp: { name: 'Colander', id: 'localhost' },
+	user: { id: 'YWNjXzdmM2sybQ', name: 'maya@example.com', displayName: 'Maya' },
+	pubKeyCredParams: [
+		{ type: 'public-key', alg: -7 },
+		{ type: 'public-key', alg: -8 },
+		{ type: 'public-key', alg: -257 }
+	],
+	timeout: 300000,
+	attestation: 'none',
+	excludeCredentials: [],
+	authenticatorSelection: { residentKey: 'required', userVerification: 'required' }
+};
+
+export const ME = {
+	account: { id: 'acc_rae', email: 'rae@example.com', display_name: 'Rae', role: 'admin', created_at: '2026-09-01T09:00:00Z', passkey_count: 0, access_pinned: true },
+	authority: 'admin',
+	permissions: ['review', 'review.staff', 'people.read', 'role.set', 'invite.issue', 'people.revoke', 'people.email', 'supporters.credit', 'audit.read']
+};
+
+export const PEOPLE: Person[] = [
+	{ id: 'acc_rae', email: 'rae@example.com', display_name: 'Rae', role: 'admin', created_at: '2026-09-01T09:00:00Z', passkey_count: 0, access_pinned: true },
+	{ id: 'acc_sam', email: 'sam@example.com', display_name: 'Sam', role: 'staff', created_at: '2026-09-02T09:00:00Z', passkey_count: 2, access_pinned: true },
+	{ id: 'acc_priya', email: 'priya@example.com', display_name: 'Priya', role: 'curator', created_at: '2026-09-10T09:00:00Z', passkey_count: 1, access_pinned: false },
+	{ id: 'acc_lee', email: 'lee@example.com', display_name: null, role: 'curator', created_at: '2026-10-02T09:00:00Z', passkey_count: 0, access_pinned: false }
+];
+
+export const AUDIT: AuditEntry[] = [
+	{ id: 9, at: '2026-10-03T09:12:00Z', actor_id: 'acc_rae', actor_sub: 'a3t:9f1c', actor_email: 'rae@example.com', host: 'admin', action: 'invite_issued', target: 'acc_lee', before: null, after: 'curator', reason: null, request_id: '8c1e0a7b3d2f4e5a' },
+	{ id: 8, at: '2026-10-03T09:10:00Z', actor_id: 'acc_rae', actor_sub: 'a3t:9f1c', actor_email: 'rae@example.com', host: 'admin', action: 'role_changed', target: 'acc_lee', before: 'member', after: 'curator', reason: null, request_id: '8c1e0a7b3d2f4e59' },
+	{ id: 7, at: '2026-10-02T20:00:00Z', actor_id: null, actor_sub: 'github:slantview', actor_email: null, host: 'ops', action: 'ops:grant-role', target: null, before: null, after: null, reason: '.github/workflows/ops.yml', request_id: '1834567' },
+	{ id: 6, at: '2026-10-02T18:44:00Z', actor_id: 'acc_priya', actor_sub: null, actor_email: null, host: 'main', action: 'signed_in', target: 'acc_priya', before: null, after: 'passkey', reason: null, request_id: null }
+];
 
 export const APPEAL: Appeal = {
 	id: 'apl_4k9x2m',
@@ -201,6 +258,9 @@ const err = (status: number, code: string, message: string): Reply => ({ status,
 function defaults(call: Call): Reply {
 	const { method, path, search } = call;
 	if (method === 'GET' && path === '/v1/account') return err(401, 'not_signed_in', 'Sign in to continue.');
+	if (method === 'GET' && path === '/v1/account/passkeys') return { json: { passkeys: [], current: null } };
+	// The email field's passkey autofill asks for a challenge once the person starts on a sign-in form.
+	if (method === 'POST' && path === '/v1/auth/passkey/options') return { json: { options: REQUEST_OPTIONS } };
 	if (method === 'GET' && path === '/v1/stats') return { json: STATS };
 	if (method === 'GET' && path === '/v1/supporters')
 		return { json: { supporters: [{ name: 'Daniel R.', since: '2026-03-02T00:00:00Z' }, { name: 'The Lindqvist family', since: '2026-04-18T00:00:00Z' }, { name: 'Ana', since: '2026-06-01T00:00:00Z' }, { name: 'Tomasz K.', since: '2026-08-21T00:00:00Z' }] } };
@@ -269,7 +329,9 @@ export const PAGES: [string, Record<string, Handler>?][] = [
 	['/support/thanks'],
 	['/supporters'],
 	['/transparency'],
-	['/account', { 'GET /v1/account': { json: { account: PLUS_ACCOUNT } } }],
+	['/account', { 'GET /v1/account': { json: { account: PLUS_ACCOUNT } }, 'GET /v1/account/passkeys': { json: { passkeys: PASSKEYS, current: 'pk_laptop' } } }],
+	['/account/invite#invite=inv_test', { 'GET /v1/account': { json: { account: CURATOR_NEW } } }],
+	['/account/cancel#cancel-secret'],
 	[
 		'/console',
 		{
@@ -278,6 +340,16 @@ export const PAGES: [string, Record<string, Handler>?][] = [
 			'GET /v1/review/sources/*': { json: reviewSource('tt:@historybites247') }
 		}
 	],
+	[
+		'/admin',
+		{
+			'GET /v1/admin/me': { json: ME },
+			'GET /v1/review/queue': { json: { items: QUEUE, next_cursor: null } },
+			'GET /v1/review/sources/*': { json: reviewSource('tt:@historybites247') }
+		}
+	],
+	['/admin/people', { 'GET /v1/admin/me': { json: ME }, 'GET /v1/admin/people': { json: { people: PEOPLE } } }],
+	['/admin/audit', { 'GET /v1/admin/me': { json: ME }, 'GET /v1/admin/audit': { json: { entries: AUDIT, next_cursor: null } } }],
 	['/privacy'],
 	['/terms'],
 	['/missing-page']

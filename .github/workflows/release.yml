@@ -34,7 +34,7 @@ jobs:
       extension_sha: ${{ steps.release.outputs['extension--sha'] }}
     steps:
       # The App token, unlike the workflow token, lets CI run on the release PRs it opens.
-      - uses: actions/create-github-app-token@v3
+      - uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
         id: app
         with:
           client-id: ${{ vars.RELEASE_APP_CLIENT_ID }}
@@ -42,7 +42,7 @@ jobs:
           permission-contents: write
           permission-pull-requests: write
           permission-issues: write
-      - uses: googleapis/release-please-action@v5
+      - uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5
         id: release
         with:
           token: ${{ steps.app.outputs.token }}
@@ -70,7 +70,7 @@ jobs:
       SHA: ${{ needs.release-please.outputs.platform_sha }}
       GH_TOKEN: ${{ github.token }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: ${{ needs.release-please.outputs.platform_sha }}
       - name: Wait until staging has passed this commit
@@ -101,8 +101,8 @@ jobs:
             echo "Waiting for staging to deploy $SHA (deployment status: ${state:-none yet})"
             sleep 30
           done
-      - uses: pnpm/action-setup@v6
-      - uses: actions/setup-node@v7
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           node-version: 24
           package-manager-cache: false
@@ -114,6 +114,7 @@ jobs:
           PUBLIC_STORE_CHROME: ${{ vars.CWS_ITEM_ID && format('https://chromewebstore.google.com/detail/{0}', vars.CWS_ITEM_ID) || '' }}
           PUBLIC_STORE_EDGE: ${{ vars.EDGE_ITEM_ID && format('https://microsoftedge.microsoft.com/addons/detail/{0}', vars.EDGE_ITEM_ID) || '' }}
           PUBLIC_STORE_FIREFOX: ${{ vars.AMO_SLUG && format('https://addons.mozilla.org/firefox/addon/{0}/', vars.AMO_SLUG) || '' }}
+          PUBLIC_TURNSTILE_SITE_KEY: ${{ vars.TURNSTILE_SITE_KEY }}
           # Pages prerender with the live numbers and latest decisions, read from the production Worker
           # that is still serving. A failed read falls back to empty pages with a build warning.
           COLANDER_BUILD_API: https://getcolander.com
@@ -134,7 +135,7 @@ jobs:
           echo "version=$version" >>"$GITHUB_OUTPUT"
           echo "seq=$seq" >>"$GITHUB_OUTPUT"
       - name: Deploy
-        uses: cloudflare/wrangler-action@v4
+        uses: cloudflare/wrangler-action@953926a2e2182532811c01a25e53647d93bf07c0 # v4
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
@@ -179,11 +180,11 @@ jobs:
       TAG: ${{ needs.release-please.outputs.extension_tag }}
       GH_TOKEN: ${{ github.token }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: ${{ needs.release-please.outputs.extension_sha }}
-      - uses: pnpm/action-setup@v6
-      - uses: actions/setup-node@v7
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           node-version: 24
           package-manager-cache: false
@@ -224,7 +225,7 @@ jobs:
             echo "::error::The Firefox package does not rebuild byte for byte from its sources zip, which AMO's review requires."
             exit 1
           fi
-      - uses: actions/attest@v4
+      - uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
         with:
           subject-path: |
             extension/dist/*-chrome.zip
@@ -256,7 +257,7 @@ jobs:
       GH_TOKEN: ${{ github.token }}
       ITEM: publishers/${{ vars.CWS_PUBLISHER_ID }}/items/${{ vars.CWS_ITEM_ID }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: ${{ needs.release-please.outputs.extension_sha }}
       - name: Download the released package and verify its provenance
@@ -265,7 +266,7 @@ jobs:
           zip=$(ls "$RUNNER_TEMP"/package/*-chrome.zip)
           gh attestation verify "$zip" --repo "$GITHUB_REPOSITORY"
           echo "ZIP=$zip" >>"$GITHUB_ENV"
-      - uses: google-github-actions/auth@v3
+      - uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3
         id: google
         with:
           workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
@@ -432,11 +433,11 @@ jobs:
       TAG: ${{ needs.release-please.outputs.extension_tag }}
       GH_TOKEN: ${{ github.token }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: ${{ needs.release-please.outputs.extension_sha }}
-      - uses: pnpm/action-setup@v6
-      - uses: actions/setup-node@v7
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           node-version: 24
           package-manager-cache: false

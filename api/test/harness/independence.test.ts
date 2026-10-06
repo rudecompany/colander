@@ -15,10 +15,11 @@ const BILLING = ['billing.ts', 'store/billing.ts'];
 /** Billing tables in SQL, and the Store's billing service. */
 const BILLING_STATE = /\b(subscriptions|donations|billing_events)\b|\.billing\b/;
 /**
- * Route modules that may read plans: the account page shows one, billing sells it, sync checks it
- * and pairing hands its token to the extension.
+ * Route modules that may read plans: the account page shows one (and deleting an account ends it),
+ * billing sells it, sync checks it, pairing hands its token to the extension, and the admin API
+ * checks Stripe receipts for support and clears supporter credit. None of them decides a verdict.
  */
-const PLAN_ROUTES = ['routes/account.ts', 'routes/billing.ts', 'routes/sync.ts', 'routes/pairing.ts'];
+const PLAN_ROUTES = ['routes/account.ts', 'routes/admin.ts', 'routes/billing.ts', 'routes/sync.ts', 'routes/pairing.ts'];
 
 /** The src-relative paths a module imports at runtime. `import type` and `export type` are erased. */
 function runtimeImports(file: string): string[] {
@@ -80,7 +81,9 @@ describe('independence of verdicts from billing', () => {
 	});
 
 	it('catches a module that reaches billing', () => {
-		expect(violations(['routes/account.ts'])).toEqual(['routes/account.ts -> billing.ts imports billing', expect.stringContaining('routes/account.ts -> store/billing.ts')]);
+		expect(violations(['routes/account.ts'])).toEqual(
+			expect.arrayContaining(['routes/account.ts -> billing.ts imports billing', expect.stringContaining('routes/account.ts -> store/billing.ts')])
+		);
 		expect(violations(['store/store.ts']).length).toBeGreaterThan(0);
 	});
 });

@@ -30,7 +30,9 @@ export const THRESHOLDS = {
 	/** the gzip of the dump sits in memory while it blocks, in an isolate of 128 MB */
 	dumpSize: 32 << 20,
 	/** ship the incremental scoring planner when a pass reads this many rows */
-	rowsPerPass: 2_000_000
+	rowsPerPass: 2_000_000,
+	/** sign-in codes sent in one hour: above this someone is likely abusing the sign-in form */
+	signInMailPerHour: 500
 };
 
 /** The analytics token is optional: without it the hourly pull is skipped. */
@@ -68,6 +70,15 @@ export function alerts(s: WatchdogStatus): Alert[] {
 				text: `The last scoring pass read ${s.pass.rowsRead} rows. Ship the incremental scoring planner (src/jobs.ts).`
 			});
 		}
+	}
+	const hour = Math.floor(s.now / HOUR);
+	const mail = s.signInMail;
+	const sent = mail ? Math.max(mail.hour === hour ? mail.count : 0, mail.hour === hour ? mail.previous : mail.hour === hour - 1 ? mail.count : 0) : 0;
+	if (sent > THRESHOLDS.signInMailPerHour) {
+		out.push({
+			key: 'sign_in_mail',
+			text: `Colander sent ${sent} sign-in codes in one hour, above the ${THRESHOLDS.signInMailPerHour} that normal use explains. Check the audit log and consider Turnstile (docs/deploy.md).`
+		});
 	}
 	if (s.head.seq === 0 && s.r2 && s.r2.seq > 0) {
 		out.push({
