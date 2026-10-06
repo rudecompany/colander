@@ -159,7 +159,7 @@ Public keys are not secret.
 Before you start, have the `colander-analytics` token from step 10 ready (it is a Worker secret).
 1. Log Wrangler in as the owner: `pnpm -C api exec wrangler login`.
 2. Run `scripts/cloudflare-bootstrap.sh`.
-   It reads the R2 bindings of both environments from `api/wrangler.jsonc`, creates the list and backup buckets with the `enam` location hint, sets lifecycle rules (dumps, restore bookmarks, seed lists and calibration exports expire after 90 days, erasure records after 120, the audit log's daily copies after 400, unfinished multipart uploads after a day), and puts a 7-day bucket lock on the Store dumps (`dumps/`), restore bookmarks (`pitr/`) and erasure records (`erasures/`) of the backup buckets and a 400-day lock on their `audit/` prefix.
+   It reads the R2 bindings of both environments from `api/wrangler.jsonc`, creates the list and backup buckets with the `enam` location hint, sets lifecycle rules (dumps, restore bookmarks, seed lists and calibration exports expire after 90 days, erasure records and seed list suppression records after 120, the audit log's daily copies after 400, unfinished multipart uploads after a day), and puts a 7-day bucket lock on the Store dumps (`dumps/`), restore bookmarks (`pitr/`), erasure records (`erasures/`) and suppression records (`objections/`) of the backup buckets and a 400-day lock on their `audit/` prefix.
    Seed list files and calibration exports stay unlocked, so `revoke-seed` and an objection can delete them at once.
    It is safe to run again.
 3. Run every secret command the script prints, for production and for staging.
@@ -580,7 +580,8 @@ The workflows talk to the Worker through one authenticated channel, and the Work
 After either restore, the Worker deletes again every account erased since (the erasure records under `erasures/` in the backup bucket) before it publishes.
 It also ends every session, reviewer token, unused pairing code and sign-in flow, and repeats what the audit log records was taken away after the restore point (a dump's restore point is the time in its name): revoked accounts and moved addresses lose their passkeys again, removed passkeys go again, lowered roles are lowered again, A3T subjects are pinned again, and cancelled or refused held requests stay cancelled.
 Nothing is given back, so a role raised after the restore point is not raised again.
-Both answers add `revocations_reapplied`, the number of audit rows it repeated.
+Then it repeats every seed list suppression and lift staff made, oldest first, from their records under `objections/` in the backup bucket, so an objection under GDPR Article 21 holds even for a channel the restored data lacks.
+Both answers add `revocations_reapplied`, the number of audit rows it repeated, and `suppressions_reapplied`, the number of suppression records.
 
 The probes require `pass_age_s` under 900, `dump_age_s` under 25,200 and `publish_lag_s` under 21,600.
 The restore drill (`scripts/pitr-drill.ts`) uses `head_seq` and `r2_seq`.

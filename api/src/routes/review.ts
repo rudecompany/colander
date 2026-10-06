@@ -18,8 +18,9 @@ import { unix, type Evaluation } from '../scoring/engine';
 import { BehaviorSignals, ProvenanceSignals, slopTypeCode } from '../scoring/rules';
 import { csrfOk, csrfRequired, hostOf, signedIn, TTL } from '../auth';
 import { authority as rolesAuthority, rank, type Role } from '../permissions';
-import type { Account } from '../store/accounts';
-import { staffOf } from '../staff';
+import { audit, type Account } from '../store/accounts';
+import { staffOf, type Staff } from '../staff';
+import { recordObjection } from '../seeds';
 import { AppealPendingManual, AppealUnderReview, appealsBySource, appealsWithStatus, getAppeal, type Appeal } from '../store/appeals';
 import { addLabel, LABELS, nextCalibration, type CalibrationTask, type Label } from '../store/calibration';
 import { ConflictError, NotFoundError } from '../store/db';
@@ -39,6 +40,8 @@ import type { Api, Params } from './server';
 interface Reviewer {
 	account: Account;
 	authority: Role;
+	/** on the admin host: the audit fields of the staff member's requests */
+	who?: Staff['who'];
 }
 
 /**
@@ -52,7 +55,7 @@ function reviewer(api: Api, request: Request): Reviewer | Response {
 	if (hostOf(request) === 'admin') {
 		if (!csrfOk(request)) return csrfRequired();
 		const st = staffOf(store, request);
-		return st instanceof Response ? st : { account: st.account, authority: st.actor.authority };
+		return st instanceof Response ? st : { account: st.account, authority: st.actor.authority, who: st.who };
 	}
 	const auth = request.headers.get('Authorization') ?? '';
 	let a: Account;
@@ -323,7 +326,8 @@ export function reviewSource(api: Api, request: Request, _url: URL, params: Para
 /**
  * POST /v1/review/sources/{platform}/{source_id}/suppress-seeds {"reason", "lift"?}: staff authority only.
  * Suppresses seed lists on a source (a GDPR Article 21 objection, or a case staff closed): its
- * entries and calibration item go and no import lists it again. "lift": true lifts it.
+ * entries and calibration item go and no import lists it again. "lift": true lifts it. Each one is
+ * recorded in the backup bucket, for restores, and audited.
  */
 export async function reviewSuppressSeeds(api: Api, request: Request, _url: URL, params: Params): Promise<Response> {
 	const a = reviewer(api, request);
@@ -337,7 +341,14 @@ export async function reviewSuppressSeeds(api: Api, request: Request, _url: URL,
 	if (ref instanceof Response) return ref;
 	const { store } = api;
 	const now = store.now();
-	setSeedSuppression(store.db, ref, body.lift !== true, reason, unix(now));
+	const lift = body.lift === true;
+	// Recorded first, so no restore gives back what an objection took away (contracts 14.4).
+	await recordObjection(store, getSource(store.db, ref)!, lift, reason, now);
+	store.db.tx(() => {
+		setSeedSuppression(store.db, ref, !lift, reason, unix(now));
+		// Staff only reach this on the admin host. The source's ID only: no channel and no reason enters the 400-day log.
+		audit(store.db, { ...a.who!, action: lift ? 'seeds_unsuppressed' : 'seeds_suppressed', target: `src:${ref}` }, unix(now));
+	});
 	store.jobs.touch([ref], now);
 	return writeReviewSource(api, ref, a);
 }

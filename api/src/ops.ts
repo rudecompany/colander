@@ -27,7 +27,7 @@ import { rfc3339, trimSpace } from './routes/respond';
 import { unix } from './scoring/engine';
 import { audit, accountByEmail, grantRole, hasAdmin, reapplyRevocations, type Account } from './store/accounts';
 import { rank } from './permissions';
-import { calibrationExport, calibrationSample, importSeed, revokeSeedOps } from './seeds';
+import { calibrationExport, calibrationSample, importSeed, reapplySuppressions, revokeSeedOps } from './seeds';
 import { latestSequence, RETENTION_SECONDS, SNAPSHOT_KEY } from './store/list';
 import { saveAdapterConfig } from './store/misc';
 import { ensureSource, getSource } from './store/sources';
@@ -266,6 +266,8 @@ async function afterRestore(env: Env, cache: CacheContext | undefined, restored:
 	const erased = await call(primary(env), 'reapply-erasures');
 	// Then no credential, role or held request the audit log says ended since comes back.
 	const revoked = await call(primary(env), 'reapply-revocations', { since });
+	// And no seed list suppression or lift made since is undone.
+	const suppressed = await call(primary(env), 'reapply-suppressions');
 	const published = await call(primary(env), 'publish');
 	const purge = await purgeEverything(cache);
 	console.log(JSON.stringify({ message: 'restored', ...published.body, cachePurged: purge.purged }));
@@ -274,6 +276,7 @@ async function afterRestore(env: Env, cache: CacheContext | undefined, restored:
 		...audited.body,
 		...erased.body,
 		...revoked.body,
+		...suppressed.body,
 		...published.body,
 		cache_purged: purge.purged,
 		...(purge.errors ? { cache_errors: purge.errors } : {})
@@ -314,7 +317,7 @@ async function drill(env: Env): Promise<OpsAnswer> {
 }
 
 /** Commands that change nothing and are not audited: the probes call status every hour. */
-const UNAUDITED = new Set(['status', 'counts', 'publish', 'restart', 'drill-check', 'reapply-erasures', 'reapply-audit', 'reapply-revocations']);
+const UNAUDITED = new Set(['status', 'counts', 'publish', 'restart', 'drill-check', 'reapply-erasures', 'reapply-audit', 'reapply-revocations', 'reapply-suppressions']);
 
 /** The Store half: runs one command in this Store (Store.ops). */
 export async function storeOps(store: Store, ctx: DurableObjectState, env: Env, command: string, a: OpsArgs, caller?: OpsCaller): Promise<OpsAnswer> {
@@ -339,6 +342,11 @@ export async function storeOps(store: Store, ctx: DurableObjectState, env: Env, 
 			return ok({ erased: await reapplyErasures(store, env) });
 		case 'reapply-revocations':
 			return ok({ revocations_reapplied: reapplyRevocations(db, Math.floor((a.since as number) / 1000)) });
+		case 'reapply-suppressions': {
+			const repeated = await reapplySuppressions(store);
+			if (store.jobs.dirty) await store.jobs.arm();
+			return ok({ suppressions_reapplied: repeated });
+		}
 		case 'check-decision': {
 			const answer = checkDecision(store, env, a);
 			if (store.jobs.dirty) await store.jobs.arm();

@@ -1,7 +1,8 @@
 // The seed list ops commands (docs/deploy.md, "The ops channel"; docs/contracts.md section 14):
-// import-seed, revoke-seed, calibration-sample and calibration-export, and the parsers for the
-// list formats the registry names. The ops run log is public: arguments name a registry entry,
-// which the public registry lists anyway, and answers carry counts only, never a channel.
+// import-seed, revoke-seed, calibration-sample and calibration-export, the parsers for the list
+// formats the registry names, and the records that let a suppression outlive a restore. The ops run
+// log is public: arguments name a registry entry, which the public registry lists anyway, and
+// answers carry counts only, never a channel.
 import { hex, utf8 } from '@colander/shared/bytes';
 import { sha256 } from '@colander/shared/sha256';
 import { INTERNAL, validateEntry, type SeedEntry } from '@colander/shared/seeds';
@@ -9,8 +10,8 @@ import { canonicalSource } from './routes/ids';
 import { runeCount, trimSpace } from './routes/respond';
 import { unix } from './scoring/engine';
 import { addCalibrationItems, communitySources, exportCalibration, sampled } from './store/calibration';
-import { findSource } from './store/sources';
-import { applyImport, frameSources, listedAt, planImport, revokeSeed, seedSources, type Alias } from './store/seeds';
+import { findSource, type Source } from './store/sources';
+import { applyImport, frameSources, listedAt, planImport, repeatObjection, revokeSeed, seedSources, type Alias, type Objection } from './store/seeds';
 import type { Store } from './store/store';
 
 /** A command's answer, as src/ops.ts sends it. */
@@ -28,6 +29,45 @@ const only = (a: Args, ...keys: string[]) => Object.keys(a).every((k) => keys.in
 /** List files and frames live in the private backup bucket under this prefix, one object per registry entry. */
 export const SEED_PREFIX = 'seeds/';
 export const seedKey = (id: string): string => `${SEED_PREFIX}${id}.json`;
+
+/**
+ * Seed list suppressions and lifts (contracts 14.4) live in the private backup bucket under this
+ * prefix, one object each, under a 7-day bucket lock; the bucket's lifecycle deletes them after 120
+ * days, when no restore point older than them is left.
+ */
+export const OBJECTION_PREFIX = 'objections/';
+
+/**
+ * Records a suppression or a lift before the Store makes it, so a restore of a dump or of an earlier
+ * point in time repeats it (reapplySuppressions). The record names the channel by its aliases, since
+ * the restored data may lack its source or give its ID to another channel; the key starts with the
+ * time, so a listing is in order. now is unix milliseconds.
+ */
+export async function recordObjection(store: Store, src: Source, lift: boolean, reason: string, now: number): Promise<void> {
+	const o: Objection = { platform: src.platform, aliases: src.aliases, lift, reason, at: unix(now) };
+	await store.backups.put(`${OBJECTION_PREFIX}${new Date(now).toISOString()}-${src.ref}.json`, JSON.stringify(o), {
+		httpMetadata: { contentType: 'application/json' }
+	});
+}
+
+/** After a restore: repeats every recorded suppression and lift, oldest first, and rescores what they changed. Returns how many. */
+export async function reapplySuppressions(store: Store): Promise<number> {
+	let repeated = 0;
+	const refs: number[] = [];
+	let cursor: string | undefined;
+	do {
+		const page = await store.backups.list({ prefix: OBJECTION_PREFIX, cursor });
+		for (const o of page.objects) {
+			const body = await store.backups.get(o.key);
+			if (!body) continue; // deleted by the lifecycle since the listing
+			refs.push(...repeatObjection(store.db, await body.json<Objection>()));
+			repeated++;
+		}
+		cursor = page.truncated ? page.cursor : undefined;
+	} while (cursor);
+	store.jobs.touch(refs, store.now());
+	return repeated;
+}
 
 /** What a list file holds, read by the entry's format. */
 export interface Parsed {

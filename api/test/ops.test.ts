@@ -12,13 +12,13 @@ import worker from '../src/index';
 import { AUDIT_EXPORTED, AUDIT_PREFIX, dump, DUMP_PREFIX, dumpKey } from '../src/backup';
 import { STATUS } from '../src/jobs';
 import { ADAPTER_CONFIG_PATH, ADMIN_BOOTSTRAPPED, PITR_PREFIX, storeOps } from '../src/ops';
-import { SEED_PREFIX } from '../src/seeds';
+import { OBJECTION_PREFIX, SEED_PREFIX } from '../src/seeds';
 import { addPasskey, audit, createSession, ensureAccount, getAccount, grantRole, holdRequest, revokeCredentials } from '../src/store/accounts';
 import { claimPairing, createPairing } from '../src/store/pairings';
 import { SeedRegistry } from '../src/store/seeds';
 import { REGISTRY } from '@colander/shared/seed-registry';
 import type { SeedEntry } from '@colander/shared/seeds';
-import { clearedEntry } from './seed-fixtures';
+import { clearedEntry, listSeed } from './seed-fixtures';
 import { log } from '../src/store/verdicts';
 import { findSource, getSource, sourceRefs } from '../src/store/sources';
 import { SNAPSHOT_KEY } from '../src/store/list';
@@ -73,7 +73,7 @@ async function resetPrimary(): Promise<void> {
 		store.engine.seeds = new SeedRegistry(REGISTRY, true);
 	});
 	await env.LISTS.delete(SNAPSHOT_KEY);
-	for (const prefix of [DUMP_PREFIX, PITR_PREFIX, SEED_PREFIX, AUDIT_PREFIX]) for (const o of (await env.BACKUPS.list({ prefix })).objects) await env.BACKUPS.delete(o.key);
+	for (const prefix of [DUMP_PREFIX, PITR_PREFIX, SEED_PREFIX, AUDIT_PREFIX, OBJECTION_PREFIX]) for (const o of (await env.BACKUPS.list({ prefix })).objects) await env.BACKUPS.delete(o.key);
 }
 
 beforeEach(resetPrimary);
@@ -594,6 +594,64 @@ describe('restores', () => {
 		expect(res.body.r2_seq).toBe(res.body.head_seq);
 		await runInDurableObject(primary(), (store: Store) => {
 			expect(store.db.all('SELECT canonical_id FROM sources')).toEqual([{ canonical_id: '@kept' }]);
+		});
+	});
+
+	// An objection under GDPR Article 21 outlives a restore. The record in the backup bucket names the
+	// channel, because the dump may lack its source or give its ID to another channel; the audit log
+	// says who did it by the source's ID only.
+	it('restore-dump repeats every seed list suppression and lift since, by channel, and audits each without naming it', async () => {
+		const entry = clearedEntry();
+		const now = Math.floor(Date.now() / 1000);
+		const staff = await accessHeaders('rae@colander.test');
+		const suppress = async (alias: string, body: Record<string, unknown>) => {
+			const res = await worker.fetch(
+				new IncomingRequest(`${ADMIN_ORIGIN}/v1/review/sources/yt/${encodeURIComponent(alias)}/suppress-seeds`, {
+					method: 'POST',
+					body: JSON.stringify(body),
+					headers: { ...staff, 'Content-Type': 'application/json', 'CF-Connecting-IP': `198.51.100.${++client % 250}` }
+				} as RequestInit<IncomingRequestCfProperties>),
+				env,
+				{ waitUntil: () => {}, passThroughOnException: () => {} } as unknown as ExecutionContext
+			);
+			expect(res.status, await res.clone().text()).toBe(200);
+		};
+		const rae = await runInDurableObject(primary(), (store: Store) => {
+			listSeed(store.db, entry, ['@objector', '@withdrawn'], now);
+			return grantRole(store.db, 'rae@colander.test', 'staff', now, { host: 'ops' }).id;
+		});
+		await suppress('@withdrawn', { reason: 'Objection under Article 21, case 6' });
+		const key = await runInDurableObject(primary(), async (store: Store, state) => (await dump(state, store.db, env.BACKUPS, Date.now())).key);
+		await suppress('@objector', { reason: 'Objection under Article 21, case 7' });
+		await suppress('@withdrawn', { reason: 'The creator withdrew it', lift: true });
+		await runInDurableObject(primary(), (store: Store) => listSeed(store.db, entry, ['@late'], now));
+		await suppress('@late', { reason: 'Objection under Article 21, case 8' });
+		const refs = await runInDurableObject(primary(), (store: Store) => ['@objector', '@withdrawn', '@late'].map((a) => findSource(store.db, 'yt', a)!));
+
+		const res = await op('restore-dump', { key, confirm: key });
+		expect(res.status).toBe(200);
+		expect(res.body.suppressions_reapplied).toBe(4);
+		await runInDurableObject(primary(), (store: Store) => {
+			const db = store.db;
+			const suppressed = (alias: string) => {
+				const ref = findSource(db, 'yt', alias);
+				return ref === undefined ? undefined : getSource(db, ref)!.seedSuppressedAt > 0;
+			};
+			expect(['@objector', '@withdrawn', '@late'].map(suppressed)).toEqual([true, false, true]);
+			expect(db.all('SELECT alias FROM seed_entries')).toEqual([]);
+			// The next import of the list skips both objectors, and lists the channel whose objection was lifted.
+			listSeed(db, entry, ['@objector', '@withdrawn', '@late'], now);
+			expect(db.all('SELECT alias FROM seed_entries')).toEqual([{ alias: '@withdrawn' }]);
+			// The restore kept the audit rows written since the dump: who did what, to which source ID.
+			expect(db.all("SELECT actor_id, host, action, target, reason FROM audit_log WHERE action LIKE 'seeds_%' ORDER BY id")).toEqual(
+				[
+					['seeds_suppressed', refs[1]],
+					['seeds_suppressed', refs[0]],
+					['seeds_unsuppressed', refs[1]],
+					['seeds_suppressed', refs[2]]
+				].map(([action, ref]) => ({ actor_id: rae, host: 'admin', action, target: `src:${ref}`, reason: null }))
+			);
+			expect(JSON.stringify(db.all('SELECT * FROM audit_log')), 'no channel and no reason in the 400-day log').not.toMatch(/@objector|@withdrawn|@late|Article|withdrew/);
 		});
 	});
 

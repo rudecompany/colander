@@ -304,6 +304,34 @@ export function setSeedSuppression(db: Db, ref: number, suppress: boolean, reaso
 	});
 }
 
+/** A suppression or a lift as the backup bucket records it (src/seeds.ts recordObjection). at is unix seconds. */
+export interface Objection {
+	platform: string;
+	/** every alias the source had, its canonical ID first */
+	aliases: string[];
+	lift: boolean;
+	reason: string;
+	at: number;
+}
+
+/**
+ * Repeats a recorded suppression or lift after a restore, by channel: on every source that holds one
+ * of its aliases. A suppression whose channel the restored data lacks gets a source of its own, so
+ * no later import lists the channel. Returns the sources it changed.
+ */
+export function repeatObjection(db: Db, o: Objection): number[] {
+	return db.tx(() => {
+		const refs = [...new Set(o.aliases.map((a) => findSource(db, o.platform, a)).filter((r) => r !== undefined))];
+		if (refs.length === 0 && !o.lift && o.aliases.length > 0) {
+			const ref = ensureSource(db, o.platform, o.aliases[0]!, '', o.at);
+			for (const a of o.aliases.slice(1)) db.run('INSERT OR IGNORE INTO source_aliases (platform, alias, source_id) VALUES (?, ?, ?)', o.platform, a, ref);
+			refs.push(ref);
+		}
+		for (const ref of refs) setSeedSuppression(db, ref, !o.lift, o.reason, o.at);
+		return refs;
+	});
+}
+
 /** The name of the registry dataset a text names by any of its datasetNames, case-insensitively, or undefined. */
 export function namedDataset(reg: SeedRegistry, text: string): string | undefined {
 	const t = text.toLowerCase();

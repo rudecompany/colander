@@ -434,6 +434,7 @@ A staff or admin account cannot ask for deletion (`403 staff_account`), and a de
 Then deletions and passkey removals run on their own, and a held export may be downloaded after a code sign-in of the last 10 minutes for 7 days.
 
 Every sign-in, credential change, role change, staff action and read of personal data writes the audit log (6.9).
+The one exception is a staff read of which seed lists name a source: `seed_provenance_reads` (6.7) records it for 24 months, longer than the audit log, and since it names the channel it stays out of the audit log; a restore loses its rows written after the restore point.
 In dev mode (`COLANDER_DEV=1`) codes and other mail are printed in the `wrangler dev` output instead of emailed.
 
 ### 6.7 Review (curators and staff)
@@ -584,6 +585,7 @@ Triggers refuse any update and any delete of a row younger than 400 days; a rest
 Every day its new rows are copied to `audit/` in the backup bucket, under a 400-day bucket lock.
 A point-in-time restore copies the rows first, its own `ops:pitr-restore` row included, and after the restart puts back from `audit/` every row written after the restore point.
 After either restore every session, reviewer token, unused pairing code and sign-in flow ends, and what the rows written after the restore point took away goes again: passkeys of revoked accounts and moved addresses, removed passkeys and those a sign out everywhere took (its row names the passkey it kept), lowered roles, A3T subject pins, and cancelled or refused held requests; a raised role is not raised again.
+Seed list suppressions and lifts are repeated from their own records (14.4).
 It names members by account ID, never by address: a people search records the IDs it found, and an email change a short hash of each address (`sha256:` and 16 hex digits of SHA-256 over `audit:` and the address), so no member's address outlives their account in it.
 
 ## 7. Website and extension handoff
@@ -850,6 +852,8 @@ The private object `seeds/<id>.json` in the environment's backup bucket is `{"fi
 An entry is live, and raises a lead, while its registry entry is usable (cleared, or `dev_only` in dev mode), its use is `lead` or `seed`, and its upstream date plus `expires_after_days` lies ahead.
 The daily `seeds` job at 04:00 UTC deletes the entries that are not live (expired, or their list lost its clearance in a deploy), every calibration item sampled from an entry that is withdrawn (gone from the registry, or not usable: refused, revoked or no longer cleared, as opposed to expired), the sources only they made, and staff provenance reads (6.7) older than 24 months, and starts a scoring pass; until it runs, leads already check liveness when they are read.
 Staff suppress seed lists on a source with `suppress-seeds` (6.7): an import skips it, and its entries and calibration item go.
+Each suppression and lift is first recorded as its own object under `objections/` in the backup bucket, naming the channel by every alias of the source, under a 7-day bucket lock and deleted after 120 days, and is audited as `seeds_suppressed` or `seeds_unsuppressed` with the target `src:<source ID>`, never the channel or the reason.
+After a restore of a dump or of an earlier point in time, the Worker repeats every record in order before it publishes; a suppressed channel that the restored data lacks gets a source of its own, so no import lists it again.
 Answers carry counts and the registry ID only, never a channel: the ops run log is public.
 Like every seed list command, these run from the Ops workflow alone (`docs/deploy.md`, "The ops channel").
 
