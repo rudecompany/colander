@@ -43,7 +43,7 @@ jobs:
           tar -xzf actionlint_1.7.12_linux_amd64.tar.gz actionlint
           ./actionlint -color
       - name: Lint the shell scripts
-        run: shellcheck scripts/*.sh
+        run: shellcheck scripts/*.sh extension/scripts/*.sh
 
   api:
     name: api
@@ -88,7 +88,7 @@ jobs:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm exec playwright install --with-deps chromium
+      - run: pnpm exec playwright install --with-deps chromium firefox
         working-directory: web
       - run: pnpm -r check
       # The in-page builders, formats and generated tokens in Node; the list and ID tests also run in the api job.
@@ -97,6 +97,17 @@ jobs:
       - run: pnpm -C extension build
       - run: pnpm -C extension test
       - run: xvfb-run -a pnpm -C extension test:e2e
+      # The Chrome, Edge and Firefox store packages as the release job builds them, with the
+      # development key in place of release.env's, and Mozilla's linter as AMO runs it.
+      - name: Store packages and the AMO linter
+        run: |
+          for browser in chrome edge firefox; do
+            WXT_COLANDER_PUBLIC_KEYS=$(cat testdata/dev-signing.pub) bash extension/scripts/build-store.sh "$browser"
+          done
+          bash extension/scripts/check-packages.sh
+          pnpm -C extension exec web-ext lint --source-dir dist/firefox-mv3
+      # The Firefox build in Playwright's Firefox against a local API: blocking, and data consent.
+      - run: xvfb-run -a pnpm -C extension test:firefox
 
   # The Worker under wrangler dev, the website and the extension together in Chromium (e2e/).
   full-stack:

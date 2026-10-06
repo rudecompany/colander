@@ -16,6 +16,7 @@ leaves it out there. Below 800 px the nav becomes a Section select.
 	import LayoutGrid from '@lucide/svelte/icons/layout-grid';
 	import List from '@lucide/svelte/icons/list';
 	import Lock from '@lucide/svelte/icons/lock';
+	import Share2 from '@lucide/svelte/icons/share-2';
 	import Shield from '@lucide/svelte/icons/shield';
 	import SlidersHorizontal from '@lucide/svelte/icons/sliders-horizontal';
 	import Card from '@colander/shared/components/ui/card/card.svelte';
@@ -33,7 +34,9 @@ leaves it out there. Below 800 px the nav becomes a Section select.
 	import Plus from './Plus.svelte';
 	import Privacy from './Privacy.svelte';
 	import Reports from './Reports.svelte';
+	import Sharing from './Sharing.svelte';
 	import Strictness from './Strictness.svelte';
+	import { browser } from 'wxt/browser';
 
 	type Section = { id: string; label: string; icon: Component<{ size?: number; 'aria-hidden'?: 'true' }>; view: Component; learn: [string, string][] };
 	const SECTIONS: Section[] = [
@@ -45,11 +48,13 @@ leaves it out there. Below 800 px the nav becomes a Section select.
 		{ id: 'plan', label: 'Plan', icon: CreditCard, view: Plan, learn: [['Compare plans', '/plans'], ['Support our work', '/support']] },
 		{ id: 'reports', label: 'My reports', icon: Flag, view: Reports, learn: [['Decision log', '/log'], ['How appeals work', '/definition#appeals']] },
 		{ id: 'data', label: 'Data', icon: Database, view: Data, learn: [['Privacy policy', '/privacy']] },
-		{ id: 'privacy', label: 'Privacy', icon: Shield, view: Privacy, learn: [['Privacy policy', '/privacy']] }
+		{ id: 'privacy', label: 'Privacy', icon: Shield, view: Privacy, learn: [['Privacy policy', '/privacy']] },
+		// Firefox asks before an add-on sends data; other browsers disclose it in their store listing.
+		...(import.meta.env.FIREFOX ? [{ id: 'sharing', label: 'Sharing', icon: Share2, view: Sharing, learn: [['Privacy policy', '/privacy']] } satisfies Section] : [])
 	];
 
 	const status = stored<Status>(K.status, DEFAULT_STATUS);
-	const version = chrome.runtime.getManifest().version;
+	const version = browser.runtime.getManifest().version;
 	const current = () => SECTIONS.find((s) => s.id === location.hash.slice(1)) ?? SECTIONS[0]!;
 	let active = $state(current());
 	addEventListener('hashchange', () => {

@@ -1,6 +1,8 @@
-// The review API for curators (docs/contracts.md 6.7), called with the reviewer bearer token.
+// The review API for curators (docs/contracts.md 6.7), called with the reviewer bearer token. In
+// Firefox the token leaves only while "Plus and review" is allowed (lib/consent.ts, contracts 8).
 import type { DecisionInput, QueueItem, ReviewSourceResponse } from '@colander/shared/api';
 import type { Platform } from '@colander/shared/verdicts';
+import { allowed } from '../lib/consent';
 import { API } from '../lib/env';
 
 export class ReviewError extends Error {
@@ -14,6 +16,7 @@ export class ReviewError extends Error {
 }
 
 async function call<T>(token: string, path: string, body?: unknown): Promise<T> {
+	if (!(await allowed('authenticationInfo'))) throw new ReviewError(0, 'consent', 'Firefox has not allowed Colander to use your reviewer sign-in.');
 	let res: Response;
 	try {
 		res = await fetch(`${API}${path}`, {
@@ -45,8 +48,5 @@ export const review = {
 	source: (t: string, p: Platform, id: string) => call<ReviewSourceResponse>(t, `/v1/review/sources/${p}/${encodeURIComponent(id)}`),
 	decideSource: (t: string, p: Platform, id: string, d: DecisionInput) => call<unknown>(t, `/v1/review/sources/${p}/${encodeURIComponent(id)}/decision`, d),
 	decideItem: (t: string, p: Platform, id: string, d: DecisionInput) => call<unknown>(t, `/v1/review/items/${p}/${encodeURIComponent(id)}/decision`, d),
-	dismiss: (t: string, reportId: string, reason: string) => call<unknown>(t, `/v1/review/reports/${encodeURIComponent(reportId)}/dismiss`, { reason }),
-	verifyAppeal: (t: string, id: string) => call<unknown>(t, `/v1/review/appeals/${encodeURIComponent(id)}/verify`, {}),
-	resolveAppeal: (t: string, id: string, outcome: 'upheld' | 'denied', reasoning: string) =>
-		call<unknown>(t, `/v1/review/appeals/${encodeURIComponent(id)}/resolve`, { outcome, reasoning })
+	dismiss: (t: string, reportId: string, reason: string) => call<unknown>(t, `/v1/review/reports/${encodeURIComponent(reportId)}/dismiss`, { reason })
 };

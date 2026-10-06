@@ -1,5 +1,5 @@
 import { test, expect } from './fixtures.ts';
-import { mockApi } from './mocks.ts';
+import { EDGE_STORE, mockApi } from './mocks.ts';
 
 test('landing explains the product and the hero demo follows the strictness table', async ({ page }) => {
 	await page.setViewportSize({ width: 1440, height: 900 });
@@ -348,4 +348,42 @@ test('the comparison keeps its table and checked date, and names no competitor o
 	await expect(page.locator('#comparison')).toHaveCount(0);
 	await expect(page.getByText('Comparison sources')).toHaveCount(0);
 	await expect(page.locator('a[href="#comparison"]')).toHaveCount(0);
+});
+
+test.describe('the install button follows the browser', () => {
+	const UA = {
+		edge: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36 Edg/141.0.0.0',
+		firefox: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:143.0) Gecko/20100101 Firefox/143.0',
+		opera: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36 OPR/126.0.0.0'
+	};
+	const hero = (page: import('@playwright/test').Page) => page.locator('.hero');
+
+	test('Edge gets its own store once it is listed, and Chrome stays one link away', async ({ browser }) => {
+		const page = await browser.newPage({ userAgent: UA.edge, viewport: { width: 1440, height: 900 } });
+		await mockApi(page);
+		await page.goto('/');
+		await expect(hero(page).getByRole('link', { name: 'Add to Edge, free' })).toHaveAttribute('href', EDGE_STORE);
+		await expect(hero(page).getByText('Also in the Chrome Web Store.')).toBeVisible();
+		await expect(page.locator('.site-header').getByRole('link', { name: 'Add to Edge' })).toHaveAttribute('href', EDGE_STORE);
+		await page.close();
+	});
+
+	test('Firefox without a listing gets the Chrome Web Store, and the browsers line leaves it out', async ({ browser }) => {
+		const page = await browser.newPage({ userAgent: UA.firefox, viewport: { width: 1440, height: 900 } });
+		await mockApi(page);
+		await page.goto('/');
+		await expect(hero(page).getByRole('link', { name: 'Add to Chrome, free' })).toHaveAttribute('href', /chromewebstore/);
+		await expect(hero(page).getByText('For Chrome, Edge, Brave and Opera on desktop.', { exact: false })).toBeVisible();
+		await expect(hero(page).getByText('Also in Edge Add-ons.')).toBeVisible();
+		await page.close();
+	});
+
+	test('Opera installs from the Chrome Web Store, with the one step it needs first', async ({ browser }) => {
+		const page = await browser.newPage({ userAgent: UA.opera, viewport: { width: 1440, height: 900 } });
+		await mockApi(page);
+		await page.goto('/');
+		await expect(hero(page).getByRole('link', { name: 'Add to Opera, free' })).toHaveAttribute('href', /chromewebstore/);
+		await expect(hero(page).getByText("In Opera, add Opera's Install Chrome Extensions first.")).toBeVisible();
+		await page.close();
+	});
 });

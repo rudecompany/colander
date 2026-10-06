@@ -10,7 +10,7 @@ Behavior described in `docs/product-requirements.md` (the spec) is not repeated 
 | Path | What | Stack |
 | --- | --- | --- |
 | `packages/shared` | `@colander/shared`: verdict enums and words, signals, glyphs, the Colander theme (`colander.css`), Mittsu components, API types, and the list format, Ed25519 signing and canonical IDs (client and server halves, WebCrypto only) | TypeScript, Svelte 5 |
-| `extension` | The Chrome MV3 extension | WXT, Svelte 5, TypeScript |
+| `extension` | The MV3 browser extension, one codebase for Chrome, Edge, Brave, Opera and Firefox | WXT, Svelte 5, TypeScript |
 | `api` | `@colander/api`: every backend service in one Cloudflare Worker (list, tag, scoring, review, appeals, public API, accounts, billing), with one SQLite Durable Object, `Store`, as the database and R2 for the signed list and the backups | TypeScript, Cloudflare Workers |
 | `web` | Public website, account pages and the review console, built static and served by the Worker as its static assets | SvelteKit (adapter-static), Svelte 5, Mittsu |
 
@@ -180,7 +180,7 @@ Rate-limited requests get `429` with `Retry-After` in seconds.
 Limits per IP count an IPv6 client by its /64.
 GETs that the edge caches by their full URL take only their canonical query and answer `400` to any other: `/v1/list/delta` exactly `?since=N` (section 3.2), `/v1/log` the parameters of 6.4 each at most once, non-empty and in the order `limit` (1 to 200), `platform`, `verdict`, `cursor` (as `next_cursor` gives it), and `/v1/list/snapshot`, `/v1/config/adapters`, `/v1/sources/*`, `/v1/stats` and `/v1/supporters` none (`invalid_query`).
 
-CORS: `/v1/list/*`, `/v1/config/*`, `/v1/tags`, `/v1/reports`, `/v1/trial`, `/v1/install`, `/v1/entitlement/refresh`, `/v1/sync`, `/v1/review/*` (bearer only) and `/v1/sources/*` answer any origin (`Access-Control-Allow-Origin: *`, no credentials) on getcolander.com, so the extension needs no host permission for the API.
+CORS: `/v1/list/*`, `/v1/config/*`, `/v1/tags`, `/v1/reports`, `/v1/trial`, `/v1/install`, `/v1/entitlement/refresh`, `/v1/pair/claim`, `/v1/sync`, `/v1/review/*` (bearer only) and `/v1/sources/*` answer any origin (`Access-Control-Allow-Origin: *`, no credentials) on getcolander.com, so the extension needs no host permission for the API.
 The admin host (6.9) answers no CORS at all.
 Cookie- and Access-authenticated routes are same-origin only: every non-GET request needs the header `X-Colander-CSRF: 1` and `Sec-Fetch-Site: same-origin` (`403 csrf_required`).
 getcolander.com, staging.getcolander.com and the admin hosts are one site to a browser, so SameSite cookies alone would not keep a sibling host out; the CORS allowlist never permits the CSRF header.
@@ -193,8 +193,8 @@ A request the edge did not mark counts as the main host, with curator authority 
 | Scheme | Header | Used by |
 | --- | --- | --- |
 | Install | `Authorization: Install <install id>` | Extension: tags, reports, trial, erasing its server data |
-| Session | Cookie `__Host-colander_session` (HttpOnly, Secure, SameSite=Strict, Path=/; in dev `colander_session` without Secure). It records how it signed in (`email` or `passkey`) and when. | Website on the main host: account, billing, review console |
-| Reviewer | `Authorization: Bearer colander_rt_...`, valid 7 days, curator authority at most | Extension side panel: review API on the main host |
+| Session | Cookie `__Host-colander_session` (HttpOnly, Secure, SameSite=Strict, Path=/; in dev `colander_session` without Secure). It records how it signed in (`email` or `passkey`) and when. | Website on the main host: account, billing, pairing codes, review console |
+| Reviewer | `Authorization: Bearer colander_rt_...`, valid 7 days, curator authority only, issued only through a pairing code (section 7) | Extension side panel: review API on the main host |
 | Plan | `Authorization: Plan <plan token>` | Extension: settings sync |
 | Access | `Cf-Access-Jwt-Assertion`, the Cloudflare Access application token, verified at the edge | Staff and admins on the admin host only (6.9) |
 | Ops | `Authorization: Bearer <GitHub Actions OIDC token>` | The ops channel (`docs/deploy.md`) |
@@ -394,18 +394,17 @@ There are no passwords and no emailed sign-in links.
 | `POST /v1/auth/passkey/verify` `{"credential"}` | Needs the passkey cookie. Signs in, or steps up, with a passkey: `200` `{"account"}` with a new passkey session, or `400 passkey_invalid`. The challenge is used up in the same transaction that records the signature counter and starts the session, so only one request can use it. A passkey sign-in cancels every request the account has waiting. |
 | `POST /v1/auth/invite/options` `{"invite"}`, `POST /v1/auth/invite/verify` `{"invite", "credential", "name"}` | Enrolls a reviewer's passkey with an invite (6.9). Both need a session of the same account (an email code is enough), so an invite works only together with control of that mailbox. The invite works once, within 24 hours, and only while the account holds the role it was issued for (`400 invite_invalid`). Verify signs the session in with the new passkey and emails a notice. |
 | `POST /v1/auth/verify` `{"token"}` | Finishes a sign-in link mailed before codes, for one release; links die 20 minutes after they were sent. `400 link_invalid` otherwise. |
-| `POST /v1/auth/logout` `{"everywhere"?}` | Ends the session. `everywhere` ends every session of the account and its reviewer token, and from a passkey sign-in of the last 10 minutes also removes every other passkey (with an email notice). |
+| `POST /v1/auth/logout` `{"everywhere"?}` | Ends the session. `everywhere` ends every session of the account, its reviewer token and its unused pairing codes, and from a passkey sign-in of the last 10 minutes also removes every other passkey (with an email notice). |
 | `POST /v1/auth/cancel` `{"secret"}` | The cancel link from a held-request email (below): `200` `{"cancelled": kind}` or `404`. |
 | `GET /v1/account` | `200` `{"account": Account}` or `401 signed_out` |
 | `PATCH /v1/account` `{"display_name"}` | Updates the public name used in the decision log and supporters page |
 | `GET /v1/account/passkeys` | `{"passkeys": [{"id", "name", "created_at", "last_used_at", "synced"}], "current"}`, `current` the passkey this session signed in with |
 | `POST /v1/account/passkeys/options`, `POST /v1/account/passkeys` `{"credential", "name"}` | Adds a passkey (`201` `{"passkey"}`), at most 10 per account (`409 too_many_passkeys`), with an email notice. A member needs a sign-in from the last 10 minutes, with a passkey once the account holds one; a curator, staff member or admin only from a passkey sign-in of that account (`403 passkey_required` with only a code; their first passkey comes from an invite, `403 invite_required`). Registration challenges use the passkey cookie too. |
 | `DELETE /v1/account/passkeys/{id}` | Removes a passkey after a passkey sign-in of the last 10 minutes, with an email notice. Sessions that signed in with it count as email sign-ins from then on. |
-| `GET /v1/account/export` | Everything kept about the account as a JSON attachment: the account, passkeys (name, dates, whether synced), session dates, the reviewer token's dates, the subscription summary, the synced settings, the decisions it authored, waiting requests and its audit events. |
+| `GET /v1/account/export` | Everything kept about the account as a JSON attachment: the account, passkeys (name, dates, whether synced), session dates, the reviewer token's dates, the subscription summary, the synced settings, the decisions it authored, waiting requests, its recent pairing codes (kind, times, browser and version, never the code) and its audit events. |
 | `DELETE /v1/account` | Ends Plus and deletes the account (6.8). `204`, and the session cookie is cleared. Staff and admin accounts are never deleted (`403 staff_account`): an admin lowers the role on the admin host first. |
 | `POST /v1/account/requests` `{"kind", "passkey_id"?}`, `DELETE /v1/account/requests/{id}` | Held requests, below |
-| `POST /v1/account/reviewer-token` | Curators, staff and admins, after a passkey sign-in of the last 10 minutes. `200` `{"token", "expires_at"}`: `colander_rt_` and 43 characters, valid 7 days, curator authority at most. Replaces any earlier token. |
-| `DELETE /v1/account/reviewer-token` | Disconnects the side panel |
+| `DELETE /v1/account/reviewer-token` | Disconnects the side panel and ends an unused reviewer code. A reviewer token comes only from a reviewer pairing code (section 7). |
 
 ```json
 {
@@ -423,7 +422,7 @@ There are no passwords and no emailed sign-in links.
 Sessions are the SHA-256 of 32 random bytes, last 30 days, record `last_seen_at` at most hourly, and are new on every sign-in and every step-up: the old token ends.
 A session from before code sign-in that still arrives under the old cookie name `colander_session` moves to `__Host-colander_session` with the same token, once, and only when no `__Host-` cookie came with it; sessions created since are never read under the old name.
 
-Step-up: export, deletion, removing a passkey, adding one to an account that already holds one, and reviewer tokens need a sign-in from the last 10 minutes (`403 recent_auth_required`), and with a passkey whenever the account holds one (`403 passkey_required`).
+Step-up: export, deletion, removing a passkey and adding one to an account that already holds one need a sign-in from the last 10 minutes (`403 recent_auth_required`), with a passkey whenever the account holds one (`403 passkey_required`); reviewer pairing codes always need a passkey sign-in from the last 10 minutes (section 7).
 The website then asks the person to confirm with their passkey, or with an emailed code when the account has none, and repeats the request.
 
 Held requests: an account that holds a passkey but was confirmed with an email code only may still ask for deletion, an export or removing a passkey it lost.
@@ -438,6 +437,7 @@ In dev mode (`COLANDER_DEV=1`) codes and other mail are printed in the `wrangler
 
 Authority depends on the host (6.9).
 On getcolander.com a reviewer acts with curator authority at most: with a session that signed in with a passkey in the last 12 hours (`403 passkey_required` otherwise; an email code alone gives member rights) or with a reviewer token (`401 invalid_token`, or `401 token_expired` after its 7 days).
+A reviewer token carries curator authority only, also a staff member's, because it works in any browser on any device.
 On the admin host staff and admins act with their full role, through Cloudflare Access, and decide as `staff` in the public log.
 Curators may decide sources that are not large and items; large sources and appeals need staff authority (`403 staff_required`, "Staff decide them in the admin console").
 
@@ -503,7 +503,7 @@ A donor's credit is changed or cleared on request by an admin, by the Checkout S
 
 Deleting an account (`DELETE /v1/account`) settles billing first: a running Plus ends at once, its latest charge is refunded when it is still refundable, and every Stripe customer of the account is deleted (Stripe keeps what tax law requires).
 Without Stripe keys an account that ever subscribed cannot be deleted (`503 billing_unavailable`), so nothing is deleted half way.
-Then, in one transaction, the account goes with its sessions, passkeys, flows, reviewer token, held requests and subscriptions; its synced settings go; its decisions and log entries keep no name, so the log shows a former reviewer; and an `account_deleted` audit row remains.
+Then, in one transaction, the account goes with its sessions, passkeys, flows, reviewer token, pairing codes, held requests and subscriptions; its synced settings go; its decisions and log entries keep no name, so the log shows a former reviewer; and an `account_deleted` audit row remains.
 An erasure record in the backup bucket makes a later restore of a dump or of an earlier point in time delete the account again before anything else.
 Later Stripe webhooks for the account are ignored as belonging to an unknown account.
 `DELETE /v1/install` (Install) erases what the server holds for one install: its tags, reports, trial and the trial's synced settings; the sources they touched are scored again.
@@ -525,7 +525,7 @@ There are four roles in one column, with a fixed permission table in code (`api/
 
 Roles change only on accounts strictly below the actor's role and only to roles strictly below it, never on the actor's own account, and never to admin.
 Admin is granted only through the ops channel's bootstrap (`grant-role` grants staff and admin only until it first grants admin, and never again, even if no admin is left).
-Raising an account to curator or above ends its sessions and deletes its passkeys and reviewer token in the same transaction, so a passkey added while it was a member never carries review authority; lowering it below curator deletes the reviewer token.
+Raising an account to curator or above ends its sessions and deletes its passkeys, reviewer token and unused pairing codes in the same transaction, so a passkey added while it was a member never carries review authority; lowering it below curator deletes the reviewer token, and a reviewer code still waiting is then refused at the claim (`403 forbidden`).
 Nobody issues an invite for their own account.
 
 The admin hosts are `admin.getcolander.com`, `staging-admin.getcolander.com` and, in dev, `admin.localhost` on the dev port (`ADMIN_HOST`, 10).
@@ -543,7 +543,7 @@ In dev mode on `http://localhost` only, `POST /__dev/access` `{"email", "subject
 | `GET /v1/admin/people?q=` | staff | Up to 50 accounts whose email contains `q` (audited with the IDs found, never `q`), or every reviewer. |
 | `PUT /v1/admin/people/role` `{"email", "role"}` | staff | Sets the role (creates a member account for a new address). `{"person": Person}` |
 | `POST /v1/admin/people/{id}/invite` | staff | `201` `{"invite", "url", "expires_at"}`: a single-use invite for a review account, valid 24 hours, bound to the account and its role, shown only to the issuer; the account gets an email notice. `url` is `{public_url}/account/invite#invite=<invite>`. |
-| `POST /v1/admin/people/{id}/revoke` | admin | Ends every session and deletes every passkey and the reviewer token |
+| `POST /v1/admin/people/{id}/revoke` | admin | Ends every session and deletes every passkey, the reviewer token and the unused pairing codes |
 | `PUT /v1/admin/people/{id}/email` `{"email", "checkout_session", "amount_cents", "date"}` | admin | Members only. Checks the Checkout Session with Stripe (this account's checkout, the amount and the UTC date `YYYY-MM-DD`; `400 receipt_mismatch`), then holds the move 7 days with a cancel link to the old address. When it runs, every session, passkey and token ends and both addresses hear; an account raised to a review role meanwhile is not moved, and the change is cancelled. `{"due_at"}` |
 | `POST /v1/admin/donations/{id}/credit` `{"credit_name"}` | admin | Replaces or clears (`""`) a donor's supporter credit by Checkout Session ID |
 | `GET /v1/admin/audit?target=&before=` | admin | The newest 100 audit rows, `{"entries", "next_cursor"}`. Audited. |
@@ -556,28 +556,46 @@ The audit log is one insert-only table: `at`, `actor_id`, `actor_sub` (`a3t:`, `
 Triggers refuse any update and any delete of a row younger than 400 days; a restore keeps the rows written since the dump.
 Every day its new rows are copied to `audit/` in the backup bucket, under a 400-day bucket lock.
 A point-in-time restore copies the rows first, its own `ops:pitr-restore` row included, and after the restart puts back from `audit/` every row written after the restore point.
+After either restore every session, reviewer token, unused pairing code and sign-in flow ends, and what the rows written after the restore point took away goes again: passkeys of revoked accounts and moved addresses, removed passkeys and those a sign out everywhere took (its row names the passkey it kept), lowered roles, A3T subject pins, and cancelled or refused held requests; a raised role is not raised again.
 It names members by account ID, never by address: a people search records the IDs it found, and an email change a short hash of each address (`sha256:` and 16 hex digits of SHA-256 over `audit:` and the address), so no member's address outlives their account in it.
 
 ## 7. Website and extension handoff
 
-The extension declares `externally_connectable.matches` for the website origin.
-The website finds the extension by its ID (build env `PUBLIC_EXTENSION_ID`) and sends:
+The website hands a plan token or a reviewer token to the extension with a pairing code, the same way in every browser.
+A reviewer token is never issued any other way.
+The website never talks to the extension directly, so nothing depends on an extension ID, a host permission or the browser.
+A code also works when the website is open in another browser or on another device.
 
-| Message | Reply |
-| --- | --- |
-| `{"type": "colander:ping"}` | `{"ok": true, "version": "1.0.0"}` |
-| `{"type": "colander:plan-token", "token": "..."}` | `{"ok": true}` after the extension verifies and stores the token |
-| `{"type": "colander:reviewer-token", "token": "..."}` | `{"ok": true}`; the side panel can now use the review API |
+| Request | Auth | Effect |
+| --- | --- | --- |
+| `POST /v1/pair` `{"kind": "plan" \| "reviewer"}` | Session | `201` `{"id", "code": "KXQ4-JP7M", "expires_at"}`. `plan` needs an active plan (`404 no_plan`); `reviewer` needs the curator, staff or admin role (`403 forbidden`) and a passkey sign-in of the last 10 minutes (`403 passkey_required`, `403 recent_auth_required`); any other kind is `400 invalid_kind`. A new code ends the account's earlier unused code of the same kind. 20 codes per account an hour. |
+| `GET /v1/pair/{id}` | Session | `200` `{"status": "pending" \| "claimed" \| "expired", "ext_version", "browser"}` for the account's own code, `404 not_found` for any other. The website checks every 2 seconds while the code is on screen. |
+| `POST /v1/pair/claim` `{"code", "ext_version", "browser"}` | none, any origin | `200` `{"kind", "token", "account"}`: a plan token (section 5) minted now for the account, or a reviewer token (6.6: 7 days, curator authority only, audited as `token_issued`) that replaces the account's earlier one; `account` is the account's email masked as `p***@example.com`, so the person sees whose account they connected. `404 invalid_code` for a wrong, used or expired code; `404 no_plan` when the plan ended since the code was made; `403 forbidden` when the role went; these leave the code unused. 10 claims per address per 10 minutes, an IPv6 address counted by its /48, wrong codes included (`429`). |
 
-A message the extension refuses answers `{"ok": false, "error": "<code>"}`, such as `invalid_token`, and the website shows that as an error, never as connected.
+A code is 8 Crockford base32 characters (40 bits), shown as two groups of 4.
+The server reads a typed code without regard to case, spaces or dashes, and reads I and L as 1 and O as 0.
+Codes are stored only as SHA-256, last 10 minutes and work once; the hourly prune deletes them an hour after they expire.
+`ext_version` is the extension's version and `browser` one of `chrome`, `edge`, `brave`, `opera`, `firefox`, `safari` and `chromium`, so the website can say "Connected Colander 1.4.0 in Firefox"; anything else is `400 invalid_field`.
 
-The dev build uses a fixed manifest `key` so the extension ID is stable across machines.
+The website shows the code and the extension takes it, never the reverse: a link the extension opened could be crafted by someone else (the device-code phishing pattern), while a code the person types into their own extension leaks only if they hand it over.
+The website says "Never share this code" beside it, with its countdown.
+The person types it in Options under Plan or in the review side panel; the extension stores a plan token only after it verifies it (section 5), and shows the masked email of the account it came from.
+Wrong codes from all addresses together are counted, and the watchdog alerts when they reach 300 an hour; that count never refuses a claim, so a guesser cannot lock anyone out.
+
+Unpacked development builds of the Chrome extension carry a fixed manifest `key`, so the end-to-end tests can open its pages by ID; store packages never carry one.
 
 ## 8. Privacy rules for the network
 
-The extension makes exactly these requests: list snapshot and deltas, adapter configuration, tags, reports, report status, trial, entitlement refresh, settings sync (Plus) and the review API (reviewers only).
+The extension makes exactly these requests: list snapshot and deltas, adapter configuration, tags, reports, report status, trial, entitlement refresh, pairing claims, settings sync (Plus) and the review API (reviewers only).
 No request ever carries a page URL, the user's platform account name, or watch history.
 List downloads carry no identifier at all.
+A pairing claim carries the code, the extension version and the browser name, and never the install ID.
+
+Firefox asks before an add-on sends data, so the Firefox build declares no required data collection and two optional kinds, which Firefox grants only when the person allows each:
+- `websiteContent` for tags and reports, which carry what was seen on a page and the install ID. Until it is allowed, tags wait in the queue on the device and Options opens at Sharing, where one click allows it; a report is refused with that explanation.
+- `authenticationInfo` for the trial, the entitlement refresh, settings sync, pairing claims and the review API, which carry or fetch a plan or reviewer token. Start 14 days free and Connect ask for it from their click.
+
+List downloads and the adapter configuration need neither, because they carry no identifier.
 Server logs never record request paths that contain item or source IDs together with an install hash.
 
 ## 9. Scoring (normative for the server)
@@ -703,7 +721,10 @@ The bindings are `STORE` (the `Store` Durable Object), `LISTS` and `BACKUPS` (R2
 | --- | --- | --- |
 | `WXT_COLANDER_API` | `http://localhost:8787` | Server origin |
 | `WXT_COLANDER_PUBLIC_KEYS` | the dev key from `testdata/dev-signing.pub` | Trusted Ed25519 public keys |
-| `WXT_COLANDER_SITE` | same as the API | Website origin for links and `externally_connectable` |
+| `WXT_COLANDER_SITE` | same as the API | Website origin for links |
+| `WXT_COLANDER_STORE_BUILD` | unset | `1` leaves the development manifest `key` out; `extension/scripts/build-store.sh` sets it |
+
+Store packages are built by `extension/scripts/build-store.sh chrome|edge|firefox` from `extension/release.env`, which holds these values for production and is committed, so AMO's reviewers rebuild the Firefox package from its sources zip byte for byte.
 
 ## 12. Keys
 

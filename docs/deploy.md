@@ -12,7 +12,9 @@ Part 3 is day-2 operations.
 | --- | --- | --- | --- |
 | production | https://getcolander.com, and the admin host https://admin.getcolander.com behind Cloudflare Access | `colander` | `release.yml`, when you merge a release PR |
 | staging | https://staging.getcolander.com, behind Cloudflare Access, and the admin host https://staging-admin.getcolander.com | `colander-staging` | `deploy-staging.yml`, after every green CI run on main |
-| Chrome Web Store | the store item | - | `release.yml`, as a staged publish |
+| Chrome Web Store | the store item, which Chrome, Brave and Opera install from | - | `release.yml`, as a staged publish |
+| Edge Add-ons | the store item | - | `release.yml`, submitted for certification once step 18 is done |
+| addons.mozilla.org | the listed add-on `colander@getcolander.com` | - | `release.yml`, submitted for review once step 19 is done |
 
 The Worker names come from `api/wrangler.jsonc`; this runbook assumes the top level is production and `env.staging` is staging.
 GitHub Actions is the only pipeline, and Workers Builds stays off.
@@ -21,10 +23,10 @@ GitHub Actions is the only pipeline, and Workers Builds stays off.
 | --- | --- | --- |
 | `ci.yml` | every pull request and push to main | The required checks: `secrets`, `workflows`, `api`, `contract`, `web-and-extension`, `full-stack` |
 | `deploy-staging.yml` | CI succeeded on main | Builds, deploys staging, runs the mutating smoke test, records a GitHub deployment for the commit |
-| `release.yml` | push to main | release-please; on a platform release, production deploy after staging passed the same commit, smoke test, automatic rollback; on an extension release, the store package with provenance and a staged Chrome Web Store submission |
+| `release.yml` | push to main | release-please; on a platform release, production deploy after staging passed the same commit, smoke test, automatic rollback; on an extension release, the Chrome, Edge and Firefox packages and the Firefox sources with provenance, a staged Chrome Web Store submission, and Edge Add-ons and addons.mozilla.org submissions once they are set up |
 | `rollback.yml` | by hand | Puts an earlier Worker version back live |
 | `ops.yml` | by hand | One command on the ops channel |
-| `probes.yml` | hourly at :41 | Read-only production smoke test and `/ops/status` thresholds; opens an issue on failure |
+| `probes.yml` | hourly at :41, and Mondays 07:23 UTC | Read-only production smoke test and `/ops/status` thresholds hourly, and the Edge Add-ons API key weekly; opens an issue on failure |
 | `drills.yml` | Mondays 05:23 UTC, and the 1st at 05:47 UTC | Production dump drill weekly, staging point-in-time restore drill monthly; opens an issue on failure |
 | `adapters-daily.yml` | daily 06:17 UTC | Platform adapters against the live sites; opens an issue on failure |
 
@@ -147,6 +149,10 @@ Write down the public keys:
 - `COLANDER_PUBLIC_KEYS` (GitHub repository variable) is the production public key, a comma, and the next public key.
 - `STAGING_PUBLIC_KEYS` (GitHub `staging` environment variable) is the staging public key.
 
+Commit the same production pair as `WXT_COLANDER_PUBLIC_KEYS=<current>,<next>` in `extension/release.env`, through a pull request.
+Store packages are built from that file, so AMO's reviewers rebuild the Firefox package byte for byte, and the release job refuses to build while it differs from `COLANDER_PUBLIC_KEYS`.
+Public keys are not secret.
+
 ### 8. R2 buckets and Worker secrets
 
 Before you start, have the `colander-analytics` token from step 10 ready (it is a Worker secret).
@@ -165,16 +171,15 @@ The first deploy attaches the Custom Domains (the site and the admin host of eac
 Do it once from your machine, still logged in as the owner:
 
 ```sh
-PUBLIC_EXTENSION_ID=nninnogmbhfebflkcgghlmjmplmpodlc pnpm -C web build
+pnpm -C web build
 pnpm -C api exec wrangler deploy --env staging
-pnpm -C web build    # the release workflow later rebuilds it with the store item ID
-pnpm -C api exec wrangler deploy
+pnpm -C api exec wrangler deploy    # the release workflow later rebuilds the site with the store links
 ```
 
 These first builds warn that `COLANDER_BUILD_API` is not set: there is no production Worker yet to read live numbers from, so the pages fill them in once the browser fetches them.
 The release workflow builds every later production website with `COLANDER_BUILD_API=https://getcolander.com`, so its pages prerender with the live numbers and latest decisions.
 
-Then check both with the smoke test (step 16 explains the reviewer token for the mutating run):
+Then check both with the smoke test (the mutating run on staging decides through the ops channel, Part 2):
 
 ```sh
 COLANDER_BASE_URL=https://getcolander.com COLANDER_PUBLIC_KEYS=<production public key> node scripts/smoke.ts
@@ -225,18 +230,19 @@ If a later change to `api/wrangler.jsonc` adds or changes routes or Custom Domai
 
 The API cannot create items, so the first package goes up by hand.
 1. Register as a Chrome Web Store developer with the publishing Google account, and turn on 2-step verification for it.
-2. Build a store package for the first upload; store builds carry no manifest key, which the store rejects:
+2. Build a store package for the first upload, from `extension/release.env` with the keys from step 7; store builds carry no manifest key, which the store rejects:
 
    ```sh
-   WXT_COLANDER_API=https://getcolander.com WXT_COLANDER_SITE=https://getcolander.com \
-   WXT_COLANDER_PUBLIC_KEYS=<COLANDER_PUBLIC_KEYS> WXT_COLANDER_STORE_BUILD=1 pnpm -C extension zip
+   bash extension/scripts/build-store.sh chrome
    ```
 
 3. In the Developer Dashboard select Add new item and upload `extension/dist/colanderextension-1.0.0-chrome.zip`.
 4. The listing title comes from the manifest name, "Colander: drain the slop from your feed", so the dashboard does not ask for one.
    Fill in the Store listing's description and the store art from `extension/store/`, and the Privacy tab.
+   Add one line to the description for Brave and Opera, which install from this listing: "Also for Brave, and for Opera with Opera's Install Chrome Extensions add-on."
 5. Copy the item ID (it is the extension ID) and the publisher ID from Account > Publisher settings.
    They become the variables `CWS_ITEM_ID` (repository) and `CWS_PUBLISHER_ID` (environment `chrome-web-store`).
+   `CWS_ITEM_ID` also points the website's Chrome install buttons at the listing; until it is set they open a store search.
 6. Submit this first version from the dashboard with "publish after review" turned off, so it waits until production is live.
 
 ### 14. Keyless publishing from GitHub (Workload Identity Federation)
@@ -371,6 +377,7 @@ Set each one with `gh secret set NAME [--env ENV]` or `gh variable set NAME [--e
 3. Make staff and curators on People, then use Invite on each: send the link through a channel you trust.
    The invite works once, within 24 hours, and only after the person signs in with their email; it adds the passkey that reviewing on getcolander.com and the side panel need.
    An admin cannot invite themselves; admins and staff review on the admin host, where Access is the sign-in.
+   Reviewers connect the side panel with a reviewer code from their account page; its token lasts 7 days and carries curator authority only.
 
 The staging smoke test and the restore drill need no reviewer account: they decide on two fictional check channels through the ops command `check-decision`.
 
@@ -382,18 +389,94 @@ The staging smoke test and the restore drill need no reviewer account: they deci
    `release.yml` waits for staging, deploys production, smoke-tests it and publishes the release `v1.0.1`.
 3. Run the Probes workflow by hand and check that it passes.
 
+### 18. Microsoft Edge Add-ons
+
+Edge ships first after Chrome, with the same code; the Edge package is the Chrome one without a manifest key.
+The API cannot create a product, so the first version goes up by hand.
+1. Register as a Microsoft Edge developer in Partner Center (https://partner.microsoft.com/dashboard/microsoftedge/), which is free, with the account that will own the listing, and turn on two-step verification for it.
+2. Select Create new extension and upload `colanderextension-<version>-edge.zip` from the latest `extension-v*` GitHub release (it carries provenance), or build it with `bash extension/scripts/build-store.sh edge`.
+3. Availability: public, all markets.
+4. Properties: category Productivity, the privacy policy URL https://getcolander.com/privacy, and the website https://getcolander.com.
+   Edge asks why each permission is needed: use the Why column of the permissions table on https://getcolander.com/privacy.
+5. Store listing (en-US): the description from the Chrome Web Store listing, the logo (300 by 300 recommended, at least 128 by 128; `extension/store/icon-128.png` meets the minimum), and from `extension/store/` the 440 by 280 small tile, the 1400 by 560 large tile and the 1280 by 800 screenshots.
+6. Make a test account for store reviewers: a Colander account whose Plus costs nothing, through a 100% off coupon on its subscription in the Stripe dashboard, so they can try the plan pairing code.
+   If they should see the review side panel, make it a curator (Ops command `grant-role`, or People on the admin host) and send it a passkey invite from People, since a reviewer code needs a passkey sign-in.
+   The 14-day trial in Options shows Plus without any account.
+7. Submission options, Notes for certification: that blocking needs no account, that Plus and the review side panel connect with a pairing code from the website, and the test account's sign-in.
+   Then select Publish; certification takes up to 7 business days.
+8. Turn on the Publish API: in Partner Center open Microsoft Edge, then Publish API, and create API credentials.
+   Copy the Client ID and the API key now; the key is shown once.
+9. Copy the Product ID, the GUID on the extension's overview page in Partner Center (not the ID in the store address).
+10. Create the environment `edge-add-ons` limited to main, as in step 15, without required reviewers, since the weekly key check uses it unattended:
+
+    ```sh
+    gh api -X PUT repos/rudecompany/colander/environments/edge-add-ons --input - <<'JSON'
+    { "deployment_branch_policy": { "protected_branches": false, "custom_branch_policies": true } }
+    JSON
+    gh api -X POST repos/rudecompany/colander/environments/edge-add-ons/deployment-branch-policies -f name=main -f type=branch
+    gh secret set EDGE_CLIENT_ID --env edge-add-ons
+    gh secret set EDGE_API_KEY --env edge-add-ons
+    gh variable set EDGE_PRODUCT_ID
+    ```
+
+    With `EDGE_PRODUCT_ID` set, every extension release uploads the Edge package and submits it for certification (`submit-edge-add-ons`), and the weekly probe checks the key.
+11. Once the listing is live, copy its item ID from the store address (`https://microsoftedge.microsoft.com/addons/detail/<item ID>`) into the repository variable `EDGE_ITEM_ID`.
+    The next production deploy shows Add to Edge to Edge visitors; until then they are sent to the Chrome Web Store, which Edge can install from.
+
+The API key expires 72 days after it is made, and Microsoft's reminder emails are not reliable: see Rotate credentials.
+
+### 19. Mozilla addons.mozilla.org
+
+Firefox ships second, as a listed add-on with the permanent ID `colander@getcolander.com`.
+AMO's reviewers rebuild the package from the sources zip each release attaches, following `extension/AMO_REVIEW.md`.
+1. Create a Firefox account for the add-on at https://addons.mozilla.org/developers/, turn on two-factor authentication, and accept the developer agreement.
+2. Write the sign-in steps of the test account from step 18 as plain text; they become the secret `AMO_REVIEWER_NOTES`, sent as each version's notes for reviewers.
+3. Submit the first version by hand: in the Developer Hub select Submit a New Add-on, choose On this site, and upload `colanderextension-<version>-firefox.zip` from the latest `extension-v*` release.
+   When asked whether the add-on needs source code, answer yes and upload `colanderextension-<version>-sources.zip` from the same release.
+4. Listing: the name and summary from `extension/amo/metadata.json`, category Privacy and Security, the license All Rights Reserved (change it in the metadata file and here if the code gets an open license), the privacy policy text from https://getcolander.com/privacy, and the support site https://getcolander.com.
+   Choose a slug for the listing address, such as `colander`.
+   Paste `AMO_REVIEWER_NOTES` into Notes to Reviewer.
+5. Get an API key at https://addons.mozilla.org/developers/addon/api/key/: the JWT issuer and the JWT secret.
+6. Create the environment `amo` limited to main, as in step 15, and store the secrets:
+
+   ```sh
+   gh api -X PUT repos/rudecompany/colander/environments/amo --input - <<'JSON'
+   { "deployment_branch_policy": { "protected_branches": false, "custom_branch_policies": true } }
+   JSON
+   gh api -X POST repos/rudecompany/colander/environments/amo/deployment-branch-policies -f name=main -f type=branch
+   gh secret set AMO_JWT_ISSUER --env amo
+   gh secret set AMO_JWT_SECRET --env amo
+   gh secret set AMO_REVIEWER_NOTES --env amo
+   ```
+
+7. Once AMO approves the first version and the listing is public, set the repository variable `AMO_SLUG` to its slug.
+   From then on every extension release submits the Firefox package with its sources for review (`submit-amo`, with `web-ext sign`), and the next production deploy shows Add to Firefox to Firefox visitors and names Firefox on the website.
+   Signing usually takes under a day; a manual review can take longer.
+
+AMO may ask whether tags and reports need a required data collection kind, since they carry the install ID; the first submission's notes should invite that question, and the answer goes in `extension/wxt.config.ts`.
+
+### Opera, if its traffic grows
+
+Opera users install from the Chrome Web Store with Opera's Install Chrome Extensions add-on, which the website tells them.
+A listing on addons.opera.com is optional and manual: there is no publishing API.
+It needs an addons.opera.com account, the Chrome package uploaded by hand (`bash extension/scripts/build-store.sh chrome`), and an attached license or terms, or Opera applies CC BY-NC-ND to the listing.
+
 ## Part 2: reference
 
 ### Secrets and variables
 
 Until `CLOUDFLARE_ACCOUNT_ID` is set, staging deploys, probes and drills skip instead of failing.
 Until `RELEASE_APP_CLIENT_ID` is set, release-please and every release job skip.
+Until `EDGE_PRODUCT_ID` and `AMO_SLUG` are set, the Edge and AMO submissions and the Edge key probe skip, and until `EDGE_ITEM_ID` and `AMO_SLUG` are set the website does not offer those stores.
 
 | Name | Kind | Where | Value |
 | --- | --- | --- | --- |
 | `CLOUDFLARE_ACCOUNT_ID` | variable | repository | Cloudflare account ID |
 | `COLANDER_PUBLIC_KEYS` | variable | repository | Production public key, comma, next public key (step 7) |
-| `CWS_ITEM_ID` | variable | repository | Chrome Web Store item ID, which is also the extension ID |
+| `CWS_ITEM_ID` | variable | repository | Chrome Web Store item ID, which is also the extension ID; the website's Chrome install link |
+| `EDGE_PRODUCT_ID` | variable | repository | Partner Center product ID of the Edge extension (step 18); turns on `submit-edge-add-ons` and the weekly key probe |
+| `EDGE_ITEM_ID` | variable | repository | Edge Add-ons item ID from the store address (step 18); the website's Edge install link |
+| `AMO_SLUG` | variable | repository | addons.mozilla.org slug of the public listing (step 19); turns on `submit-amo` and the website's Firefox install link |
 | `RELEASE_APP_CLIENT_ID` | variable | repository | Client ID of the `colander-release` GitHub App |
 | `RELEASE_APP_PRIVATE_KEY` | secret | repository | Private key PEM of that App |
 | `CLOUDFLARE_API_TOKEN` | secret | `staging` | `colander-ci-staging` token |
@@ -405,6 +488,11 @@ Until `RELEASE_APP_CLIENT_ID` is set, release-please and every release job skip.
 | `CWS_PUBLISHER_ID` | variable | `chrome-web-store` | Chrome Web Store publisher ID |
 | `GCP_WORKLOAD_IDENTITY_PROVIDER` | variable | `chrome-web-store` | Full provider name from step 14 |
 | `GCP_SERVICE_ACCOUNT` | variable | `chrome-web-store` | `cws-publisher@<project>.iam.gserviceaccount.com` |
+| `EDGE_CLIENT_ID` | secret | `edge-add-ons` | Publish API client ID (step 18) |
+| `EDGE_API_KEY` | secret | `edge-add-ons` | Publish API key, which expires after 72 days (step 18) |
+| `AMO_JWT_ISSUER` | secret | `amo` | addons.mozilla.org API key, the JWT issuer (step 19) |
+| `AMO_JWT_SECRET` | secret | `amo` | addons.mozilla.org API secret (step 19) |
+| `AMO_REVIEWER_NOTES` | secret | `amo` | Notes for AMO's reviewers with the test account's sign-in (step 19) |
 
 Worker secrets, per environment, set with `wrangler secret put` and never stored in GitHub: `COLANDER_SIGNING_KEY`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `YOUTUBE_API_KEY`, `RESEND_API_KEY`, `CF_ANALYTICS_TOKEN`, `IP_SALT`, and optionally `TURNSTILE_SECRET_KEY`.
 Worker vars in `api/wrangler.jsonc`, not secret: `CF_ACCESS_TEAM_DOMAIN`, `CF_ACCESS_AUD` and `ADMIN_HOST` per environment (step 6a), and `OPS_GITHUB_REPOSITORY`, `OPS_GITHUB_REPOSITORY_ID` and `OPS_GITHUB_ENVIRONMENT`.
@@ -429,7 +517,7 @@ The workflows talk to the Worker through one authenticated channel, and the Work
 | Command | Body | Success answer |
 | --- | --- | --- |
 | `status` | `{}` | `head_seq` (Store list head), `r2_seq` (sequence in R2's `list/snapshot.bin`), `pass_age_s` (seconds since the last completed scoring pass), `publish_lag_s` (seconds the oldest verdict change not yet in R2's list has waited, 0 when R2 holds the head), `dump_age_s` (seconds since the newest successful dump), `dump_ms`, `rows_read_last_pass` |
-| `grant-role` | `{"email", "role"}` with role `member`, `curator`, `staff` or `admin`. Until it first grants admin it grants any role, so the owner bootstraps the first admin; after that it moves only member and curator accounts between member and curator (`403 admin_exists`), even if no admin is left. Raising a role ends the account's sessions and passkeys. | The account |
+| `grant-role` | `{"email", "role"}` with role `member`, `curator`, `staff` or `admin`. Until it first grants admin it grants any role, so the owner bootstraps the first admin; after that it moves only member and curator accounts between member and curator (`403 admin_exists`), even if no admin is left. Raising a role ends the account's sessions and deletes its passkeys, reviewer token and unused pairing codes. | The account |
 | `import-seed` | `{"key"}` and nothing else, key naming an object under `seeds/` in the environment's backup bucket. The object is a JSON object `{"file", "list", "source_name", "license", "attribution", "permission_doc"}`: file the list text, list `blocklist` or `warnlist`, license `CC0-1.0`, `CC-BY-4.0`, `MIT` or `LicenseRef-written-grant`. `attribution` (the credit) is required for CC BY and MIT, `permission_doc` (where the written grant is kept) for a written grant. Non-commercial, no-derivatives, share-alike, GPL and unlicensed lists answer `400 license_refused`. | Counts imported and the batch ID, never the list's name or license; entries become review leads, never verdicts |
 | `pin-subject` | `{"email", "subject"}`: binds a staff or admin account to its A3T subject before that person's first A3T sign-in, replacing an earlier pin (step 6a). `409 subject_taken` when another account holds it. | The account |
 | `sign-config` | `{}`: the Worker reads `extension/src/adapters/default-config.json` itself from `raw.githubusercontent.com` at the commit on main the run started from (the token's `sha`) and signs it byte for byte. A body with `file` is `400`. | Version, key ID and the commit |
@@ -440,6 +528,9 @@ The workflows talk to the Worker through one authenticated channel, and the Work
 | `check-decision` | `{"source", "reason"}`, source `@colander-smoke` or `@colander-drill`: toggles that fictional channel between Clear and not rated, as a curator decision. Staging and dev only (`403` in production). | The source and the verdict it set |
 
 After either restore, the Worker deletes again every account erased since (the erasure records under `erasures/` in the backup bucket) before it publishes.
+It also ends every session, reviewer token, unused pairing code and sign-in flow, and repeats what the audit log records was taken away after the restore point (a dump's restore point is the time in its name): revoked accounts and moved addresses lose their passkeys again, removed passkeys go again, lowered roles are lowered again, A3T subjects are pinned again, and cancelled or refused held requests stay cancelled.
+Nothing is given back, so a role raised after the restore point is not raised again.
+Both answers add `revocations_reapplied`, the number of audit rows it repeated.
 
 The probes require `pass_age_s` under 900, `dump_age_s` under 25,200 and `publish_lag_s` under 21,600.
 The restore drill (`scripts/pitr-drill.ts`) uses `head_seq` and `r2_seq`.
@@ -453,8 +544,9 @@ The restore drill (`scripts/pitr-drill.ts`) uses `head_seq` and `r2_seq`.
 3. release-please keeps a release PR open with the next versions and changelogs; never edit a CHANGELOG.md by hand.
 4. Merging the release PR deploys production: `release.yml` waits until staging passed that commit, records the live version, runs `wrangler deploy --tag vX.Y.Z`, smoke-tests production read-only, and publishes the release.
    If the smoke test fails it rolls back to the recorded version and the job fails.
-5. An extension release (a change under `extension/`) builds the store package, attests it, attaches it to the `extension-vX.Y.Z` release and submits it as a staged publish.
-   After review, publish it from the Developer Dashboard once the backend it needs is live in production.
+5. An extension release (a change under `extension/`) builds the Chrome, Edge and Firefox packages from `extension/release.env`, checks them, rebuilds the Firefox package from its sources zip byte for byte, attests all four files and attaches them to the `extension-vX.Y.Z` release.
+   It submits the Chrome package as a staged publish; after review, publish it from the Developer Dashboard once the backend it needs is live in production.
+   Once steps 18 and 19 are done it also submits the Edge package for certification and the Firefox package with its sources for AMO review, and those stores publish each version when it passes.
 
 A change to `packages/shared` releases with the platform.
 When it also changes the extension, touch `extension/` in the same pull request or add a `Release-As:` footer.
@@ -499,10 +591,12 @@ Point-in-time restore covers the last 30 days:
 2. Run Ops with command `pitr-restore`, args `{"at": "2026-11-02T14:05:00Z"}` and confirm `2026-11-02T14:05:00Z`.
 3. The answer holds an undo bookmark; keep it from the run summary (the backup bucket keeps it too, under `pitr/`).
 4. The Store restarts on the restored data, publishes a list sequence above any that installs hold, and the edge cache is purged.
+5. Everyone signs in again and reconnects the side panel, and no credential or role taken away since comes back; grant again any role raised after the restore point, and issue again any passkey invite still open.
 
 If the Store namespace itself is gone, restore the newest dump from the backup bucket:
 1. Find the newest dump's key: run Ops with command `drill`, whose answer names it as `key` even when the empty Store fails the comparison, or browse the `dumps/` prefix of the backup bucket in the Cloudflare dashboard (the bootstrap script prints the bucket names; Wrangler has no command that lists objects).
 2. Run Ops with command `restore-dump`, args `{"key": "<dump key>"}` and confirm set to the same key.
+3. As after a point-in-time restore, everyone signs in again; grant again any role raised after the dump, and issue again any passkey invite still open.
 
 Until then the empty Store publishes nothing: it never puts an empty list above the one in R2, which every install would take, and the watchdog alerts `store_empty`.
 To start from an empty list on purpose instead (a reset staging environment), delete `list/snapshot.bin` from the lists bucket with `pnpm -C api exec wrangler r2 object delete <lists bucket>/list/snapshot.bin --remote`.
@@ -536,6 +630,8 @@ The extension trusts every key in `COLANDER_PUBLIC_KEYS`, so rotation never brea
 | Access service token | yearly, before expiry | Zero Trust > Service Tokens > Rotate secret with a grace period, then update `CF_ACCESS_CLIENT_SECRET` |
 | Staff keys | when one is lost | Step 6a, Recovery |
 | GitHub App private key | yearly | Generate a new key in the App settings, update `RELEASE_APP_PRIVATE_KEY`, delete the old key |
+| Edge Add-ons API key | within 72 days, which is when it expires | In Partner Center, Microsoft Edge, Publish API, create a new key before the old one expires (several can exist at once), update `EDGE_API_KEY`, then delete the old one. The weekly probe opens an issue named "Edge Add-ons API key refused" once a key stops working. |
+| AMO API key | when it leaks or a maintainer leaves | Regenerate it at https://addons.mozilla.org/developers/addon/api/key/ and update `AMO_JWT_ISSUER` and `AMO_JWT_SECRET` |
 
 Google publishing is keyless and has nothing to rotate.
 
@@ -551,6 +647,8 @@ Google publishing is keyless and has nothing to rotate.
 ### When something fails
 
 - The watchdog cron mails the alert address when the scoring pass, the list publication, R2 or the dumps fall behind, and when more than 500 sign-in codes go out in an hour (`sign_in_mail`): check the audit log and turn on Turnstile (step 6b).
+- It also mails `pair_guessing` when 300 or more wrong pairing codes come in within an hour from all addresses together, which looks like someone guessing codes.
+  Claims stay limited per address either way; look for `POST /v1/pair/claim` in the edge logs.
 - `probes.yml`, `drills.yml` and `adapters-daily.yml` open an issue named after the failing check, or comment on the open one.
   Close the issue once the cause is fixed.
 - GitHub turns off scheduled workflows after 60 days without activity in a public repository, so re-enable them under Actions if the repository goes quiet.

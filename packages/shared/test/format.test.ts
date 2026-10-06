@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { PLATFORM_SURFACES } from '../src/copy';
 import { demoCounts, demoHiddenCount } from '../src/inpage/demo';
-import { fmtAgo, fmtDate, fmtDateTime, fmtDay, fmtShortDate, fmtTime, middleTruncate } from '../src/utils/format';
+import { fmtAgo, fmtDate, fmtDateTime, fmtDay, fmtList, fmtShortDate, fmtTime, middleTruncate } from '../src/utils/format';
 
 const t = '2026-10-02T14:02:00Z';
 
@@ -13,6 +13,12 @@ describe('formats', () => {
 		expect(fmtTime(t)).toBe('14:02 UTC');
 		expect(fmtDateTime(t)).toBe('2 Oct 2026, 14:02 UTC');
 		expect(fmtShortDate('2026-09-03T00:00:00Z')).toBe('3 Sep 2026');
+	});
+
+	it('join lists with "and" and no comma before it', () => {
+		expect(fmtList(['YouTube'])).toBe('YouTube');
+		expect(fmtList(['YouTube', 'TikTok'])).toBe('YouTube and TikTok');
+		expect(fmtList(['Chrome', 'Edge', 'Brave', 'Opera'])).toBe('Chrome, Edge, Brave and Opera');
 	});
 
 	it('say how long ago, then the date after a day', () => {

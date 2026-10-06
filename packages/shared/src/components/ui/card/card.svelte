@@ -3,7 +3,8 @@
 
 Padding 16 (`size="md"`, the extension) or 24 (`size="lg"`, the website); `padding={false}`
 opts out. `title` adds a heading in body 600 (`md`) or title type (`lg`), and `aside` a
-right-aligned snippet beside it, such as a quiet button. `interactive` strengthens the border
+right-aligned snippet beside it, such as a quiet button. `titleId` gives the heading that id and
+lets a script move focus to it, for when the card replaces what had focus. `interactive` strengthens the border
 on hover for a card that is a link or button, with no lift.
 `variant="tinted"` uses the raised surface, for the rare nested card.
 
@@ -22,6 +23,7 @@ CSS lives in `./card.css`.
     padding?: boolean;
     interactive?: boolean;
     title?: string;
+    titleId?: string;
     headingLevel?: 2 | 3 | 4;
     aside?: Snippet;
     class?: string;
@@ -34,6 +36,7 @@ CSS lives in `./card.css`.
     padding = true,
     interactive = false,
     title,
+    titleId,
     headingLevel = 3,
     aside,
     class: className,
@@ -48,7 +51,7 @@ CSS lives in `./card.css`.
 >
   {#if title || aside}
     <div class="uin-card-head">
-      {#if title}<svelte:element this={`h${headingLevel}`} class="uin-card-title">{title}</svelte:element>{/if}
+      {#if title}<svelte:element this={`h${headingLevel}`} class="uin-card-title" id={titleId} tabindex={titleId ? -1 : undefined}>{title}</svelte:element>{/if}
       {#if aside}<div class="uin-card-aside">{@render aside()}</div>{/if}
     </div>
   {/if}

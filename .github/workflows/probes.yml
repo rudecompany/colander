@@ -1,10 +1,12 @@
 # Hourly outside check of production, next to the in-Cloudflare watchdog cron (the primary alarm).
-# GitHub may delay or skip scheduled runs, so this is the second line, not the first.
+# GitHub may delay or skip scheduled runs, so this is the second line, not the first. Weekly, it
+# also checks that the Edge Add-ons API key still works, since those keys expire after 72 days.
 name: Probes
 
 on:
   schedule:
     - cron: '41 * * * *'
+    - cron: '23 7 * * 1'
   workflow_dispatch:
 
 permissions:
@@ -21,7 +23,7 @@ jobs:
   production:
     name: probe-production
     # Skips until the Cloudflare account is set up (docs/deploy.md step 15).
-    if: vars.CLOUDFLARE_ACCOUNT_ID != ''
+    if: vars.CLOUDFLARE_ACCOUNT_ID != '' && github.event.schedule != '23 7 * * 1'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     environment:
@@ -62,3 +64,33 @@ jobs:
         uses: ./.github/actions/report-failure
         with:
           title: Production probe failing
+
+  edge-key:
+    name: probe-edge-key
+    # Weekly, once Edge publishing is set up (docs/deploy.md, Microsoft Edge Add-ons).
+    if: vars.EDGE_PRODUCT_ID != '' && github.event.schedule != '41 * * * *'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    environment:
+      name: edge-add-ons
+      deployment: false
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      # An operation that does not exist: 404 with a working key, 401 or 403 with an expired one.
+      - name: The Edge API key still works
+        env:
+          EDGE_PRODUCT_ID: ${{ vars.EDGE_PRODUCT_ID }}
+          EDGE_CLIENT_ID: ${{ secrets.EDGE_CLIENT_ID }}
+          EDGE_API_KEY: ${{ secrets.EDGE_API_KEY }}
+        run: |
+          status=$(curl -sS -o /dev/null -w '%{http_code}' -H "Authorization: ApiKey $EDGE_API_KEY" -H "X-ClientID: $EDGE_CLIENT_ID" \
+            "https://api.addons.microsoftedge.microsoft.com/v1/products/$EDGE_PRODUCT_ID/submissions/operations/00000000-0000-0000-0000-000000000000")
+          if [ "$status" = 401 ] || [ "$status" = 403 ]; then
+            echo "::error::The Edge Add-ons API key was refused (HTTP $status). Make a new one in Partner Center and update EDGE_API_KEY (docs/deploy.md)."
+            exit 1
+          fi
+          echo "The Edge Add-ons API key works (an unknown operation answered HTTP $status)."
+      - if: failure()
+        uses: ./.github/actions/report-failure
+        with:
+          title: Edge Add-ons API key refused

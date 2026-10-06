@@ -1,4 +1,4 @@
-// Journey 10: signing in (docs/contracts.md 6.6 and 6.9). A member signs in with an emailed code,
+// Journey 11: signing in (docs/contracts.md 6.6 and 6.9). A member signs in with an emailed code,
 // adds a passkey and signs in with it; a new curator gets member rights from a code until an invite
 // adds a passkey; staff work on the admin host behind dev mode's stand-in for Cloudflare Access,
 // whose token opens nothing on the main host.

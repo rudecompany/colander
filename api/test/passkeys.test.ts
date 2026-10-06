@@ -182,6 +182,8 @@ describe('passkeys', () => {
 		await expectStatus(await h.do('POST', '/v1/auth/logout', { everywhere: true }, ...CSRF, 'Cookie', owner), 204);
 		for (const c of [elsewhere, pk, owner]) await expectStatus(await h.do('GET', '/v1/account', undefined, 'Cookie', c), 401);
 		expect(await h.run((store) => store.db.all('SELECT credential_id FROM passkeys'))).toEqual([{ credential_id: mine.id }]);
+		// The audit row names the passkey it kept, so a restore can take the others again.
+		expect(await h.run((store) => store.db.all("SELECT a.after = p.id AS kept FROM audit_log a, passkeys p WHERE a.action = 'signed_out_everywhere'"))).toEqual([{ kept: 1 }]);
 		expect(h.mail).toContain('every other passkey was taken off');
 		expect(await errorCode(await passkeySignIn(h, intruder))).toBe('passkey_invalid');
 	});
@@ -357,17 +359,20 @@ describe('reviewers', () => {
 		expect(await errorCode(await redeem(h, await h.signIn('ana@example.test'), member, new SoftAuthenticator(SITE)))).toBe('invite_invalid');
 	});
 
-	it('issues reviewer tokens from a fresh passkey session, for 7 days, with curator authority at most', async () => {
+	it('issues reviewer tokens through a pairing code from a fresh passkey session, for 7 days, with curator authority at most', async () => {
 		const h = await Harness.create();
 		const inv = await invite(h, 'rae@example.test', 'staff');
 		const code = await h.signIn('rae@example.test');
-		expect(await errorCode(await h.do('POST', '/v1/account/reviewer-token', undefined, ...CSRF, 'Cookie', code))).toBe('passkey_required');
+		expect(await errorCode(await h.do('POST', '/v1/pair', { kind: 'reviewer' }, ...CSRF, 'Cookie', code))).toBe('passkey_required');
+		// No other route issues one.
+		await expectStatus(await h.do('POST', '/v1/account/reviewer-token', undefined, ...CSRF, 'Cookie', code), 404);
 		const session = sessionOf(await redeem(h, code, inv, new SoftAuthenticator(SITE)));
-		const res = await h.do('POST', '/v1/account/reviewer-token', undefined, ...CSRF, 'Cookie', session);
+		const made = await h.do('POST', '/v1/pair', { kind: 'reviewer' }, ...CSRF, 'Cookie', session);
+		await expectStatus(made, 201);
+		const res = await h.do('POST', '/v1/pair/claim', { code: ((await made.json()) as { code: string }).code, ext_version: '1.0.0', browser: 'chrome' });
 		await expectStatus(res, 200);
-		const { token, expires_at } = (await res.json()) as { token: string; expires_at: string };
+		const { token } = (await res.json()) as { token: string };
 		expect(token).toMatch(/^colander_rt_[A-Za-z0-9_-]{43}$/);
-		expect(expires_at).toBe('2026-10-08T12:00:00Z');
 		expect(await h.run((store) => store.db.get('SELECT token_hash FROM reviewer_tokens'))).toEqual({ token_hash: hashToken(token) });
 		const bearer = ['Authorization', `Bearer ${token}`];
 		// Staff with a token act as curators: appeals answer staff_required.
@@ -396,7 +401,7 @@ describe('account data', () => {
 		await expectStatus(out, 200);
 		expect(out.headers.get('Content-Disposition')).toBe('attachment; filename="colander-account.json"');
 		const data = (await out.json()) as Record<string, unknown>;
-		expect(Object.keys(data).sort()).toEqual(['account', 'audit', 'decisions', 'exported_at', 'passkeys', 'requests', 'reviewer_token', 'sessions', 'subscription', 'synced_settings']);
+		expect(Object.keys(data).sort()).toEqual(['account', 'audit', 'decisions', 'exported_at', 'pairings', 'passkeys', 'requests', 'reviewer_token', 'sessions', 'subscription', 'synced_settings']);
 		expect(data.synced_settings).toEqual({ version: 2, updated_at: '1970-01-01T00:00:05Z', data: { strictness: 'strict' } });
 		expect((data.passkeys as unknown[]).length).toBe(1);
 		expect(JSON.stringify(data)).not.toMatch(/token_hash|public_key|credential_id/);

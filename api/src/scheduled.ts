@@ -3,6 +3,7 @@
 //   and alerts go out once each through the ALERTS binding while they last;
 // - hourly, the list request counts from the GraphQL Analytics API into list_requests, because
 //   cache hits never run code (contracts 9.6).
+import { LIMITERS } from './limits';
 import { primary, type WatchdogStatus } from './store/store';
 
 /** The hourly trigger. Every other trigger is the watchdog. */
@@ -89,6 +90,12 @@ export function alerts(s: WatchdogStatus): Alert[] {
 		out.push({
 			key: 'r2_behind',
 			text: `R2 holds list sequence ${s.r2?.seq ?? 'none'} while the Store's head is ${s.head.seq}. Snapshot misses serve an old list.`
+		});
+	}
+	if (s.pairGuessing) {
+		out.push({
+			key: 'pair_guessing',
+			text: `${LIMITERS.pair_claim_fail.n} or more wrong pairing codes were tried within an hour, from all addresses together. Someone may be guessing codes. Each address is still limited; look for POST /v1/pair/claim in the edge logs, and consider longer codes (src/routes/pairing.ts).`
 		});
 	}
 	if (s.jobs.includes('dump')) {

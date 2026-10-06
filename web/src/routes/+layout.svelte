@@ -18,6 +18,7 @@
 	import Toaster from '@colander/shared/components/ui/toast/toaster.svelte';
 	import SiteHeader from '#lib/components/SiteHeader.svelte';
 	import SiteFooter from '#lib/components/SiteFooter.svelte';
+	import { detectStore } from '#lib/install.svelte.ts';
 	import { refreshLive } from '#lib/live.svelte.ts';
 	import { onAdminHost } from '#lib/site.ts';
 	import { onStepUp, type StepUpReason } from '#lib/api.ts';
@@ -28,6 +29,7 @@
 	// The live numbers come from the main host's public API, which the admin host does not serve.
 	onMount(() => {
 		if (!onAdminHost(page.url)) refreshLive();
+		detectStore();
 	});
 
 	// The step-up dialog loads the first time a request needs it, so pages that never ask do not carry it.

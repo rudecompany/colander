@@ -16,6 +16,7 @@ import { decide as engineDecide, resolveAppeal, verifyAppeal, type DecisionInput
 import { Sig, TestBit } from './scoring/rules';
 import { grantRole, setDisplayName, type Account } from './store/accounts';
 import { AppealAwaiting, AppealPendingManual, createAppeal, transitionAppeal, type Appeal } from './store/appeals';
+import { saveSubscription } from './store/billing';
 import { latestSequence } from './store/list';
 import { verdictCounts } from './store/misc';
 import { ensureSource, findItem, findSource, importSeed, recordSeedImport, setYouTube, sourceRefs, type SeedImport } from './store/sources';
@@ -300,6 +301,10 @@ class Seeder {
 		this.attempt(() => setDisplayName(db, this.staff.id, 'Rae'));
 		this.attempt(() => setDisplayName(db, this.curator.id, 'Sam'));
 		[this.staff.displayName, this.curator.displayName] = ['Rae', 'Sam'];
+		// A member with Plus, renewed yearly, as the Stripe webhook stores it, so pairing a plan works
+		// without Stripe.
+		const plus = grantRole(db, 'pat@colander.test', 'member', this.unix, SEEDED);
+		this.attempt(() => saveSubscription(db, { id: 'sub_demo_pat', accountId: plus.id, customerId: 'cus_demo_pat', status: 'active', interval: 'year', periodStart: this.unix, periodEnd: Math.floor(this.end / 1000) + 245 * 86400, ending: false, startDate: this.unix }, this.unix));
 
 		// An old staff decision that lapses: Quantum Recipes was confirmed as Slop, and small, 95 days
 		// ago. Platform labels on its videos keep it mass-produced, so it scores as Slop again.

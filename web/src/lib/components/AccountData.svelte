@@ -90,7 +90,7 @@ only confirmed by email code can ask anyway, and the request waits 72 hours.
 		Your account holds your email, display name, sign-ins, passkeys, plan and synced settings. Read how long we keep each in the
 		<a href="/privacy">privacy notice</a>.
 	</p>
-	<div class="row">
+	<div class="row actions">
 		<Button variant="secondary" size="xl" onclick={download}><Download size={16} aria-hidden="true" />Download my data</Button>
 		{#if !keeps}<Button variant="quiet" size="xl" onclick={() => (confirming = true)}>Delete account</Button>{/if}
 	</div>
@@ -156,6 +156,16 @@ only confirmed by email code can ask anyway, and the request waits 72 hours.
 		display: flex;
 		flex-wrap: wrap;
 		gap: var(--cl-s2);
+	}
+	/* On a phone, Delete account takes its own line; its text lines up with the text above, not its padding. */
+	@media (max-width: 639px) {
+		.actions {
+			flex-direction: column;
+			align-items: flex-start;
+		}
+		.actions :global(.uin-btn-ghost) {
+			margin-left: calc(-1 * var(--cl-s4));
+		}
 	}
 	.waiting {
 		display: grid;

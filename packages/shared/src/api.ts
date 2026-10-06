@@ -286,7 +286,48 @@ export interface PlanTokenPayload {
 	exp: number;
 }
 
-export type ExternalMessage =
-	| { type: 'colander:ping' }
-	| { type: 'colander:plan-token'; token: string }
-	| { type: 'colander:reviewer-token'; token: string };
+/** Pairing codes, the one website-to-extension handoff (contracts 7). */
+export type PairKind = 'plan' | 'reviewer';
+export const PAIR_BROWSERS = ['chrome', 'edge', 'brave', 'opera', 'firefox', 'safari', 'chromium'] as const;
+export type PairBrowser = (typeof PAIR_BROWSERS)[number];
+export const BROWSER_NAME: Record<PairBrowser, string> = {
+	chrome: 'Chrome',
+	edge: 'Edge',
+	brave: 'Brave',
+	opera: 'Opera',
+	firefox: 'Firefox',
+	safari: 'Safari',
+	chromium: 'a Chromium browser'
+};
+
+/** POST /v1/pair */
+export interface PairCreated {
+	id: string;
+	/** 8 Crockford base32 characters, shown as two groups of 4, for example KXQ4-JP7M. */
+	code: string;
+	expires_at: string;
+}
+
+/** GET /v1/pair/{id} */
+export interface PairStatus {
+	status: 'pending' | 'claimed' | 'expired';
+	ext_version: string | null;
+	browser: PairBrowser | null;
+}
+
+/** POST /v1/pair/claim */
+export interface PairClaimed {
+	kind: PairKind;
+	token: string;
+	/** The account the code came from, as a masked email such as p***@example.com: the person sees whose account they connected. */
+	account: string;
+}
+
+/**
+ * Reads a typed code as Crockford base32 does: case, spaces and dashes do not matter, I and L
+ * read as 1 and O as 0. Returns the 8 characters, or null when it cannot be a code.
+ */
+export function normalizePairCode(input: string): string | null {
+	const s = input.toUpperCase().replace(/[\s-]/g, '').replace(/[IL]/g, '1').replace(/O/g, '0');
+	return /^[0-9A-HJKMNP-TV-Z]{8}$/.test(s) ? s : null;
+}

@@ -33,6 +33,7 @@ export const PRIVACY_LEAVES: { title: string; detail: string }[] = [
 		detail: 'The source, up to three example items, your reason, optional type and tests, and the install ID.'
 	},
 	{ title: 'Plus, if you use it', detail: 'Your plan token to start a trial, renew, and sync settings across browsers.' },
+	{ title: 'Pairing codes you type', detail: 'The code from your account page, the extension version and the browser name, to connect Plus or the side panel.' },
 	{ title: 'Review, for curators', detail: 'Decisions you make in the side panel, with your reviewer token.' }
 ];
 
@@ -74,7 +75,7 @@ export const PLAN_COPY = {
 		line: 'Blocking, forever. No account needed.',
 		summary: '$0. Blocking, forever. No account needed.',
 		features: ['Blocking on all 4 platforms', 'All 3 strictness levels', 'Tagging, reports and appeals', 'Your own block and allow lists'],
-		cta: 'Add to Chrome'
+		cta: 'Add to your browser'
 	},
 	plus: {
 		name: 'Plus',

@@ -31,7 +31,16 @@ export const LIMITERS = {
 	auth_lock: { n: 1, per: DAY },
 	/** passkey challenges started without a session, per IP */
 	passkey_options_ip: { n: 60, per: HOUR },
-	donate: { n: 10, per: HOUR }
+	donate: { n: 10, per: HOUR },
+	/** pairing codes an account may make; each one ends the one before */
+	pair_create: { n: 20, per: HOUR },
+	/** a claim carries nothing but the code, so guesses are limited per address */
+	pair_claim_ip: { n: 10, per: 10 * MINUTE },
+	/**
+	 * wrong pairing codes from all addresses together, the baseline the watchdog alerts at
+	 * (src/scheduled.ts); it never refuses a claim
+	 */
+	pair_claim_fail: { n: 300, per: HOUR }
 } as const;
 
 export type Limiter = keyof typeof LIMITERS;

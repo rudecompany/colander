@@ -1,4 +1,4 @@
-// User settings and the chrome.storage.local layout. Content scripts read these keys directly
+// User settings and the browser.storage.local layout. Content scripts read these keys directly
 // (they cannot reach the extension origin's IndexedDB) and react to storage.onChanged.
 import type { Platform, Strictness, TagVerdict } from '@colander/shared/verdicts';
 
@@ -58,7 +58,7 @@ export const DEFAULT_SETTINGS: Settings = {
 	onboarded: false
 };
 
-/** chrome.storage.local keys. Content scripts read the first five; the rest is bookkeeping. */
+/** browser.storage.local keys. Content scripts read the first five; the rest is bookkeeping. */
 export const K = {
 	settings: 'settings',
 	ownTags: 'ownTags',
@@ -139,6 +139,8 @@ export interface Entitlement {
 	plus: boolean;
 	trial: boolean;
 	exp: number;
+	/** Paid Plus from a pairing code: the account's masked email, such as p***@example.com. */
+	account?: string;
 }
 
 /** Plus features are on while the verified plan token has not expired. */

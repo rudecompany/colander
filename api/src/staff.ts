@@ -58,4 +58,3 @@ export function staffOf(s: Store, request: Request): Staff | Response {
 	}
 	return { account, actor: { id: account.id, authority: account.role as Role }, who };
 }
-

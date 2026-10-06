@@ -30,6 +30,9 @@ const source = (s: Partial<Source> & Pick<Source, 'platform' | 'id' | 'name' | '
 	...s
 });
 
+/** The Edge Add-ons listing the test build is made with (playwright.config.ts); Firefox has none. */
+export const EDGE_STORE = 'https://microsoftedge.microsoft.com/addons/detail/colander-test';
+
 export const SOURCES: Record<string, Source> = {
 	'yt:UCq3x9Vb2m4LkT7pQe8sW1aZ': source({
 		platform: 'yt',

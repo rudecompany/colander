@@ -20,6 +20,14 @@ test('queue, evidence and a decision', async ({ ext }) => {
 	await side.getByRole('button', { name: /Cat Rescue Tales/ }).click();
 	await expect(side.getByRole('heading', { name: 'Cat Rescue Tales' })).toBeVisible();
 	await expect(side.getByText('Consensus is still forming')).toBeVisible();
+	// A layer not met yet: its question runs on in the line of its name, as plain text.
+	const unmet = side.getByRole('list', { name: 'Layers not met yet' });
+	const question = unmet.getByText('Do people who usually disagree both call it slop?');
+	await expect(question).toHaveCSS('display', 'inline');
+	const [nameBox, questionBox] = [await unmet.getByText('Community consensus', { exact: true }).boundingBox(), await question.boundingBox()];
+	expect(Math.abs(questionBox!.y - nameBox!.y)).toBeLessThan(4);
+	// It has data, so the evidence card above never calls it a layer with no data yet.
+	await expect(side.getByText('no data yet', { exact: false })).toHaveCount(0);
 	await expect(side.getByText('Staged rescue videos made with AI, posted every hour.')).toBeVisible();
 	expect(ext.api.sent.find((s) => s.path.startsWith('/v1/review/queue'))!.auth).toBe('Bearer rvw_test');
 	await side.getByRole('button', { name: 'Record decision' }).click();
@@ -29,8 +37,35 @@ test('queue, evidence and a decision', async ({ ext }) => {
 	await expect(side.getByText('Decision recorded.')).toBeVisible();
 	const d = ext.api.posted('/v1/review/sources/yt/%40catrescuetales/decision')[0]!;
 	expect(d.body).toMatchObject({ verdict: 'slop', reason: 'Staff review confirmed AI narration over generated footage, posted hourly.', signals: ['mostly_ai'], slop_type: 'deceptive', tests: ['mass_produced', 'hollow'] });
-	// "large" goes along only when the reviewer changed it: the server refuses it from curators.
+	// The panel never marks a source large: that is staff's, in the admin console.
 	expect(d.body).not.toHaveProperty('large');
+	await expect(side.getByText('Large source, staff only')).toHaveCount(0);
+});
+
+// The reviewer token carries curator authority only, also a staff member's.
+test('large sources and appeals are left to staff in the admin console', async ({ ext }) => {
+	ext.api.review.queue = REVIEW_QUEUE();
+	const appeal = { id: 'apl_1', platform: 'yt', source_id: '@catrescuetales', status: 'under_review', code: 'CLN-7Q4K', statement: 'We film every rescue ourselves.', created_at: '2026-10-02T10:00:00Z' };
+	ext.api.review.source = { ...REVIEW_SOURCE, source: { ...REVIEW_SOURCE.source, large: true }, appeals: [appeal] };
+	await ext.ctl.evaluate(() => chrome.storage.local.set({ reviewerToken: 'rvw_test' }));
+	const side = await ext.ctx.newPage();
+	await side.setViewportSize({ width: 400, height: 900 });
+	await side.goto(`chrome-extension://${EXT_ID}/sidepanel.html`);
+	await side.getByRole('button', { name: /Cat Rescue Tales/ }).click();
+	await expect(side.getByText('Cat Rescue Tales has a large audience, so only staff can decide it, in the admin console.')).toBeVisible();
+	await expect(side.getByRole('radiogroup', { name: 'Verdict' })).toHaveCount(0);
+	await expect(side.getByRole('button', { name: 'Record decision' })).toBeDisabled();
+	await expect(side.getByText('Staff verify and resolve appeals in the admin console.')).toBeVisible();
+	await expect(side.getByText('We film every rescue ourselves.')).toBeVisible();
+	for (const name of ['Uphold', 'Deny', 'Code is on the account']) await expect(side.getByRole('button', { name })).toHaveCount(0);
+	await side.keyboard.press('Control+Enter');
+	expect(ext.api.posted('/v1/review/sources/yt/%40catrescuetales/decision')).toHaveLength(0);
+
+	// An open appeal on a source that is not large: staff decide it until the appeal is resolved.
+	ext.api.review.source = { ...REVIEW_SOURCE, appeals: [appeal] };
+	await side.getByRole('button', { name: 'Queue' }).click();
+	await side.getByRole('button', { name: /Cat Rescue Tales/ }).click();
+	await expect(side.getByText('An appeal is open on this source, so only staff can decide it until the appeal is resolved.')).toBeVisible();
 });
 
 test('keys pick a verdict, list the shortcuts and go back', async ({ ext }) => {

@@ -127,10 +127,10 @@ export const APPEAL_EMAIL_S = 30 * 86_400;
 /**
  * The hourly cleanup: expired magic links, sessions and sign-in flows, held requests that ran or
  * were cancelled over 30 days ago, audit rows past 400 days, the email of appeals closed over 30
- * days ago, list
- * sequences past the delta window (their changes cascade; the head always stays), refilled rate
- * limit buckets, the synced settings of ended install trials, which no token can read again, and
- * YouTube Data API data before it is 30 days old (with quota ledger days older than that).
+ * days ago, pairing codes an hour after they expired, list sequences past the delta window (their
+ * changes cascade; the head always stays), refilled rate limit buckets, the synced settings of
+ * ended install trials, which no token can read again, and YouTube Data API data before it is 30
+ * days old (with quota ledger days older than that).
  * The trial rows stay, so each install still gets one trial.
  */
 export function prune(db: Db, now: number): number {
@@ -141,6 +141,7 @@ export function prune(db: Db, now: number): number {
 		db.run('DELETE FROM auth_flows WHERE expires_at <= ?', s);
 		db.run('DELETE FROM account_requests WHERE coalesce(done_at, cancelled_at) < ?', s - 30 * 86_400);
 		db.run("UPDATE appeals SET email = '' WHERE resolved_at < ? AND email != ''", s - APPEAL_EMAIL_S);
+		db.run('DELETE FROM pairings WHERE expires_at < ?', s - 3600);
 		db.run('DELETE FROM sync_blobs WHERE sub IN (SELECT sub FROM trials WHERE expires_at <= ?)', s);
 		db.run(
 			'DELETE FROM list_sequences WHERE created_at < ? AND seq < (SELECT ifnull(max(seq), 0) FROM list_sequences)',

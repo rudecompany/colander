@@ -22,8 +22,17 @@ export const BASE_URL = process.env.COLANDER_E2E_BASE_URL?.replace(/\/+$/, '') ?
 /** Why the journeys skip against a deployed origin. */
 export const LOCAL_ONLY = 'needs the local stack: the seeded data, dev mail and the server log';
 
+/** The store listings the local website is built with: every store, as production once Firefox ships. */
+export const STORES = {
+	PUBLIC_STORE_CHROME: 'https://chromewebstore.google.com/detail/colander-e2e',
+	PUBLIC_STORE_EDGE: 'https://microsoftedge.microsoft.com/addons/detail/colander-e2e',
+	PUBLIC_STORE_FIREFOX: 'https://addons.mozilla.org/firefox/addon/colander-e2e/'
+};
+
 export const STAFF = 'rae@colander.test';
 export const CURATOR = 'sam@colander.test';
+/** A member whose yearly Plus the seed stores as the Stripe webhook would. */
+export const PLUS_MEMBER = 'pat@colander.test';
 /** Made admin through the ops channel's bootstrap in global setup, as the owner does once. */
 export const ADMIN = 'ada@colander.test';
 

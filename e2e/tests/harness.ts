@@ -222,6 +222,21 @@ export async function enrollReviewer(page: Page, email: string, issuer: string):
 	await expect(page.getByRole('heading', { level: 1 })).toHaveText('Your passkey is ready');
 }
 
+/**
+ * Pairs the extension with the signed-in account the way a person does (contract 7): Show a code in
+ * the account page's section, then type it into the extension page, which must show the code box.
+ * Returns the code.
+ */
+export async function pairWith(site: Page, section: Locator, page: Page): Promise<string> {
+	await section.getByRole('button', { name: 'Show a code' }).click();
+	const code = (await section.locator('output.code').textContent())!.trim();
+	expect(code).toMatch(/^[0-9A-HJKMNP-TV-Z]{4}-[0-9A-HJKMNP-TV-Z]{4}$/);
+	await expect(section.getByText('Never share this code.', { exact: false })).toBeVisible();
+	await page.getByLabel('Code from the website').fill(code);
+	await page.getByRole('button', { name: 'Connect' }).click();
+	return code;
+}
+
 /** The options page's Lists section, synced now with its own button. */
 export async function syncNow(ext: Ext): Promise<Page> {
 	const options = await ext.page('options.html#lists');

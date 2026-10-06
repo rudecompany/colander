@@ -42,7 +42,8 @@ interface Reviewer {
 /**
  * Authenticates a reviewer (contracts 6.7). On the admin host: the staff member Access let in,
  * with their full role. On the main host: a reviewer token, or a session that signed in with a
- * passkey within 12 hours (else 403 passkey_required), and curator authority at most.
+ * passkey within 12 hours (else 403 passkey_required), and curator authority at most. A reviewer
+ * token works in any browser on any device, so it carries curator authority also for staff.
  */
 function reviewer(api: Api, request: Request): Reviewer | Response {
 	const { store } = api;

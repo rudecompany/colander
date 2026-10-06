@@ -77,7 +77,7 @@ describe('watchdog', () => {
 		await env.LISTS.put(SNAPSHOT_KEY, new Uint8Array([1]), { customMetadata: { seq: String(S - 50), created: String(S - 50) } });
 		await inStore((store) => store.db.run('INSERT INTO list_sequences (seq, created_at) VALUES (?, ?)', S - 50, S - 50));
 		const status = await inStore((store) => store.watchdog());
-		expect(status).toMatchObject({ now: T, jobs: ['audit', 'dump', 'pass', 'prune', 'publish', 'requests', 'rescore'], alarmLost: false, head: { seq: S - 50, createdAt: S - 50 }, r2: { seq: S - 50, created: S - 50 }, alerted: [], since: T });
+		expect(status).toMatchObject({ now: T, jobs: ['audit', 'dump', 'pass', 'prune', 'publish', 'requests', 'rescore'], alarmLost: false, head: { seq: S - 50, createdAt: S - 50 }, r2: { seq: S - 50, created: S - 50 }, alerted: [], since: T, pairGuessing: false });
 		// R2 holds the head, so no publication was asked for.
 		expect(await inStore((store) => store.db.all('SELECT name FROM jobs ORDER BY name'))).toEqual([
 			{ name: 'audit' },
@@ -162,6 +162,7 @@ describe('alerts', () => {
 		dump: null,
 		alerted: [],
 		since: T - 60 * MINUTE,
+		pairGuessing: false,
 		signInMail: null
 	};
 	const keys = (s: Partial<WatchdogStatus>) => alerts({ ...base, ...s }).map((a) => a.key);
@@ -196,6 +197,11 @@ describe('alerts', () => {
 		expect(keys({ jobs, dump: { at: T - 60 * MINUTE, ms: 900, ...sizes } })).toEqual([]);
 		expect(keys({ jobs, dump: { at: T - 60 * MINUTE, ms: 900, bytes: 300 << 20, size: THRESHOLDS.dumpSize + 1 } })).toEqual(['dump_large']);
 		expect(keys({ alarmLost: true, overdueMs: 3 * MINUTE })).toEqual(['alarm_lost']);
+	});
+
+	it('alert when wrong pairing codes run above the baseline', () => {
+		expect(keys({ pairGuessing: true })).toEqual(['pair_guessing']);
+		expect(alerts({ ...base, pairGuessing: true })[0]!.text).toContain('Someone may be guessing codes.');
 	});
 
 	it('alert when sign-in codes go out faster than normal use explains, this hour or the last', () => {

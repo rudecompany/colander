@@ -3,6 +3,7 @@
 // is synchronous, so it runs inside the caller's transaction.
 import { rank } from '../permissions';
 import { newId, nullString, type Db } from './db';
+import { endPairings } from './pairings';
 
 /** A website account. */
 export interface Account {
@@ -102,12 +103,74 @@ export function grantRole(db: Db, email: string, role: string, now: number, who:
 	});
 }
 
-/** Ends every session and deletes every passkey and the reviewer token of an account. */
+/** Ends every session and deletes every passkey, the reviewer token and the unused pairing codes of an account. */
 export function revokeCredentials(db: Db, accountId: string): void {
 	db.run('DELETE FROM sessions WHERE account_id = ?', accountId);
 	db.run('DELETE FROM passkeys WHERE account_id = ?', accountId);
 	db.run('DELETE FROM reviewer_tokens WHERE account_id = ?', accountId);
+	endPairings(db, accountId);
 	db.run("DELETE FROM auth_flows WHERE account_id = ? AND kind IN ('register', 'passkey')", accountId);
+}
+
+/** The audit actions after a restore point that reapplyRevocations repeats. */
+const REVOCATIONS = ['revoked', 'email_changed', 'signed_out_everywhere', 'passkey_removed', 'role_changed', 'access_pinned', 'request_cancelled', 'delete_refused', 'email_change_refused'];
+
+/**
+ * After a restore to since (unix seconds), which brings back the credentials and roles of that
+ * moment: ends every session, reviewer token, unused pairing code and sign-in flow (invites
+ * included), because a plain sign-out, a step-up or a replaced token leaves no audit row to repeat,
+ * so everyone signs in again. Then repeats, in order, what the audit log records since that took
+ * something away: revoked accounts and moved addresses lose their passkeys, removed passkeys and
+ * those a sign out everywhere took go, a lowered role is lowered, an A3T subject is pinned, and a
+ * held request that was cancelled or refused stays cancelled. Nothing is given back: a role raised
+ * since stays as the restore left it. Returns how many audit rows it repeated.
+ */
+export function reapplyRevocations(db: Db, since: number): number {
+	return db.tx(() => {
+		for (const t of ['sessions', 'reviewer_tokens', 'auth_flows']) db.run(`DELETE FROM ${t}`);
+		db.run('DELETE FROM pairings WHERE claimed_at IS NULL');
+		const rows = db.all<{ at: number; action: string; target: string; before: string | null; after: string | null }>(
+			`SELECT at, action, target, before, after FROM audit_log
+			WHERE at >= ? AND target IS NOT NULL AND action IN (${REVOCATIONS.map(() => '?').join(',')}) ORDER BY at, id`,
+			since,
+			...REVOCATIONS
+		);
+		for (const r of rows) {
+			switch (r.action) {
+				case 'revoked':
+				case 'email_changed':
+					db.run('DELETE FROM passkeys WHERE account_id = ?', r.target);
+					break;
+				case 'signed_out_everywhere':
+					// It names the passkey it kept only when it took the others.
+					if (r.after) db.run('DELETE FROM passkeys WHERE account_id = ? AND id != ?', r.target, r.after);
+					break;
+				case 'passkey_removed':
+					deletePasskey(db, r.target, r.before ?? '');
+					break;
+				case 'role_changed': {
+					const role = getAccount(db, r.target)?.role;
+					if (role && r.after && rank(r.after) < rank(role)) db.run('UPDATE accounts SET role = ? WHERE id = ?', r.after, r.target);
+					break;
+				}
+				case 'access_pinned':
+					db.run('UPDATE accounts SET access_subject = ? WHERE id = ?', r.after, r.target);
+					break;
+				default: {
+					// A cancellation names the request's kind in before, a refusal in its action.
+					const kind = r.action === 'request_cancelled' ? r.before : r.action.slice(0, -'_refused'.length);
+					db.run(
+						'UPDATE account_requests SET cancelled_at = ? WHERE account_id = ? AND kind = ? AND created_at <= ? AND done_at IS NULL AND cancelled_at IS NULL',
+						r.at,
+						r.target,
+						kind,
+						r.at
+					);
+				}
+			}
+		}
+		return rows.length;
+	});
 }
 
 /** Updates the public name ("" clears it). */
@@ -562,7 +625,7 @@ export function finishRequest(db: Db, id: string, now: number): boolean {
 
 /**
  * Deletes an account and everything that hangs on it, in one transaction: sessions, passkeys,
- * flows, the reviewer token, held requests and its plan rows cascade; its sync blob goes; its
+ * flows, the reviewer token, pairing codes, held requests and its plan rows cascade; its sync blob goes; its
  * decisions and log entries lose their name, so the log shows a former reviewer; an
  * account_deleted audit row remains. Billing must have been settled with Stripe before.
  */

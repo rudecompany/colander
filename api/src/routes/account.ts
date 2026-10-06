@@ -1,6 +1,7 @@
 // Accounts and sign-in (docs/contracts.md 6.6): emailed 6-digit codes and passkeys, invites that
 // enroll a reviewer's passkey, sessions and step-up, passkey management, export, deletion, held
-// requests and reviewer tokens. Every route that sets or uses the session needs the CSRF rule
+// requests and disconnecting the side panel (reviewer tokens come only from a pairing code,
+// src/routes/pairing.ts). Every route that sets or uses the session needs the CSRF rule
 // (src/auth.ts csrfOk), sign-in included, so a cross-site page can never sign a visitor in.
 import type { AuthenticationResponseJSON, RegistrationResponseJSON } from '@simplewebauthn/server';
 import { csrfOk, csrfRequired, hashToken, newCode, newToken, normalizeEmail, readCookie, safeNext, signedIn, TTL, type Auth } from '../auth';
@@ -43,6 +44,7 @@ import {
 	type Session
 } from '../store/accounts';
 import { current } from '../store/billing';
+import { endPairings } from '../store/pairings';
 import { getSync } from '../store/misc';
 import type { Store } from '../store/store';
 import {
@@ -86,13 +88,12 @@ export function accountRoutes(s: Store, env: Pick<Env, 'PUBLIC_URL'> & { TURNSTI
 		['DELETE', '/v1/account/passkeys/:id', (r, _u, p) => removePasskey(s, r, pathValue(p, 'id'))],
 		['POST', '/v1/account/requests', (r) => holdRoute(s, publicUrl, r)],
 		['DELETE', '/v1/account/requests/:id', (r, _u, p) => cancelRoute(s, r, pathValue(p, 'id'))],
-		['POST', '/v1/account/reviewer-token', (r) => issueReviewerToken(s, r)],
 		['DELETE', '/v1/account/reviewer-token', (r) => revokeReviewerToken(s, r)]
 	];
 }
 
 /** The audit fields of a request on the main host. */
-const main = (request: Request, actorId?: string): Omit<AuditEntry, 'action' | 'target'> => ({
+export const main = (request: Request, actorId?: string): Omit<AuditEntry, 'action' | 'target'> => ({
 	host: 'main',
 	actorId,
 	requestId: request.headers.get(REQUEST_ID_HEADER) ?? undefined
@@ -479,8 +480,8 @@ async function authVerifyLink(s: Store, request: Request): Promise<Response> {
 }
 
 /**
- * POST /v1/auth/logout {"everywhere"?}: ends this session. Everywhere ends every session and the
- * reviewer token; from a passkey session of the last 10 minutes it also removes every other
+ * POST /v1/auth/logout {"everywhere"?}: ends this session. Everywhere ends every session, the
+ * reviewer token and the pairing codes not yet used; from a passkey session of the last 10 minutes it also removes every other
  * passkey, so one an intruder added does not outlive the owner taking the mailbox back.
  */
 async function authLogout(s: Store, request: Request): Promise<Response> {
@@ -502,7 +503,10 @@ async function authLogout(s: Store, request: Request): Promise<Response> {
 			}
 			s.db.run('DELETE FROM sessions WHERE account_id = ?', ses.account.id);
 			deleteReviewerToken(s.db, ses.account.id);
-			audit(s.db, { ...main(request, ses.account.id), action: 'signed_out_everywhere', target: ses.account.id }, now);
+			endPairings(s.db, ses.account.id);
+			// The passkey it kept, when it took the others: a restore takes them again (reapplyRevocations).
+			const kept = n > 0 ? ses.passkeyId : undefined;
+			audit(s.db, { ...main(request, ses.account.id), action: 'signed_out_everywhere', target: ses.account.id, after: kept }, now);
 			return n;
 		});
 		if (removed > 0) await sendQuietly(s, ses.account.email, securityNotice('Every other passkey was taken off your account'));
@@ -652,6 +656,12 @@ function exportAccount(s: Store, request: Request): Response {
 			)
 			.map((d) => ({ at: at(d.created_at), platform: d.platform, source: d.source_key, verdict: d.verdict, reason: d.reason, as: d.actor })),
 		requests: heldRequests(s.db, a.id, now).map(requestJSON),
+		pairings: s.db
+			.all<{ kind: string; created_at: number; expires_at: number; claimed_at: number | null; browser: string | null; ext_version: string | null }>(
+				'SELECT kind, created_at, expires_at, claimed_at, browser, ext_version FROM pairings WHERE account_id = ? ORDER BY created_at',
+				a.id
+			)
+			.map((p) => ({ kind: p.kind, created_at: at(p.created_at), expires_at: at(p.expires_at), claimed_at: at(p.claimed_at ?? 0), browser: p.browser, ext_version: p.ext_version })),
 		audit: s.db
 			.all<{ at: number; action: string; host: string; actor_id: string | null }>(
 				'SELECT at, action, host, actor_id FROM audit_log WHERE target = ? ORDER BY id',
@@ -751,32 +761,15 @@ function cancelRoute(s: Store, request: Request, id: string): Response {
 	return r ? new Response(null, { status: 204 }) : jsonError(404, 'not_found', 'Nothing with this ID is waiting.');
 }
 
-/**
- * POST /v1/account/reviewer-token: curators, staff and admins, from a passkey sign-in of the last
- * 10 minutes. The token gives curator authority at most, for 7 days, and replaces any earlier one.
- */
-function issueReviewerToken(s: Store, request: Request): Response {
-	const ses = signedIn(s.auth, request);
-	if (ses instanceof Response) return ses;
-	if (rank(ses.account.role) < rank('curator')) return jsonError(403, 'forbidden', 'Only curators and staff can create a reviewer token.');
-	const refused = s.auth.stepUp(ses, { passkey: true });
-	if (refused) return refused;
-	const now = unix(s.now());
-	const t = s.db.tx(() => {
-		const t = s.auth.issueReviewerToken(ses.account.id);
-		audit(s.db, { ...main(request, ses.account.id), action: 'token_issued', target: ses.account.id }, now);
-		return t;
-	});
-	return json(200, { token: t.token, expires_at: rfc3339(t.expiresAt) });
-}
-
-/** DELETE /v1/account/reviewer-token: disconnects the side panel. */
+/** DELETE /v1/account/reviewer-token: disconnects the side panel, and ends a reviewer code not used yet. */
 function revokeReviewerToken(s: Store, request: Request): Response {
 	const ses = signedIn(s.auth, request);
 	if (ses instanceof Response) return ses;
 	const now = unix(s.now());
 	s.db.tx(() => {
-		if (deleteReviewerToken(s.db, ses.account.id)) audit(s.db, { ...main(request, ses.account.id), action: 'token_revoked', target: ses.account.id }, now);
+		const token = deleteReviewerToken(s.db, ses.account.id);
+		const codes = endPairings(s.db, ses.account.id, 'reviewer');
+		if (token || codes > 0) audit(s.db, { ...main(request, ses.account.id), action: 'token_revoked', target: ses.account.id }, now);
 	});
 	return new Response(null, { status: 204 });
 }

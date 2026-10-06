@@ -1,6 +1,6 @@
 // Messages between content scripts, the service worker and extension pages.
 import type { Platform, SlopType, TagVerdict, Test, Verdict, Action } from '@colander/shared/verdicts';
-import type { Report } from '@colander/shared/api';
+import type { PairKind, Report } from '@colander/shared/api';
 import type { Reason } from './match';
 import type { Signal } from '@colander/shared/verdicts';
 import type { Mode } from '../adapters/schema';
@@ -86,6 +86,8 @@ export type ToWorker =
 	| { type: 'pause-tab'; tabId: number; paused: boolean }
 	| { type: 'sync-now' }
 	| { type: 'start-trial' }
+	/** A pairing code typed into Options or the side panel (contracts 7). */
+	| { type: 'pair'; code: string }
 	| { type: 'refresh-reports' }
 	| { type: 'set-platform'; platform: Platform; on: boolean }
 	| { type: 'open'; page: 'options' | 'welcome'; section?: string }
@@ -94,6 +96,8 @@ export type ToWorker =
 
 export type HelloReply = { tabPaused: boolean };
 export type ReportReply = { ok: true; report: Report } | { ok: false; error: string };
+/** `account` is the masked email of the account the code came from, such as p***@example.com; an older server sends none. */
+export type PairReply = { ok: true; kind: PairKind; account?: string } | { ok: false; error: string };
 
 /** Service worker or popup -> content script. */
 export type ToPage =

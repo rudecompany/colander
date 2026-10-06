@@ -8,6 +8,7 @@ import scoringState from './migrations/0003_scoring_state.sql';
 import store from './migrations/0004_store.sql';
 import compliance from './migrations/0005_compliance.sql';
 import auth from './migrations/0006_auth.sql';
+import pairing from './migrations/0007_pairing.sql';
 import { complianceData } from './compliance';
 import type { Db } from './db';
 
@@ -17,7 +18,7 @@ export interface Migration {
 	sql: string;
 	/**
 	 * Data changes in code, run after sql in the same transaction, and again on the rows of a dump
-	 * taken before this migration when one is restored (restoredData). now is unix seconds.
+	 * taken without this migration when one is restored (restoredData). now is unix seconds.
 	 */
 	data?: (db: Db, now: number) => void;
 }
@@ -28,7 +29,8 @@ export const MIGRATIONS: Migration[] = [
 	{ version: 3, name: '0003_scoring_state.sql', sql: scoringState },
 	{ version: 4, name: '0004_store.sql', sql: store },
 	{ version: 5, name: '0005_compliance.sql', sql: compliance, data: complianceData },
-	{ version: 6, name: '0006_auth.sql', sql: auth, data: authData }
+	{ version: 6, name: '0006_auth.sql', sql: auth, data: authData },
+	{ version: 7, name: '0007_pairing.sql', sql: pairing }
 ];
 
 /** Reviewer tokens from before 0006 keep working this long, while curators enroll a passkey (contracts 6.6). */
@@ -74,9 +76,9 @@ export function migrate(db: Db, nowMs: number): number {
 }
 
 /**
- * Runs the data changes of every migration newer than a restored dump's schema version on its
- * rows, which the Store's schema took in but no migration changed. now is unix seconds.
+ * Runs the data changes of every migration a restored dump had not applied on its rows, which the
+ * Store's schema took in but no migration changed. now is unix seconds.
  */
-export function restoredData(db: Db, dumpVersion: number, now: number): void {
-	for (const m of MIGRATIONS) if (m.version > dumpVersion) m.data?.(db, now);
+export function restoredData(db: Db, applied: ReadonlySet<number>, now: number): void {
+	for (const m of MIGRATIONS) if (!applied.has(m.version)) m.data?.(db, now);
 }

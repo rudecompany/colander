@@ -17,7 +17,7 @@ import { sha256 } from '@colander/shared/sha256';
 import { CONFIG_CONTEXT, signEnvelope } from '@colander/shared/signing';
 import { devLocal } from './access';
 import { normalizeEmail } from './auth';
-import { countsAgree, exportAudit, newestDump, reapplyAudit, restoreDump, tableCounts } from './backup';
+import { countsAgree, dumpTime, exportAudit, newestDump, reapplyAudit, restoreDump, tableCounts } from './backup';
 import { reapplyErasures } from './erase';
 import { json, jsonError } from './http';
 import { verifyJwt } from './jwt';
@@ -26,7 +26,7 @@ import { r2Sequence } from './list/publisher';
 import { canonicalSource } from './routes/ids';
 import { rfc3339, trimSpace } from './routes/respond';
 import { unix } from './scoring/engine';
-import { audit, accountByEmail, grantRole, hasAdmin, type Account } from './store/accounts';
+import { audit, accountByEmail, grantRole, hasAdmin, reapplyRevocations, type Account } from './store/accounts';
 import { rank } from './permissions';
 import { latestSequence, RETENTION_SECONDS, SNAPSHOT_KEY } from './store/list';
 import { redactSeedNames } from './store/compliance';
@@ -178,7 +178,7 @@ export async function ops(request: Request, env: Env, cache: CacheContext | unde
 			const res = await call(primary(env), 'restore-dump', { key }, caller);
 			if (res.status !== 200) return send(res);
 			await restart(env);
-			return send(await afterRestore(env, cache, res.body));
+			return send(await afterRestore(env, cache, res.body, dumpTime(key)));
 		}
 		case 'drill':
 			return send(await drill(env));
@@ -224,7 +224,7 @@ async function pitrRestore(env: Env, cache: CacheContext | undefined, a: OpsArgs
 	if (!saved) {
 		return fail(500, 'restore_unrecorded', `The Store restarted without recording ${record}: check the Worker logs for its bookmarks before anything else.`);
 	}
-	return afterRestore(env, cache, { at, ...(await saved.json<Record<string, unknown>>()) }, t);
+	return afterRestore(env, cache, { at, ...(await saved.json<Record<string, unknown>>()) }, t, true);
 }
 
 /** Waits for a call that ends by resetting the Store; any other failure is thrown. */
@@ -240,15 +240,18 @@ async function resetting(p: Promise<unknown>): Promise<void> {
 const restart = (env: Env) => resetting(call(primary(env), 'restart'));
 
 /**
- * After a restore and its restart: have the new instance publish (above R2's sequence, so no
- * install ever sees an older list) and purge the edge cache. After a point-in-time restore to
- * auditSince (unix ms), the audit rows written since come back from their copies in R2 first.
+ * After a restore to since (unix ms) and its restart: have the new instance publish (above R2's
+ * sequence, so no install ever sees an older list) and purge the edge cache. A point-in-time
+ * restore (pitr) took the audit log back too, so the rows written since come back from their
+ * copies in R2 first.
  */
-async function afterRestore(env: Env, cache: CacheContext | undefined, restored: Record<string, unknown>, auditSince?: number): Promise<OpsAnswer> {
+async function afterRestore(env: Env, cache: CacheContext | undefined, restored: Record<string, unknown>, since: number, pitr = false): Promise<OpsAnswer> {
 	// A reset object breaks its stubs: primary() makes a new one, which starts a new instance.
-	const audited = auditSince === undefined ? { body: {} } : await call(primary(env), 'reapply-audit', { since: auditSince });
+	const audited = pitr ? await call(primary(env), 'reapply-audit', { since }) : { body: {} };
 	// Accounts deleted after the restore point are deleted again before anything else.
 	const erased = await call(primary(env), 'reapply-erasures');
+	// Then no credential, role or held request the audit log says ended since comes back.
+	const revoked = await call(primary(env), 'reapply-revocations', { since });
 	const published = await call(primary(env), 'publish');
 	const purge = await purgeEverything(cache);
 	console.log(JSON.stringify({ message: 'restored', ...published.body, cachePurged: purge.purged }));
@@ -256,6 +259,7 @@ async function afterRestore(env: Env, cache: CacheContext | undefined, restored:
 		...restored,
 		...audited.body,
 		...erased.body,
+		...revoked.body,
 		...published.body,
 		cache_purged: purge.purged,
 		...(purge.errors ? { cache_errors: purge.errors } : {})
@@ -296,7 +300,7 @@ async function drill(env: Env): Promise<OpsAnswer> {
 }
 
 /** Commands that change nothing and are not audited: the probes call status every hour. */
-const UNAUDITED = new Set(['status', 'counts', 'publish', 'restart', 'drill-check', 'reapply-erasures', 'reapply-audit']);
+const UNAUDITED = new Set(['status', 'counts', 'publish', 'restart', 'drill-check', 'reapply-erasures', 'reapply-audit', 'reapply-revocations']);
 
 /** The Store half: runs one command in this Store (Store.ops). */
 export async function storeOps(store: Store, ctx: DurableObjectState, env: Env, command: string, a: OpsArgs, caller?: OpsCaller): Promise<OpsAnswer> {
@@ -319,6 +323,8 @@ export async function storeOps(store: Store, ctx: DurableObjectState, env: Env, 
 			return ok({ audit_restored: await reapplyAudit(db, env.BACKUPS, a.since as number) });
 		case 'reapply-erasures':
 			return ok({ erased: await reapplyErasures(store, env) });
+		case 'reapply-revocations':
+			return ok({ revocations_reapplied: reapplyRevocations(db, Math.floor((a.since as number) / 1000)) });
 		case 'check-decision': {
 			const answer = checkDecision(store, env, a);
 			if (store.jobs.dirty) await store.jobs.arm();

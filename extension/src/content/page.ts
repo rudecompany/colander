@@ -22,6 +22,7 @@ import { SITE } from '../lib/env';
 import { platformConfig } from '../lib/platforms';
 import { isPlus, K, withDefaults, type Entitlement, type OwnTag, type Settings, type StoredIndex } from '../lib/settings';
 import { itemView, whyEvidence } from './views';
+import { browser } from 'wxt/browser';
 
 interface CardState {
 	id: number;
@@ -160,7 +161,7 @@ class PageLayer extends Layer {
 /** After an extension update the old content script's context is gone and sendMessage throws. */
 const send = <T = unknown>(m: ToWorker): Promise<T> => {
 	try {
-		return chrome.runtime.sendMessage(m) as Promise<T>;
+		return browser.runtime.sendMessage(m) as Promise<T>;
 	} catch (e) {
 		return Promise.reject(e);
 	}
@@ -1164,7 +1165,7 @@ export function start(): void {
 
 	// ---- Messages and storage ---------------------------------------------------------------
 
-	chrome.runtime.onMessage.addListener((m: ToPage, _sender, reply) => {
+	browser.runtime.onMessage.addListener((m: ToPage, _sender, reply) => {
 		switch (m.type) {
 			case 'page-state':
 				reply(pageState());
@@ -1202,7 +1203,7 @@ export function start(): void {
 		}
 	});
 
-	chrome.storage.onChanged.addListener((changes, area) => {
+	browser.storage.onChanged.addListener((changes, area) => {
 		if (area !== 'local') return;
 		let dirty = false;
 		if (changes[K.settings]) {
@@ -1233,7 +1234,7 @@ export function start(): void {
 
 	void (async () => {
 		const [stored, hello] = await Promise.all([
-			chrome.storage.local.get([K.settings, K.ownTags, K.listIndex, K.adapterConfig, K.entitlement]),
+			browser.storage.local.get([K.settings, K.ownTags, K.listIndex, K.adapterConfig, K.entitlement]),
 			send<HelloReply>({ type: 'hello' }).catch(() => ({ tabPaused: false }))
 		]);
 		settings = withDefaults(stored[K.settings] as Partial<Settings>);

@@ -44,7 +44,13 @@ export class MockApi {
 	config: unknown = null;
 	/** What POST /v1/entitlement/refresh finds behind a paid token. */
 	plan: 'active' | 'ended' = 'active';
-	review: { queue: unknown[]; source: unknown } = { queue: [], source: null };
+	review: { queue: unknown[]; source: unknown; unauthorized?: boolean; expired?: boolean } = { queue: [], source: null };
+	/** What POST /v1/pair/claim answers: a token, or an error. */
+	pair: { kind: 'plan' | 'reviewer'; token: string } | { status: number; code: string; message: string } = {
+		status: 404,
+		code: 'invalid_code',
+		message: 'This code is not valid. It may have expired or been used already. Make a new one on the website.'
+	};
 	/** The Plus settings copy behind /v1/sync, with the server's compare-and-set on version. */
 	syncBlob: { version: number; data: unknown } | null = null;
 
@@ -77,7 +83,7 @@ export class MockApi {
 			if (this.plan === 'ended') return ok({ error: { code: 'no_plan', message: 'No active plan.' } }, 404);
 			return ok({ token: planToken({ trial: false, exp: Math.floor(Date.now() / 1000) + 33 * 86400 }) });
 		}
-		if (p === '/v1/trial') return ok({ token: planToken({ trial: true, exp: Math.floor(Date.now() / 1000) + 14 * 86400 }) });
+		if (p === '/v1/trial') return ok({ token: planToken({ trial: true, exp: Math.floor(Date.now() / 1000) + 14 * 86400, sub: 'trl_e2e' }) });
 		if (p === '/v1/sync') {
 			const have = this.syncBlob ?? { version: 0, data: null };
 			if (req.method() === 'GET') return ok(have);
@@ -86,6 +92,9 @@ export class MockApi {
 			this.syncBlob = { version: have.version + 1, data: put.data };
 			return ok({ version: this.syncBlob.version });
 		}
+		if (p === '/v1/pair/claim') return 'token' in this.pair ? ok({ account: 'p***@colander.test', ...this.pair }) : ok({ error: { code: this.pair.code, message: this.pair.message } }, this.pair.status);
+		if (p.startsWith('/v1/review/') && this.review.unauthorized) return ok({ error: { code: 'unauthorized', message: 'Sign in again.' } }, 401);
+		if (p.startsWith('/v1/review/') && this.review.expired) return ok({ error: { code: 'token_expired', message: 'The reviewer token expired after 7 days.' } }, 401);
 		if (p.startsWith('/v1/review/queue')) return ok({ items: this.review.queue, next_cursor: null });
 		if (p.startsWith('/v1/review/sources/') && p.endsWith('/decision')) return ok({ ok: true });
 		if (p.startsWith('/v1/review/sources/')) return ok(this.review.source);

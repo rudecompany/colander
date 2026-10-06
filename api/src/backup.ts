@@ -7,10 +7,10 @@
 // value exactly, and line breaks inside text become ||char(10)||. A restore into a Store keeps the
 // Store's own schema (its migrations) and replaces the rows of every table with the dump's, so a
 // dump from older code loads into newer code (expand-then-contract keeps new columns defaulted),
-// and the data changes of the migrations newer than the dump run on its rows.
+// and the data changes of the migrations the dump had not applied run on its rows.
 import type { DumpResult } from './jobs';
 import type { Db } from './store/db';
-import { migrate, restoredData } from './store/migrations';
+import { migrate, MIGRATIONS, restoredData } from './store/migrations';
 
 /** Dumps live under this prefix, named by their time, so the newest sorts last. */
 export const DUMP_PREFIX = 'dumps/';
@@ -57,6 +57,15 @@ export function dumpTables(db: Db): { name: string; sql: string }[] {
 
 /** The key a dump taken at now (unix ms) is stored under. */
 export const dumpKey = (now: number): string => `${DUMP_PREFIX}${new Date(now).toISOString()}.sql.gz`;
+
+/**
+ * When the dump under key was taken (unix ms), read back from the name dumpKey gave it; 0 for any
+ * other name, so a restore of it then repeats every revocation the audit log holds.
+ */
+export function dumpTime(key: string): number {
+	const t = key.startsWith(DUMP_PREFIX) && key.endsWith('.sql.gz') ? Date.parse(key.slice(DUMP_PREFIX.length, -'.sql.gz'.length)) : NaN;
+	return Number.isNaN(t) ? 0 : t;
+}
 
 /**
  * The dump as SQL lines. It reads the tables lazily, so the caller must keep writes out until it
@@ -181,6 +190,8 @@ export interface Insert {
 	columns: string[];
 	/** the statement, for the table it names */
 	sql: string;
+	/** per column, a number or NULL as written, or ? for a text or blob in params */
+	values: string[];
 	params: SqlStorageValue[];
 	/** the same statement for another table */
 	into(table: string): string;
@@ -253,7 +264,7 @@ export function parseInsert(line: string): Insert {
 	if (i !== line.length) fail('trailing text');
 	if (values.length !== columns.length) fail(`${values.length} values for ${columns.length} columns`);
 	const into = (t: string) => `INSERT INTO ${ident(t)}(${columns.map(ident).join(',')}) VALUES(${values.join(',')})`;
-	return { table, columns, sql: into(table), params, into };
+	return { table, columns, sql: into(table), values, params, into };
 }
 
 /** The text lines of a byte stream, without their line breaks, one at a time. */
@@ -277,8 +288,9 @@ const BATCH_CHARS = 1 << 20;
  * COMMIT. API_DATA_TABLES end up empty and are left out of the counts, and the quota ledger keeps
  * the larger count of each day (LEDGER). The rows stream into staging tables in bounded batches,
  * so a dump never sits in memory whole; one transaction then swaps them in and runs the data
- * changes of the migrations newer than the dump (its header names its version; one without a
- * header counts as older than all), so the live tables change all at once or not at all.
+ * changes of the migrations the dump had not applied (its own _migrations rows; a dump without
+ * them had applied those up to the version its header names, and one without a header none), so
+ * the live tables change all at once or not at all.
  * Requests keep being served from the live tables meanwhile, and what they write is replaced.
  */
 export async function loadDump(db: Db, body: ReadableStream<Uint8Array>, now: number): Promise<Record<string, number>> {
@@ -302,6 +314,9 @@ export async function loadDump(db: Db, body: ReadableStream<Uint8Array>, now: nu
 		};
 		let last = '';
 		let version = 0;
+		// Versions need not be consecutive: a migration numbered below one already shipped (two
+		// branches in parallel) is applied later, so the header's newest version does not say it.
+		const applied = new Set<number>();
 		for await (const line of textLines(body)) {
 			last = line;
 			if (!line.startsWith('INSERT INTO ')) {
@@ -309,8 +324,12 @@ export async function loadDump(db: Db, body: ReadableStream<Uint8Array>, now: nu
 				continue;
 			}
 			const s = parseInsert(line);
+			if (s.table === '_migrations') {
+				applied.add(Number(s.values[s.columns.indexOf('version')]));
+				continue;
+			}
 			// Dumps from before API_DATA_TABLES held their rows: those stay out.
-			if (s.table === '_migrations' || API_DATA_TABLES.has(s.table)) continue;
+			if (API_DATA_TABLES.has(s.table)) continue;
 			if (!(s.table in counts)) throw new Error(`the dump has a table this Store does not know: ${s.table}`);
 			const known = columns.get(s.table);
 			if (!known) columns.set(s.table, s.columns);
@@ -344,7 +363,8 @@ export async function loadDump(db: Db, body: ReadableStream<Uint8Array>, now: nu
 				const keep = t === LEDGER ? ' WHERE true ON CONFLICT (day) DO UPDATE SET units = max(units, excluded.units)' : '';
 				db.run(`INSERT INTO ${ident(t)}(${list}) SELECT ${list} FROM ${ident(STAGE + t)}${keep}`);
 			}
-			restoredData(db, version, Math.floor(now / 1000));
+			if (applied.size === 0) for (const m of MIGRATIONS) if (m.version <= version) applied.add(m.version);
+			restoredData(db, applied, Math.floor(now / 1000));
 		});
 		for (const t of API_DATA_TABLES) delete counts[t];
 		return counts;

@@ -15,7 +15,7 @@ test.afterAll(async () => {
 });
 
 type Settings = { perPlatform: Record<string, string> };
-type SyncState = { version: number; dirty: boolean };
+type SyncState = { version: number; dirty: boolean; sub?: string };
 
 test('the trial unlocks Plus, per-platform strictness applies, and settings sync round-trips', async () => {
 	const options = await ext.page('options.html#plan');
@@ -70,7 +70,7 @@ test('the trial unlocks Plus, per-platform strictness applies, and settings sync
 	await expect.poll(() => ext.storage<Settings>('settings').then((s) => s.perPlatform)).toEqual({ yt: 'label' });
 	await expect(youtube.getByRole('radio', { name: 'Label' })).toHaveAttribute('aria-checked', 'true');
 	await expect(chip(card(page, CARD.likely))).toContainText('Likely slop');
-	expect(await ext.storage<SyncState>('syncState')).toEqual({ version: 2, dirty: false });
+	expect(await ext.storage<SyncState>('syncState')).toEqual({ version: 2, dirty: false, sub: expect.stringMatching(/^trl_/) });
 	// Taking the other browser's settings is not a local edit: nothing is written back.
 	const after = ext.seen.slice(from).filter((s) => s.url === `${ORIGIN}/v1/sync`).map((s) => s.method);
 	expect(after).toEqual(['GET']);
@@ -85,7 +85,7 @@ test('the trial unlocks Plus, per-platform strictness applies, and settings sync
 	await expect(youtube.getByRole('radio', { name: 'Standard' })).toHaveAttribute('aria-checked', 'true');
 	await expect(card(page, CARD.likely)).toHaveAttribute('data-colander', 'hide');
 	await expect(chip(card(page, CARD.aiMade))).toContainText('AI-made');
-	await expect.poll(() => ext.storage<SyncState>('syncState')).toEqual({ version: 4, dirty: false });
+	await expect.poll(() => ext.storage<SyncState>('syncState')).toEqual({ version: 4, dirty: false, sub: expect.stringMatching(/^trl_/) });
 	const migrated = await api<{ version: number; data: { strictness: string } & Settings }>('/v1/sync', { auth });
 	expect([migrated.json.data.strictness, migrated.json.data.perPlatform]).toEqual(['standard', { yt: 'standard' }]);
 });

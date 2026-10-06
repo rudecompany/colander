@@ -36,7 +36,7 @@ const shots: Shot[] = [
 		path: '/plans/welcome',
 		setup: { 'GET /v1/account': { json: { account: PLUS_ACCOUNT } } },
 		after: async (page) => {
-			await page.getByRole('heading', { name: 'Connect this browser' }).waitFor();
+			await page.getByRole('heading', { name: 'Connect a browser' }).waitFor();
 		}
 	},
 	{ name: 'support', path: '/support' },
@@ -59,7 +59,8 @@ const shots: Shot[] = [
 		path: '/account',
 		setup: {
 			'GET /v1/account': { json: { account: { ...PLUS_ACCOUNT, passkey_count: 2 } } },
-			'GET /v1/account/passkeys': { json: { passkeys: PASSKEYS, current: 'pk_laptop' } }
+			// This session signed in with an email code, so no passkey is this sign-in's.
+			'GET /v1/account/passkeys': { json: { passkeys: PASSKEYS, current: null } }
 		}
 	},
 	{
@@ -73,6 +74,31 @@ const shots: Shot[] = [
 	{ name: 'account-invite', path: '/account/invite#invite=inv_test', setup: { 'GET /v1/account': { json: { account: CURATOR_NEW } } } },
 	{ name: 'account-cancel', path: '/account/cancel#cancel-secret' },
 	{ name: 'console-passkey-needed', path: '/console', setup: { 'GET /v1/account': { json: { account: CURATOR_NEW } } } },
+	{
+		// A pairing code on screen, waiting for the extension, then a reviewer code already taken.
+		name: 'account-codes',
+		path: '/account',
+		setup: {
+			// The side panel's connection that the reviewer code just made.
+			'GET /v1/account': { json: { account: { ...STAFF, plan: PLUS_ACCOUNT.plan, reviewer_token: { expires_at: new Date(Date.now() + 7 * 86_400_000).toISOString(), last_used_at: null } } } },
+			'GET /v1/account/passkeys': { json: { passkeys: PASSKEYS.slice(0, 1), current: 'pk_laptop' } },
+			'POST /v1/pair': (c) => ({
+				status: 201,
+				json: { id: `pair_${c.body.kind}`, code: c.body.kind === 'plan' ? 'KXQ4-JP7M' : 'RVW4-2K9P', expires_at: new Date(Date.now() + 600_000).toISOString() }
+			}),
+			'GET /v1/pair/*': (c) => ({
+				json: c.path.endsWith('pair_reviewer') ? { status: 'claimed', ext_version: '1.0.0', browser: 'firefox' } : { status: 'pending', ext_version: null, browser: null }
+			})
+		},
+		after: async (page) => {
+			await page.getByRole('button', { name: 'Show a code' }).first().click();
+			await page.getByText('KXQ4-JP7M').waitFor();
+			await page.getByRole('button', { name: 'Show a code' }).click();
+			await page.getByText('Connected Colander 1.0.0 in Firefox.').waitFor();
+			// The full-page picture starts at the top, so the sticky header sits where it belongs.
+			await page.evaluate(() => scrollTo(0, 0));
+		}
+	},
 	{
 		name: 'console',
 		path: '/console',

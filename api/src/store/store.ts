@@ -11,6 +11,7 @@ import { runHeldRequests } from '../erase';
 import { Billing, billingConfig } from '../billing';
 import { devRoutes, testNow } from '../dev';
 import { jsonError, notFound, ROUTE_HEADER, setCache } from '../http';
+import { available } from '../limits';
 import { Jobs, prune, STATUS, type DumpStatus, type PassStatus, type PublishStatus } from '../jobs';
 import { Publisher, r2Sequence } from '../list/publisher';
 import { Mailer } from '../mail';
@@ -18,6 +19,7 @@ import { storeOps, type OpsArgs, type OpsCaller } from '../ops';
 import { accountRoutes } from '../routes/account';
 import { adminRoutes } from '../routes/admin';
 import { billingRoutes } from '../routes/billing';
+import { pairRoutes } from '../routes/pairing';
 import { routes as apiRoutes } from '../routes/server';
 import { Engine } from '../scoring/engine';
 import { DAILY_UNITS, YouTube } from '../youtube';
@@ -59,6 +61,8 @@ export interface WatchdogStatus {
 	alerted: string[];
 	/** when the watchdog first ran here (unix ms): job ages count from it until a job reports */
 	since: number;
+	/** more wrong pairing codes came in than the baseline allows (src/limits.ts pair_claim_fail) */
+	pairGuessing: boolean;
 	/** sign-in codes sent, by hour */
 	signInMail: SignInMail | null;
 }
@@ -142,6 +146,7 @@ export class Store extends DurableObject<Env> {
 				...accountRoutes(this, env),
 				...adminRoutes(this, env),
 				...billingRoutes(this),
+				...pairRoutes(this),
 				...devRoutes(this, ctx, env)
 			].map(([method, pattern, handler]) => route(method, pattern, handler))
 		];
@@ -233,6 +238,7 @@ export class Store extends DurableObject<Env> {
 			dump: kv.get<DumpStatus>(STATUS.dump) ?? null,
 			alerted: kv.get<string[]>(STATUS.alerts) ?? [],
 			since,
+			pairGuessing: !available(this.db, now, '', 'pair_claim_fail'),
 			signInMail: kv.get<SignInMail>(STATUS.signInMail) ?? null
 		};
 	}

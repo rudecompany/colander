@@ -61,15 +61,14 @@ jobs:
           node-version: 24
           package-manager-cache: false
       - run: pnpm install --frozen-lockfile
+      # No COLANDER_BUILD_API: staging sits behind Cloudflare Access, so the build could not read its
+      # numbers. Staging pages fill them in once the browser fetches them. Testers pair a development
+      # build of the extension with staging through pairing codes, like any other browser.
       - name: Build the website
         run: pnpm -C web build
         env:
-          # The development build of the extension (stable ID) is the one testers point at staging.
-          PUBLIC_EXTENSION_ID: nninnogmbhfebflkcgghlmjmplmpodlc
           # Turnstile on the sign-in code form; empty until the owner adds a widget (docs/deploy.md).
           PUBLIC_TURNSTILE_SITE_KEY: ${{ vars.TURNSTILE_SITE_KEY }}
-          # No COLANDER_BUILD_API: staging sits behind Cloudflare Access, so the build could not read its
-          # numbers. Staging pages fill them in once the browser fetches them.
       - name: Deploy
         uses: cloudflare/wrangler-action@953926a2e2182532811c01a25e53647d93bf07c0 # v4
         with:

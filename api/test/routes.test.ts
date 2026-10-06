@@ -95,7 +95,7 @@ class Harness {
 		return { Cookie: this.session(account.id, true), 'X-Colander-CSRF': '1' };
 	}
 
-	/** A reviewer bearer token, as POST /v1/account/reviewer-token issues one: curator authority for 7 days. */
+	/** A reviewer bearer token, as a reviewer pairing code hands one over: curator authority for 7 days. */
 	bearer(email: string, role: string, name: string): Record<string, string> {
 		const account = grantRole(this.db, email, role, unix(this.clock), { host: 'job' });
 		setDisplayName(this.db, account.id, name);

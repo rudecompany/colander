@@ -143,6 +143,7 @@ describe('Cache-Control on every route', () => {
 		const staff = { origin: ADMIN_ORIGIN, headers: await accessHeaders('rae@colander.test') };
 		await check('GET /v1/review/queue', 'GET', '/v1/review/queue', 200, 'none', { headers: bearer });
 		await check('GET /v1/review/sources/:platform/:source_id', 'GET', '/v1/review/sources/yt/@chan', 200, 'none', { headers: bearer });
+		// The appeal is under review, so deciding the source needs staff: a reviewer token carries curator authority only.
 		await check('POST /v1/review/sources/:platform/:source_id/decision', 'POST', '/v1/review/sources/yt/@chan/decision', 403, 'none', {
 			headers: bearer,
 			body: { verdict: 'slop', reason: 'Still generated.', signals: ['watermark'] }
@@ -195,7 +196,6 @@ describe('Cache-Control on every route', () => {
 		await check('DELETE /v1/account/requests/:id', 'DELETE', '/v1/account/requests/req_none', 404, 'none', { headers: signedIn });
 		await check('POST /v1/auth/cancel', 'POST', '/v1/auth/cancel', 404, 'none', { headers: CSRF, body: { secret: 'nothing' } });
 		await check('GET /v1/account/export', 'GET', '/v1/account/export', 200, 'none', { headers: signedIn });
-		await check('POST /v1/account/reviewer-token', 'POST', '/v1/account/reviewer-token', 403, 'none', { headers: signedIn });
 		await check('DELETE /v1/account/reviewer-token', 'DELETE', '/v1/account/reviewer-token', 204, 'none', { headers: signedIn });
 
 		// The admin API, only on the admin host and only through Access.
@@ -216,6 +216,12 @@ describe('Cache-Control on every route', () => {
 		await check('GET /v1/admin/audit', 'GET', '/v1/admin/audit', 403, 'none', staff);
 		await check('GET (unmatched)', 'GET', '/v1/admin/me', 404, 'none');
 		expect(await runInDurableObject(primary(), (s: Store) => getAccount(s.db, curatorId)?.role)).toBe('curator');
+
+		// Pairing (contract 7): a member without a plan gets no code and no reviewer code; the claim answers any origin.
+		await check('POST /v1/pair', 'POST', '/v1/pair', 404, 'none', { headers: signedIn, body: { kind: 'plan' } });
+		await check('POST /v1/pair', 'POST', '/v1/pair', 403, 'none', { headers: signedIn, body: { kind: 'reviewer' } });
+		await check('GET /v1/pair/:id', 'GET', '/v1/pair/pair_none', 404, 'none', { headers: signedIn });
+		await check('POST /v1/pair/claim', 'POST', '/v1/pair/claim', 404, 'none', { body: { code: 'KXQ4-JP7M', ext_version: '1.0.0', browser: 'chrome' } });
 
 		// Billing and entitlements (contract 6.8): without Stripe keys payments are off; the
 		// supporters page is the same for every viewer.

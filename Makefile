@@ -3,7 +3,6 @@
 
 DEV_KEY ?= testdata/dev-signing.key
 DEV_URL ?= http://localhost:8787
-EXTENSION_ID ?= nninnogmbhfebflkcgghlmjmplmpodlc
 
 .PHONY: setup build web extension extension-zip test test-api test-web test-extension e2e fixtures seed dev deploy-dry smoke keygen clean
 
@@ -13,7 +12,7 @@ setup:
 build: web extension
 
 web:
-	PUBLIC_EXTENSION_ID=$(EXTENSION_ID) pnpm -C web build
+	pnpm -C web build
 
 extension:
 	pnpm -C extension build
@@ -36,10 +35,12 @@ test-web:
 	pnpm -C web check
 	pnpm -C web test
 
+# The Firefox smoke test needs Playwright's Firefox: pnpm -C extension exec playwright install firefox
 test-extension:
 	pnpm -C extension check
 	pnpm -C extension test
 	pnpm -C extension test:e2e
+	pnpm -C extension test:firefox
 
 # Full stack: the Worker under wrangler dev, the built website and the built extension together in
 # Chromium. COLANDER_E2E_BASE_URL runs the edge specs against a deployed origin instead.
