@@ -37,14 +37,14 @@
   },
   "dependencies": {
     "@fontsource-variable/atkinson-hyperlegible-next": "^5.3.0",
-    "@lucide/svelte": "^1.51.0",
+    "@lucide/svelte": "^1.53.0",
     "bits-ui": "^2.0.0",
-    "lucide": "^1.51.0"
+    "lucide": "^1.53.0"
   },
   "devDependencies": {
     "@types/node": "^24.19.1",
     "linkedom": "^0.18.13",
-    "svelte": "^5.57.1",
+    "svelte": "^5.57.2",
     "svelte-check": "^4.0.0",
     "typescript": "^5.9.0",
     "vitest": "^4.1.11"
