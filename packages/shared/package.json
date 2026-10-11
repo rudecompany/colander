@@ -42,7 +42,7 @@
     "lucide": "^1.51.0"
   },
   "devDependencies": {
-    "@types/node": "^24.19.1",
+    "@types/node": "^26.6.4",
     "linkedom": "^0.18.13",
     "svelte": "^5.57.1",
     "svelte-check": "^4.0.0",

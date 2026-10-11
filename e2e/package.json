@@ -10,7 +10,7 @@
     "@colander/api": "workspace:*",
     "@playwright/test": "1.63.0",
     "@types/chrome": "^0.3.4",
-    "@types/node": "^24.19.1",
+    "@types/node": "^26.6.4",
     "typescript": "^5.9.0"
   }
 }
