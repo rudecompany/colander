@@ -9,6 +9,6 @@
     "check": "pnpm -r check"
   },
   "devDependencies": {
-    "wrangler": "4.147.0"
+    "wrangler": "4.151.0"
   }
 }
