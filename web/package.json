@@ -19,19 +19,19 @@
   },
   "dependencies": {
     "@colander/shared": "workspace:*",
-    "@lucide/svelte": "^1.51.0"
+    "@lucide/svelte": "^1.61.0"
   },
   "devDependencies": {
-    "@axe-core/playwright": "^4.13.0",
-    "@playwright/test": "^1.63.0",
+    "@axe-core/playwright": "^4.14.0",
+    "@playwright/test": "^1.64.1",
     "@sveltejs/adapter-static": "^4.0.0",
-    "@sveltejs/kit": "^3.0.0",
+    "@sveltejs/kit": "^3.1.0",
     "@sveltejs/vite-plugin-svelte": "^7.3.1",
     "@types/node": "^24.19.1",
-    "linkedom": "^0.18.13",
-    "svelte": "^5.57.1",
-    "svelte-check": "^4.7.6",
+    "linkedom": "^0.18.14",
+    "svelte": "^5.57.2",
+    "svelte-check": "^4.7.7",
     "typescript": "^6.0.3",
-    "vite": "^8.3.2"
+    "vite": "^8.3.5"
   }
 }
